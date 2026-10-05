@@ -19,6 +19,14 @@ REPO="${REPO:-https://github.com/niyongaboemmy/nga-tmcode.git}"
 SLICE_MEMORY="${SLICE_MEMORY:-1200M}"
 SLICE_CPU="${SLICE_CPU:-150%}"
 
+# Update the code first and re-run the updated copy of this script (bash reads
+# scripts incrementally, so updating the file under a running bash is unsafe).
+if [ "${TM_JUDGE_REEXEC:-}" != "1" ] && [ -d "$APP_DIR/.git" ]; then
+  git -C "$APP_DIR" fetch -q origin main
+  git -C "$APP_DIR" reset -q --hard origin/main
+  TM_JUDGE_REEXEC=1 exec bash "$APP_DIR/services/judge/deploy/install.sh" "$@"
+fi
+
 echo "== 1/5 packages"
 sudo apt-get update -qq
 sudo apt-get install -y -qq --no-install-recommends \
@@ -51,10 +59,7 @@ sudo systemctl restart isolate.service
 isolate-check-environment || echo "(isolate-check-environment warnings above are advisory)"
 
 echo "== 4/5 code"
-if [ -d "$APP_DIR/.git" ]; then
-  git -C "$APP_DIR" fetch -q origin main
-  git -C "$APP_DIR" reset -q --hard origin/main
-else
+if [ ! -d "$APP_DIR/.git" ]; then
   sudo mkdir -p "$APP_DIR"
   sudo chown "$(id -u):$(id -g)" "$APP_DIR"
   git clone -q "$REPO" "$APP_DIR"
@@ -69,9 +74,18 @@ echo "   building"
 (cd "$APP_DIR/services/judge" && npm install --no-save --no-package-lock --workspaces=false --omit=dev --no-audit --no-fund --silent && node scripts/build.mjs --log-level=warning)
 
 echo "== 5/5 pm2"
-pm2 startOrReload "$APP_DIR/services/judge/deploy/ecosystem.config.cjs" --update-env
+# delete + start (not reload): a reload keeps an old script path.
+pm2 delete tm-judge >/dev/null 2>&1 || true
+pm2 start "$APP_DIR/services/judge/deploy/ecosystem.config.cjs" >/dev/null
 pm2 save >/dev/null
-for _ in $(seq 1 20); do curl -fs -o /dev/null http://127.0.0.1:5010/ 2>/dev/null || [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5010/v1/health)" = "401" ] && break; sleep 0.5; done
 TOKEN="$(grep '^JUDGE_TOKEN=' "$APP_DIR/.judge.env" | cut -d= -f2)"
-curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/v1/health && echo
-echo "tm-judge ready"
+for _ in $(seq 1 30); do
+  if curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/v1/health; then
+    echo
+    echo "tm-judge ready"
+    exit 0
+  fi
+  sleep 1
+done
+echo "tm-judge did not become healthy; see: pm2 logs tm-judge" >&2
+exit 1
