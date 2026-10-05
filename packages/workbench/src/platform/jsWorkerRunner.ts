@@ -17,6 +17,7 @@ const fmt = (args) => args.map((a) => {
 }).join(" ");
 onmessage = (e) => {
   const { code, stdin, file } = e.data;
+  let stdinLeft = stdin;
   const lines = stdin.split(/\r?\n/);
   if (lines.length && lines[lines.length - 1] === "") lines.pop();
   const out = (d) => send("stdout", String(d));
@@ -32,7 +33,8 @@ onmessage = (e) => {
     stdin: { on() {}, setEncoding() {}, resume() {} },
   };
   const modules = {
-    fs: { readFileSync: (fd) => { if (fd === 0 || fd === "/dev/stdin") return stdin; throw new Error("fs is not available when running in the browser"); } },
+    // Like Node: stdin can be read once; later reads see end-of-file.
+    fs: { readFileSync: (fd) => { if (fd === 0 || fd === "/dev/stdin") { const s = stdinLeft; stdinLeft = ""; return s; } throw new Error("fs is not available when running in the browser"); } },
     readline: {
       createInterface: () => {
         const handlers = {};

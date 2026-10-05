@@ -2,6 +2,7 @@ import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
 import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
+import { SyncStatus } from "../exam/ExamViews";
 
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
 const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
@@ -54,6 +55,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <Codicon name={MODE_ICON[mode]} />
           <span>{MODE_LABEL[mode]}</span>
         </Item>
+        <SyncStatus />
         <Item title={`Errors: ${errors}, Warnings: ${warnings}`} onClick={() => showPanel("problems")}>
           <Codicon name="error" /> {errors} <Codicon name="warning" /> {warnings}
         </Item>

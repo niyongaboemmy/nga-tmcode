@@ -1,7 +1,9 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
 import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
+import { useExam } from "../exam/state";
 
+const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
@@ -14,6 +16,8 @@ export function ActivityBar() {
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
   const failing = useWorkbench((s) => s.tests.items.filter((t) => t.status === "failed" || t.status === "error").length);
   const os = getPlatform().os;
+  const inExam = useExam((s) => !!s.quiz);
+  const views = inExam ? [TASK_VIEW, ...VIEWS] : VIEWS;
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
@@ -24,7 +28,7 @@ export function ActivityBar() {
   return (
     <nav className="tm-activitybar" aria-label="Active View Switcher">
       <div className="tm-activitybar-top" role="tablist" aria-orientation="vertical">
-        {VIEWS.map((v) => {
+        {views.map((v) => {
           const active = sidebarVisible && activeView === v.id;
           return (
             <button

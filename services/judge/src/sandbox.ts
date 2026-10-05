@@ -213,7 +213,9 @@ export class LocalSandbox implements Sandbox {
       exec(argv, { stdin, limits, env = {} }) {
         return new Promise((resolve) => {
           const started = Date.now();
-          const child = spawn(argv[0], argv.slice(1), { cwd: dir, env: { ...process.env, ...env }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+          // A minimal environment, like isolate's: nothing inherited may change a program's output.
+          const clean = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, LANG: "C.UTF-8", NO_COLOR: "1" };
+          const child = spawn(argv[0], argv.slice(1), { cwd: dir, env: { ...clean, ...env }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
           let stdout = "";
           let stderr = "";
           let over = false;

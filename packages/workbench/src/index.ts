@@ -7,3 +7,6 @@ export { startedWorkers, selfCheckWorkers } from "./monaco/setup";
 export { PREVIEW_MESSAGE_KEY, injectIntoHead, shimTag } from "./preview/compose";
 export { composeReactPage } from "./preview/page";
 export { loadTests, runTests } from "./run/testService";
+export { startExam, parseLaunchLink, stopExam } from "./exam/session";
+export { useExam } from "./exam/state";
+export { isAllowedApi } from "./exam/api";

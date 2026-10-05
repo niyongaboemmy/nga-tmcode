@@ -233,6 +233,8 @@ fn display(program: &Path, args: &[String], root: &Path) -> String {
         .join(" ")
 }
 
+const INHERITED_NOISE: &[&str] = &["FORCE_COLOR", "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS"];
+
 fn spawn_pipe(program: &Path, args: &[String], cwd: &Path) -> std::io::Result<std::process::Child> {
     let mut cmd = Command::new(program);
     cmd.args(args)
@@ -244,6 +246,10 @@ fn spawn_pipe(program: &Path, args: &[String], cwd: &Path) -> std::io::Result<st
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONNOUSERSITE", "1")
         .env("NO_COLOR", "1");
+    // Inherited settings must not change a student's output (colours, preloaded modules, paths).
+    for var in INHERITED_NOISE {
+        cmd.env_remove(var);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -482,6 +488,9 @@ fn run_pty(program: &Path, args: &[String], cwd: &Path, request: &RunRequest, st
     cmd.env("TERM", "xterm-256color");
     cmd.env("PYTHONIOENCODING", "utf-8");
     cmd.env("PYTHONNOUSERSITE", "1");
+    for var in INHERITED_NOISE {
+        cmd.env_remove(var);
+    }
     let mut child = match pty.slave.spawn_command(cmd) {
         Ok(c) => c,
         Err(e) => return fail(format!("Could not start {}: {e}", program.display())),

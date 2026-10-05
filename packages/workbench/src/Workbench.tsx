@@ -18,6 +18,7 @@ import { TitleBar } from "./parts/TitleBar";
 import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
+import { ExamOverlay } from "./exam/ExamViews";
 
 /**
  * Editor groups side by side. Always one Allotment with a stable key per group,
@@ -136,6 +137,7 @@ export function Workbench() {
       <QuickInput />
       <ContextMenu />
       <Dialog />
+      <ExamOverlay />
       <Notifications />
     </div>
   );

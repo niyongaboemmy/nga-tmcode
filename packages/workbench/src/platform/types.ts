@@ -66,6 +66,8 @@ export interface Platform {
   store: KeyValueStore;
   /** Runs student code; absent where nothing can run (then the run fallbacks apply). */
   runner?: Runner;
+  /** Exams from Task Mentor; absent where they can't be taken. */
+  exam?: ExamHost;
   /** Desktop preview origin; without it previews are composed into an iframe srcdoc. */
   preview?: PreviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
@@ -136,4 +138,37 @@ export interface PreviewHost {
    * Returns the URL of `entry`.
    */
   publish(root: string, entry: string, overlay: Record<string, string>, opts: { internet: boolean }): Promise<string>;
+}
+
+// ───────────── exams (plan §10, §13) ─────────────
+
+export interface JournalEntry {
+  seq: number;
+  question_id: number;
+  kind: "auto" | "run" | "final" | "offline_final";
+  client_ts: string;
+  files: { path: string; content: string }[];
+  files_hash: string;
+  hmac: string;
+  synced: boolean;
+}
+
+/** Append-only, crash-safe local store of snapshots for one session. */
+export interface JournalStore {
+  load(sessionId: string): Promise<JournalEntry[]>;
+  append(sessionId: string, entry: JournalEntry): Promise<void>;
+  markSynced(sessionId: string, seq: number): Promise<void>;
+}
+
+export interface ExamHost {
+  /** Debug builds and the browser build accept a localhost Task Mentor. */
+  dev: boolean;
+  device(): Promise<{ id: string; os: string; os_version: string; arch: string; app_version: string }>;
+  /** Creates (if needed) and opens the folder an exam's tasks live in. */
+  openExamWorkspace(submissionId: number, title: string): Promise<{ name: string; root: string }>;
+  journal: JournalStore;
+  /** fetch() for Task Mentor (Rust-side on the desktop: no CORS, host allow-list). */
+  fetch(url: string, init?: RequestInit): Promise<Response>;
+  /** Installed toolchains, reported to Task Mentor at session start. */
+  toolchains(): Promise<{ tool: string; version: string }[]>;
 }

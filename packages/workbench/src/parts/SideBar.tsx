@@ -4,8 +4,9 @@ import { ActionButton } from "../widgets/icons";
 import { ExplorerView } from "./explorer/ExplorerView";
 import { SearchView } from "./search/SearchView";
 import { TestingView } from "./testing/TestingView";
+import { TaskView } from "../exam/ExamViews";
 
-const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task" } as const;
 
 export function SideBar() {
   const view = useWorkbench((s) => s.activeView);
@@ -31,7 +32,7 @@ export function SideBar() {
         </div>
       </header>
       <div className="tm-sidebar-content">
-        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : <TestingView />}
+        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : <TestingView />}
       </div>
     </aside>
   );

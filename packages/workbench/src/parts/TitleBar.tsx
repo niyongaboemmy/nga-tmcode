@@ -3,6 +3,8 @@ import { executeCommand, formatKeybinding, getCommand, isEnabled, keybindingFor 
 import { closeContextMenu, getPlatform, openContextMenu, useWorkbench, type ContextMenuItem } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { Logo } from "../widgets/Logo";
+import { ExamTitle } from "../exam/ExamViews";
+import { useExam } from "../exam/state";
 
 type MenuSpec = (string | "-")[];
 
@@ -149,6 +151,7 @@ export function TitleBar({ focused }: { focused: boolean }) {
   const workspace = useWorkbench((s) => s.workspace);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
+  const inExam = useExam((s) => !!s.quiz);
   const os = platform.os;
   const nativeMenus = platform.kind === "desktop" && os === "mac";
   const kb = (id: string) => {
@@ -167,6 +170,7 @@ export function TitleBar({ focused }: { focused: boolean }) {
         )}
       </div>
       <div className="tm-titlebar-center" data-tauri-drag-region>
+        {inExam ? <ExamTitle /> : (
         <button
           type="button"
           className="tm-command-center"
@@ -176,6 +180,7 @@ export function TitleBar({ focused }: { focused: boolean }) {
           <Codicon name="search" />
           <span>{workspace ? workspace.name : "TMCode"}</span>
         </button>
+        )}
       </div>
       <div className="tm-titlebar-right" data-tauri-drag-region>
         <ActionButton

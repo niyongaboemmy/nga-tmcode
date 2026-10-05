@@ -47,7 +47,9 @@ test("visible tests run locally and failures open a diff", async ({ page }) => {
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await open(page, "js", "js/sum.js");
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("F1");
+  await page.keyboard.type("Edit: Select All");
+  await page.keyboard.press("Enter");
   await page.keyboard.type('console.log("wrong");');
   await page.locator('.tm-activity[aria-label^="Testing"]').click();
   await page.getByRole("button", { name: "Run All Tests" }).click();

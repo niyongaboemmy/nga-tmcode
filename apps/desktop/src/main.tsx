@@ -5,7 +5,9 @@ import {
   createMemoryPlatform,
   executeCommand,
   initWorkbench,
+  parseLaunchLink,
   selfCheckWorkers,
+  startExam,
   setWorkspace,
   startedWorkers,
   type Platform,
@@ -40,7 +42,7 @@ async function boot() {
     if (ws) await setWorkspace(ws);
   }
   // Browser builds open the in-memory demo project straight away (dev server, Playwright).
-  if (platform.kind === "web" && params.get("empty") !== "1") {
+  if (platform.kind === "web" && params.get("empty") !== "1" && !params.get("launch")) {
     await setWorkspace({ name: "practice-project", root: "memory://practice-project" });
   }
   if (import.meta.env.DEV) {
@@ -51,6 +53,12 @@ async function boot() {
       <Workbench />
     </StrictMode>,
   );
+  // Browser build: ?launch=<tmcode:// link> starts an exam (dev server and e2e against a mock Task Mentor).
+  const launch = params.get("launch");
+  if (platform.kind === "web" && launch) {
+    const link = parseLaunchLink(launch);
+    if (link) void startExam(link.api, link.ticket);
+  }
   if (inTauri) {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");

@@ -3,6 +3,8 @@ import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
 import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
 import { loadTests, runTests } from "../run/testService";
+import { submitExam } from "../exam/session";
+import { inExam } from "../exam/state";
 import {
   activeEditor,
   activeFilePath,
@@ -176,6 +178,7 @@ export function registerBuiltinCommands() {
   editorAction("editor.action.revealDefinition", "Go to Definition", "editor.action.revealDefinition", undefined, "Go");
   editorAction("editor.foldAll", "Fold All", "editor.foldAll");
   editorAction("editor.unfoldAll", "Unfold All", "editor.unfoldAll");
+  editorAction("editor.action.selectAll", "Select All", "editor.action.selectAll", undefined, "Edit");
   editorAction("undo", "Undo", "undo", undefined, "Edit");
   editorAction("redo", "Redo", "redo", undefined, "Edit");
 
@@ -243,6 +246,10 @@ export function registerBuiltinCommands() {
   registerCommand({ id: "workbench.view.testing", title: "Show Testing", category: "View", run: () => revealView("testing") });
   registerCommand({ id: "tmcode.refreshToolchains", title: "Refresh Toolchains", category: "Run", run: refreshToolchains });
   registerCommand({ id: "workbench.action.run.show", title: "Show Run Output", category: "View", run: () => showPanel("run") });
+
+  // ── Exams ──
+  registerCommand({ id: "tmcode.submitExam", title: "Submit Exam", category: "Exam", enabled: inExam, run: () => submitExam() });
+  registerCommand({ id: "workbench.view.task", title: "Show Task", category: "Exam", enabled: inExam, run: () => revealView("task") });
 
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });

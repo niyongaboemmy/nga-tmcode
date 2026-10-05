@@ -69,7 +69,7 @@ jobs:
       - name: Language runtimes and isolate build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless
+          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev libseccomp-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless
       - name: Build and start isolate v2.7
         run: |
           git clone --depth 1 --branch v2.7 https://github.com/ioi/isolate /tmp/isolate

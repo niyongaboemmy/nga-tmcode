@@ -1,5 +1,5 @@
 import { createJsWorkerRunner } from "./jsWorkerRunner";
-import type { DirEntry, FileSystem, KeyValueStore, OsKind, Platform } from "./types";
+import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
  * An in-memory file system. Used by the browser build (dev server, Playwright,
@@ -92,6 +92,54 @@ export class MemoryFileSystem implements FileSystem {
     if (!this.dirs.has(path) || path === "") throw new Error(`'${path}' does not exist`);
     for (const d of [...this.dirs]) if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
     for (const f of [...this.files.keys()]) if (f.startsWith(`${path}/`)) this.files.delete(f);
+  }
+}
+
+/** A FileSystem whose backing store can be swapped (practice folder ↔ exam folder). */
+export class SwitchableFileSystem implements FileSystem {
+  constructor(public target: FileSystem) {}
+  readDir(p: string) {
+    return this.target.readDir(p);
+  }
+  readFile(p: string) {
+    return this.target.readFile(p);
+  }
+  writeFile(p: string, c: string) {
+    return this.target.writeFile(p, c);
+  }
+  createFile(p: string) {
+    return this.target.createFile(p);
+  }
+  createDir(p: string) {
+    return this.target.createDir(p);
+  }
+  rename(a: string, b: string) {
+    return this.target.rename(a, b);
+  }
+  remove(p: string) {
+    return this.target.remove(p);
+  }
+}
+
+/** Journal in localStorage (browser build); survives reloads like the desktop one survives crashes. */
+export class LocalStorageJournal implements JournalStore {
+  private key = (sid: string) => `tmcode:journal:${sid}`;
+  async load(sid: string): Promise<JournalEntry[]> {
+    try {
+      return JSON.parse(localStorage.getItem(this.key(sid)) ?? "[]") as JournalEntry[];
+    } catch {
+      return [];
+    }
+  }
+  async append(sid: string, e: JournalEntry) {
+    const all = await this.load(sid);
+    all.push(e);
+    localStorage.setItem(this.key(sid), JSON.stringify(all));
+  }
+  async markSynced(sid: string, seq: number) {
+    const all = await this.load(sid);
+    for (const e of all) if (e.seq <= seq) e.synced = true;
+    localStorage.setItem(this.key(sid), JSON.stringify(all));
   }
 }
 
@@ -215,12 +263,36 @@ export default function App() {
 
 /** A browser-only platform with an in-memory demo project. */
 export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT): Platform {
-  const fs = new MemoryFileSystem(seed);
+  const practice = new MemoryFileSystem(seed);
+  const fs = new SwitchableFileSystem(practice);
+  const exams = new Map<number, MemoryFileSystem>();
+  const exam: ExamHost = {
+    dev: true,
+    async device() {
+      let id = localStorage.getItem("tmcode:device-id");
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("tmcode:device-id", id);
+      }
+      return { id, os: detectOs(), os_version: navigator.userAgent.slice(0, 60), arch: "web", app_version: "0.1.0-web" };
+    },
+    async openExamWorkspace(submissionId, title) {
+      if (!exams.has(submissionId)) exams.set(submissionId, new MemoryFileSystem({}));
+      fs.target = exams.get(submissionId)!;
+      return { name: title, root: `memory://exam-${submissionId}` };
+    },
+    journal: new LocalStorageJournal(),
+    fetch: (url, init) => fetch(url, init),
+    async toolchains() {
+      return [{ tool: "node", version: "browser sandbox" }];
+    },
+  };
   return {
     kind: "web",
     os: detectOs(),
     version: "0.1.0-web",
     async openFolder() {
+      fs.target = practice;
       return { name: "practice-project", root: "memory://practice-project" };
     },
     async reopenFolder(root) {
@@ -229,5 +301,6 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     fs,
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
+    exam,
   };
 }

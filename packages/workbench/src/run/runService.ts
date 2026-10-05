@@ -109,6 +109,14 @@ async function showDiagnostics(output: string, entry: string) {
 // ───────────── running ─────────────
 
 let current: RunHandle | null = null;
+const runStarted = new Set<(entry: string) => void>();
+/** Exams snapshot exactly the code that was run. */
+export function onRunStarted(l: (entry: string) => void) {
+  runStarted.add(l);
+  return () => {
+    runStarted.delete(l);
+  };
+}
 let consoleSize = { cols: 100, rows: 24 };
 
 /** The Run console reports its size so interactive programs wrap at the right column. */
@@ -164,6 +172,7 @@ export async function runFile(path: string) {
     current = null;
   }
   const local = target.profile.local!;
+  runStarted.forEach((l) => l(target.entry));
   clearRunMarkers();
   emit({ type: "clear" });
   showPanel("run");

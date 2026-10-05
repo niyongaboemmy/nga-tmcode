@@ -9,6 +9,14 @@ async function boot(page: Page, query = "") {
   await expect(page.locator(".tm-titlebar")).toBeVisible();
 }
 
+/** Go to Line, then End: deterministic on every engine (Ctrl/Cmd+End is not on WebKit/Linux). */
+async function gotoLineEnd(page: Page, line: number) {
+  await page.keyboard.press("Control+g");
+  await page.keyboard.type(String(line));
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("End");
+}
+
 const row = (page: Page, path: string) => page.locator(`.tm-explorer [data-path="${path}"]`);
 const tab = (page: Page, name: string) => page.locator(".tm-tab", { hasText: name });
 
@@ -41,7 +49,7 @@ test("editing marks the file dirty and auto save clears it", async ({ page }) =>
   await boot(page);
   await row(page, "main.py").dblclick();
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press(`${MOD}+End`);
+  await gotoLineEnd(page, 23);
   await page.keyboard.type("\n# edited");
   await expect(tab(page, "main.py")).toHaveClass(/is-dirty/);
   // files.autoSave = afterDelay (1000 ms)
@@ -95,7 +103,7 @@ test("TypeScript errors appear in Problems and the explorer", async ({ page }) =
   await row(page, "src").click();
   await row(page, "src/utils.ts").dblclick();
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press(`${MOD}+End`);
+  await gotoLineEnd(page, 3);
   await page.keyboard.type("\nconst n: number = 'oops';\n");
   await page.keyboard.press(`${MOD}+Shift+m`);
   await expect(page.locator(".tm-problem")).toContainText("is not assignable to type 'number'", { timeout: 15000 });

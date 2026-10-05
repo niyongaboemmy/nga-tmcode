@@ -77,6 +77,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const currentPath = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const settings = useWorkbench((s) => s.settings);
+  const readOnly = useWorkbench((s) => s.readOnly);
   const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
   const os = getPlatform().os;
 
@@ -149,8 +150,8 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   }, [path]);
 
   useEffect(() => {
-    editorRef.current?.updateOptions(editorOptions(settings, os));
-  }, [settings, os]);
+    editorRef.current?.updateOptions({ ...editorOptions(settings, os), readOnly, readOnlyMessage: { value: "Time is up — your code can no longer be changed." } });
+  }, [settings, os, readOnly]);
 
   useEffect(() => {
     monaco.editor.setTheme(monacoThemeFor(theme));

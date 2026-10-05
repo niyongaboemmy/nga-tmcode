@@ -4,7 +4,7 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing";
+export type ViewId = "explorer" | "search" | "testing" | "task";
 export type PanelId = "problems" | "output" | "run" | "terminal";
 
 export type EditorInput =
@@ -130,6 +130,8 @@ export interface WorkbenchState {
   contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null;
 
   run: RunState;
+  /** Editors are read-only (exam time is up or submitted). */
+  readOnly: boolean;
   tests: { entry: string | null; items: TestItem[]; running: boolean; source: string | null };
 }
 
@@ -175,6 +177,7 @@ const initialState: WorkbenchState = {
   quickInput: null,
   contextMenu: null,
   run: { status: "idle", entry: null, label: null, lastExit: null },
+  readOnly: false,
   tests: { entry: null, items: [], running: false, source: null },
 };
 
