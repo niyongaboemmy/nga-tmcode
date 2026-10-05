@@ -12,7 +12,11 @@ import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
 import { activeFilePath } from "./state/store";
 import { basename } from "./util/paths";
-import { isDarkTheme } from "./monaco/setup";
+import { applyTheme, useThemes } from "./themes/themeService";
+import { applyIconTheme, useIconTheme } from "./themes/iconThemes";
+import { startupHooks } from "./state/store";
+import { loadInstalledExtensions } from "./extensions/service";
+import "./extensions/monacoContributions";
 import { ActivityBar } from "./parts/ActivityBar";
 import { EditorGroupView } from "./parts/editor/EditorGroupView";
 import { Panel } from "./parts/panel/Panel";
@@ -41,13 +45,27 @@ function EditorArea() {
   );
 }
 
+// Colour and icon themes (and the extensions that contribute them) load before the first paint.
+startupHooks.beforeReady = async () => {
+  // A slow or broken extension store must not hold the workbench back.
+  await Promise.race([loadInstalledExtensions(), new Promise((r) => setTimeout(r, 3000))]);
+  const s = useWorkbench.getState().settings;
+  await Promise.all([applyTheme(s["workbench.colorTheme"]), applyIconTheme(s["workbench.iconTheme"])]);
+};
+
 /**
  * The whole VS Code-style workbench. The host calls `initWorkbench(platform)`
  * before rendering this.
  */
 export function Workbench() {
   const ready = useWorkbench((s) => s.ready);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
+  const themeId = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
+  const themesVersion = useThemes((s) => s.version);
+  const activeTheme = useThemes((s) => s.active);
+  const iconThemeId = useWorkbench((s) => s.previewIconTheme ?? s.settings["workbench.iconTheme"]);
+  const iconThemesVersion = useIconTheme((s) => s.version);
+  const theme = activeTheme?.cssBase ?? "dark-modern";
+  const dark = activeTheme ? activeTheme.uiTheme === "vs-dark" || activeTheme.uiTheme === "hc-black" : true;
   const reduceMotion = useWorkbench((s) => s.settings["workbench.reduceMotion"]);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
@@ -99,9 +117,16 @@ export function Workbench() {
   }, [titleFile, titleFolder, titleDirty, platform]);
 
   useEffect(() => {
-    platform.setNativeTheme?.(isDarkTheme(theme) ? "dark" : "light");
-    document.documentElement.style.colorScheme = isDarkTheme(theme) ? "dark" : "light";
-  }, [theme, platform]);
+    void applyTheme(themeId);
+  }, [themeId, themesVersion]);
+  useEffect(() => {
+    void applyIconTheme(iconThemeId);
+  }, [iconThemeId, iconThemesVersion]);
+
+  useEffect(() => {
+    platform.setNativeTheme?.(dark ? "dark" : "light");
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  }, [dark, platform]);
 
   // Global keybindings, in the capture phase so they win over focused widgets.
   useEffect(() => {
@@ -134,12 +159,16 @@ export function Workbench() {
     };
   }, []);
 
-  if (!ready) return <div className="tm-root tm-booting" data-theme={theme} />;
+  // Theme colours as CSS variables over the closest hand-styled base (empty for Dark/Light Modern and HC).
+  const themeStyle = activeTheme?.cssVars as React.CSSProperties | undefined;
+  if (!ready) return <div className="tm-root tm-booting" data-theme={theme} style={themeStyle} />;
 
   return (
     <div
       className="tm-root"
       data-theme={theme}
+      data-color-theme={activeTheme?.id}
+      style={themeStyle}
       data-os={platform.os}
       data-platform={platform.kind}
       data-motion={reduceMotion ? "reduced" : "full"}

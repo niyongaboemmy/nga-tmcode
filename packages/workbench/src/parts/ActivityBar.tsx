@@ -10,6 +10,8 @@ const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
+// ── extensions (feat/extensions): hidden during exams ──
+const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
 
 export function ActivityBar() {
   const activeView = useWorkbench((s) => s.activeView);
@@ -19,7 +21,8 @@ export function ActivityBar() {
   const os = getPlatform().os;
   const inExam = useExam((s) => !!s.quiz);
   const updateReady = useUpdate((s) => s.status === "available");
-  const views = inExam ? [TASK_VIEW, ...VIEWS] : VIEWS;
+  const practice = useWorkbench((s) => s.policy.mode === "practice");
+  const views = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, EXTENSIONS_VIEW] : VIEWS;
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);

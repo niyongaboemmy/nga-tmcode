@@ -2696,3 +2696,410 @@ kbd,
 .tm-status-update:hover {
   background: var(--accent-hover) !important;
 }
+
+/* ───── file icon themes from extensions (themes/iconThemes.ts) ───── */
+.tm-themed-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  object-fit: contain;
+}
+.tm-themed-icon--font {
+  font-style: normal;
+  font-weight: normal;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ───── extensions (feat/extensions): Extensions view + details editor ───── */
+.tm-skeleton {
+  display: block;
+  border-radius: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--foreground) 7%, transparent) 25%, color-mix(in srgb, var(--foreground) 14%, transparent) 50%, color-mix(in srgb, var(--foreground) 7%, transparent) 75%);
+  background-size: 200% 100%;
+  animation: tm-skeleton 1.4s ease-in-out infinite;
+}
+@keyframes tm-skeleton {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.tm-ext-view {
+  overflow: hidden;
+}
+.tm-ext-search {
+  padding: 4px 12px 8px 20px;
+  flex: none;
+}
+.tm-ext-search .tm-input::-webkit-search-cancel-button {
+  display: none;
+}
+.tm-ext-body {
+  overflow: auto;
+}
+.tm-ext-message {
+  margin: 0;
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--description);
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.tm-ext-message.is-error {
+  color: var(--error);
+}
+.tm-ext-section .tm-pane-header .tm-badge {
+  margin-left: auto;
+}
+.tm-ext-row {
+  display: flex;
+  gap: 10px;
+  padding: 7px 12px 7px 16px;
+  min-height: 72px;
+  box-sizing: border-box;
+  cursor: pointer;
+  outline: none;
+  transition: background var(--motion);
+}
+.tm-ext-row:hover {
+  background: var(--list-hover-bg);
+}
+.tm-ext-row:focus-visible,
+.tm-ext-row:focus {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-ext-row.is-disabled .tm-ext-icon,
+.tm-ext-row.is-disabled .tm-ext-row-main {
+  opacity: 0.6;
+}
+.tm-ext-row.is-skeleton {
+  cursor: default;
+}
+.tm-ext-row.is-skeleton .tm-ext-row-main {
+  gap: 7px;
+  justify-content: center;
+}
+.tm-ext-icon {
+  flex: none;
+  object-fit: contain;
+  border-radius: 2px;
+}
+.tm-ext-icon--placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--description);
+}
+.tm-ext-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.tm-ext-row-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 20px;
+}
+.tm-ext-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tm-ext-row-stats {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+.tm-ext-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--description);
+  white-space: nowrap;
+}
+.tm-ext-stat .codicon {
+  font-size: 14px;
+}
+.tm-ext-star {
+  color: #ff8e00;
+}
+.tm-ext-desc {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-ext-publisher {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tm-ext-verified {
+  color: var(--link);
+  font-size: 14px !important;
+}
+.tm-ext-code-warning {
+  color: var(--warning);
+  font-size: 14px !important;
+}
+.tm-ext-row-action {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.tm-button.tm-ext-install {
+  min-height: 20px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.tm-ext-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-ext-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 16px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--description);
+}
+.tm-ext-tag.is-warning {
+  background: color-mix(in srgb, var(--warning) 25%, transparent);
+  color: var(--foreground);
+}
+
+/* details editor */
+.tm-ext-editor {
+  height: 100%;
+  overflow: auto;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-ext-header {
+  display: flex;
+  gap: 20px;
+  padding: 20px 20px 14px;
+}
+.tm-ext-header .tm-ext-icon {
+  width: 128px;
+  height: 128px;
+}
+.tm-ext-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.tm-ext-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tm-ext-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-ext-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+.tm-ext-subtitle .tm-ext-publisher,
+.tm-ext-subtitle .tm-ext-stat {
+  font-size: 13px;
+}
+.tm-ext-id {
+  font-size: 12px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--description);
+}
+.tm-ext-description {
+  margin: 0;
+}
+.tm-ext-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.tm-ext-actions .tm-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tm-ext-notice {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12px;
+}
+.tm-ext-notice.is-warning {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border-left: 3px solid var(--warning);
+}
+.tm-ext-notice.is-warning .codicon {
+  color: var(--warning);
+}
+.tm-ext-tabs {
+  display: flex;
+  gap: 18px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-ext-tabs button {
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--description);
+  font: inherit;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.tm-ext-tabs button:hover,
+.tm-ext-tabs button.is-active {
+  color: var(--foreground);
+}
+.tm-ext-tabs button.is-active {
+  border-bottom-color: var(--panel-active-border);
+}
+.tm-ext-content {
+  display: flex;
+  gap: 24px;
+  padding: 16px 20px 32px;
+  align-items: flex-start;
+}
+.tm-ext-main {
+  flex: 1;
+  min-width: 0;
+}
+.tm-ext-readme {
+  max-width: 900px;
+  overflow-wrap: anywhere;
+}
+.tm-ext-readme img {
+  max-width: 100%;
+}
+.tm-ext-readme a {
+  color: var(--link);
+  text-decoration: none;
+  cursor: default;
+}
+.tm-ext-readme pre {
+  overflow: auto;
+}
+.tm-ext-readme-img-missing:empty {
+  display: none;
+}
+.tm-ext-skeleton-line {
+  height: 12px;
+  margin: 0 0 12px;
+}
+.tm-ext-aside {
+  flex: none;
+  width: 220px;
+  font-size: 12px;
+}
+.tm-ext-aside section + section {
+  margin-top: 16px;
+}
+.tm-ext-aside h3,
+.tm-ext-features h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tm-ext-aside dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0;
+}
+.tm-ext-aside dt {
+  color: var(--description);
+}
+.tm-ext-aside dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tm-ext-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tm-ext-chip {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.tm-ext-features section + section {
+  margin-top: 14px;
+}
+.tm-ext-features ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.tm-root[data-size="xs"] .tm-ext-content,
+.tm-root[data-size="sm"] .tm-ext-content {
+  flex-direction: column;
+}
+.tm-root[data-size="xs"] .tm-ext-aside,
+.tm-root[data-size="sm"] .tm-ext-aside {
+  width: 100%;
+}
+.tm-root[data-size="xs"] .tm-ext-header .tm-ext-icon,
+.tm-root[data-size="sm"] .tm-ext-header .tm-ext-icon {
+  width: 64px;
+  height: 64px;
+}
+.tm-root[data-size="xs"] .tm-ext-header {
+  gap: 12px;
+  padding: 14px 12px 10px;
+}
+.tm-root[data-size="xs"] .tm-ext-title {
+  font-size: 20px;
+}
+/* ───── end extensions ───── */

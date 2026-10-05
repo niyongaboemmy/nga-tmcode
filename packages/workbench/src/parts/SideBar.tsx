@@ -5,8 +5,9 @@ import { ExplorerView } from "./explorer/ExplorerView";
 import { SearchView } from "./search/SearchView";
 import { TestingView } from "./testing/TestingView";
 import { TaskView } from "../exam/ExamViews";
+import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsView";
 
-const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", extensions: "Extensions" } as const;
 
 export function SideBar() {
   const view = useWorkbench((s) => s.activeView);
@@ -15,6 +16,7 @@ export function SideBar() {
       <header className="tm-sidebar-title">
         <h2>{TITLES[view]}</h2>
         <div className="tm-sidebar-title-actions">
+          {view === "extensions" && <ExtensionsTitleActions />}
           <ActionButton
             icon="ellipsis"
             label="Views and More Actions..."
@@ -32,7 +34,7 @@ export function SideBar() {
         </div>
       </header>
       <div className="tm-sidebar-content">
-        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : <TestingView />}
+        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "extensions" ? <ExtensionsView /> : <TestingView />}
       </div>
     </aside>
   );

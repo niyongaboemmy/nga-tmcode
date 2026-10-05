@@ -1,4 +1,5 @@
 import { createJsWorkerRunner } from "./jsWorkerRunner";
+import { createMemoryExtensionHost } from "./memoryExtensions";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -309,6 +310,7 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
     exam,
+    extensions: createMemoryExtensionHost(),
     // Dev server / e2e only: a scripted updater (localStorage "tmcode:mock-update" = UpdateInfo JSON).
     ...(import.meta.env?.DEV
       ? {

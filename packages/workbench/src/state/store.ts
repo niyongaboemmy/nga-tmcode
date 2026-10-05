@@ -4,7 +4,7 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task";
+export type ViewId = "explorer" | "search" | "testing" | "task" | "extensions";
 export type PanelId = "problems" | "output" | "run" | "terminal";
 
 export type EditorInput =
@@ -15,7 +15,9 @@ export type EditorInput =
   /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
   | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react"; preview: false }
   /** Expected vs actual output of one visible test. */
-  | { kind: "testDiff"; id: string; testId: string; preview: false };
+  | { kind: "testDiff"; id: string; testId: string; preview: false }
+  /** Details of a VS Code extension ("extension:<publisher.name>"). */
+  | { kind: "extension"; id: string; extensionId: string; preview: false };
 
 export type TestStatus = "idle" | "queued" | "running" | "passed" | "failed" | "error";
 
@@ -84,7 +86,7 @@ export interface ExplorerEdit {
   error?: string | null;
 }
 
-export type QuickInputMode = "files" | "commands" | "line" | "theme";
+export type QuickInputMode = "files" | "commands" | "line" | "theme" | "iconTheme";
 
 export interface OutputLine {
   t: number;
@@ -117,6 +119,8 @@ export interface WorkbenchState {
   settings: Settings;
   /** Theme shown while the theme picker is open (live preview). */
   previewTheme: Settings["workbench.colorTheme"] | null;
+  /** File icon theme shown while its picker is open. */
+  previewIconTheme: string | null;
 
   cursor: { line: number; column: number; selected: number };
   activeLanguage: string | null;
@@ -169,6 +173,7 @@ const initialState: WorkbenchState = {
   activePanel: "terminal",
   settings: DEFAULT_SETTINGS,
   previewTheme: null,
+  previewIconTheme: null,
   cursor: { line: 1, column: 1, selected: 0 },
   activeLanguage: null,
   eol: "LF",
@@ -217,6 +222,8 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
     panelVisible: ui.layout?.panelVisible ?? false,
     activePanel: ui.layout?.activePanel ?? "terminal",
   });
+  // The colour theme is ready before the first paint (no flash of the default theme).
+  await startupHooks.beforeReady();
   const last = get().recent[0];
   if (opts.autoOpenLast && last) {
     const ws = await p.reopenFolder(last.root).catch(() => null);
@@ -225,6 +232,9 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
   if (!get().workspace) openSpecialEditor("welcome");
   set({ ready: true });
 }
+
+/** Set by modules the store must not import (themes, extensions), run during initWorkbench. */
+export const startupHooks: { beforeReady: () => Promise<void> } = { beforeReady: async () => {} };
 
 export function resetWorkbenchForTests() {
   platform = null;
@@ -530,7 +540,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "extension" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();
@@ -769,6 +779,10 @@ export function setPreviewTheme(theme: Settings["workbench.colorTheme"] | null) 
   set({ previewTheme: theme });
 }
 
+export function setPreviewIconTheme(theme: string | null) {
+  set({ previewIconTheme: theme });
+}
+
 export function setPolicy(policy: Policy) {
   set({ policy });
 }
@@ -829,7 +843,7 @@ export function openQuickInput(mode: QuickInputMode, initial?: string) {
 }
 
 export function closeQuickInput() {
-  set({ quickInput: null, previewTheme: null });
+  set({ quickInput: null, previewTheme: null, previewIconTheme: null });
 }
 
 export function openContextMenu(x: number, y: number, items: ContextMenuItem[]) {
