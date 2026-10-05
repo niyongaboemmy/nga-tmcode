@@ -76,6 +76,9 @@ jobs:
           cd /tmp/isolate
           make isolate isolate-cg-keeper
           sudo make install
+          if ! getent passwd isolate >/dev/null; then sudo adduser --quiet --disabled-login --home /nonexistent --no-create-home --shell /bin/false --comment "" isolate; fi
+          grep -q '^isolate:' /etc/subuid || sudo usermod --add-subuids 1000000-1065535 isolate
+          grep -q '^isolate:' /etc/subgid || sudo usermod --add-subgids 1000000-1065535 isolate
           sudo systemctl daemon-reload
           sudo systemctl start isolate.service || { sudo journalctl -u isolate.service --no-pager | tail -40; cat /sys/fs/cgroup/cgroup.controllers; exit 1; }
           sudo systemctl status isolate.service --no-pager

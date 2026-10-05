@@ -34,6 +34,13 @@ if ! command -v isolate >/dev/null || ! isolate --version 2>&1 | grep -q "${ISOL
   rm -rf "$tmp"
 fi
 
+# isolate maps every box to a uid/gid from the "isolate" user's subordinate ranges.
+if ! getent passwd isolate >/dev/null; then
+  sudo adduser --quiet --disabled-login --home /nonexistent --no-create-home --shell /bin/false --comment "" isolate
+fi
+grep -q '^isolate:' /etc/subuid || sudo usermod --add-subuids 1000000-1065535 isolate
+grep -q '^isolate:' /etc/subgid || sudo usermod --add-subgids 1000000-1065535 isolate
+
 echo "== 3/5 cgroup limits for all sandboxes together"
 sudo mkdir -p /etc/systemd/system/isolate.slice.d
 printf '[Slice]\nMemoryMax=%s\nCPUQuota=%s\nTasksMax=512\n' "$SLICE_MEMORY" "$SLICE_CPU" |
