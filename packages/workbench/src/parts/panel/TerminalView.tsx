@@ -14,6 +14,7 @@ export function terminalTheme(theme: string): ITheme {
       background: "#f8f8f8",
       foreground: "#3b3b3b",
       cursor: "#005fb8",
+      cursorAccent: "#ffffff",
       selectionBackground: "#add6ff",
       black: "#000000",
       red: "#cd3131",
@@ -36,7 +37,8 @@ export function terminalTheme(theme: string): ITheme {
   return {
     background: theme === "dark-hc" ? "#000000" : "#181818",
     foreground: "#cccccc",
-    cursor: "#cccccc",
+    cursor: "#aeafad",
+    cursorAccent: "#000000",
     selectionBackground: "#264f78",
     black: "#000000",
     red: "#cd3131",
@@ -77,6 +79,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const platform = getPlatform();
   const supported = !!platform.terminal;
 
+  const live = useRef<Instance[]>([]);
+  live.current = instances;
   // One spawn at a time (StrictMode runs effects twice in development).
   const spawning = useRef(false);
   const create = async () => {
@@ -85,7 +89,11 @@ export function TerminalView({ visible }: { visible: boolean }) {
     const term = new Terminal({
       fontFamily: defaultFontFamily(platform.os),
       fontSize,
+      // VS Code: a blinking bar while focused, an outline when not, so the cursor is always visible.
       cursorBlink: true,
+      cursorStyle: "bar",
+      cursorWidth: 2,
+      cursorInactiveStyle: "outline",
       allowProposedApi: false,
       scrollback: 5000,
       theme: terminalTheme(useWorkbench.getState().settings["workbench.colorTheme"]),
@@ -159,11 +167,11 @@ export function TerminalView({ visible }: { visible: boolean }) {
     }
   }, [theme, fontSize, instances]);
 
-  // First show creates a terminal; "New Terminal" adds one.
+  // First show creates a terminal (again after the folder changes); "New Terminal" adds one.
   useEffect(() => {
-    if (visible && supported && instances.length === 0) void create();
+    if (visible && supported && live.current.length === 0) void create();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, supported]);
+  }, [visible, supported, workspace?.root]);
   useEffect(() => {
     const onNew = () => void create();
     window.addEventListener("tmcode:new-terminal", onNew);
@@ -171,8 +179,6 @@ export function TerminalView({ visible }: { visible: boolean }) {
   });
 
   // A new workspace means a new cwd: close shells from the old one (and all of them on unmount).
-  const live = useRef<Instance[]>([]);
-  live.current = instances;
   useEffect(() => {
     return () => {
       for (const i of live.current) {

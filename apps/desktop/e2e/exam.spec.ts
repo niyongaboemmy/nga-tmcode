@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 /** Phase 3 acceptance (client side), against the mock Task Mentor in e2e/mock-tm.mjs. */
 
-const TM = "http://localhost:5099";
+const TM = `http://localhost:${process.env.MOCK_TM_PORT ?? 5099}`;
 
 // Exams share one mock server: run these tests one at a time.
 test.describe.configure({ mode: "serial" });

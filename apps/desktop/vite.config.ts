@@ -9,7 +9,8 @@ export default defineConfig({
   plugins: [react(), reactVendorPlugin()],
   clearScreen: false,
   server: {
-    port: 1430,
+    // TMCODE_DEV_PORT lets parallel worktrees run their own dev server (Tauri dev uses 1430).
+    port: Number(process.env.TMCODE_DEV_PORT ?? 1430),
     strictPort: true,
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1431 } : undefined,
