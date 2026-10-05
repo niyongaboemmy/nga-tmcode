@@ -244,9 +244,13 @@ mod tests {
     #[test]
     fn finds_the_path_argument() {
         let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let cwd = std::path::Path::new("/home/dev");
-        assert_eq!(super::path_arg(&args(&["tmcode", "project"]), cwd).as_deref(), Some("/home/dev/project"));
-        assert_eq!(super::path_arg(&args(&["tmcode", "--flag", "/abs/x.py"]), cwd).as_deref(), Some("/abs/x.py"));
+        let cwd = std::env::temp_dir();
+        let cwd = cwd.as_path();
+        let expected = cwd.join("project").to_string_lossy().into_owned();
+        assert_eq!(super::path_arg(&args(&["tmcode", "project"]), cwd).as_deref(), Some(expected.as_str()));
+        // An absolute path (in this OS's own form) is kept as-is.
+        let abs = cwd.join("x.py").to_string_lossy().into_owned();
+        assert_eq!(super::path_arg(&args(&["tmcode", "--flag", &abs]), cwd).as_deref(), Some(abs.as_str()));
         assert_eq!(super::path_arg(&args(&["tmcode", "tmcode://launch?t=1"]), cwd), None);
         assert_eq!(super::path_arg(&args(&["tmcode"]), cwd), None);
     }
