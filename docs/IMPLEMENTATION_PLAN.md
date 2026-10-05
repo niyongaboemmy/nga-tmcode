@@ -14,17 +14,27 @@
 
 ## Implementation status (updated 2026-10-05)
 
+Repo: **github.com/niyongaboemmy/nga-tmcode** (public; CI on Linux, macOS, Windows, all green).
+
 | Phase | State | Notes |
 |---|---|---|
-| 0 — TM-FIX (Task Mentor) | **Items 1–8 done** on branch `feat/tm-fix-coding-grading` (8 commits, not pushed) | Server 618 pass / 17 fail (all failures pre-existing suites); client 417 pass / 6 pre-existing. Migrations applied to the local dev DB only. **Before deploy:** check prod quizzes with `lockdown_browser=1` (they will require SEB). TM-FIX-9/10 → Phase 3, TM-FIX-11 → Phase 7. |
-| 0 — Spikes | S1 ✅ (Monaco workers in WKWebView, logged self-check). S2 ✅ (`tmpreview://` + sandboxed iframe + console shim, static and React). S3–S5 pending (judge host, deep link, lockdown) | S2 uses a sandboxed iframe on a custom scheme instead of a child webview: overlays (menus, quick input) stay above it and it still gets no IPC. |
-| 1 — Workbench | ✅ Done | Monaco **0.57** (newer than the 0.56 planned). Updater wiring moved to Phase 6 with the release pipeline. |
-| 2 — Profiles, runner, preview | ✅ Done (except packs) | 8 profiles; native runner (pty + pipe, tree kill, caps); visible tests + diff; Problems from compiler/runtime output; static + React preview (esbuild-wasm, vendored React). Verified with real toolchains and inside WKWebView. **Deferred:** toolchain packs (need hosting on api.amashuri.com → Phase 3) and the Pyodide fallback. |
-| 3–7 | Not started | |
+| 0 — TM-FIX (Task Mentor) | **Items 1–8 done.** Task Mentor PR #27 is open. | Not merged. Before merging, check production quizzes with `lockdown_browser=1` (they will require SEB). TM-FIX-10 is in PR #28; TM-FIX-9 is still open; TM-FIX-11 moves to Phase 7. |
+| 0 — Spikes | S1 ✅ S2 ✅ S3 ✅ S4 ✅ (deep link + launch ticket). S5 (lockdown) moves to Phase 4. | S3: **Piston and Judge0 were replaced by our own tm-judge on `isolate`**. The shared server (2 vCPU, 3.8 GB, cgroup v2, no Docker) can't host Docker judges. |
+| 1 — Workbench | ✅ | Monaco 0.57. |
+| 2 — Profiles, runner, preview | ✅ (except toolchain packs and the Pyodide fallback) | Verified with real toolchains and inside WKWebView. |
+| 3 — Task Mentor integration | **Code complete.** Task Mentor PR #28 is open (stacked on #27). The TMCode client is on main. **tm-judge is live on the shared server.** | Remaining before students use it: merge and deploy #27 and #28, run their migrations, set the `TMJUDGE_*` and `CODERUNNER_ENGINE` secrets. Still to do: MIS desktop handoff (`app=tmcode`, for practice sign-in), `/desktop/:product`, toolchain packs. |
+| 4–7 | Not started | |
 
-**Verification so far:** 30 unit tests, 34 Playwright runs (Chromium + WebKit), 22 Rust tests (incl. Python/Node/TS/C/C++/Java compiled and run with this machine's toolchains), and a debug-build self-test inside the real app (`TMCODE_DEV_WORKSPACE=… TMCODE_DEV_SELFTEST=1 npm run tauri:dev`). The Windows build has not run yet (no Windows machine; it needs the CI runner).
+**tm-judge in production** (`/opt/apps/tm-judge`, pm2 `tm-judge`, 127.0.0.1:5010, token in `.judge.env`):
+- Runtimes: Python 3.14, Node 22, GCC/G++ 15, OpenJDK 21.
+- Each submission runs in its own isolate box: memory, process, time and output limits, and no network.
+- All boxes together are capped by `isolate.slice` (1200 MB memory, 150 % CPU).
+- A probe from inside a box could not read `/opt/apps`, home folders, `/etc/shadow` or the judge's own token.
 
----
+**Verification:**
+- TypeScript tests: 35 unit tests, 46 Playwright runs (Chromium + WebKit, including the full exam flow against a mock Task Mentor), 18 judge tests (CI runs them inside isolate, with containment tests).
+- Rust: 25 tests, including real-toolchain runs on macOS and Windows CI.
+- Native debug self-tests in the macOS app: workbench, runner, previews, and a full exam (launch → submit → graded).
 
 ## Contents
 
