@@ -3,10 +3,17 @@
  * all read the same definitions (ids match VS Code's where one exists).
  */
 
-export type ThemeId = "dark-modern" | "light-modern" | "dark-hc";
+/**
+ * A colour theme id: a built-in ("dark-modern", "light-modern", "dark-hc",
+ * "dark-plus", …; themes/themeService.ts) or one contributed by an extension
+ * ("ext:<publisher.name>:<theme id>").
+ */
+export type ThemeId = string;
 
 export interface Settings {
   "workbench.colorTheme": ThemeId;
+  /** File icon theme: "tmcode" (built-in glyphs), "none", or "ext:<publisher.name>:<id>". */
+  "workbench.iconTheme": string;
   "editor.fontSize": number;
   "editor.fontFamily": string;
   "editor.tabSize": number;
@@ -29,6 +36,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   "workbench.colorTheme": "dark-modern",
+  "workbench.iconTheme": "tmcode",
   "editor.fontSize": 14,
   "editor.fontFamily": "",
   "editor.tabSize": 4,
@@ -60,6 +68,8 @@ export type SettingDef =
       description: string;
       type: "enum";
       options: { value: string; label: string }[];
+      /** Options computed when shown (themes from installed extensions). */
+      dynamicOptions?: "colorThemes" | "iconThemes";
     };
 
 export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
@@ -76,6 +86,18 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "light-modern", label: "Light Modern" },
           { value: "dark-hc", label: "Dark High Contrast" },
         ],
+        dynamicOptions: "colorThemes",
+      },
+      {
+        key: "workbench.iconTheme",
+        label: "File Icon Theme",
+        description: "Specifies the file icon theme used in the workbench, or 'None' to not show any file icons.",
+        type: "enum",
+        options: [
+          { value: "tmcode", label: "TMCode Glyphs" },
+          { value: "none", label: "None" },
+        ],
+        dynamicOptions: "iconThemes",
       },
       {
         key: "workbench.reduceMotion",

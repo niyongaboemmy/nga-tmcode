@@ -78,7 +78,6 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const [error, setError] = useState<string | null>(null);
   const settings = useWorkbench((s) => s.settings);
   const readOnly = useWorkbench((s) => s.readOnly);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
   const os = getPlatform().os;
 
   // Create the editor once per group.
@@ -87,7 +86,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     const ed = monaco.editor.create(host.current!, {
       ...editorOptions(useWorkbench.getState().settings, os),
       model: null,
-      theme: monacoThemeFor(useWorkbench.getState().settings["workbench.colorTheme"]),
+      theme: monacoThemeFor(),
       ariaLabel: "Editor content",
     });
     editorRef.current = ed;
@@ -153,9 +152,6 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     editorRef.current?.updateOptions({ ...editorOptions(settings, os), readOnly, readOnlyMessage: { value: "Time is up — your code can no longer be changed." } });
   }, [settings, os, readOnly]);
 
-  useEffect(() => {
-    monaco.editor.setTheme(monacoThemeFor(theme));
-  }, [theme]);
 
   return (
     <div className="tm-code-editor">

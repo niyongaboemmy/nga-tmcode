@@ -360,7 +360,7 @@ export function ExplorerView() {
             <span key={i} className="tm-indent-guide" style={{ left: 8 + i * 8 + 7 }} />
           ))}
           <span className="tm-twistie">{isDir && <Codicon name={open ? "chevron-down" : "chevron-right"} />}</span>
-          {isDir ? <FolderIcon open={open} /> : <FileIcon path={entry.path} />}
+          {isDir ? <FolderIcon open={open} name={entry.name} /> : <FileIcon path={entry.path} />}
           <span className="tm-tree-label">{entry.name}</span>
           {isDirty && <span className="tm-dirty-dot" title="Unsaved changes" />}
           {decoration && !isDir && <span className={`tm-decoration-badge is-${decoration}`}>{problems.filter((p) => p.path === entry.path && p.severity === decoration).length}</span>}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { normalizeOutput } from "@tmcode/protocol";
-import { monaco, monacoThemeFor, setupMonaco } from "../../monaco/setup";
+import { monaco, setupMonaco } from "../../monaco/setup";
 import { runTests } from "../../run/testService";
 import { getPlatform, useWorkbench, type EditorInput } from "../../state/store";
 import { defaultFontFamily } from "../../state/settings";
@@ -12,7 +12,6 @@ type DiffInput = Extract<EditorInput, { kind: "testDiff" }>;
 export function TestDiffEditor({ input }: { input: DiffInput }) {
   const test = useWorkbench((s) => s.tests.items.find((t) => t.id === input.testId));
   const running = useWorkbench((s) => s.tests.running);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
   const fontSize = useWorkbench((s) => s.settings["editor.fontSize"]);
   const host = useRef<HTMLDivElement>(null);
   const diffRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -56,9 +55,6 @@ export function TestDiffEditor({ input }: { input: DiffInput }) {
     if (m.modified.getValue() !== a) m.modified.setValue(a);
   }, [expected, actual]);
 
-  useEffect(() => {
-    monaco.editor.setTheme(monacoThemeFor(theme));
-  }, [theme]);
   useEffect(() => {
     diffRef.current?.updateOptions({ fontSize });
   }, [fontSize]);
