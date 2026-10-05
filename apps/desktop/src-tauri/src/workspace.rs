@@ -162,6 +162,36 @@ pub fn ws_reveal(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(target).map_err(|e| e.to_string())
 }
 
+/// Images, audio and video for the media viewer and Markdown preview.
+const MAX_MEDIA_BYTES: u64 = 64 * 1024 * 1024;
+
+#[tauri::command]
+pub fn ws_read_base64(ws: State<'_, Workspace>, path: String) -> Result<String, String> {
+    use base64::Engine;
+    let root = ws.root()?;
+    let file = resolve(&root, &path)?;
+    let meta = fs::metadata(&file).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_MEDIA_BYTES {
+        return Err(format!("'{path}' is too large to preview ({} MB).", meta.len() / 1_048_576));
+    }
+    let bytes = fs::read(&file).map_err(|e| e.to_string())?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// Only web and mail links leave the app; never file:// or custom schemes.
+pub fn is_external_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    (lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")) && !lower.contains(char::is_whitespace)
+}
+
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), String> {
+    if !is_external_url(&url) {
+        return Err("Only http(s) and mailto links can be opened.".into());
+    }
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn ws_read_dir(ws: State<'_, Workspace>, path: String) -> Result<Vec<DirEntry>, String> {
     let root = ws.root()?;
@@ -298,6 +328,16 @@ pub fn ws_remove(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_urls_are_web_or_mail_only() {
+        assert!(is_external_url("https://github.com/x"));
+        assert!(is_external_url("mailto:a@b.c"));
+        assert!(!is_external_url("file:///etc/passwd"));
+        assert!(!is_external_url("javascript:alert(1)"));
+        assert!(!is_external_url("tmcode://launch"));
+        assert!(!is_external_url("https://a b"));
+    }
 
     fn root() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();

@@ -21,6 +21,7 @@ import {
 } from "../../state/store";
 import { basename, dirname, isWithin, join, validateName } from "../../util/paths";
 import { ActionButton, FileIcon, FolderIcon, Codicon } from "../../widgets/icons";
+import { SkeletonRows } from "../../widgets/Skeleton";
 import type { DirEntry } from "../../platform/types";
 
 interface Row {
@@ -406,7 +407,8 @@ export function ExplorerView() {
           }}
         >
           {out}
-          {rows.length === 0 && !edit && <div className="tm-view-hint">This folder is empty. Create a file to get started.</div>}
+          {!dirs[""] && <SkeletonRows rows={7} label="Loading folder" />}
+          {dirs[""] && rows.length === 0 && !edit && <div className="tm-view-hint">This folder is empty. Create a file to get started.</div>}
         </div>
       )}
     </div>

@@ -13,6 +13,8 @@ fn main() {
             "ws_reveal",
             "ws_read_dir",
             "ws_read_file",
+            "ws_read_base64",
+            "open_external",
             "ws_write_file",
             "ws_create_file",
             "ws_create_dir",

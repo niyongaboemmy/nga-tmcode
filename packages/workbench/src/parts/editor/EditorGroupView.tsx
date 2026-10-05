@@ -25,12 +25,17 @@ import { ShortcutsEditor } from "./ShortcutsEditor";
 import { WelcomePage } from "./WelcomePage";
 import { PreviewEditor } from "./PreviewEditor";
 import { TestDiffEditor } from "./TestDiffEditor";
+import { BrowserEditor } from "./BrowserEditor";
+import { MarkdownEditor } from "./MarkdownEditor";
+import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { profileForPath } from "@tmcode/profiles";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
   if (e.kind === "preview") return `Preview ${basename(e.entry)}`;
   if (e.kind === "testDiff") return `Test: ${useWorkbench.getState().tests.items.find((t) => t.id === e.testId)?.name ?? e.testId}`;
+  if (e.kind === "browser") return e.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (e.kind === "markdown" || e.kind === "image") return `Preview ${basename(e.path)}`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   return "Welcome";
@@ -41,6 +46,8 @@ function iconOf(e: EditorInput) {
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "testDiff") return <Codicon name="diff" className="tm-tab-codicon" />;
+  if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
+  if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
 }
 
@@ -277,6 +284,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             {dragOver === group.editors.length && <div className="tm-tab-drop-end" />}
           </div>
           <div className="tm-tabs-actions">
+            {active?.kind === "file" && <SidePreviewButton path={active.path} />}
             {active?.kind === "file" && <RunButton path={active.path} />}
             <ActionButton icon="split-horizontal" label={`Split Editor Right (${formatKeybinding("mod+\\", os)})`} onClick={() => splitEditor()} />
             <ActionButton
@@ -300,11 +308,15 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
       {active?.kind === "file" && <Breadcrumbs path={active.path} />}
       <div className="tm-editor-content">
         {/* Keep Monaco mounted while switching between files of this group. */}
-        {group.editors.some((e) => e.kind === "file") && (
-          <div className="tm-editor-slot" hidden={active?.kind !== "file"}>
-            <CodeEditor groupId={group.id} path={active?.kind === "file" ? active.path : lastFile(group)} />
+        {group.editors.some((e) => e.kind === "file" && !isMediaFile(e.path)) && (
+          <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path)}>
+            <CodeEditor groupId={group.id} path={active?.kind === "file" && !isMediaFile(active.path) ? active.path : lastFile(group)} />
           </div>
         )}
+        {active?.kind === "file" && isMediaFile(active.path) && <MediaEditor key={active.path} path={active.path} />}
+        {active?.kind === "image" && <MediaEditor key={active.id} path={active.path} />}
+        {active?.kind === "markdown" && <MarkdownEditor key={active.id} input={active} />}
+        {active?.kind === "browser" && <BrowserEditor key={active.id} input={active} />}
         {active?.kind === "settings" && <SettingsEditor />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
@@ -332,7 +344,14 @@ function RunButton({ path }: { path: string }) {
   );
 }
 
+/** Markdown and SVG get VS Code's "Open Preview to the Side" (Ctrl+K V). */
+function SidePreviewButton({ path }: { path: string }) {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext !== "md" && ext !== "markdown" && ext !== "svg") return null;
+  return <ActionButton icon="open-preview" label="Open Preview to the Side (Ctrl+K V)" onClick={() => executeCommand("markdown.showPreviewToSide")} />;
+}
+
 function lastFile(group: EditorGroup) {
-  const f = [...group.editors].reverse().find((e) => e.kind === "file");
+  const f = [...group.editors].reverse().find((e) => e.kind === "file" && !isMediaFile(e.path));
   return f?.kind === "file" ? f.path : "";
 }

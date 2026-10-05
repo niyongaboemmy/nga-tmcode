@@ -265,6 +265,9 @@ export default function App() {
 /** Browser build: lets tests (and TMCode Web) simulate a change made outside the editor. */
 const watchers = new Set<(paths: string[]) => void>();
 export async function simulateExternalWrite(platform: Platform, path: string, content: string) {
+  // Like `git checkout` / `npm install`: missing folders are created too.
+  const parts = path.split("/");
+  for (let i = 1; i < parts.length; i++) await platform.fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
   await platform.fs.writeFile(path, content);
   watchers.forEach((w) => w([path]));
 }

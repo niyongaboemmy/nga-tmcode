@@ -21,6 +21,8 @@ export interface FileSystem {
   createDir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
+  /** Binary files (images) as base64; absent where unsupported. */
+  readBase64?(path: string): Promise<string>;
 }
 
 export interface TerminalSession {
@@ -32,6 +34,8 @@ export interface TerminalSession {
 export interface TerminalSpawnOptions {
   cols: number;
   rows: number;
+  /** Workspace-relative working directory (default: the workspace root). */
+  cwd?: string;
   onData(data: string): void;
   onExit(code: number | null): void;
 }
@@ -68,6 +72,8 @@ export interface Platform {
   watch?(onChange: (paths: string[]) => void): () => void;
   /** Signed in-app updates (desktop). */
   updater?: Updater;
+  /** Opens a URL in the system browser. */
+  openExternal?(url: string): Promise<void>;
   /** Sets the OS window title. */
   setTitle?(title: string): void;
   fs: FileSystem;

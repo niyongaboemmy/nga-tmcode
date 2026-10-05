@@ -17,6 +17,8 @@ import {
 import { fuzzyMatch, highlightRuns } from "../util/fuzzy";
 import { basename, dirname } from "../util/paths";
 import { Codicon, FileIcon } from "./icons";
+import { SkeletonRows } from "./Skeleton";
+import { acceptPick, cancelPick, currentPick } from "./quickPick";
 
 interface Item {
   id: string;
@@ -58,7 +60,7 @@ function Highlighted({ text, indices }: { text: string; indices?: number[] }) {
 
 /** Switches modes the way VS Code does when the user types a prefix. */
 function modeFromValue(value: string, base: QuickInputMode): { mode: QuickInputMode; query: string } {
-  if (base === "theme") return { mode: "theme", query: value };
+  if (base === "theme" || base === "pick") return { mode: base, query: value };
   if (value.startsWith(">")) return { mode: "commands", query: value.slice(1).trim() };
   if (value.startsWith(":")) return { mode: "line", query: value.slice(1).trim() };
   return { mode: "files", query: value.trim() };
@@ -67,7 +69,7 @@ function modeFromValue(value: string, base: QuickInputMode): { mode: QuickInputM
 export function QuickInput() {
   const qi = useWorkbench((s) => s.quickInput);
   if (!qi) return null;
-  return <QuickInputWidget key={`${qi.mode}:${qi.initial ?? ""}`} baseMode={qi.mode} initial={qi.initial} />;
+  return <QuickInputWidget key={`${qi.mode}:${qi.initial ?? ""}`} baseMode={qi.mode} initial={qi.mode === "pick" ? "" : qi.initial} />;
 }
 
 function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; initial?: string }) {
@@ -81,6 +83,18 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
   const currentTheme = useWorkbench((s) => s.settings["workbench.colorTheme"]);
   const hasWorkspace = useWorkbench((s) => !!s.workspace);
   const { mode, query } = modeFromValue(value, baseMode);
+
+  // A pick closed any other way (Escape, backdrop, another quick input) resolves as cancelled.
+  useEffect(() => {
+    if (baseMode !== "pick") return;
+    const pick = currentPick();
+    // Deferred: StrictMode's mount/unmount/mount must not cancel a pick that is still showing.
+    return () => {
+      setTimeout(() => {
+        if (workbench.get().quickInput?.mode !== "pick") cancelPick(pick);
+      }, 0);
+    };
+  }, [baseMode]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -162,6 +176,24 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
         },
       }));
     }
+    if (mode === "pick") {
+      const pick = currentPick();
+      if (!pick) return [];
+      const scored = pick.items
+        .map((it) => ({ it, m: fuzzyMatch(query, it.label) ?? (it.description ? fuzzyMatch(query, it.description) : null) }))
+        .filter((x) => !!x.m);
+      if (query) scored.sort((a, b) => b.m!.score - a.m!.score);
+      return scored.map(({ it }, i) => ({
+        id: it.id,
+        label: it.label,
+        description: it.description,
+        detail: it.detail,
+        indices: fuzzyMatch(query, it.label)?.indices,
+        group: !query && it.group && (i === 0 || scored[i - 1].it.group !== it.group) ? it.group : undefined,
+        icon: it.icon ? <Codicon name={it.icon} /> : undefined,
+        run: () => acceptPick(it),
+      }));
+    }
     return [];
   }, [mode, query, files, os, currentTheme]);
 
@@ -202,11 +234,14 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
 
   const accept = () => {
     if (mode === "line") return lineInfo?.go?.();
+    if (mode === "pick" && !items[index] && query && currentPick()?.options.allowCustom) return acceptPick({ id: "custom", label: query });
     items[index]?.run();
   };
 
   const placeholder =
-    mode === "theme"
+    mode === "pick"
+      ? (currentPick()?.title ?? "")
+      : mode === "theme"
       ? "Select Color Theme (Up/Down Keys to Preview)"
       : mode === "files"
         ? hasWorkspace
@@ -247,8 +282,9 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           <div className="tm-qi-message">{lineInfo?.text}</div>
         ) : (
           <div ref={listRef} id="tm-qi-list" className="tm-qi-list tm-scroll" role="listbox">
-            {items.length === 0 && (
-              <div className="tm-qi-message">{mode === "commands" ? "No matching commands" : mode === "files" && files === null && hasWorkspace ? "Loading files…" : "No matching results"}</div>
+            {items.length === 0 && mode === "files" && files === null && hasWorkspace && <SkeletonRows rows={6} label="Loading files" />}
+            {items.length === 0 && !(mode === "files" && files === null && hasWorkspace) && (
+              <div className="tm-qi-message">{mode === "pick" && query && currentPick()?.options.allowCustom ? `Press Enter to use "${query}"` : mode === "commands" ? "No matching commands" : mode === "files" && files === null && hasWorkspace ? "Loading files…" : "No matching results"}</div>
             )}
             {items.map((it, i) => (
               <div

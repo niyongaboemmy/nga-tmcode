@@ -46,6 +46,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     openFile: () => invoke("ws_open_file"),
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
+    openExternal: (url) => invoke("open_external", { url }),
     watch(onChange) {
       let un: (() => void) | null = null;
       let stopped = false;
@@ -67,6 +68,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     fs: {
       readDir: (path) => invoke<DirEntry[]>("ws_read_dir", { path }),
       readFile: (path) => invoke<string>("ws_read_file", { path }),
+      readBase64: (path) => invoke<string>("ws_read_base64", { path }),
       writeFile: (path, content) => invoke("ws_write_file", { path, content }),
       createFile: (path) => invoke("ws_create_file", { path }),
       createDir: (path) => invoke("ws_create_dir", { path }),
@@ -74,10 +76,10 @@ export async function createTauriPlatform(): Promise<Platform> {
       remove: (path) => invoke("ws_remove", { path }),
     },
     terminal: {
-      async spawn({ cols, rows, onData, onExit }): Promise<TerminalSession> {
+      async spawn({ cols, rows, cwd, onData, onExit }): Promise<TerminalSession> {
         const channel = new Channel<PtyEvent>();
         channel.onmessage = (e) => (e.type === "data" ? onData(e.data) : onExit(e.code));
-        const id = await invoke<number>("pty_spawn", { cols, rows, onEvent: channel });
+        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, onEvent: channel });
         return {
           write: (data) => void invoke("pty_write", { id, data }).catch(() => {}),
           resize: (c, r) => void invoke("pty_resize", { id, cols: c, rows: r }).catch(() => {}),

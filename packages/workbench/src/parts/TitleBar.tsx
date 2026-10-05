@@ -48,6 +48,7 @@ const MENUS: { label: string; items: MenuSpec }[] = [
       "workbench.action.toggleSidebarVisibility",
       "workbench.action.togglePanel",
       "workbench.action.splitEditor",
+      "workbench.action.toggleZenMode",
       "-",
       "editor.action.toggleWordWrap",
       "editor.action.toggleMinimap",
@@ -56,7 +57,19 @@ const MENUS: { label: string; items: MenuSpec }[] = [
     ],
   },
   { label: "Go", items: ["workbench.action.quickOpen", "workbench.action.gotoLine", "editor.action.revealDefinition"] },
-  { label: "Terminal", items: ["workbench.action.terminal.new", "workbench.action.terminal.toggleTerminal"] },
+  {
+    label: "Terminal",
+    items: [
+      "workbench.action.terminal.new",
+      "workbench.action.terminal.toggleTerminal",
+      "-",
+      "workbench.action.tasks.runTask",
+      "workbench.action.terminal.runRecentCommand",
+      "workbench.action.terminal.focusFind",
+      "-",
+      "simpleBrowser.show",
+    ],
+  },
   {
     label: "Help",
     items: [

@@ -15,7 +15,13 @@ export type EditorInput =
   /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
   | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react"; preview: false }
   /** Expected vs actual output of one visible test. */
-  | { kind: "testDiff"; id: string; testId: string; preview: false };
+  | { kind: "testDiff"; id: string; testId: string; preview: false }
+  /** Simple Browser on a local dev server (Vite, Next, Angular, Spring…). */
+  | { kind: "browser"; id: string; url: string; preview: false }
+  /** Rendered Markdown beside its source, live while typing. */
+  | { kind: "markdown"; id: string; path: string; preview: false }
+  /** Rendered image beside its source (SVG). Binary images open as ordinary "file" editors. */
+  | { kind: "image"; id: string; path: string; preview: false };
 
 export type TestStatus = "idle" | "queued" | "running" | "passed" | "failed" | "error";
 
@@ -84,7 +90,7 @@ export interface ExplorerEdit {
   error?: string | null;
 }
 
-export type QuickInputMode = "files" | "commands" | "line" | "theme";
+export type QuickInputMode = "files" | "commands" | "line" | "theme" | "pick";
 
 export interface OutputLine {
   t: number;
@@ -411,6 +417,13 @@ export async function renameEntry(from: string, newName: string) {
 }
 
 /** Renames or moves a file/folder and keeps editors, dirty flags and the tree in step. */
+function renamedId(id: string | null, from: string, to: string) {
+  if (!id) return id;
+  const m = /^(markdown|image):(.*)$/.exec(id);
+  if (m && isWithin(m[2], from)) return `${m[1]}:${rebase(m[2], from, to)}`;
+  return isWithin(id, from) ? rebase(id, from, to) : id;
+}
+
 export async function moveEntry(from: string, to: string) {
   if (to === from) return;
   if (isWithin(to, from)) throw new Error(`Cannot move '${from}' into itself.`);
@@ -418,8 +431,12 @@ export async function moveEntry(from: string, to: string) {
   const s = get();
   const groups = s.groups.map((g) => ({
     ...g,
-    editors: g.editors.map((e) => (e.kind === "file" && isWithin(e.path, from) ? { ...e, path: rebase(e.path, from, to), id: rebase(e.path, from, to) } : e)),
-    activeId: g.activeId && isWithin(g.activeId, from) ? rebase(g.activeId, from, to) : g.activeId,
+    editors: g.editors.map((e): EditorInput => {
+      if (e.kind === "file" && isWithin(e.path, from)) return { ...e, path: rebase(e.path, from, to), id: rebase(e.path, from, to) };
+      if ((e.kind === "markdown" || e.kind === "image") && isWithin(e.path, from)) return { ...e, path: rebase(e.path, from, to), id: `${e.kind}:${rebase(e.path, from, to)}` };
+      return e;
+    }),
+    activeId: renamedId(g.activeId, from, to),
   }));
   const dirty: Record<string, true> = {};
   for (const p of Object.keys(s.dirty)) dirty[rebase(p, from, to)] = true;
@@ -450,7 +467,7 @@ export async function deleteEntry(path: string) {
   await getPlatform().fs.remove(path);
   const s = get();
   const groups = s.groups.map((g) => {
-    const editors = g.editors.filter((e) => !(e.kind === "file" && isWithin(e.path, path)));
+    const editors = g.editors.filter((e) => !((e.kind === "file" || e.kind === "markdown" || e.kind === "image") && isWithin(e.path, path)));
     const activeId = editors.some((e) => e.id === g.activeId) ? g.activeId : (editors[editors.length - 1]?.id ?? null);
     return { ...g, editors, activeId };
   });
@@ -530,7 +547,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();

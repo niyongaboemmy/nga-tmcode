@@ -5,7 +5,9 @@ import "@xterm/xterm/css/xterm.css";
 import { defaultFontFamily } from "../../state/settings";
 import { getPlatform, log, notify, useWorkbench } from "../../state/store";
 import type { TerminalSession } from "../../platform/types";
-import { Codicon } from "../../widgets/icons";
+import { ActionButton, Codicon } from "../../widgets/icons";
+import { enhanceTerminal, type EnhancedTerminal } from "../../terminal/enhance";
+import { recordCommand, CommandLineTracker } from "../../terminal/history";
 
 /** Terminal colours from VS Code's Dark Modern / Light Modern. */
 export function terminalTheme(theme: string): ITheme {
@@ -61,10 +63,19 @@ export function terminalTheme(theme: string): ITheme {
 
 interface Instance {
   id: number;
+  name: string;
   term: Terminal;
   fit: FitAddon;
+  extras: EnhancedTerminal;
   session: TerminalSession | null;
   exited: boolean;
+}
+
+export interface NewTerminalRequest {
+  /** Typed into the shell once it starts (tasks, Run Recent Command). */
+  command?: string;
+  cwd?: string;
+  name?: string;
 }
 
 let seq = 0;
@@ -73,6 +84,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [finding, setFinding] = useState(false);
   const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
   const fontSize = useWorkbench((s) => s.settings["terminal.integrated.fontSize"]);
   const workspace = useWorkbench((s) => s.workspace);
@@ -83,7 +95,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
   live.current = instances;
   // One spawn at a time (StrictMode runs effects twice in development).
   const spawning = useRef(false);
-  const create = async () => {
+  const create = async (req: NewTerminalRequest = {}) => {
     if (!platform.terminal || spawning.current) return;
     spawning.current = true;
     const term = new Terminal({
@@ -94,26 +106,41 @@ export function TerminalView({ visible }: { visible: boolean }) {
       cursorStyle: "bar",
       cursorWidth: 2,
       cursorInactiveStyle: "outline",
-      allowProposedApi: false,
+      // Unicode 11 widths (emoji, CJK) are a "proposed" xterm API.
+      allowProposedApi: true,
       scrollback: 5000,
       theme: terminalTheme(useWorkbench.getState().settings["workbench.colorTheme"]),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const inst: Instance = { id: ++seq, term, fit, session: null, exited: false };
+    const extras = enhanceTerminal(term);
+    const inst: Instance = { id: ++seq, name: req.name ?? "", term, fit, extras, session: null, exited: false };
     setInstances((list) => [...list, inst]);
     setActiveId(inst.id);
     try {
       inst.session = await platform.terminal.spawn({
         cols: 80,
         rows: 24,
-        onData: (d) => term.write(d),
+        cwd: req.cwd,
+        onData: (d) => {
+          term.write(d);
+          extras.observe(d);
+        },
         onExit: (code) => {
           inst.exited = true;
           term.write(`\r\n\x1b[90m[process exited with code ${code ?? "?"}]\x1b[0m\r\n`);
         },
       });
-      term.onData((d) => inst.session?.write(d));
+      const tracker = new CommandLineTracker((cmd) => recordCommand(cmd));
+      term.onData((d) => {
+        tracker.feed(d);
+        inst.session?.write(d);
+      });
+      if (req.command) {
+        recordCommand(req.command);
+        // Give the shell a moment to print its prompt, as VS Code's task terminals do.
+        setTimeout(() => inst.session?.write(`${req.command}\r`), 350);
+      }
       term.onResize(({ cols, rows }) => inst.session?.resize(cols, rows));
       log("Terminal", `Started terminal ${inst.id}`);
     } catch (e) {
@@ -173,9 +200,25 @@ export function TerminalView({ visible }: { visible: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, supported, workspace?.root]);
   useEffect(() => {
-    const onNew = () => void create();
+    const onNew = (e: Event) => void create((e as CustomEvent<NewTerminalRequest | undefined>).detail ?? {});
+    const onRun = (e: Event) => {
+      const cmd = (e as CustomEvent<string>).detail;
+      const inst = live.current.find((i) => i.id === activeId && !i.exited);
+      if (inst?.session) {
+        inst.session.write(`${cmd}\r`);
+        recordCommand(cmd);
+        inst.term.focus();
+      } else void create({ command: cmd });
+    };
+    const onFind = () => setFinding(true);
     window.addEventListener("tmcode:new-terminal", onNew);
-    return () => window.removeEventListener("tmcode:new-terminal", onNew);
+    window.addEventListener("tmcode:terminal-run", onRun);
+    window.addEventListener("tmcode:terminal-find", onFind);
+    return () => {
+      window.removeEventListener("tmcode:new-terminal", onNew);
+      window.removeEventListener("tmcode:terminal-run", onRun);
+      window.removeEventListener("tmcode:terminal-find", onFind);
+    };
   });
 
   // A new workspace means a new cwd: close shells from the old one (and all of them on unmount).
@@ -183,6 +226,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
     return () => {
       for (const i of live.current) {
         i.session?.kill();
+        i.extras.dispose();
         i.term.dispose();
       }
       live.current = [];
@@ -194,11 +238,14 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const kill = (id: number) => {
     const inst = instances.find((i) => i.id === id);
     inst?.session?.kill();
+    inst?.extras.dispose();
     inst?.term.dispose();
     const rest = instances.filter((i) => i.id !== id);
     setInstances(rest);
     setActiveId(rest[rest.length - 1]?.id ?? null);
   };
+
+  const activeInstance = instances.find((i) => i.id === activeId);
 
   if (!supported) {
     return (
@@ -211,12 +258,13 @@ export function TerminalView({ visible }: { visible: boolean }) {
   return (
     <div className="tm-terminal" hidden={!visible}>
       <div ref={host} className="tm-terminal-host" />
+      {finding && activeInstance && <TerminalFind key={activeInstance.id} inst={activeInstance} onClose={() => setFinding(false)} />}
       {instances.length > 1 && (
         <ul className="tm-terminal-list" aria-label="Terminals">
           {instances.map((i, n) => (
             <li key={i.id} className={i.id === activeId ? "is-active" : ""}>
               <button type="button" onClick={() => setActiveId(i.id)}>
-                <Codicon name="terminal" /> {n + 1}: shell
+                <Codicon name={i.name ? "tools" : "terminal"} /> {i.name || `${n + 1}: ${shellName(platform.os)}`}
               </button>
               <button type="button" className="tm-terminal-kill" aria-label="Kill terminal" title="Kill Terminal" onClick={() => kill(i.id)}>
                 <Codicon name="trash" />
@@ -225,6 +273,83 @@ export function TerminalView({ visible }: { visible: boolean }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function shellName(os: string) {
+  return os === "windows" ? "powershell" : os === "mac" ? "zsh" : "bash";
+}
+
+/** VS Code's terminal find widget: incremental, case/word/regex toggles, match count. */
+function TerminalFind({ inst, onClose }: { inst: Instance; onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const [opts, setOpts] = useState({ caseSensitive: false, wholeWord: false, regex: false });
+  const [result, setResult] = useState<{ index: number; count: number } | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const search = inst.extras.search;
+
+  useEffect(() => {
+    input.current?.focus();
+    const sub = search.onDidChangeResults((r) => setResult(r ? { index: r.resultIndex, count: r.resultCount } : null));
+    return () => {
+      sub.dispose();
+      search.clearDecorations();
+    };
+  }, [search]);
+
+  const decorations = {
+    matchOverviewRuler: "#d18616",
+    activeMatchColorOverviewRuler: "#a0a0a0",
+    matchBackground: "#623315",
+    activeMatchBackground: "#515c6a",
+  };
+  const find = (dir: 1 | -1, incremental = false) => {
+    if (!query) return search.clearDecorations();
+    const o = { ...opts, incremental, decorations };
+    if (dir > 0) search.findNext(query, o);
+    else search.findPrevious(query, o);
+  };
+  useEffect(() => {
+    find(1, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, opts]);
+
+  const close = () => {
+    onClose();
+    inst.term.focus();
+  };
+  const toggle = (k: keyof typeof opts, icon: string, label: string) => (
+    <ActionButton icon={icon} label={label} active={opts[k]} aria-pressed={opts[k]} onClick={() => setOpts((o) => ({ ...o, [k]: !o[k] }))} />
+  );
+
+  return (
+    <div className="tm-find-widget tm-terminal-find" role="search">
+      <div className="tm-input-box">
+        <input
+          ref={input}
+          className="tm-input"
+          placeholder="Find"
+          aria-label="Find in terminal"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") find(e.shiftKey ? -1 : 1);
+            else if (e.key === "Escape") close();
+            else return;
+            e.preventDefault();
+          }}
+        />
+        {toggle("caseSensitive", "case-sensitive", "Match Case")}
+        {toggle("wholeWord", "whole-word", "Match Whole Word")}
+        {toggle("regex", "regex", "Use Regular Expression")}
+      </div>
+      <span className={`tm-find-count ${query && result?.count === 0 ? "is-empty" : ""}`}>
+        {!query ? "No results" : result ? (result.count ? `${result.index + 1} of ${result.count}` : "No results") : ""}
+      </span>
+      <ActionButton icon="arrow-up" label="Previous Match (Shift+Enter)" onClick={() => find(-1)} />
+      <ActionButton icon="arrow-down" label="Next Match (Enter)" onClick={() => find(1)} />
+      <ActionButton icon="close" label="Close (Escape)" onClick={close} />
     </div>
   );
 }

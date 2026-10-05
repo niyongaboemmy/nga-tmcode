@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { codeEditorFor } from "../../monaco/editors";
-import { clearOutput, openFile, showPanel, togglePanel, togglePanelMaximized, useWorkbench, workbench, type PanelId } from "../../state/store";
+import { revealInEditor } from "../../monaco/reveal";
+import { clearOutput, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
 import { basename, dirname } from "../../util/paths";
 import { ActionButton, Codicon, FileIcon } from "../../widgets/icons";
 import { TerminalView } from "./TerminalView";
@@ -26,18 +26,7 @@ function ProblemsView({ filter }: { filter: string }) {
     return <div className="tm-panel-empty">{problems.length ? "No results found with provided filter criteria." : "No problems have been detected in the workspace."}</div>;
   }
 
-  const reveal = (path: string, line: number, column: number) => {
-    openFile(path, { pinned: true });
-    const go = (n = 0) => {
-      const ed = codeEditorFor(workbench.get().activeGroup);
-      if (ed?.getModel()?.uri.path === `/${path}`) {
-        ed.setPosition({ lineNumber: line, column });
-        ed.revealLineInCenterIfOutsideViewport(line);
-        ed.focus();
-      } else if (n < 20) setTimeout(() => go(n + 1), 25);
-    };
-    go();
-  };
+  const reveal = (path: string, line: number, column: number) => revealInEditor(path, line, column);
 
   return (
     <div className="tm-problems tm-scroll" role="tree" aria-label="Problems">

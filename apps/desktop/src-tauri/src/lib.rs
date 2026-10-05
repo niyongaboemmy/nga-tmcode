@@ -184,6 +184,8 @@ pub fn run() {
             workspace::ws_open_file,
             workspace::ws_open_path,
             workspace::ws_reveal,
+            workspace::ws_read_base64,
+            workspace::open_external,
             workspace::ws_read_dir,
             workspace::ws_read_file,
             workspace::ws_write_file,

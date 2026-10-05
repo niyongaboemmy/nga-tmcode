@@ -5,6 +5,7 @@ import { onConsole, sendRunInput, setConsoleSize, type ConsoleEvent } from "../.
 import { defaultFontFamily } from "../../state/settings";
 import { getPlatform, useWorkbench } from "../../state/store";
 import { terminalTheme } from "./TerminalView";
+import { enhanceTerminal } from "../../terminal/enhance";
 
 const DIM = "\x1b[90m";
 const RED = "\x1b[31m";
@@ -63,17 +64,22 @@ export function RunConsole({ visible }: { visible: boolean }) {
       cursorBlink: interactive,
       disableStdin: !interactive,
       scrollback: 10000,
+      allowProposedApi: true,
       theme: terminalTheme(useWorkbench.getState().settings["workbench.colorTheme"]),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    const extras = enhanceTerminal(term);
     term.open(host.current!);
     termRef.current = term;
     fitRef.current = fit;
     const off = onConsole((e) => {
       const out = renderConsoleEvent(e, interactive);
       if (out === "clear") term.reset();
-      else if (out) term.write(out);
+      else if (out) {
+        term.write(out);
+        if (e.type === "stdout" || e.type === "stderr") extras.observe(out);
+      }
     });
     const input = term.onData((d) => {
       if (useWorkbench.getState().run.status === "running") sendRunInput(d);
@@ -92,6 +98,7 @@ export function RunConsole({ visible }: { visible: boolean }) {
       ro.disconnect();
       off();
       input.dispose();
+      extras.dispose();
       term.dispose();
     };
   }, [interactive, platform.os]);
