@@ -73,7 +73,7 @@ jobs:
   publish:
     name: Stable download links, checks, publish
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ github.ref_name }}
