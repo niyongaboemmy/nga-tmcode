@@ -115,9 +115,3 @@ export async function start() {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  start().catch((e) => {
-    console.error(`[tm-judge] ${e.message}`);
-    process.exit(1);
-  });
-}
