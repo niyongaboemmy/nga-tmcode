@@ -35,6 +35,7 @@ fn main() {
             "debug_send",
             "debug_stop",
             "debug_run_in_terminal",
+            "debug_policy",
             "preview_publish",
             "exam_device",
             "exam_workspace",

@@ -65,6 +65,7 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
                "resume": { "snapshot_seq": 41, "files": [ "..." ] } } ],
   "live": null }
 ```
+- **`policy.debugger`** (optional, default `false`): `true` lets students use Run and Debug (breakpoints, stepping, the Debug Console) during this exam. Debugger downloads (js-debug, debugpy) are still never made during an exam.
 - **Never sent:** hidden tests, reference solutions and web-check specs.
 - **`resume`:** present when the server already holds synced snapshots for that question; it is the latest one.
 - **Profile mapping** (Task Mentor language → profile): python→`python-3`, javascript→`node-22`, typescript→`typescript`, c→`c17`, cpp/c++→`cpp17`, java→`java-21`, html/css/web→`web`, react→`react`.

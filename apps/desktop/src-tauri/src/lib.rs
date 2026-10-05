@@ -210,6 +210,7 @@ pub fn run() {
             debug::debug_send,
             debug::debug_stop,
             debug::debug_run_in_terminal,
+            debug::debug_policy,
             preview::preview_publish,
             exam::exam_device,
             exam::exam_workspace,

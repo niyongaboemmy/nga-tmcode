@@ -13,7 +13,8 @@
 //! - Java: not available yet (Run still works).
 //!
 //! Debugging is a practice-mode feature: nothing here runs while the open
-//! folder is an exam folder, and adapters are never downloaded during an exam.
+//! folder is an exam folder (unless the exam's policy turned the debugger on,
+//! `debug_policy`), and adapters are never downloaded during an exam.
 
 use crate::runner::{build_dir, program_for, run_piped, run_pty, Context, RunEvent, Runs, Step, Tree, INHERITED_NOISE};
 use crate::toolchains::Toolchains;
@@ -269,6 +270,8 @@ struct Server {
 
 #[derive(Default)]
 pub struct Debuggers {
+    /// The current exam's policy allows debugging (`policy.debugger`).
+    exam_allowed: AtomicBool,
     next: AtomicU32,
     conns: Mutex<HashMap<u32, Conn>>,
     servers: Mutex<HashMap<u32, Server>>,
@@ -315,12 +318,27 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
 }
 
-/// Exams are locked down: the exam folders live under `<app data>/exams`.
+/// Is the open folder an exam folder (they live under `<app data>/exams`)?
+fn in_exam_folder(app: &AppHandle, ws: &Workspace) -> bool {
+    matches!((ws.root(), app_data(app)), (Ok(root), Ok(data)) if root.starts_with(data.join("exams")))
+}
+
+/// Exams are locked down: no debugger unless the exam's policy allows it.
 fn refuse_in_exam(app: &AppHandle, ws: &Workspace) -> Result<(), String> {
-    if let (Ok(root), Ok(data)) = (ws.root(), app_data(app)) {
-        if root.starts_with(data.join("exams")) {
-            return Err("Debugging is turned off during exams.".into());
-        }
+    if in_exam_folder(app, ws) && !app.state::<Debuggers>().exam_allowed.load(Ordering::SeqCst) {
+        return Err("Debugging is turned off during exams.".into());
+    }
+    Ok(())
+}
+
+/// The workbench applies an exam policy: `allowed` = `policy.debugger`.
+/// Downloads stay refused in exam folders either way (`debug_install`).
+#[tauri::command]
+pub fn debug_policy(dbg: State<'_, Debuggers>, allowed: bool) -> Result<(), String> {
+    dbg.exam_allowed.store(allowed, Ordering::SeqCst);
+    if !allowed {
+        // Turning it off ends any session that is still running.
+        dbg.kill_all();
     }
     Ok(())
 }
@@ -404,7 +422,9 @@ pub enum InstallEvent {
 /// Installs what `debug_probe` asked for: debugpy (`pip install --user`) or js-debug (download).
 #[tauri::command]
 pub async fn debug_install(app: AppHandle, what: String, on_event: Channel<InstallEvent>) -> Result<(), String> {
-    refuse_in_exam(&app, &app.state::<Workspace>())?;
+    if in_exam_folder(&app, &app.state::<Workspace>()) {
+        return Err("Debugger components are never installed during an exam.".into());
+    }
     match what.as_str() {
         "debugpy" => {
             let py = app.state::<Toolchains>().get("python").ok_or_else(|| crate::runner::missing_tool_message("python"))?;
@@ -944,39 +964,166 @@ mod tests {
         assert!(!terminal_program_allowed(Path::new("/bin/sh"), &allowed));
     }
 
-    /// End-to-end over a real adapter process when one is installed (skipped otherwise):
-    /// `python -m debugpy.adapter` answers `initialize` through our framing.
-    #[test]
-    fn talks_to_debugpy_when_installed() {
-        let Some(py) = crate::toolchains::Toolchains::default().get("python") else { return };
-        let Some((true, _)) = output_of(Path::new(&py.path), &["-c", "import debugpy"], Duration::from_secs(10)) else { return };
-        let cmd = adapter_command("python", &AdapterEnv { python: Some((PathBuf::from(&py.path), py.prefix_args.clone())), ..Default::default() }, 0).unwrap();
-        let mut child = spawn_adapter(&cmd, &std::env::temp_dir()).unwrap();
-        let tree = Tree::of(child.id());
-        let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(&encode(r#"{"seq":1,"type":"request","command":"initialize","arguments":{"adapterID":"python","clientID":"tmcode"}}"#)).unwrap();
-        stdin.flush().unwrap();
-        let mut out = child.stdout.take().unwrap();
-        let mut r = DapReader::default();
-        let mut buf = [0u8; 4096];
-        let started = Instant::now();
-        let mut ok = false;
-        while !ok && started.elapsed() < Duration::from_secs(20) {
-            let n = out.read(&mut buf).unwrap();
-            if n == 0 {
-                break;
+    /// A DAP client over a real adapter's stdio, for the end-to-end test below.
+    struct TestClient {
+        stdin: std::process::ChildStdin,
+        rx: std::sync::mpsc::Receiver<serde_json::Value>,
+        seen: Vec<serde_json::Value>,
+        seq: u64,
+    }
+
+    impl TestClient {
+        fn new(child: &mut Child) -> TestClient {
+            let mut out = child.stdout.take().unwrap();
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let mut r = DapReader::default();
+                let mut buf = [0u8; 8192];
+                while let Ok(n) = out.read(&mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    r.push(&buf[..n]);
+                    while let Ok(Some(m)) = r.next() {
+                        if tx.send(serde_json::from_str(&m).unwrap()).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+            TestClient { stdin: child.stdin.take().unwrap(), rx, seen: Vec::new(), seq: 0 }
+        }
+
+        fn send(&mut self, command: &str, arguments: serde_json::Value) -> u64 {
+            self.seq += 1;
+            let msg = serde_json::json!({ "seq": self.seq, "type": "request", "command": command, "arguments": arguments });
+            self.stdin.write_all(&encode(&msg.to_string())).unwrap();
+            self.stdin.flush().unwrap();
+            self.seq
+        }
+
+        /// The first message (seen earlier or arriving within 30 s) matching `pred`; it is consumed.
+        fn wait(&mut self, what: &str, pred: impl Fn(&serde_json::Value) -> bool) -> serde_json::Value {
+            if let Some(i) = self.seen.iter().position(&pred) {
+                return self.seen.remove(i);
             }
-            r.push(&buf[..n]);
-            while let Some(m) = r.next().unwrap() {
-                let v: serde_json::Value = serde_json::from_str(&m).unwrap();
-                if v["type"] == "response" && v["command"] == "initialize" {
-                    assert_eq!(v["success"], true);
-                    ok = true;
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
+                let left = deadline.saturating_duration_since(Instant::now());
+                match self.rx.recv_timeout(left) {
+                    Ok(v) if pred(&v) => return v,
+                    Ok(v) => self.seen.push(v),
+                    Err(_) => panic!("debugpy: no {what}; got {:?}", self.seen),
                 }
             }
         }
+
+        fn request(&mut self, command: &str, arguments: serde_json::Value) -> serde_json::Value {
+            let seq = self.send(command, arguments);
+            let r = self.wait(command, |v| v["type"] == "response" && v["request_seq"] == seq);
+            assert_eq!(r["success"], true, "{command} failed: {r}");
+            r["body"].clone()
+        }
+
+        fn event(&mut self, name: &str) -> serde_json::Value {
+            self.wait(name, |v| v["type"] == "event" && v["event"] == name)
+        }
+    }
+
+    /// The Python to test debugpy with: `TMCODE_TEST_PYTHON`, else the detected one.
+    fn python_with_debugpy() -> Option<(PathBuf, Vec<String>)> {
+        let (py, prefix) = match std::env::var_os("TMCODE_TEST_PYTHON") {
+            Some(p) => (PathBuf::from(p), vec![]),
+            None => {
+                let tc = crate::toolchains::Toolchains::default().get("python")?;
+                (PathBuf::from(tc.path), tc.prefix_args)
+            }
+        };
+        let mut args: Vec<&str> = prefix.iter().map(String::as_str).collect();
+        args.extend(["-c", "import debugpy"]);
+        matches!(output_of(&py, &args, Duration::from_secs(15)), Some((true, _))).then_some((py, prefix))
+    }
+
+    /// A real debug session over `python -m debugpy.adapter` and our framing:
+    /// breakpoint → stopped → stack/scopes/variables → evaluate → continue → exit.
+    /// Skipped (with a note) when no Python with debugpy is installed; set
+    /// `TMCODE_TEST_PYTHON` to a Python that has it to force the run.
+    #[test]
+    fn debugs_a_real_python_program_with_debugpy() {
+        let Some((py, prefix)) = python_with_debugpy() else {
+            eprintln!("skipped: no Python with debugpy (pip install debugpy, or set TMCODE_TEST_PYTHON)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let script = dunce::canonicalize(dir.path()).unwrap().join("main.py");
+        std::fs::write(&script, "total = 0\nfor n in [10, 20, 12]:\n    total += n\nanswer = total\nprint('answer', answer)\n").unwrap();
+        let cmd = adapter_command("python", &AdapterEnv { python: Some((py.clone(), prefix.clone())), ..Default::default() }, 0).unwrap();
+        let mut child = spawn_adapter(&cmd, dir.path()).unwrap();
+        let tree = Tree::of(child.id());
+        let mut c = TestClient::new(&mut child);
+
+        let caps = c.request("initialize", serde_json::json!({ "clientID": "tmcode", "adapterID": "debugpy", "linesStartAt1": true, "columnsStartAt1": true, "pathFormat": "path" }));
+        assert_eq!(caps["supportsConfigurationDoneRequest"], true);
+        let mut python = vec![py.to_string_lossy().into_owned()];
+        python.extend(prefix);
+        let launch = c.send(
+            "launch",
+            serde_json::json!({ "type": "python", "request": "launch", "name": "test", "program": script, "cwd": dir.path(), "console": "internalConsole", "python": python, "justMyCode": true }),
+        );
+        c.event("initialized");
+        let path = script.to_string_lossy().into_owned();
+        let bps = c.request("setBreakpoints", serde_json::json!({ "source": { "path": path }, "breakpoints": [{ "line": 4 }] }));
+        assert_eq!(bps["breakpoints"][0]["verified"], true, "{bps}");
+        c.request("setExceptionBreakpoints", serde_json::json!({ "filters": [] }));
+        c.request("configurationDone", serde_json::json!({}));
+        c.wait("launch response", |v| v["type"] == "response" && v["request_seq"] == launch);
+
+        let stopped = c.event("stopped");
+        assert_eq!(stopped["body"]["reason"], "breakpoint");
+        let thread = stopped["body"]["threadId"].clone();
+        let frames = c.request("stackTrace", serde_json::json!({ "threadId": thread, "levels": 20 }));
+        let top = &frames["stackFrames"][0];
+        assert_eq!(top["line"], 4);
+        assert!(top["source"]["path"].as_str().unwrap().ends_with("main.py"));
+        let frame = top["id"].clone();
+        let scopes = c.request("scopes", serde_json::json!({ "frameId": frame }));
+        let locals = scopes["scopes"][0]["variablesReference"].clone();
+        let vars = c.request("variables", serde_json::json!({ "variablesReference": locals }));
+        let total = vars["variables"].as_array().unwrap().iter().find(|v| v["name"] == "total").expect("total in locals");
+        assert_eq!(total["value"], "42");
+        let eval = c.request("evaluate", serde_json::json!({ "expression": "total * 2", "frameId": frame, "context": "repl" }));
+        assert_eq!(eval["result"], "84");
+
+        c.request("continue", serde_json::json!({ "threadId": thread }));
+        let mut printed = String::new();
+        loop {
+            let v = c.wait("output or exit", |v| v["type"] == "event" && (v["event"] == "output" || v["event"] == "exited" || v["event"] == "terminated"));
+            match v["event"].as_str() {
+                Some("output") => printed.push_str(v["body"]["output"].as_str().unwrap_or("")),
+                Some("exited") => {
+                    assert_eq!(v["body"]["exitCode"], 0);
+                    break;
+                }
+                _ => break,
+            }
+        }
+        // stdout may arrive before or after `exited`; give it a moment.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !printed.contains("answer 42") && Instant::now() < deadline {
+            if let Ok(v) = c.rx.recv_timeout(Duration::from_millis(200)) {
+                if v["event"] == "output" {
+                    printed.push_str(v["body"]["output"].as_str().unwrap_or(""));
+                }
+            }
+        }
+        for v in &c.seen {
+            if v["event"] == "output" {
+                printed.push_str(v["body"]["output"].as_str().unwrap_or(""));
+            }
+        }
+        assert!(printed.contains("answer 42"), "program output: {printed:?}");
+        let _ = c.send("disconnect", serde_json::json!({ "terminateDebuggee": true }));
         tree.kill();
         let _ = child.wait();
-        assert!(ok, "no initialize response from debugpy");
     }
 }
