@@ -113,6 +113,41 @@ export function languageVersions(programs: Map<string, string>) {
   return out;
 }
 
+function failedCompile(language: string, kind: RunResponse["sandbox"], compile: NonNullable<RunResponse["compile"]>, tests: TestCase[]): RunResponse {
+  return {
+    language,
+    sandbox: kind,
+    compile,
+    tests: tests.map((t) => ({ id: t.id, verdict: "runtime-error", passed: false, stdout: "", stderr: "Compilation failed", exit_code: null, time_ms: 0, memory_kb: null })),
+  };
+}
+
+/**
+ * Transpiles .ts/.mts/.cts files to CommonJS JavaScript with esbuild (a parser
+ * only; nothing is executed here). Type errors are not reported, as with
+ * Node's own type stripping; syntax errors fail the "compile".
+ */
+async function transpileTypeScript(files: SubmissionFile[]) {
+  const started = Date.now();
+  const { transform } = await import("esbuild");
+  const out: SubmissionFile[] = [];
+  const errors: string[] = [];
+  for (const f of files) {
+    const m = /\.(c|m)?ts$/.exec(f.path);
+    if (!m) continue;
+    try {
+      const r = await transform(f.content, { loader: "ts", format: "cjs", target: "node20", sourcefile: f.path });
+      out.push({ path: f.path.replace(/\.(c|m)?ts$/, `.${m[1] ?? ""}js`), content: r.code });
+    } catch (e) {
+      const failure = e as { errors?: { text: string; location?: { file: string; line: number; column: number } }[] };
+      for (const err of failure.errors ?? [{ text: String(e) }]) {
+        errors.push(err.location ? `${err.location.file}:${err.location.line}:${err.location.column + 1}: error: ${err.text}` : err.text);
+      }
+    }
+  }
+  return { files: out, errors, timeMs: Date.now() - started };
+}
+
 const VERDICT: Record<ExecResult["status"], Verdict> = {
   ok: "ok",
   "runtime-error": "runtime-error",
@@ -147,6 +182,12 @@ export async function judge(sandbox: Sandbox, programs: Map<string, string>, req
   try {
     for (const f of req.files) await box.write(f.path, f.content);
     let compile: RunResponse["compile"] = null;
+    if (lang.transpile === "typescript") {
+      const t = await transpileTypeScript(req.files);
+      for (const f of t.files) await box.write(f.path, f.content);
+      compile = { ok: t.errors.length === 0, output: t.errors.join("\n"), time_ms: t.timeMs };
+      if (!compile.ok) return failedCompile(lang.id, sandbox.kind, compile, req.tests);
+    }
     if (lang.compile) {
       const c = await box.exec(lang.compile(ctx), {
         stdin: "",
@@ -154,14 +195,7 @@ export async function judge(sandbox: Sandbox, programs: Map<string, string>, req
         env: lang.env,
       });
       compile = { ok: c.status === "ok" && c.exitCode === 0, output: `${c.stdout}${c.stderr}`.slice(0, 64 * 1024), time_ms: c.timeMs };
-      if (!compile.ok) {
-        return {
-          language: lang.id,
-          sandbox: sandbox.kind,
-          compile,
-          tests: req.tests.map((t) => ({ id: t.id, verdict: "runtime-error", passed: false, stdout: "", stderr: "Compilation failed", exit_code: null, time_ms: 0, memory_kb: null })),
-        };
-      }
+      if (!compile.ok) return failedCompile(lang.id, sandbox.kind, compile, req.tests);
     }
     const tests: TestResult[] = [];
     for (const t of req.tests) {

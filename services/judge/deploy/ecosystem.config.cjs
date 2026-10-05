@@ -19,9 +19,8 @@ module.exports = {
     {
       name: "tm-judge",
       cwd: path.join(appDir, "services/judge"),
-      script: "src/server.ts",
-      interpreter: "node",
-      interpreter_args: "--experimental-strip-types --no-warnings",
+      // Plain JavaScript built by install.sh (scripts/build.mjs).
+      script: "dist/server.mjs",
       max_memory_restart: "150M",
       env: {
         NODE_ENV: "production",

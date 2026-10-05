@@ -125,6 +125,28 @@ describe.runIf(has("javac", "java"))("java-21", () => {
   });
 });
 
+describe.runIf(has("node"))("typescript", () => {
+  it("transpiles and runs TypeScript (no type stripping needed)", async () => {
+    const r = await judge(sandbox, programs, {
+      language: "typescript",
+      entry: "main.ts",
+      files: [
+        { path: "main.ts", content: "import { double } from './lib';\nconst n: number = Number(require('fs').readFileSync(0, 'utf8'));\nconsole.log(double(n));\n" },
+        { path: "lib.ts", content: "export const double = (x: number): number => x * 2;\n" },
+      ],
+      tests: [{ id: "1", input: "21\n", expected_output: "42\n" }],
+    });
+    expect(r.compile?.ok).toBe(true);
+    expect(r.tests[0].verdict).toBe("accepted");
+  });
+
+  it("reports syntax errors as a failed compile", async () => {
+    const r = await run({ language: "typescript", entry: "main.ts", files: [{ path: "main.ts", content: "const x: number = ;\n" }] });
+    expect(r.compile?.ok).toBe(false);
+    expect(r.compile?.output).toMatch(/main\.ts:1:/);
+  });
+});
+
 describe.runIf(has("node"))("node-22", () => {
   it("reads stdin", async () => {
     const r = await judge(sandbox, programs, {

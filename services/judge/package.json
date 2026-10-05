@@ -6,11 +6,12 @@
   "description": "tm-judge: the sandboxed code runner Task Mentor grades with (isolate, cgroup v2)",
   "main": "src/server.ts",
   "scripts": {
-    "start": "node --experimental-strip-types --no-warnings src/server.ts",
+    "build": "node scripts/build.mjs",
+    "start": "node dist/server.mjs",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@tmcode/protocol": "*"
+    "esbuild": "0.28.2"
   },
   "engines": {
     "node": ">=22.6"

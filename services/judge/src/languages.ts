@@ -15,6 +15,8 @@ export interface Language {
   processes?: number;
   memoryMb?: number;
   env?: Record<string, string>;
+  /** TypeScript: transpiled to JavaScript by the judge (esbuild, outside the box) before running. */
+  transpile?: "typescript";
 }
 
 export interface Ctx {
@@ -44,7 +46,9 @@ export const LANGUAGES: Language[] = [
     id: "typescript",
     programs: ["node"],
     version: ["node", "--version"],
-    run: (c) => [c.bin("node"), "--experimental-strip-types", "--no-warnings", c.entry],
+    transpile: "typescript",
+    // Runs the transpiled entry (main.ts → main.js); works on Node builds without type stripping.
+    run: (c) => [c.bin("node"), c.entry.replace(/\.(c|m)?ts$/, ".$1js")],
     processes: 32,
   },
   {

@@ -65,10 +65,13 @@ if [ ! -f "$APP_DIR/.judge.env" ]; then
   echo "   created $APP_DIR/.judge.env (give this token to Task Mentor as TMJUDGE_TOKEN)"
 fi
 
+echo "   building"
+(cd "$APP_DIR/services/judge" && npm install --no-save --no-package-lock --workspaces=false --omit=dev --no-audit --no-fund --silent && node scripts/build.mjs --log-level=warning)
+
 echo "== 5/5 pm2"
 pm2 startOrReload "$APP_DIR/services/judge/deploy/ecosystem.config.cjs" --update-env
 pm2 save >/dev/null
-sleep 2
+for _ in $(seq 1 20); do curl -fs -o /dev/null http://127.0.0.1:5010/ 2>/dev/null || [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5010/v1/health)" = "401" ] && break; sleep 0.5; done
 TOKEN="$(grep '^JUDGE_TOKEN=' "$APP_DIR/.judge.env" | cut -d= -f2)"
 curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5010/v1/health && echo
 echo "tm-judge ready"
