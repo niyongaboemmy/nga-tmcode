@@ -4,14 +4,40 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search";
-export type PanelId = "problems" | "output" | "terminal";
+export type ViewId = "explorer" | "search" | "testing";
+export type PanelId = "problems" | "output" | "run" | "terminal";
 
 export type EditorInput =
   | { kind: "file"; id: string; path: string; preview: boolean }
   | { kind: "settings"; id: "settings"; preview: false }
   | { kind: "welcome"; id: "welcome"; preview: false }
-  | { kind: "shortcuts"; id: "shortcuts"; preview: false };
+  | { kind: "shortcuts"; id: "shortcuts"; preview: false }
+  /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
+  | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react"; preview: false }
+  /** Expected vs actual output of one visible test. */
+  | { kind: "testDiff"; id: string; testId: string; preview: false };
+
+export type TestStatus = "idle" | "queued" | "running" | "passed" | "failed" | "error";
+
+export interface TestItem {
+  id: string;
+  name: string;
+  input: string;
+  expected_output: string;
+  status: TestStatus;
+  actual?: string;
+  stderr?: string;
+  message?: string;
+  duration_ms?: number;
+}
+
+export interface RunState {
+  status: "idle" | "building" | "running";
+  entry: string | null;
+  /** Label shown in the Run panel title, e.g. "Python 3: main.py". */
+  label: string | null;
+  lastExit: { code: number | null; timed_out: boolean; killed: boolean; duration_ms: number } | null;
+}
 
 export interface EditorGroup {
   id: number;
@@ -102,6 +128,9 @@ export interface WorkbenchState {
   dialog: DialogRequest | null;
   quickInput: { mode: QuickInputMode; initial?: string } | null;
   contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null;
+
+  run: RunState;
+  tests: { entry: string | null; items: TestItem[]; running: boolean; source: string | null };
 }
 
 export type ContextMenuItem =
@@ -145,6 +174,8 @@ const initialState: WorkbenchState = {
   dialog: null,
   quickInput: null,
   contextMenu: null,
+  run: { status: "idle", entry: null, label: null, lastExit: null },
+  tests: { entry: null, items: [], running: false, source: null },
 };
 
 /** Persisted between launches (per user, not per workspace). */
@@ -437,6 +468,47 @@ export function pinEditor(path: string) {
       editors: g.editors.map((e) => (e.kind === "file" && e.path === path && e.preview ? { ...e, preview: false } : e)),
     })),
   });
+}
+
+/** Opens (or focuses) a non-file editor such as a preview or a test diff. */
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" }>, opts: { group?: number; toSide?: boolean } = {}) {
+  let groupId = opts.group ?? get().activeGroup;
+  if (opts.toSide) {
+    const s = get();
+    const idx = s.groups.findIndex((g) => g.id === s.activeGroup);
+    const right = s.groups[idx + 1];
+    if (right) groupId = right.id;
+    else {
+      const id = groupSeq++;
+      const groups = [...s.groups];
+      groups.splice(idx + 1, 0, { id, editors: [], activeId: null });
+      set({ groups });
+      groupId = id;
+    }
+  }
+  updateGroup(groupId, (g) => {
+    if (g.editors.some((e) => e.id === input.id)) {
+      return { ...g, editors: g.editors.map((e) => (e.id === input.id ? input : e)), activeId: input.id };
+    }
+    const editors = [...g.editors];
+    const activeIdx = editors.findIndex((e) => e.id === g.activeId);
+    editors.splice(activeIdx + 1, 0, input);
+    return { ...g, editors, activeId: input.id };
+  });
+  set({ activeGroup: groupId });
+}
+
+export function setRunState(run: Partial<RunState>) {
+  set({ run: { ...get().run, ...run } });
+}
+
+export function setTests(tests: Partial<WorkbenchState["tests"]>) {
+  set({ tests: { ...get().tests, ...tests } });
+}
+
+export function updateTest(id: string, patch: Partial<TestItem>) {
+  const t = get().tests;
+  set({ tests: { ...t, items: t.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) } });
 }
 
 export function openSpecialEditor(kind: "settings" | "welcome" | "shortcuts") {

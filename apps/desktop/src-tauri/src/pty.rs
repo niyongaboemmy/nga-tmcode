@@ -57,7 +57,7 @@ fn default_shell() -> CommandBuilder {
 
 /// Splits `buf` at the last complete UTF-8 character, keeping the rest for the
 /// next read, so multi-byte characters split across reads are never mangled.
-fn take_utf8(pending: &mut Vec<u8>) -> String {
+pub(crate) fn take_utf8(pending: &mut Vec<u8>) -> String {
     let valid_up_to = match std::str::from_utf8(pending) {
         Ok(_) => pending.len(),
         Err(e) if e.error_len().is_none() => e.valid_up_to(),

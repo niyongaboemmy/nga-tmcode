@@ -18,6 +18,11 @@ fn main() {
             "pty_write",
             "pty_resize",
             "pty_kill",
+            "toolchains_detect",
+            "run_start",
+            "run_input",
+            "run_kill",
+            "preview_publish",
         ]),
     ))
     .expect("failed to run tauri-build");

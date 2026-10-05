@@ -5,12 +5,14 @@ import { Codicon } from "../widgets/icons";
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
+  { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
 
 export function ActivityBar() {
   const activeView = useWorkbench((s) => s.activeView);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
+  const failing = useWorkbench((s) => s.tests.items.filter((t) => t.status === "failed" || t.status === "error").length);
   const os = getPlatform().os;
 
   const label = (v: (typeof VIEWS)[number]) => {
@@ -37,6 +39,7 @@ export function ActivityBar() {
             >
               <Codicon name={v.icon} />
               {v.id === "explorer" && dirtyCount > 0 && <span className="tm-activity-badge">{dirtyCount}</span>}
+              {v.id === "testing" && failing > 0 && <span className="tm-activity-badge is-error">{failing}</span>}
             </button>
           );
         })}

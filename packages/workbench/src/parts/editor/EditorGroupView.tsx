@@ -23,9 +23,14 @@ import { CodeEditor } from "./CodeEditor";
 import { SettingsEditor } from "./SettingsEditor";
 import { ShortcutsEditor } from "./ShortcutsEditor";
 import { WelcomePage } from "./WelcomePage";
+import { PreviewEditor } from "./PreviewEditor";
+import { TestDiffEditor } from "./TestDiffEditor";
+import { profileForPath } from "@tmcode/profiles";
 
-function titleOf(e: EditorInput) {
+function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
+  if (e.kind === "preview") return `Preview ${basename(e.entry)}`;
+  if (e.kind === "testDiff") return `Test: ${useWorkbench.getState().tests.items.find((t) => t.id === e.testId)?.name ?? e.testId}`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   return "Welcome";
@@ -34,6 +39,8 @@ function titleOf(e: EditorInput) {
 function iconOf(e: EditorInput) {
   if (e.kind === "file") return <FileIcon path={e.path} />;
   if (e.kind === "welcome") return <Logo size={14} />;
+  if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
+  if (e.kind === "testDiff") return <Codicon name="diff" className="tm-tab-codicon" />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
 }
 
@@ -41,7 +48,12 @@ function iconOf(e: EditorInput) {
 function descriptions(editors: EditorInput[]) {
   const names = new Map<string, number>();
   for (const e of editors) names.set(titleOf(e), (names.get(titleOf(e)) ?? 0) + 1);
-  return (e: EditorInput) => (e.kind === "file" && (names.get(titleOf(e)) ?? 0) > 1 ? dirname(e.path) || "." : "");
+  return (e: EditorInput) => {
+    if ((names.get(titleOf(e)) ?? 0) < 2) return "";
+    if (e.kind === "file") return dirname(e.path) || ".";
+    if (e.kind === "preview") return e.root || ".";
+    return "";
+  };
 }
 
 function Breadcrumbs({ path }: { path: string }) {
@@ -265,6 +277,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             {dragOver === group.editors.length && <div className="tm-tab-drop-end" />}
           </div>
           <div className="tm-tabs-actions">
+            {active?.kind === "file" && <RunButton path={active.path} />}
             <ActionButton icon="split-horizontal" label={`Split Editor Right (${formatKeybinding("mod+\\", os)})`} onClick={() => splitEditor()} />
             <ActionButton
               icon="ellipsis"
@@ -295,9 +308,27 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "settings" && <SettingsEditor />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
+        {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
+        {active?.kind === "testDiff" && <TestDiffEditor key={active.id} input={active} />}
         {!active && <Watermark />}
       </div>
     </section>
+  );
+}
+
+const WEB_EXTS = ["html", "htm", "css", "jsx", "tsx"];
+
+/** ▶ in the editor title, like VS Code's "Run Python File" (■ while running). */
+function RunButton({ path }: { path: string }) {
+  const running = useWorkbench((s) => s.run.status !== "idle");
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  const web = WEB_EXTS.includes(ext);
+  if (!web && !profileForPath(path)?.local) return null;
+  if (running && !web) return <ActionButton icon="debug-stop" label="Stop (Shift+F5)" className="tm-stop" onClick={() => executeCommand("tmcode.stop")} />;
+  return web ? (
+    <ActionButton icon="open-preview" label="Open Preview to the Side (F5)" onClick={() => executeCommand("tmcode.run")} />
+  ) : (
+    <ActionButton icon="play" label="Run File (F5)" className="tm-run" onClick={() => executeCommand("tmcode.run")} />
   );
 }
 

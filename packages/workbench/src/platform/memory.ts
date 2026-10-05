@@ -1,3 +1,4 @@
+import { createJsWorkerRunner } from "./jsWorkerRunner";
 import type { DirEntry, FileSystem, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -156,12 +157,59 @@ if __name__ == "__main__":
     <nav><a href="#about">About</a><a href="#work">Work</a><a href="#contact">Contact</a></nav>
     <h1>Hello, NGA!</h1>
     <button id="theme">Toggle theme</button>
+    <p><a href="about.html">About me</a></p>
     <script src="app.js"></script>
   </body>
 </html>
 `,
+  "web/about.html": `<!doctype html>\n<html lang="en">\n  <head><meta charset="utf-8" /><title>About</title><link rel="stylesheet" href="style.css" /></head>\n  <body><h1>About me</h1><p><a href="index.html">Home</a></p></body>\n</html>\n`,
   "web/style.css": `body {\n  font-family: system-ui, sans-serif;\n  margin: 2rem;\n}\n\nbody.dark {\n  background: #111;\n  color: #eee;\n}\n`,
-  "web/app.js": `document.getElementById("theme").addEventListener("click", () => {\n  document.body.classList.toggle("dark");\n});\n`,
+  "web/app.js": `document.getElementById("theme").addEventListener("click", () => {\n  document.body.classList.toggle("dark");\n  console.log("dark mode:", document.body.classList.contains("dark"));\n});\n`,
+  "js/sum.js": `// Reads two numbers and prints their sum.
+const [a, b] = require("fs").readFileSync(0, "utf8").trim().split(/\\s+/).map(Number);
+console.log(a + b);
+`,
+  ".tmcode/tests.json": JSON.stringify(
+    {
+      entry: "js/sum.js",
+      tests: [
+        { id: "t1", name: "small numbers", input: "2 3\n", expected_output: "5\n" },
+        { id: "t2", name: "negative", input: "-4 10\n", expected_output: "6\n" },
+        { id: "t3", name: "large", input: "1000000 2000000\n", expected_output: "3000000\n" },
+      ],
+    },
+    null,
+    2,
+  ),
+  "react-app/index.html": `<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Counter</title></head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+`,
+  "react-app/src/main.jsx": `import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
+import "./App.css";
+
+createRoot(document.getElementById("root")).render(<App />);
+`,
+  "react-app/src/App.jsx": `import { useState } from "react";
+
+export default function App() {
+  const [count, setCount] = useState(0);
+  console.log("render", count);
+  return (
+    <main>
+      <h1>Counter</h1>
+      <button onClick={() => setCount(count + 1)}>Clicked {count} times</button>
+    </main>
+  );
+}
+`,
+  "react-app/src/App.css": `main { font-family: system-ui, sans-serif; padding: 2rem; }\nbutton { font-size: 1rem; padding: .5rem 1rem; }\n`,
   "src/utils.ts": `export function average(values: number[]): number {\n  return values.reduce((a, b) => a + b, 0) / values.length;\n}\n`,
 };
 
@@ -180,5 +228,6 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     },
     fs,
     store: new LocalStorageStore("tmcode:"),
+    runner: createJsWorkerRunner(fs),
   };
 }

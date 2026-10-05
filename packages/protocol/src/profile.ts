@@ -19,6 +19,12 @@ export const LimitsSchema = z.object({
 });
 export type Limits = z.infer<typeof LimitsSchema>;
 
+export const ToolSchema = z.enum(["python", "node", "cc", "cxx", "javac", "java", "exe"]);
+export type Tool = z.infer<typeof ToolSchema>;
+
+export const StepSchema = z.object({ tool: ToolSchema, args: z.array(z.string()) });
+export type Step = z.infer<typeof StepSchema>;
+
 export const ProfileSchema = z.object({
   id: z.string().regex(/^[a-z0-9.+-]+$/),
   version: z.number().int().positive(),
@@ -30,14 +36,16 @@ export const ProfileSchema = z.object({
   entry_point: z.string(),
   /** Files a new practice project starts with. */
   template: z.array(z.object({ path: z.string(), content: z.string() })),
+  /**
+   * How to build and run locally. Each step names a *tool* the desktop app
+   * resolved itself ("python", "node", "cc", "cxx", "javac", "java", or "exe"
+   * for a binary the build produced), so a profile can never run an arbitrary
+   * program. Argument tokens: {entry}, {entry_stem}, {out}, {sources:<ext>}.
+   */
   local: z
     .object({
-      /** Toolchain pack id (plan §7.3), e.g. "python", "node", "zig", "jdk". */
-      toolchain: z.string(),
-      min_version: z.string().optional(),
-      /** Optional build step; `{entry}`, `{out}` and toolchain tokens are substituted. */
-      build: z.array(z.string()).optional(),
-      run: z.array(z.string()),
+      build: z.array(StepSchema).default([]),
+      run: StepSchema,
       fallback: z.enum(["pyodide", "js-worker", "server"]).optional(),
     })
     .nullable(),

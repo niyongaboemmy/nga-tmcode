@@ -1,6 +1,8 @@
 import { registerCommand } from "./registry";
 import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
+import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
+import { loadTests, runTests } from "../run/testService";
 import {
   activeEditor,
   activeFilePath,
@@ -27,6 +29,10 @@ import {
   workbench,
 } from "../state/store";
 
+const executeRun = () => {
+  const path = activeFilePath();
+  if (path) void runFile(path);
+};
 const hasWorkspace = () => !!useWorkbench.getState().workspace;
 const hasActiveFile = () => !!activeFilePath();
 const terminalAllowed = () => {
@@ -197,6 +203,46 @@ export function registerBuiltinCommands() {
       window.dispatchEvent(new CustomEvent("tmcode:new-terminal"));
     },
   });
+
+  // ── Run & test (plan §8) ──
+  registerCommand({
+    id: "tmcode.run",
+    title: "Run File",
+    category: "Run",
+    keybinding: "f5",
+    enabled: hasActiveFile,
+    run: () => {
+      const path = activeFilePath();
+      if (path) void runFile(path);
+    },
+  });
+  registerCommand({ id: "tmcode.runNoDebug", title: "Run Without Debugging", category: "Run", hidden: true, keybinding: "ctrl+f5", enabled: hasActiveFile, run: () => executeRun() });
+  registerCommand({
+    id: "tmcode.rerun",
+    title: "Run Again",
+    category: "Run",
+    enabled: () => !!useWorkbench.getState().run.entry,
+    run: () => {
+      const entry = useWorkbench.getState().run.entry;
+      if (entry) void runFile(entry);
+    },
+  });
+  registerCommand({ id: "tmcode.stop", title: "Stop", category: "Run", keybinding: "shift+f5", enabled: isRunning, run: stopRun });
+  registerCommand({
+    id: "tmcode.runTests",
+    title: "Run All Tests",
+    category: "Test",
+    keybinding: "mod+; a",
+    enabled: () => useWorkbench.getState().tests.items.length > 0 && !useWorkbench.getState().tests.running,
+    run: () => {
+      revealView("testing");
+      void runTests();
+    },
+  });
+  registerCommand({ id: "tmcode.reloadTests", title: "Reload Tests", category: "Test", enabled: hasWorkspace, run: loadTests });
+  registerCommand({ id: "workbench.view.testing", title: "Show Testing", category: "View", run: () => revealView("testing") });
+  registerCommand({ id: "tmcode.refreshToolchains", title: "Refresh Toolchains", category: "Run", run: refreshToolchains });
+  registerCommand({ id: "workbench.action.run.show", title: "Show Run Output", category: "View", run: () => showPanel("run") });
 
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });

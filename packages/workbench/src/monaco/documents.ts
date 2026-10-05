@@ -73,9 +73,19 @@ export function ensureDocument(path: string): Promise<monaco.editor.ITextModel> 
   return p;
 }
 
+const changeListeners = new Set<(path: string) => void>();
+/** Fires on every edit and save of an open file (live preview, test file reload). */
+export function onDocumentChanged(l: (path: string) => void) {
+  changeListeners.add(l);
+  return () => {
+    changeListeners.delete(l);
+  };
+}
+
 function createTrackedModel(path: string, content: string) {
   const model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
   model.onDidChangeContent(() => {
+    changeListeners.forEach((l) => l(pathOfUri(model.uri)));
     const d = docs.get(pathOfUri(model.uri));
     if (!d) return;
     const isDirty = model.getAlternativeVersionId() !== d.savedVersion;
@@ -93,6 +103,7 @@ export async function saveDocument(path: string) {
   try {
     await getPlatform().fs.writeFile(path, value);
     doc.savedVersion = version;
+    changeListeners.forEach((l) => l(path));
     setDirty(path, doc.model.getAlternativeVersionId() !== doc.savedVersion);
   } catch (e) {
     notify("error", `Failed to save '${path}': ${String((e as Error)?.message ?? e)}`);

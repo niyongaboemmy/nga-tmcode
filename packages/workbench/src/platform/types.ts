@@ -64,6 +64,76 @@ export interface Platform {
   /** Absent in the browser, where the page has no window chrome to drive. */
   window?: WindowControls;
   store: KeyValueStore;
+  /** Runs student code; absent where nothing can run (then the run fallbacks apply). */
+  runner?: Runner;
+  /** Desktop preview origin; without it previews are composed into an iframe srcdoc. */
+  preview?: PreviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
   setNativeTheme?(theme: "dark" | "light"): void;
+}
+
+// ───────────── running code (plan §8) ─────────────
+
+export interface Toolchain {
+  tool: string;
+  path: string;
+  version: string;
+}
+
+export interface RunStep {
+  tool: string;
+  args: string[];
+}
+
+export interface RunRequest {
+  /** Workspace-relative entry file. */
+  entry: string;
+  build: RunStep[];
+  run: RunStep;
+  /** "pty": interactive console; "pipe": tests (stdin fed in full). */
+  mode: "pty" | "pipe";
+  stdin?: string;
+  timeout_ms?: number;
+  output_limit_kb?: number;
+  cols?: number;
+  rows?: number;
+}
+
+export type RunEvent =
+  | { type: "step"; phase: "build" | "run"; command: string }
+  | { type: "stdout"; data: string }
+  | { type: "stderr"; data: string }
+  | {
+      type: "exit";
+      phase: "build" | "run";
+      code: number | null;
+      timed_out: boolean;
+      truncated: boolean;
+      killed: boolean;
+      duration_ms: number;
+    }
+  | { type: "error"; message: string };
+
+export interface RunHandle {
+  input(data: string): void;
+  resize?(cols: number, rows: number): void;
+  kill(): void;
+}
+
+export interface Runner {
+  /** Interactive (pty) runs are only possible on the desktop. */
+  interactive: boolean;
+  detect(refresh?: boolean): Promise<Toolchain[]>;
+  start(request: RunRequest, onEvent: (e: RunEvent) => void): Promise<RunHandle>;
+}
+
+// ───────────── web preview (plan §9) ─────────────
+
+export interface PreviewHost {
+  /**
+   * Serves `root` (a workspace folder) at a sandboxed preview origin, with
+   * `overlay` files (generated HTML, bundles, unsaved edits) taking priority.
+   * Returns the URL of `entry`.
+   */
+  publish(root: string, entry: string, overlay: Record<string, string>, opts: { internet: boolean }): Promise<string>;
 }

@@ -1878,3 +1878,396 @@ kbd,
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ───────────────────────── run (plan §8) ───────────────────────── */
+.tm-action.tm-run {
+  color: var(--success);
+}
+.tm-action.tm-stop {
+  color: var(--error);
+}
+.tm-panel-run-label {
+  margin-right: 6px;
+  font-size: 12px;
+  color: var(--description);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.tm-status-running {
+  color: var(--statusbar-fg);
+}
+.tm-activity-badge.is-error {
+  background: var(--error);
+  color: #fff;
+}
+.tm-badge--error {
+  margin-left: 6px;
+  background: var(--error);
+  color: #fff;
+}
+.tm-badge--warning {
+  margin-left: 4px;
+  background: var(--warning);
+  color: #000;
+}
+
+/* ───────────────────────── testing ───────────────────────── */
+.tm-test-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px 8px;
+  font-size: 12px;
+}
+.tm-test-bar {
+  display: flex;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.tm-test-bar .is-passed {
+  background: var(--success);
+}
+.tm-test-bar .is-failed {
+  background: var(--error);
+}
+.tm-test-row {
+  padding-left: 20px;
+}
+.tm-test-icon {
+  font-size: 16px;
+}
+.tm-test-icon.is-passed {
+  color: var(--success);
+}
+.tm-test-icon.is-failed {
+  color: var(--error);
+}
+.tm-test-icon.is-error {
+  color: var(--warning);
+}
+.tm-test-icon.is-idle {
+  color: var(--description);
+}
+.tm-test-msg {
+  font-size: 12px;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-test-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-test-run {
+  opacity: 0;
+  flex: none;
+}
+.tm-test-row:hover .tm-test-run,
+.tm-test-run:focus-visible {
+  opacity: 1;
+}
+.tm-test-note {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 20px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--description);
+  border-top: 1px solid var(--border);
+}
+.tm-test-note .codicon {
+  font-size: 14px;
+  margin-top: 1px;
+}
+.tm-view-empty code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tm-testdiff {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--editor-bg);
+}
+.tm-testdiff-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-testdiff-head.is-passed > .codicon {
+  color: var(--success);
+}
+.tm-testdiff-head.is-failed > .codicon {
+  color: var(--error);
+}
+.tm-testdiff-rerun {
+  margin-left: auto;
+}
+.tm-testdiff-io {
+  padding: 6px 16px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-testdiff-io .tm-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  color: var(--foreground) !important;
+}
+.tm-testdiff-input,
+.tm-testdiff-stderr {
+  max-height: 140px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-size: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-testdiff-stderr {
+  color: var(--error);
+}
+.tm-testdiff-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px 16px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--description);
+}
+.tm-testdiff-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ───────────────────────── preview (plan §9) ───────────────────────── */
+.tm-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--editor-bg);
+}
+.tm-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.tm-preview-address {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tm-preview-address span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-preview-address .codicon {
+  font-size: 13px;
+  color: var(--description);
+}
+.tm-preview-title {
+  color: var(--description);
+}
+.tm-segmented {
+  display: flex;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  overflow: hidden;
+  flex: none;
+}
+.tm-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.tm-segmented button + button {
+  border-left: 1px solid var(--input-border);
+}
+.tm-segmented button .codicon {
+  font-size: 14px;
+}
+.tm-segmented button:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.tm-segmented button.is-on {
+  background: color-mix(in srgb, var(--focus-border) 28%, transparent);
+}
+.tm-preview-console-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  flex: none;
+}
+.tm-preview-console-toggle:hover,
+.tm-preview-console-toggle.is-on {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.tm-preview-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: #ffffff;
+}
+.tm-preview-stage.is-device {
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--foreground) 6%, var(--editor-bg));
+}
+.tm-preview-device {
+  flex: 1;
+  display: flex;
+}
+.tm-preview-stage.is-device .tm-preview-device {
+  flex: none;
+  transform-origin: top center;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 6px 24px var(--shadow), 0 0 0 1px var(--border);
+}
+.tm-preview-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.tm-preview-scale {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--widget-bg);
+  color: var(--description);
+}
+.tm-preview-console {
+  display: flex;
+  flex-direction: column;
+  height: 150px;
+  flex: none;
+  border-top: 1px solid var(--border);
+}
+.tm-preview-console-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 26px;
+  padding: 0 6px 0 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--description);
+}
+.tm-preview-console-body {
+  flex: 1;
+  padding: 0 0 6px;
+  font-size: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-preview-console-empty {
+  padding: 4px 12px;
+  font-family: var(--font-ui);
+}
+.tm-console-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tm-console-line .codicon {
+  font-size: 14px;
+  margin-top: 1px;
+}
+.tm-console-line.is-error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.tm-console-line.is-warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.tm-console-text {
+  flex: 1;
+}
+.tm-console-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  text-align: center;
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+/* Narrow preview columns: keep the address readable, drop secondary labels. */
+.tm-preview {
+  container-type: inline-size;
+}
+.tm-preview-address {
+  min-width: 90px;
+}
+@container (max-width: 560px) {
+  .tm-segmented button span,
+  .tm-preview-title {
+    display: none;
+  }
+}
+@container (max-width: 420px) {
+  .tm-preview-console-toggle {
+    font-size: 0;
+    gap: 0;
+  }
+  .tm-preview-console-toggle .codicon {
+    font-size: 16px;
+  }
+}

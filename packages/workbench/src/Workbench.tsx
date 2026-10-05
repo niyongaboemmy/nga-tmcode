@@ -7,6 +7,7 @@ import "./styles/workbench.css";
 import { registerBuiltinCommands } from "./commands/builtin";
 import { KeybindingResolver } from "./commands/registry";
 import { wireDocuments } from "./monaco/documents";
+import { wireRunServices } from "./run/wire";
 import { isDarkTheme } from "./monaco/setup";
 import { ActivityBar } from "./parts/ActivityBar";
 import { EditorGroupView } from "./parts/editor/EditorGroupView";
@@ -18,14 +19,17 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 
+/**
+ * Editor groups side by side. Always one Allotment with a stable key per group,
+ * so splitting or closing a group never remounts (and re-lays-out) the others.
+ */
 function EditorArea() {
   const groups = useWorkbench((s) => s.groups);
-  if (groups.length === 1) return <EditorGroupView group={groups[0]} single />;
   return (
-    <Allotment key={groups.map((g) => g.id).join(",")} className="tm-editor-groups">
+    <Allotment className="tm-editor-groups">
       {groups.map((g) => (
         <Allotment.Pane key={g.id} minSize={180}>
-          <EditorGroupView group={g} single={false} />
+          <EditorGroupView group={g} single={groups.length === 1} />
         </Allotment.Pane>
       ))}
     </Allotment>
@@ -54,6 +58,7 @@ export function Workbench() {
   useEffect(() => {
     registerBuiltinCommands();
     wireDocuments();
+    wireRunServices();
   }, []);
 
   useEffect(() => {

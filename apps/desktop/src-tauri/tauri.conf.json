@@ -21,30 +21,51 @@
         "worker-src": "'self' blob:",
         "img-src": "'self' data: blob:",
         "font-src": "'self' data:",
-        "connect-src": "'self' ipc: http://ipc.localhost"
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "frame-src": "tmpreview: http://tmpreview.localhost"
       },
-      "capabilities": ["workbench"]
+      "capabilities": [
+        "workbench"
+      ]
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi", "dmg", "app"],
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app"
+    ],
     "publisher": "New Generation Academy",
-    "copyright": "© 2026 New Generation Academy",
+    "copyright": "\u00a9 2026 New Generation Academy",
     "category": "DeveloperTool",
     "shortDescription": "The code editor for Task Mentor practicals and exams",
     "longDescription": "TMCode is a Visual Studio Code-style editor for New Generation Academy coding students: write, run and preview code, and take Task Mentor coding tests and exams.",
     "homepage": "https://taskmentor.amashuri.com",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "createUpdaterArtifacts": false,
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"
     },
     "windows": {
-      "webviewInstallMode": { "type": "embedBootstrapper" },
-      "nsis": { "installMode": "currentUser", "displayLanguageSelector": false },
-      "wix": { "language": "en-US" }
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "en-US"
+      }
     }
   }
 }

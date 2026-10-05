@@ -1,13 +1,20 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LazyStore } from "@tauri-apps/plugin-store";
-import type { DirEntry, Platform, TerminalSession } from "@tmcode/workbench";
+import type { DirEntry, Platform, RunEvent, TerminalSession, Toolchain } from "@tmcode/workbench";
 
 type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | null };
 
 /** The desktop platform: workbench calls → capability-gated Rust commands. */
+export interface DevOptions {
+  workspace: string | null;
+  selftest: boolean;
+}
+export let devOptions: DevOptions = { workspace: null, selftest: false };
+
 export async function createTauriPlatform(): Promise<Platform> {
-  const info = await invoke<{ version: string; os: Platform["os"] }>("app_info");
+  const info = await invoke<{ version: string; os: Platform["os"]; dev_workspace: string | null; dev_selftest: boolean }>("app_info");
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest };
   const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
 
@@ -41,6 +48,22 @@ export async function createTauriPlatform(): Promise<Platform> {
           kill: () => void invoke("pty_kill", { id }).catch(() => {}),
         };
       },
+    },
+    runner: {
+      interactive: true,
+      detect: (refresh = false) => invoke<Toolchain[]>("toolchains_detect", { refresh }),
+      async start(request, onEvent) {
+        const channel = new Channel<RunEvent>();
+        channel.onmessage = onEvent;
+        const id = await invoke<number>("run_start", { request, onEvent: channel });
+        return {
+          input: (data) => void invoke("run_input", { id, data }).catch(() => {}),
+          kill: () => void invoke("run_kill", { id }).catch(() => {}),
+        };
+      },
+    },
+    preview: {
+      publish: (root, entry, overlay, { internet }) => invoke<string>("preview_publish", { root, entry, overlay, internet }),
     },
     window:
       info.os === "mac"

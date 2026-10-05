@@ -8,7 +8,7 @@ import type { TerminalSession } from "../../platform/types";
 import { Codicon } from "../../widgets/icons";
 
 /** Terminal colours from VS Code's Dark Modern / Light Modern. */
-function terminalTheme(theme: string): ITheme {
+export function terminalTheme(theme: string): ITheme {
   if (theme === "light-modern") {
     return {
       background: "#f8f8f8",

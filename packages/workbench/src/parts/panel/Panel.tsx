@@ -4,6 +4,9 @@ import { clearOutput, openFile, showPanel, togglePanel, togglePanelMaximized, us
 import { basename, dirname } from "../../util/paths";
 import { ActionButton, Codicon, FileIcon } from "../../widgets/icons";
 import { TerminalView } from "./TerminalView";
+import { RunConsole } from "./RunConsole";
+import { executeCommand } from "../../commands/registry";
+import { clearConsole } from "../../run/runService";
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -103,11 +106,13 @@ export function Panel() {
   const problemCount = useWorkbench((s) => s.problems.filter((p) => p.severity !== "info").length);
   const terminalAllowed = useWorkbench((s) => s.policy.terminal !== "off");
   const panelVisible = useWorkbench((s) => s.panelVisible);
+  const run = useWorkbench((s) => s.run);
   const [filter, setFilter] = useState("");
 
   const tabs: { id: PanelId; label: string; badge?: number }[] = [
     { id: "problems", label: "Problems", badge: problemCount || undefined },
     { id: "output", label: "Output" },
+    { id: "run", label: "Run" },
     ...(terminalAllowed ? [{ id: "terminal" as const, label: "Terminal" }] : []),
   ];
   const current = tabs.some((t) => t.id === active) ? active : "problems";
@@ -131,7 +136,18 @@ export function Panel() {
           ))}
         </div>
         <div className="tm-panel-actions">
-          {current !== "terminal" && (
+          {current === "run" && (
+            <>
+              {run.label && <span className="tm-panel-run-label">{run.label}</span>}
+              {run.status !== "idle" ? (
+                <ActionButton icon="debug-stop" label="Stop (Shift+F5)" className="tm-stop" onClick={() => executeCommand("tmcode.stop")} />
+              ) : (
+                run.entry && <ActionButton icon="debug-restart" label="Run Again" onClick={() => executeCommand("tmcode.rerun")} />
+              )}
+              <ActionButton icon="clear-all" label="Clear" onClick={clearConsole} />
+            </>
+          )}
+          {current !== "terminal" && current !== "run" && (
             <div className="tm-input-box tm-panel-filter">
               <input className="tm-input" placeholder={current === "problems" ? "Filter (e.g. text, **/*.py)" : "Filter"} aria-label="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
               <Codicon name="filter" className="tm-input-trailing" />
@@ -148,6 +164,7 @@ export function Panel() {
       <div className="tm-panel-body">
         {current === "problems" && <ProblemsView filter={filter} />}
         {current === "output" && <OutputView filter={filter} />}
+        <RunConsole visible={panelVisible && current === "run"} />
         {terminalAllowed && <TerminalView visible={panelVisible && current === "terminal"} />}
       </div>
     </section>

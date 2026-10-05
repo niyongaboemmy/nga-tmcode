@@ -29,6 +29,11 @@
     "allow-pty-spawn",
     "allow-pty-write",
     "allow-pty-resize",
-    "allow-pty-kill"
+    "allow-pty-kill",
+    "allow-toolchains-detect",
+    "allow-run-start",
+    "allow-run-input",
+    "allow-run-kill",
+    "allow-preview-publish"
   ]
 }

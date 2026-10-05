@@ -3,8 +3,9 @@ import { openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton } from "../widgets/icons";
 import { ExplorerView } from "./explorer/ExplorerView";
 import { SearchView } from "./search/SearchView";
+import { TestingView } from "./testing/TestingView";
 
-const TITLES = { explorer: "Explorer", search: "Search" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing" } as const;
 
 export function SideBar() {
   const view = useWorkbench((s) => s.activeView);
@@ -29,7 +30,9 @@ export function SideBar() {
           />
         </div>
       </header>
-      <div className="tm-sidebar-content">{view === "explorer" ? <ExplorerView /> : <SearchView />}</div>
+      <div className="tm-sidebar-content">
+        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : <TestingView />}
+      </div>
     </aside>
   );
 }

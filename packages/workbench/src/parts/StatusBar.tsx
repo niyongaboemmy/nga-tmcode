@@ -43,6 +43,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
+  const run = useWorkbench((s) => s.run);
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
@@ -59,6 +60,12 @@ export function StatusBar({ chord }: { chord: string | null }) {
         {dirtyCount > 0 && autoSave === "off" && (
           <Item title={`${dirtyCount} unsaved file${dirtyCount > 1 ? "s" : ""}`} onClick={() => executeCommand("workbench.action.files.saveAll")}>
             <Codicon name="circle-filled" className="tm-status-unsaved" /> {dirtyCount} unsaved
+          </Item>
+        )}
+        {run.status !== "idle" && (
+          <Item title="Show the Run panel" onClick={() => showPanel("run")} className="tm-status-running">
+            <Codicon name="loading" className="codicon-modifier-spin" />
+            {run.status === "building" ? "Building" : "Running"} {run.entry?.split("/").pop()}
           </Item>
         )}
         {chord && <Item title="Waiting for second key of chord">({chord}) was pressed. Waiting for second key of chord...</Item>}

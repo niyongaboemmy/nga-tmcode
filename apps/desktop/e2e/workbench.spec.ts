@@ -70,12 +70,12 @@ test("new file validation, rename and delete in the explorer", async ({ page }) 
   const input = page.locator(".tm-inline-input");
   await input.fill("app.js");
   await expect(page.locator(".tm-input-message")).toContainText("already exists");
-  await input.fill("about.html");
+  await input.fill("gallery.html");
   await input.press("Enter");
-  await expect(row(page, "web/about.html")).toBeVisible();
-  await expect(tab(page, "about.html")).toBeVisible();
+  await expect(row(page, "web/gallery.html")).toBeVisible();
+  await expect(tab(page, "gallery.html")).toBeVisible();
 
-  await row(page, "web/about.html").click({ button: "right" });
+  await row(page, "web/gallery.html").click({ button: "right" });
   await page.locator(".tm-menu-item", { hasText: "Rename..." }).click();
   await page.locator(".tm-inline-input").fill("contact.html");
   await page.keyboard.press("Enter");

@@ -1,12 +1,24 @@
 #[cfg(target_os = "macos")]
 mod menus;
+mod preview;
 mod pty;
+mod runner;
+mod toolchains;
 mod workspace;
 
 use serde::Serialize;
 use tauri::webview::WebviewBuilder;
 use tauri::window::WindowBuilder;
 use tauri::{App, LogicalPosition, Manager, RunEvent, Theme, WebviewUrl};
+
+/// Internals exposed for the integration tests in `tests/` (not part of the app API).
+#[doc(hidden)]
+pub mod test_support {
+    pub use crate::runner::{program_for, run_piped, Context, RunEvent, Step};
+    pub fn detect(tool: &str) -> Option<crate::toolchains::Toolchain> {
+        crate::toolchains::Toolchains::default().get(tool)
+    }
+}
 
 pub const WINDOW: &str = "main";
 pub const WORKBENCH: &str = "workbench";
@@ -15,6 +27,11 @@ pub const WORKBENCH: &str = "workbench";
 struct AppInfo {
     version: &'static str,
     os: &'static str,
+    /// Debug builds only: a folder to open and whether to run the self-test
+    /// (`TMCODE_DEV_WORKSPACE`, `TMCODE_DEV_SELFTEST=1`), for checks inside the
+    /// real WKWebView / WebView2 where nobody can click.
+    dev_workspace: Option<String>,
+    dev_selftest: bool,
 }
 
 #[tauri::command]
@@ -28,6 +45,8 @@ fn app_info() -> AppInfo {
         } else {
             "linux"
         },
+        dev_workspace: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_WORKSPACE").ok() } else { None },
+        dev_selftest: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("1"),
     }
 }
 
@@ -110,6 +129,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(workspace::Workspace::default())
         .manage(pty::Terminals::default())
+        .manage(toolchains::Toolchains::default())
+        .manage(runner::Runs::default())
+        .manage(preview::Preview::default())
+        .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,
@@ -126,6 +149,11 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            toolchains::toolchains_detect,
+            runner::run_start,
+            runner::run_input,
+            runner::run_kill,
+            preview::preview_publish,
         ])
         .setup(|app| {
             build_main_window(app)?;
@@ -138,6 +166,7 @@ pub fn run() {
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
             handle.state::<pty::Terminals>().kill_all();
+            handle.state::<runner::Runs>().kill_all();
         }
     });
 }

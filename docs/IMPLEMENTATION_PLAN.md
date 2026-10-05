@@ -12,6 +12,20 @@
 
 ---
 
+## Implementation status (updated 2026-10-05)
+
+| Phase | State | Notes |
+|---|---|---|
+| 0 — TM-FIX (Task Mentor) | **Items 1–8 done** on branch `feat/tm-fix-coding-grading` (8 commits, not pushed) | Server 618 pass / 17 fail (all failures pre-existing suites); client 417 pass / 6 pre-existing. Migrations applied to the local dev DB only. **Before deploy:** check prod quizzes with `lockdown_browser=1` (they will require SEB). TM-FIX-9/10 → Phase 3, TM-FIX-11 → Phase 7. |
+| 0 — Spikes | S1 ✅ (Monaco workers in WKWebView, logged self-check). S2 ✅ (`tmpreview://` + sandboxed iframe + console shim, static and React). S3–S5 pending (judge host, deep link, lockdown) | S2 uses a sandboxed iframe on a custom scheme instead of a child webview: overlays (menus, quick input) stay above it and it still gets no IPC. |
+| 1 — Workbench | ✅ Done | Monaco **0.57** (newer than the 0.56 planned). Updater wiring moved to Phase 6 with the release pipeline. |
+| 2 — Profiles, runner, preview | ✅ Done (except packs) | 8 profiles; native runner (pty + pipe, tree kill, caps); visible tests + diff; Problems from compiler/runtime output; static + React preview (esbuild-wasm, vendored React). Verified with real toolchains and inside WKWebView. **Deferred:** toolchain packs (need hosting on api.amashuri.com → Phase 3) and the Pyodide fallback. |
+| 3–7 | Not started | |
+
+**Verification so far:** 30 unit tests, 34 Playwright runs (Chromium + WebKit), 22 Rust tests (incl. Python/Node/TS/C/C++/Java compiled and run with this machine's toolchains), and a debug-build self-test inside the real app (`TMCODE_DEV_WORKSPACE=… TMCODE_DEV_SELFTEST=1 npm run tauri:dev`). The Windows build has not run yet (no Windows machine; it needs the CI runner).
+
+---
+
 ## Contents
 
 1. [Problem and goals](#1-problem-and-goals)
