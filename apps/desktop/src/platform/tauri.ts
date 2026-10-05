@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { fetch as httpFetch } from "@tauri-apps/plugin-http";
-import type { DirEntry, JournalEntry, Platform, RunEvent, TerminalSession, Toolchain, UpdateInfo, UpdateProgress } from "@tmcode/workbench";
+import type { DirEntry, GitEvent, GitHost, GitTask, JournalEntry, Platform, RunEvent, TerminalSession, Toolchain, UpdateInfo, UpdateProgress } from "@tmcode/workbench";
 
 type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | null };
 
@@ -11,9 +11,11 @@ type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | 
 export interface DevOptions {
   workspace: string | null;
   selftest: boolean;
+  /** TMCODE_DEV_SELFTEST=git */
+  selftestGit: boolean;
   launch: string | null;
 }
-export let devOptions: DevOptions = { workspace: null, selftest: false, launch: null };
+export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, launch: null };
 /** Folder or file passed on the command line (`tmcode ~/project`). */
 export let launchPath: string | null = null;
 
@@ -23,10 +25,11 @@ export async function createTauriPlatform(): Promise<Platform> {
     os: Platform["os"];
     dev_workspace: string | null;
     dev_selftest: boolean;
+    dev_selftest_git: boolean;
     dev_launch: string | null;
     open_path: string | null;
   }>("app_info");
-  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, launch: info.dev_launch };
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
@@ -133,5 +136,67 @@ export async function createTauriPlatform(): Promise<Platform> {
       set: (key, value) => store.set(key, value),
     },
     setNativeTheme: (theme) => void invoke("set_native_theme", { theme }).catch(() => {}),
+    git: createTauriGit(),
+  };
+}
+
+// ───────────── git & GitHub (git.rs, github.rs) ─────────────
+
+let gitTaskSeq = 0;
+/** A cancellable streamed git command: the task id lets `git_cancel` kill it. */
+function gitTask<T>(command: string, args: Record<string, unknown>, onEvent: (e: GitEvent) => void): GitTask<T> {
+  const task = ++gitTaskSeq;
+  const channel = new Channel<GitEvent>();
+  channel.onmessage = onEvent;
+  return {
+    done: invoke<T>(command, { ...args, task, onEvent: channel }),
+    cancel: () => void invoke("git_cancel", { task }).catch(() => {}),
+  };
+}
+
+function createTauriGit(): GitHost {
+  return {
+    info: (refresh = false) => invoke("git_info", { refresh }),
+    status: () => invoke("git_status"),
+    show: (path, rev) => invoke("git_show", { path, rev }),
+    stage: (paths) => invoke("git_stage", { paths }),
+    unstage: (paths) => invoke("git_unstage", { paths }),
+    discard: (tracked, untracked) => invoke("git_discard", { tracked, untracked }),
+    commit: (options) => invoke("git_commit", { options }),
+    branches: () => invoke("git_branches"),
+    checkout: (name, o = {}) => invoke("git_checkout", { name, create: !!o.create, from: o.from ?? null, remote: !!o.remote }),
+    log: (limit) => invoke("git_log", { limit }),
+    init: () => invoke("git_init"),
+    stash: (action, message) => invoke("git_stash", { action, message: message ?? null }),
+    checkIgnore: (paths) => invoke("git_check_ignore", { paths }),
+    setIdentity: (name, email) => invoke("git_set_identity", { name, email }),
+    remote: (op, options, onEvent) => gitTask<void>("git_remote", { op, options }, onEvent),
+    pickCloneParent: () => invoke("git_pick_clone_parent"),
+    clone: (url, onEvent) => gitTask<string>("git_clone", { url }, onEvent),
+    onLog(cb) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      void listen<string>("git-log", (e) => cb(e.payload)).then((u) => (stopped ? u() : (un = u)));
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
+    onRepoChange(cb) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      void listen("git-changed", () => cb()).then((u) => (stopped ? u() : (un = u)));
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
+    openExternal: (url) => void invoke("git_open_url", { url }).catch(() => {}),
+    github: {
+      signIn: (token) => invoke("github_sign_in", { token }),
+      user: () => invoke("github_user"),
+      signOut: () => invoke("github_sign_out"),
+      repos: () => invoke("github_repos"),
+    },
   };
 }
