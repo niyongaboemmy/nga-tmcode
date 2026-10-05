@@ -61,6 +61,11 @@
     "core:window:allow-set-title",
     "allow-update-check",
     "allow-update-install",
-    "allow-take-pending-open"
+    "allow-take-pending-open",
+    "allow-ext-fetch",
+    "allow-ext-list",
+    "allow-ext-install",
+    "allow-ext-uninstall",
+    "allow-ext-read-file"
   ]
 }

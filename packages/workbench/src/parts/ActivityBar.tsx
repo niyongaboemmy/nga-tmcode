@@ -67,6 +67,7 @@ export function ActivityBar() {
               { kind: "separator" },
               { kind: "item", label: "Settings", keybinding: formatKeybinding("mod+,", os), run: () => executeCommand("workbench.action.openSettings") },
               { kind: "item", label: "Keyboard Shortcuts", keybinding: formatKeybinding("mod+k mod+s", os), run: () => executeCommand("workbench.action.keybindingsReference") },
+              ...(practice && !inExam ? [{ kind: "item" as const, label: "Extensions", keybinding: formatKeybinding("mod+shift+x", os), run: () => executeCommand("workbench.view.extensions") }] : []),
               { kind: "separator" },
               { kind: "item", label: "Themes", keybinding: formatKeybinding("mod+k mod+t", os), run: () => executeCommand("workbench.action.selectTheme") },
               { kind: "separator" },

@@ -1,6 +1,7 @@
 #[cfg(target_os = "macos")]
 mod menus;
 mod exam;
+mod extensions;
 mod preview;
 mod pty;
 mod runner;
@@ -207,6 +208,11 @@ pub fn run() {
             exam::journal_mark_synced,
             updates::update_check,
             updates::update_install,
+            extensions::ext_fetch,
+            extensions::ext_list,
+            extensions::ext_install,
+            extensions::ext_uninstall,
+            extensions::ext_read_file,
         ])
         .setup(|app| {
             // Windows/Linux dev builds register tmcode:// at runtime; installers register it for real

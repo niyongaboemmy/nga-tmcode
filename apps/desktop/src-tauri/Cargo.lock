@@ -4827,6 +4827,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 name = "tmcode"
 version = "0.2.2"
 dependencies = [
+ "base64 0.22.1",
  "dunce",
  "getrandom 0.3.4",
  "libc",
@@ -4849,6 +4850,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "windows-sys 0.59.0",
+ "zip",
 ]
 
 [[package]]
@@ -6194,6 +6196,7 @@ checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
  "arbitrary",
  "crc32fast",
+ "flate2",
  "indexmap 2.14.2",
  "memchr",
 ]
