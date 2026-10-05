@@ -23,7 +23,8 @@ Repo: **github.com/niyongaboemmy/nga-tmcode** (public; CI on Linux, macOS, Windo
 | 1 — Workbench | ✅ | Monaco 0.57. |
 | 2 — Profiles, runner, preview | ✅ (except toolchain packs and the Pyodide fallback) | Verified with real toolchains and inside WKWebView. |
 | 3 — Task Mentor integration | **Code complete.** Task Mentor PR #28 is open (stacked on #27). The TMCode client is on main. **tm-judge is live on the shared server.** | Remaining before students use it: merge and deploy #27 and #28, run their migrations, set the `TMJUDGE_*` and `CODERUNNER_ENGINE` secrets. Still to do: MIS desktop handoff (`app=tmcode`, for practice sign-in), `/desktop/:product`, toolchain packs. |
-| 4–7 | Not started | |
+| 6 (partly) — Distribution | **Live.** v0.2.2 is published on GitHub Releases for macOS (universal), Windows and Linux. Signed in-app updates are verified: an installed 0.2.1 detected 0.2.2. Task Mentor has a "Get TMCode" button and a public `/tmcode` page. | Distribution went to GitHub Releases instead of the MIS `/desktop/:product` routes (no MIS change needed). It's also usable as a general developer editor: file watching, `tmcode <path>`, Open With, responsive layout. |
+| 4, 5, 7 | Not started | |
 
 **tm-judge in production** (`/opt/apps/tm-judge`, pm2 `tm-judge`, 127.0.0.1:5010, token in `.judge.env`):
 - Runtimes: Python 3.14, Node 22, GCC/G++ 15, OpenJDK 21.
