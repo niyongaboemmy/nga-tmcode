@@ -24,6 +24,11 @@ impl Workspace {
             .clone()
             .ok_or_else(|| "No folder is open.".to_string())
     }
+
+    /// Opens an already-canonical folder (exam folders the app created itself).
+    pub fn set_root(&self, root: PathBuf) {
+        *self.0.lock().unwrap() = Some(root);
+    }
 }
 
 #[derive(Serialize)]

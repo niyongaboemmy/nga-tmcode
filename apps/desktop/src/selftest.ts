@@ -1,4 +1,4 @@
-import { PREVIEW_MESSAGE_KEY, composeReactPage, injectIntoHead, loadTests, runTests, shimTag, useWorkbench, type Platform } from "@tmcode/workbench";
+import { PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
 
 /**
  * Debug-build self-test (TMCODE_DEV_SELFTEST=1): exercises the runner,
@@ -75,4 +75,24 @@ export async function runSelfTest(platform: Platform, log: (msg: string) => void
   });
 
   log("selftest done");
+}
+
+/**
+ * Exam self-test (TMCODE_DEV_LAUNCH=<tmcode:// link to the mock Task Mentor>):
+ * launch → package → solve task 1 on disk → snapshot/sync through Rust HTTP
+ * and the on-disk journal → submit → results, all inside the real webview.
+ */
+export async function runExamSelfTest(link: string, log: (msg: string) => void) {
+  const parsed = parseLaunchLink(link);
+  if (!parsed) return log("exam selftest: bad link");
+  await startExam(parsed.api, parsed.ticket);
+  const st = useExam.getState();
+  if (st.phase !== "active") return log(`exam selftest: FAILED to start: ${st.error}`);
+  log(`exam selftest started: ${st.quiz?.title}; tasks=${st.tasks.map((t) => t.folder).join(",")}; root=${useWorkbench.getState().workspace?.root}`);
+  const t1 = st.tasks[0];
+  await getPlatformForSelfTest().fs.writeFile(t1.entry, "const [a, b] = require('fs').readFileSync(0, 'utf8').trim().split(/\\s+/).map(Number);\nconsole.log(a + b);\n");
+  await submitExam({ auto: true });
+  for (let i = 0; i < 30 && useExam.getState().results?.status !== "released"; i++) await new Promise((r) => setTimeout(r, 1000));
+  const r = useExam.getState().results;
+  log(`exam selftest result: phase=${useExam.getState().phase} score=${r?.score}/${r?.max_score} questions=${JSON.stringify(r?.questions?.map((q) => [q.question_id, q.points]))}`);
 }

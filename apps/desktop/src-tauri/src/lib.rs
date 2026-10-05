@@ -1,5 +1,6 @@
 #[cfg(target_os = "macos")]
 mod menus;
+mod exam;
 mod preview;
 mod pty;
 mod runner;
@@ -32,6 +33,8 @@ struct AppInfo {
     /// real WKWebView / WebView2 where nobody can click.
     dev_workspace: Option<String>,
     dev_selftest: bool,
+    /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
+    dev_launch: Option<String>,
 }
 
 #[tauri::command]
@@ -47,6 +50,7 @@ fn app_info() -> AppInfo {
         },
         dev_workspace: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_WORKSPACE").ok() } else { None },
         dev_selftest: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("1"),
+        dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
     }
 }
 
@@ -127,6 +131,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_http::init())
         .manage(workspace::Workspace::default())
         .manage(pty::Terminals::default())
         .manage(toolchains::Toolchains::default())
@@ -154,8 +160,20 @@ pub fn run() {
             runner::run_input,
             runner::run_kill,
             preview::preview_publish,
+            exam::exam_device,
+            exam::exam_workspace,
+            exam::journal_load,
+            exam::journal_append,
+            exam::journal_mark_synced,
         ])
         .setup(|app| {
+            // Windows/Linux dev builds register tmcode:// at runtime; installers register it for real
+            // (macOS: from the bundle's Info.plist).
+            #[cfg(all(debug_assertions, any(windows, target_os = "linux")))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
             build_main_window(app)?;
             log::info!("TMCode {} started", env!("CARGO_PKG_VERSION"));
             Ok(())

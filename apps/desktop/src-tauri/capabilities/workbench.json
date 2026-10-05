@@ -34,6 +34,26 @@
     "allow-run-start",
     "allow-run-input",
     "allow-run-kill",
-    "allow-preview-publish"
+    "allow-preview-publish",
+    "allow-exam-device",
+    "allow-exam-workspace",
+    "allow-journal-load",
+    "allow-journal-append",
+    "allow-journal-mark-synced",
+    "deep-link:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://taskmentor-api.amashuri.com/api/tmcode/*"
+        },
+        {
+          "url": "http://localhost:*/api/tmcode/*"
+        },
+        {
+          "url": "http://127.0.0.1:*/api/tmcode/*"
+        }
+      ]
+    }
   ]
 }

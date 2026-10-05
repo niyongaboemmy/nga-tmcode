@@ -63,8 +63,19 @@ async function boot() {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");
     void listen<string>("menu", (e) => executeCommand(e.payload));
+    // tmcode://launch links: the one that started the app, and any that arrive while it runs.
+    const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
+    const open = (urls: string[] | null) => {
+      const link = urls?.map(parseLaunchLink).find(Boolean);
+      if (link) void startExam(link.api, link.ticket);
+    };
+    open(await getCurrent().catch(() => null));
+    void onOpenUrl(open);
   }
-  if (desktopLog && dev?.selftest) {
+  if (desktopLog && dev?.launch) {
+    const { runExamSelfTest } = await import("./selftest");
+    setTimeout(() => void runExamSelfTest(dev.launch!, (m) => void desktopLog.info(m)), 2000);
+  } else if (desktopLog && dev?.selftest) {
     const { runSelfTest } = await import("./selftest");
     setTimeout(() => void runSelfTest(platform, (m) => void desktopLog.info(m)), 2500);
   }

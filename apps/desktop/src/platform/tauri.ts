@@ -1,7 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LazyStore } from "@tauri-apps/plugin-store";
-import type { DirEntry, Platform, RunEvent, TerminalSession, Toolchain } from "@tmcode/workbench";
+import { fetch as httpFetch } from "@tauri-apps/plugin-http";
+import type { DirEntry, JournalEntry, Platform, RunEvent, TerminalSession, Toolchain } from "@tmcode/workbench";
 
 type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | null };
 
@@ -9,12 +10,13 @@ type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | 
 export interface DevOptions {
   workspace: string | null;
   selftest: boolean;
+  launch: string | null;
 }
-export let devOptions: DevOptions = { workspace: null, selftest: false };
+export let devOptions: DevOptions = { workspace: null, selftest: false, launch: null };
 
 export async function createTauriPlatform(): Promise<Platform> {
-  const info = await invoke<{ version: string; os: Platform["os"]; dev_workspace: string | null; dev_selftest: boolean }>("app_info");
-  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest };
+  const info = await invoke<{ version: string; os: Platform["os"]; dev_workspace: string | null; dev_selftest: boolean; dev_launch: string | null }>("app_info");
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, launch: info.dev_launch };
   const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
 
@@ -61,6 +63,19 @@ export async function createTauriPlatform(): Promise<Platform> {
           kill: () => void invoke("run_kill", { id }).catch(() => {}),
         };
       },
+    },
+    exam: {
+      dev: import.meta.env.DEV,
+      device: () => invoke("exam_device"),
+      openExamWorkspace: (submissionId, title) => invoke("exam_workspace", { submissionId, title }),
+      journal: {
+        load: (sessionId) => invoke<JournalEntry[]>("journal_load", { sessionId }),
+        append: (sessionId, entry) => invoke("journal_append", { sessionId, entry }),
+        markSynced: (sessionId, seq) => invoke("journal_mark_synced", { sessionId, seq }),
+      },
+      // Through Rust: no CORS, and the capability allows only Task Mentor's /api/tmcode.
+      fetch: (url, init) => httpFetch(url, init),
+      toolchains: async () => (await invoke<Toolchain[]>("toolchains_detect", { refresh: false })).map((t) => ({ tool: t.tool, version: t.version })),
     },
     preview: {
       publish: (root, entry, overlay, { internet }) => invoke<string>("preview_publish", { root, entry, overlay, internet }),

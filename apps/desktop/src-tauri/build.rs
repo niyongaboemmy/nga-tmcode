@@ -23,6 +23,11 @@ fn main() {
             "run_input",
             "run_kill",
             "preview_publish",
+            "exam_device",
+            "exam_workspace",
+            "journal_load",
+            "journal_append",
+            "journal_mark_synced",
         ]),
     ))
     .expect("failed to run tauri-build");
