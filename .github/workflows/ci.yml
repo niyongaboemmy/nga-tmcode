@@ -77,7 +77,7 @@ jobs:
           make isolate isolate-cg-keeper
           sudo make install
           sudo systemctl daemon-reload
-          sudo systemctl start isolate.service
+          sudo systemctl start isolate.service || { sudo journalctl -u isolate.service --no-pager | tail -40; cat /sys/fs/cgroup/cgroup.controllers; exit 1; }
           sudo systemctl status isolate.service --no-pager
           isolate --version
           isolate-check-environment || true

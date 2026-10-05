@@ -104,13 +104,12 @@ export class IsolateSandbox implements Sandbox {
   kind = "isolate" as const;
   private free: number[];
   private waiters: ((id: number) => void)[] = [];
+  private isolate: string;
 
-  constructor(
-    private isolate: string,
-    boxes: number,
-    private firstBox = 0,
-  ) {
-    this.free = Array.from({ length: boxes }, (_, i) => this.firstBox + i);
+  // No parameter properties: production runs this file with Node's type stripping.
+  constructor(isolate: string, boxes: number, firstBox = 0) {
+    this.isolate = isolate;
+    this.free = Array.from({ length: boxes }, (_, i) => firstBox + i);
   }
 
   private take(): Promise<number> {
