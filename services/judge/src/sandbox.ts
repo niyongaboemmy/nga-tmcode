@@ -62,6 +62,7 @@ function run(cmd: string, args: string[], opts: { input?: string; timeoutMs?: nu
       resolve({ code, stdout, stderr });
     });
     child.on("error", (e) => resolve({ code: null, stdout, stderr: String(e) }));
+    child.stdin.on("error", () => {}); // the child may exit before reading its input (EPIPE)
     child.stdin.end(opts.input ?? "");
   });
 }
@@ -72,6 +73,21 @@ function safeJoin(root: string, rel: string) {
 }
 
 // ───────────────────────── isolate ─────────────────────────
+
+const DEFAULT_MOUNTS = ["/usr/", "/bin/", "/lib/", "/lib64/", "/box/"];
+
+/**
+ * Programs installed outside the standard system folders (nvm, /opt, tool
+ * caches) need their install directory mounted read-only inside the box:
+ * the folder above their bin/ (or their own folder).
+ */
+export function extraMounts(program: string): string[] {
+  if (!program.startsWith("/") || DEFAULT_MOUNTS.some((m) => program.startsWith(m))) return [];
+  const parts = program.split("/");
+  const bin = parts.lastIndexOf("bin");
+  const root = bin > 1 ? parts.slice(0, bin).join("/") : parts.slice(0, -1).join("/");
+  return root && root !== "/" ? [root] : [];
+}
 
 export function parseMeta(text: string): Record<string, string> {
   const meta: Record<string, string> = {};
@@ -166,6 +182,7 @@ export class IsolateSandbox implements Sandbox {
           ...Object.entries(env).map(([k, v]) => `--env=${k}=${v}`),
           // Read-only system config (the JVM reads /etc/java-*); the sandbox user can't read root-only files.
           "--dir=/etc:noexec",
+          ...extraMounts(argv[0]).map((d) => `--dir=${d}`),
           "--run",
           "--",
           ...argv,

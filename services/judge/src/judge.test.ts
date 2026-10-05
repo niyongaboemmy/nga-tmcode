@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeOutput as protocolNormalize } from "../../../packages/protocol/src/output";
 import { judge, normalizeOutput, resolvePrograms, validate, type RunRequest } from "./judge.ts";
-import { IsolateSandbox, LocalSandbox, parseMeta, statusFromMeta, type Sandbox } from "./sandbox.ts";
+import { extraMounts, IsolateSandbox, LocalSandbox, parseMeta, statusFromMeta, type Sandbox } from "./sandbox.ts";
 
 /**
  * Runs against the local (unsandboxed) driver by default; CI on Linux sets
@@ -29,6 +29,15 @@ describe("request validation", () => {
     expect(() => validate({ ...base, files: [{ path: "/etc/passwd", content: "" }] })).toThrow(/Invalid file path/);
     expect(() => validate({ ...base, entry: "other.py" })).toThrow(/Entry/);
     expect(() => validate({ ...base, tests: [] })).toThrow(/No tests/);
+  });
+});
+
+describe("extra mounts", () => {
+  it("mounts toolchains installed outside the system folders", () => {
+    expect(extraMounts("/usr/bin/python3")).toEqual([]);
+    expect(extraMounts("/opt/hostedtoolcache/node/24.1.0/x64/bin/node")).toEqual(["/opt/hostedtoolcache/node/24.1.0/x64"]);
+    expect(extraMounts("/home/u/.nvm/versions/node/v22.1.0/bin/node")).toEqual(["/home/u/.nvm/versions/node/v22.1.0"]);
+    expect(extraMounts("./main")).toEqual([]);
   });
 });
 
