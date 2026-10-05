@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
+import { revealLabel } from "../../commands/builtin";
 import {
   activeFilePath,
   beginExplorerEdit,
@@ -176,6 +177,9 @@ export function ExplorerView() {
     if (entry) {
       items.push(
         { kind: "separator" },
+        ...(getPlatform().reveal
+          ? ([{ kind: "item", label: revealLabel(), run: () => void getPlatform().reveal?.(entry.path) }] as ContextMenuItem[])
+          : []),
         {
           kind: "item",
           label: "Copy Relative Path",

@@ -1,8 +1,9 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { fetch as httpFetch } from "@tauri-apps/plugin-http";
-import type { DirEntry, JournalEntry, Platform, RunEvent, TerminalSession, Toolchain } from "@tmcode/workbench";
+import type { DirEntry, JournalEntry, Platform, RunEvent, TerminalSession, Toolchain, UpdateInfo, UpdateProgress } from "@tmcode/workbench";
 
 type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | null };
 
@@ -13,10 +14,20 @@ export interface DevOptions {
   launch: string | null;
 }
 export let devOptions: DevOptions = { workspace: null, selftest: false, launch: null };
+/** Folder or file passed on the command line (`tmcode ~/project`). */
+export let launchPath: string | null = null;
 
 export async function createTauriPlatform(): Promise<Platform> {
-  const info = await invoke<{ version: string; os: Platform["os"]; dev_workspace: string | null; dev_selftest: boolean; dev_launch: string | null }>("app_info");
+  const info = await invoke<{
+    version: string;
+    os: Platform["os"];
+    dev_workspace: string | null;
+    dev_selftest: boolean;
+    dev_launch: string | null;
+    open_path: string | null;
+  }>("app_info");
   devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, launch: info.dev_launch };
+  launchPath = info.open_path;
   const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
 
@@ -29,6 +40,27 @@ export async function createTauriPlatform(): Promise<Platform> {
     },
     async reopenFolder(root) {
       return invoke<{ name: string; root: string }>("ws_reopen", { root });
+    },
+    openFile: () => invoke("ws_open_file"),
+    openPath: (path) => invoke("ws_open_path", { path }),
+    reveal: (path) => invoke("ws_reveal", { path }),
+    watch(onChange) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      void listen<string[]>("fs-changed", (e) => onChange(e.payload)).then((u) => (stopped ? u() : (un = u)));
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
+    setTitle: (title) => void win.setTitle(title).catch(() => {}),
+    updater: {
+      check: () => invoke<UpdateInfo | null>("update_check"),
+      async install(onProgress) {
+        const channel = new Channel<UpdateProgress>();
+        channel.onmessage = onProgress;
+        await invoke("update_install", { onProgress: channel });
+      },
     },
     fs: {
       readDir: (path) => invoke<DirEntry[]>("ws_read_dir", { path }),

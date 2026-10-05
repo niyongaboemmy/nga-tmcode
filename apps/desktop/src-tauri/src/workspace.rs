@@ -7,7 +7,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 /// Files above this size are not opened as text (the editor would crawl).
@@ -35,6 +35,9 @@ impl Workspace {
 pub struct Opened {
     name: String,
     root: String,
+    /// When a *file* was opened: its path inside the opened (parent) folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    file: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -87,7 +90,13 @@ fn rel_of(root: &Path, abs: &Path) -> String {
         .join("/")
 }
 
-fn open_root(ws: &Workspace, path: PathBuf) -> Result<Opened, String> {
+/// Makes `root` the workspace and starts watching it for outside changes.
+pub fn activate(app: &AppHandle, ws: &Workspace, root: PathBuf) {
+    ws.set_root(root.clone());
+    app.state::<crate::watcher::Watcher>().watch(app, root);
+}
+
+fn open_root(app: &AppHandle, ws: &Workspace, path: PathBuf) -> Result<Opened, String> {
     let root = dunce::canonicalize(&path)
         .map_err(|e| format!("Cannot open '{}': {e}", path.display()))?;
     if !root.is_dir() {
@@ -97,12 +106,26 @@ fn open_root(ws: &Workspace, path: PathBuf) -> Result<Opened, String> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| root.display().to_string());
-    *ws.0.lock().unwrap() = Some(root.clone());
+    activate(app, ws, root.clone());
     log::info!("workspace opened: {}", root.display());
     Ok(Opened {
         name,
         root: root.display().to_string(),
+        file: None,
     })
+}
+
+/// Opens a folder, or a file (its folder becomes the workspace) — command-line
+/// arguments, "Open With", Open File.
+pub fn open_path(app: &AppHandle, ws: &Workspace, path: PathBuf) -> Result<Opened, String> {
+    let real = dunce::canonicalize(&path).map_err(|e| format!("Cannot open '{}': {e}", path.display()))?;
+    if real.is_dir() {
+        return open_root(app, ws, real);
+    }
+    let parent = real.parent().ok_or("This file has no folder.")?.to_path_buf();
+    let mut opened = open_root(app, ws, parent.clone())?;
+    opened.file = Some(rel_of(&parent, &real));
+    Ok(opened)
 }
 
 #[tauri::command]
@@ -110,12 +133,33 @@ pub async fn ws_open(app: AppHandle, ws: State<'_, Workspace>) -> Result<Option<
     let picked = app.dialog().file().set_title("Open Folder").blocking_pick_folder();
     let Some(folder) = picked else { return Ok(None) };
     let path = folder.into_path().map_err(|e| e.to_string())?;
-    open_root(&ws, path).map(Some)
+    open_root(&app, &ws, path).map(Some)
 }
 
 #[tauri::command]
-pub fn ws_reopen(ws: State<'_, Workspace>, root: String) -> Result<Opened, String> {
-    open_root(&ws, PathBuf::from(root))
+pub async fn ws_open_file(app: AppHandle, ws: State<'_, Workspace>) -> Result<Option<Opened>, String> {
+    let picked = app.dialog().file().set_title("Open File").blocking_pick_file();
+    let Some(file) = picked else { return Ok(None) };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    open_path(&app, &ws, path).map(Some)
+}
+
+#[tauri::command]
+pub fn ws_reopen(app: AppHandle, ws: State<'_, Workspace>, root: String) -> Result<Opened, String> {
+    open_root(&app, &ws, PathBuf::from(root))
+}
+
+#[tauri::command]
+pub fn ws_open_path(app: AppHandle, ws: State<'_, Workspace>, path: String) -> Result<Opened, String> {
+    open_path(&app, &ws, PathBuf::from(path))
+}
+
+/// Shows a workspace file or folder in Finder / File Explorer.
+#[tauri::command]
+pub fn ws_reveal(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
+    let root = ws.root()?;
+    let target = resolve(&root, &path)?;
+    tauri_plugin_opener::reveal_item_in_dir(target).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

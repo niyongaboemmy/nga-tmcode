@@ -5,12 +5,14 @@ mod preview;
 mod pty;
 mod runner;
 mod toolchains;
+mod updates;
+mod watcher;
 mod workspace;
 
 use serde::Serialize;
 use tauri::webview::WebviewBuilder;
 use tauri::window::WindowBuilder;
-use tauri::{App, LogicalPosition, Manager, RunEvent, Theme, WebviewUrl};
+use tauri::{App, Emitter, LogicalPosition, Manager, RunEvent, Theme, WebviewUrl};
 
 /// Internals exposed for the integration tests in `tests/` (not part of the app API).
 #[doc(hidden)]
@@ -35,6 +37,20 @@ struct AppInfo {
     dev_selftest: bool,
     /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
     dev_launch: Option<String>,
+    /// A folder or file given on the command line (`tmcode ~/project`).
+    open_path: Option<String>,
+}
+
+/// The first argument that is a path (not a flag, not a tmcode:// link), made absolute.
+pub fn path_arg(args: &[String], cwd: &std::path::Path) -> Option<String> {
+    args.iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-') && !a.contains("://"))
+        .map(|a| {
+            let p = std::path::Path::new(a);
+            let abs = if p.is_absolute() { p.to_path_buf() } else { cwd.join(p) };
+            abs.to_string_lossy().into_owned()
+        })
 }
 
 #[tauri::command]
@@ -51,6 +67,7 @@ fn app_info() -> AppInfo {
         dev_workspace: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_WORKSPACE").ok() } else { None },
         dev_selftest: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("1"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
+        open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
     }
 }
 
@@ -86,7 +103,7 @@ fn build_main_window(app: &mut App) -> tauri::Result<()> {
     let builder = WindowBuilder::new(app, WINDOW)
         .title("TMCode")
         .inner_size(width, height)
-        .min_inner_size(800.0, 500.0)
+        .min_inner_size(600.0, 420.0)
         .maximized(maximized)
         .background_color((31, 31, 31, 255).into());
     let builder = if maximized { builder } else { builder.center() };
@@ -116,10 +133,14 @@ pub fn run() {
         .on_menu_event(|app, event| menus::on_menu_event(app, event.id().as_ref()));
     let app = builder
         // Must be first: a second launch (or a tmcode:// link) focuses the running window.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             if let Some(w) = app.get_window(WINDOW) {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
+            }
+            // `tmcode ~/other-project` while TMCode is running opens it here.
+            if let Some(path) = path_arg(&argv, std::path::Path::new(&cwd)) {
+                let _ = app.emit_to(tauri::EventTarget::webview(WORKBENCH), "open-path", path);
             }
         }))
         .plugin(
@@ -131,6 +152,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_http::init())
         .manage(workspace::Workspace::default())
@@ -138,12 +161,17 @@ pub fn run() {
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
         .manage(preview::Preview::default())
+        .manage(watcher::Watcher::default())
+        .manage(updates::Pending::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,
             workspace::ws_open,
             workspace::ws_reopen,
+            workspace::ws_open_file,
+            workspace::ws_open_path,
+            workspace::ws_reveal,
             workspace::ws_read_dir,
             workspace::ws_read_file,
             workspace::ws_write_file,
@@ -165,6 +193,8 @@ pub fn run() {
             exam::journal_load,
             exam::journal_append,
             exam::journal_mark_synced,
+            updates::update_check,
+            updates::update_install,
         ])
         .setup(|app| {
             // Windows/Linux dev builds register tmcode:// at runtime; installers register it for real
@@ -182,6 +212,15 @@ pub fn run() {
         .expect("error while building TMCode");
 
     app.run(|handle, event| {
+        // macOS: files dropped on the Dock icon or chosen with "Open With".
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = &event {
+            for url in urls.iter().filter(|u| u.scheme() == "file") {
+                if let Ok(path) = url.to_file_path() {
+                    let _ = handle.emit_to(tauri::EventTarget::webview(WORKBENCH), "open-path", path.to_string_lossy().into_owned());
+                }
+            }
+        }
         if let RunEvent::Exit = event {
             handle.state::<pty::Terminals>().kill_all();
             handle.state::<runner::Runs>().kill_all();
@@ -200,6 +239,16 @@ mod tests {
             assert!(max, "{w}x{h}");
             assert!(fw <= w && fh <= h);
         }
+    }
+
+    #[test]
+    fn finds_the_path_argument() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let cwd = std::path::Path::new("/home/dev");
+        assert_eq!(super::path_arg(&args(&["tmcode", "project"]), cwd).as_deref(), Some("/home/dev/project"));
+        assert_eq!(super::path_arg(&args(&["tmcode", "--flag", "/abs/x.py"]), cwd).as_deref(), Some("/abs/x.py"));
+        assert_eq!(super::path_arg(&args(&["tmcode", "tmcode://launch?t=1"]), cwd), None);
+        assert_eq!(super::path_arg(&args(&["tmcode"]), cwd), None);
     }
 
     #[test]

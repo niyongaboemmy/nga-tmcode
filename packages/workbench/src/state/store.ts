@@ -130,6 +130,8 @@ export interface WorkbenchState {
   contextMenu: { x: number; y: number; items: ContextMenuItem[] } | null;
 
   run: RunState;
+  /** Window size class: xs < 640px, sm < 900px, md < 1200px, lg otherwise. */
+  viewport: "xs" | "sm" | "md" | "lg";
   /** Editors are read-only (exam time is up or submitted). */
   readOnly: boolean;
   tests: { entry: string | null; items: TestItem[]; running: boolean; source: string | null };
@@ -178,6 +180,7 @@ const initialState: WorkbenchState = {
   contextMenu: null,
   run: { status: "idle", entry: null, label: null, lastExit: null },
   readOnly: false,
+  viewport: "lg",
   tests: { entry: null, items: [], running: false, source: null },
 };
 
@@ -245,11 +248,64 @@ export async function setWorkspace(ws: { name: string; root: string }) {
   persist();
   await loadDir("");
   log("Workspace", `Opened ${ws.name}`);
+  await restoreEditors(ws.root);
 }
+
+// ── open editors per folder (restored when the folder is opened again, as in VS Code) ──
+
+const editorsKey = (root: string) => `editors:${root}`;
+
+async function restoreEditors(root: string) {
+  if (root.startsWith("memory://exam") || !platform) return;
+  const saved = await platform.store.get<{ paths: string[]; active: string | null }>(editorsKey(root)).catch(() => undefined);
+  if (!saved?.paths?.length) return;
+  for (const path of saved.paths) {
+    const exists = await platform.fs.readFile(path).then(() => true).catch(() => false);
+    if (exists) openFile(path, { pinned: true });
+  }
+  if (saved.active && saved.paths.includes(saved.active)) openFile(saved.active, { pinned: true });
+}
+
+let editorsTimer: ReturnType<typeof setTimeout> | null = null;
+useWorkbench.subscribe((s, prev) => {
+  if (!s.workspace || (s.groups === prev.groups && s.activeGroup === prev.activeGroup)) return;
+  if (editorsTimer) clearTimeout(editorsTimer);
+  editorsTimer = setTimeout(() => {
+    const st = get();
+    if (!st.workspace || !platform) return;
+    const paths = [...new Set(st.groups.flatMap((g) => g.editors.flatMap((e) => (e.kind === "file" && !e.preview ? [e.path] : []))))].slice(0, 30);
+    void platform.store.set(editorsKey(st.workspace.root), { paths, active: activeFilePath(st) });
+  }, 500);
+});
 
 export async function openFolder() {
   const ws = await getPlatform().openFolder();
   if (ws) await setWorkspace(ws);
+}
+
+export async function openFileDialog() {
+  const p = getPlatform();
+  if (!p.openFile) return openFolder();
+  const ws = await p.openFile().catch((e) => {
+    notify("error", String((e as Error)?.message ?? e));
+    return null;
+  });
+  if (!ws) return;
+  if (get().workspace?.root !== ws.root) await setWorkspace(ws);
+  if (ws.file) openFile(ws.file, { pinned: true });
+}
+
+/** Opens an absolute path from the command line, a second launch or "Open With". */
+export async function openPathFromOs(path: string) {
+  const p = getPlatform();
+  if (!p.openPath) return;
+  try {
+    const ws = await p.openPath(path);
+    if (get().workspace?.root !== ws.root) await setWorkspace(ws);
+    if (ws.file) openFile(ws.file, { pinned: true });
+  } catch (e) {
+    notify("error", String((e as Error)?.message ?? e));
+  }
 }
 
 export async function openRecent(root: string) {

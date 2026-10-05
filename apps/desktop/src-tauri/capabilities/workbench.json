@@ -54,6 +54,12 @@
           "url": "http://127.0.0.1:*/api/tmcode/*"
         }
       ]
-    }
+    },
+    "allow-ws-open-file",
+    "allow-ws-open-path",
+    "allow-ws-reveal",
+    "core:window:allow-set-title",
+    "allow-update-check",
+    "allow-update-install"
   ]
 }

@@ -3,6 +3,7 @@ import { languageLabel } from "../monaco/documents";
 import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
+import { showReleaseNotes, useUpdate } from "../update/updateService";
 
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
 const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
@@ -30,6 +31,26 @@ function Item({
       {children}
     </button>
   );
+}
+
+function UpdateItem() {
+  const { status, info, progress } = useUpdate();
+  if (status === "available" && info) {
+    return (
+      <Item className="tm-status-update" title={`TMCode ${info.version} is available — click for details`} onClick={() => void showReleaseNotes()}>
+        <Codicon name="arrow-circle-up" /> Update to {info.version}
+      </Item>
+    );
+  }
+  if (status === "downloading" || status === "installing") {
+    return (
+      <Item className="tm-status-update" title="Updating TMCode">
+        <Codicon name="loading" className="codicon-modifier-spin" />
+        {status === "installing" ? "Installing update…" : `Downloading update ${progress ?? 0}%`}
+      </Item>
+    );
+  }
+  return null;
 }
 
 export function StatusBar({ chord }: { chord: string | null }) {
@@ -79,18 +100,19 @@ export function StatusBar({ chord }: { chord: string | null }) {
               Ln {cursor.line}, Col {cursor.column}
               {cursor.selected > 0 && ` (${cursor.selected} selected)`}
             </Item>
-            <Item title="Indentation (Settings)" onClick={() => executeCommand("workbench.action.openSettings")}>
+            <Item className="tm-prio-low" title="Indentation (Settings)" onClick={() => executeCommand("workbench.action.openSettings")}>
               {spaces ? "Spaces" : "Tab Size"}: {tabSize}
             </Item>
-            <Item title="Encoding">UTF-8</Item>
-            <Item title="End of Line Sequence">{eol}</Item>
-            <Item title="Language Mode">{languageLabel(language)}</Item>
+            <Item className="tm-prio-low" title="Encoding">UTF-8</Item>
+            <Item className="tm-prio-low" title="End of Line Sequence">{eol}</Item>
+            <Item className="tm-prio-mid" title="Language Mode">{languageLabel(language)}</Item>
           </>
         )}
-        <Item title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
+        <Item className="tm-prio-low" title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
           <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />
           {autoSave === "off" ? "Auto Save Off" : "Auto Save"}
         </Item>
+        <UpdateItem />
         <Item title={notifications ? `${notifications} notifications` : "No Notifications"}>
           <Codicon name={notifications ? "bell-dot" : "bell"} />
         </Item>

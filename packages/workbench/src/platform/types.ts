@@ -58,6 +58,18 @@ export interface Platform {
   openFolder(): Promise<{ name: string; root: string } | null>;
   /** Re-opens a folder chosen before (recent list). */
   reopenFolder(root: string): Promise<{ name: string; root: string } | null>;
+  /** Picks a file; its folder becomes the workspace and `file` is the file inside it. */
+  openFile?(): Promise<{ name: string; root: string; file?: string } | null>;
+  /** Opens a folder or file given by absolute path (command line, Open With). */
+  openPath?(path: string): Promise<{ name: string; root: string; file?: string }>;
+  /** Shows a workspace path in Finder / File Explorer. */
+  reveal?(path: string): Promise<void>;
+  /** Changes made outside TMCode (workspace-relative paths). Returns an unsubscribe. */
+  watch?(onChange: (paths: string[]) => void): () => void;
+  /** Signed in-app updates (desktop). */
+  updater?: Updater;
+  /** Sets the OS window title. */
+  setTitle?(title: string): void;
   fs: FileSystem;
   /** Absent where a shell is impossible (web) or forbidden by policy. */
   terminal?: { spawn(opts: TerminalSpawnOptions): Promise<TerminalSession> };
@@ -171,4 +183,21 @@ export interface ExamHost {
   fetch(url: string, init?: RequestInit): Promise<Response>;
   /** Installed toolchains, reported to Task Mentor at session start. */
   toolchains(): Promise<{ tool: string; version: string }[]>;
+}
+
+// ───────────── updates ─────────────
+
+export interface UpdateInfo {
+  version: string;
+  current_version: string;
+  notes: string | null;
+  date: string | null;
+}
+
+export type UpdateProgress = { type: "started"; total: number | null } | { type: "chunk"; downloaded: number; total: number | null } | { type: "installing" };
+
+export interface Updater {
+  check(): Promise<UpdateInfo | null>;
+  /** Downloads, verifies the signature, installs and restarts the app. */
+  install(onProgress: (p: UpdateProgress) => void): Promise<void>;
 }

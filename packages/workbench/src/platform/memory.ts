@@ -262,6 +262,13 @@ export default function App() {
 };
 
 /** A browser-only platform with an in-memory demo project. */
+/** Browser build: lets tests (and TMCode Web) simulate a change made outside the editor. */
+const watchers = new Set<(paths: string[]) => void>();
+export async function simulateExternalWrite(platform: Platform, path: string, content: string) {
+  await platform.fs.writeFile(path, content);
+  watchers.forEach((w) => w([path]));
+}
+
 export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT): Platform {
   const practice = new MemoryFileSystem(seed);
   const fs = new SwitchableFileSystem(practice);
@@ -302,5 +309,29 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
     exam,
+    // Dev server / e2e only: a scripted updater (localStorage "tmcode:mock-update" = UpdateInfo JSON).
+    ...(import.meta.env?.DEV
+      ? {
+          updater: {
+            async check() {
+              const raw = localStorage.getItem("tmcode:mock-update");
+              return raw ? JSON.parse(raw) : null;
+            },
+            async install(onProgress: (p: import("./types").UpdateProgress) => void) {
+              onProgress({ type: "started", total: 100 });
+              for (let d = 25; d <= 100; d += 25) {
+                await new Promise((r) => setTimeout(r, 50));
+                onProgress({ type: "chunk", downloaded: d, total: 100 });
+              }
+              onProgress({ type: "installing" });
+              localStorage.setItem("tmcode:mock-installed", localStorage.getItem("tmcode:mock-update") ?? "");
+            },
+          },
+        }
+      : {}),
+    watch(onChange) {
+      watchers.add(onChange);
+      return () => watchers.delete(onChange);
+    },
   };
 }

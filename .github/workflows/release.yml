@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag made by `npm run release -- X.Y.Z` to build, sign and publish.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal
+            os: macos-latest
+            args: --target universal-apple-darwin
+          - name: Windows x64
+            os: windows-latest
+            args: ""
+          - name: Linux x64
+            os: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      - run: npm ci
+      - name: Release notes
+        id: notes
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## "v" " {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          { echo "body<<EOF"; cat notes.md; echo "EOF"; } >> "$GITHUB_OUTPUT"
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: TMCode ${{ github.ref_name }}
+          releaseBody: ${{ steps.notes.outputs.body }}
+          # Published by the "publish" job once every platform is uploaded.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }} --config {"bundle":{"createUpdaterArtifacts":true}}
+
+  publish:
+    name: Stable download links, checks, publish
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the draft's assets
+        run: gh release download "$TAG" --dir assets
+      - name: Updater manifest covers every platform
+        run: |
+          for p in darwin-aarch64 darwin-x86_64 windows-x86_64 linux-x86_64; do
+            jq -e --arg p "$p" '.platforms[$p].signature | length > 0' assets/latest.json >/dev/null || { echo "latest.json lacks $p"; cat assets/latest.json; exit 1; }
+          done
+          jq -e --arg v "${TAG#v}" '.version == $v' assets/latest.json
+      - name: Fixed-name copies (stable links for the download page)
+        run: |
+          cd assets
+          cp *_universal.dmg TMCode-macOS.dmg
+          cp *_x64-setup.exe TMCode-Windows-Setup.exe
+          cp *_x64_en-US.msi TMCode-Windows.msi
+          cp *_amd64.AppImage TMCode-Linux.AppImage
+          cp *_amd64.deb TMCode-Linux.deb
+          gh release upload "$TAG" TMCode-macOS.dmg TMCode-Windows-Setup.exe TMCode-Windows.msi TMCode-Linux.AppImage TMCode-Linux.deb --clobber
+      - name: Publish
+        run: gh release edit "$TAG" --draft=false --latest

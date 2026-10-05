@@ -2569,3 +2569,130 @@ kbd,
   border-top: 1px solid var(--border);
   font-size: 12.5px;
 }
+
+/* ───────────────────────── responsive (window size classes) ───────────────────────── */
+.tm-menu-button {
+  width: 28px;
+  height: 26px;
+  margin-left: 2px;
+}
+.tm-command-center {
+  min-width: 0;
+}
+.tm-root[data-size="md"] .tm-command-center {
+  width: min(34vw, 420px);
+}
+.tm-root[data-size="sm"] .tm-command-center {
+  width: min(40vw, 320px);
+}
+.tm-root[data-size="sm"] .tm-prio-low,
+.tm-root[data-size="xs"] .tm-prio-low,
+.tm-root[data-size="xs"] .tm-prio-mid {
+  display: none;
+}
+.tm-root[data-size="sm"] .tm-tab {
+  max-width: 180px;
+  min-width: 64px;
+}
+.tm-root[data-size="sm"] .tm-panel-filter {
+  width: 150px;
+}
+.tm-root[data-size="sm"] .tm-exam-title {
+  max-width: 54vw;
+}
+
+/* xs (< 640px): the essentials only */
+.tm-root[data-size="xs"] {
+  --activitybar-w: 40px;
+  --tabs-h: 32px;
+}
+.tm-root[data-size="xs"] .tm-activity {
+  height: 42px;
+}
+.tm-root[data-size="xs"] .tm-activity .codicon {
+  font-size: 20px;
+}
+.tm-root[data-size="xs"] .tm-titlebar {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+}
+.tm-root[data-size="xs"] .tm-command-center {
+  width: 100%;
+  min-width: 0;
+}
+.tm-root[data-size="xs"] .tm-command-center span:last-child,
+.tm-root[data-size="xs"] .tm-exam-title-name,
+.tm-root[data-size="xs"] .tm-app-icon {
+  display: none;
+}
+.tm-root[data-size="xs"] .tm-breadcrumbs,
+.tm-root[data-size="xs"] .tm-panel-filter,
+.tm-root[data-size="xs"] .tm-panel-run-label,
+.tm-root[data-size="xs"] .tm-tab-desc {
+  display: none;
+}
+.tm-root[data-size="xs"] .tm-tab {
+  min-width: 56px;
+  max-width: 150px;
+  padding-left: 8px;
+}
+.tm-root[data-size="xs"] .tm-tabs-actions .tm-action:not(.tm-run):not(.tm-stop) {
+  display: none;
+}
+.tm-root[data-size="xs"] .tm-panel-tab {
+  padding: 0 6px;
+}
+.tm-root[data-size="xs"] .tm-status-item {
+  padding: 0 4px;
+}
+.tm-root[data-size="xs"] .tm-sync {
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-root[data-size="xs"] .tm-welcome-inner {
+  padding: 24px 18px;
+}
+.tm-root[data-size="xs"] .tm-welcome-hero {
+  margin-bottom: 24px;
+}
+.tm-root[data-size="xs"] .tm-welcome-hero h1 {
+  font-size: 26px;
+}
+.tm-root[data-size="xs"] .tm-settings-header,
+.tm-root[data-size="xs"] .tm-settings-list,
+.tm-root[data-size="xs"] .tm-shortcuts-table {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.tm-root[data-size="xs"] .tm-shortcuts-row {
+  grid-template-columns: 1fr auto;
+}
+.tm-root[data-size="xs"] .tm-shortcuts-row > :nth-child(3) {
+  display: none;
+}
+.tm-root[data-size="xs"] .tm-watermark dl {
+  display: none;
+}
+.tm-root[data-size="xs"] .tm-quick-input {
+  top: 40px;
+  width: calc(100vw - 16px);
+}
+.tm-root[data-size="xs"] .tm-dialog-backdrop {
+  padding-top: 10vh;
+}
+.tm-root[data-size="xs"] .tm-toasts {
+  right: 8px;
+  width: calc(100vw - 16px);
+}
+.tm-root[data-size="xs"] .tm-exam-card {
+  padding: 24px 18px;
+}
+
+.tm-status-update {
+  color: #fff;
+  background: var(--accent);
+}
+.tm-status-update:hover {
+  background: var(--accent-hover) !important;
+}

@@ -23,6 +23,8 @@ export interface Settings {
   "files.autoSaveDelay": number;
   "terminal.integrated.fontSize": number;
   "workbench.reduceMotion": boolean;
+  /** "default": check at start and every 6 hours; "manual": only from the command; "none": never. */
+  "update.mode": "default" | "manual" | "none";
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "files.autoSaveDelay": 1000,
   "terminal.integrated.fontSize": 13,
   "workbench.reduceMotion": false,
+  "update.mode": "default",
 };
 
 export type SettingKey = keyof Settings;
@@ -172,6 +175,22 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         type: "number",
         min: 200,
         max: 60000,
+      },
+    ],
+  },
+  {
+    title: "Application",
+    settings: [
+      {
+        key: "update.mode",
+        label: "Update: Mode",
+        description: "Configure whether TMCode checks for updates automatically. Updates are signed and never install during an exam.",
+        type: "enum",
+        options: [
+          { value: "default", label: "default (check automatically)" },
+          { value: "manual", label: "manual (Help › Check for Updates)" },
+          { value: "none", label: "none" },
+        ],
       },
     ],
   },

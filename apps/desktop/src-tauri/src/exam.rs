@@ -91,7 +91,7 @@ pub fn exam_workspace(app: AppHandle, ws: State<'_, Workspace>, submission_id: u
     let dir = app_dir(&app, "exams")?.join(submission_id.to_string());
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let root = dunce::canonicalize(&dir).map_err(|e| e.to_string())?;
-    ws.set_root(root.clone());
+    crate::workspace::activate(&app, &ws, root.clone());
     log::info!("exam workspace {}", root.display());
     Ok(Opened { name: title, root: root.display().to_string() })
 }

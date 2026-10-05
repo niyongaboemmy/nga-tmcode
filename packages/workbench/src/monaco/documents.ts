@@ -116,6 +116,14 @@ export async function saveAll() {
   for (const p of dirty) await saveDocument(p).catch(() => {});
 }
 
+/** The model's current text is what's on disk (after an outside change was loaded). */
+export function markSaved(path: string) {
+  const doc = docs.get(path);
+  if (!doc) return;
+  doc.savedVersion = doc.model.getAlternativeVersionId();
+  setDirty(path, false);
+}
+
 export function revertDocument(path: string) {
   const doc = docs.get(path);
   if (!doc) return;

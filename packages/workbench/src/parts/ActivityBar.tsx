@@ -2,6 +2,7 @@ import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../
 import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
+import { useUpdate } from "../update/updateService";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
@@ -17,6 +18,7 @@ export function ActivityBar() {
   const failing = useWorkbench((s) => s.tests.items.filter((t) => t.status === "failed" || t.status === "error").length);
   const os = getPlatform().os;
   const inExam = useExam((s) => !!s.quiz);
+  const updateReady = useUpdate((s) => s.status === "available");
   const views = inExam ? [TASK_VIEW, ...VIEWS] : VIEWS;
 
   const label = (v: (typeof VIEWS)[number]) => {
@@ -64,10 +66,15 @@ export function ActivityBar() {
               { kind: "item", label: "Keyboard Shortcuts", keybinding: formatKeybinding("mod+k mod+s", os), run: () => executeCommand("workbench.action.keybindingsReference") },
               { kind: "separator" },
               { kind: "item", label: "Themes", keybinding: formatKeybinding("mod+k mod+t", os), run: () => executeCommand("workbench.action.selectTheme") },
+              { kind: "separator" },
+              updateReady
+                ? { kind: "item", label: `Install Update and Restart (${useUpdate.getState().info?.version})`, run: () => executeCommand("update.restartToUpdate") }
+                : { kind: "item", label: "Check for Updates...", disabled: !getCommand("update.checkForUpdates")?.enabled?.(), run: () => executeCommand("update.checkForUpdates") },
             ]);
           }}
         >
           <Codicon name="settings-gear" />
+          {updateReady && <span className="tm-activity-badge" aria-label="Update available">1</span>}
         </button>
       </div>
     </nav>

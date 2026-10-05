@@ -5,6 +5,7 @@ import {
   createMemoryPlatform,
   executeCommand,
   initWorkbench,
+  openPathFromOs,
   parseLaunchLink,
   selfCheckWorkers,
   startExam,
@@ -35,8 +36,11 @@ async function boot() {
   const desktopLog = inTauri ? await wireDesktopLogging() : null;
   const platform = await choosePlatform();
   const params = new URLSearchParams(location.search);
-  const dev = inTauri ? (await import("./platform/tauri")).devOptions : null;
-  await initWorkbench(platform, { autoOpenLast: platform.kind === "desktop" && !dev?.workspace });
+  const desktop = inTauri ? await import("./platform/tauri") : null;
+  const dev = desktop?.devOptions ?? null;
+  const launchPath = desktop?.launchPath ?? null;
+  await initWorkbench(platform, { autoOpenLast: platform.kind === "desktop" && !dev?.workspace && !launchPath });
+  if (launchPath) await openPathFromOs(launchPath);
   if (dev?.workspace) {
     const ws = await platform.reopenFolder(dev.workspace);
     if (ws) await setWorkspace(ws);
@@ -46,7 +50,11 @@ async function boot() {
     await setWorkspace({ name: "practice-project", root: "memory://practice-project" });
   }
   if (import.meta.env.DEV) {
-    (window as unknown as { __TMCODE_DEBUG__: unknown }).__TMCODE_DEBUG__ = { startedWorkers };
+    const { simulateExternalWrite } = await import("@tmcode/workbench");
+    (window as unknown as { __TMCODE_DEBUG__: unknown }).__TMCODE_DEBUG__ = {
+      startedWorkers,
+      externalWrite: (path: string, content: string) => simulateExternalWrite(platform, path, content),
+    };
   }
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
@@ -63,6 +71,8 @@ async function boot() {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");
     void listen<string>("menu", (e) => executeCommand(e.payload));
+    // A second `tmcode <path>`, or files dropped on the Dock icon / "Open With".
+    void listen<string>("open-path", (e) => void openPathFromOs(e.payload));
     // tmcode://launch links: the one that started the app, and any that arrive while it runs.
     const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
     const open = (urls: string[] | null) => {

@@ -5,6 +5,7 @@ import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runServic
 import { loadTests, runTests } from "../run/testService";
 import { submitExam } from "../exam/session";
 import { inExam } from "../exam/state";
+import { checkForUpdates, installUpdate, showAbout, updatesSupported, useUpdate } from "../update/updateService";
 import {
   activeEditor,
   activeFilePath,
@@ -14,7 +15,7 @@ import {
   collapseAll,
   deleteEntry,
   getPlatform,
-  notify,
+  openFileDialog,
   openFolder,
   openQuickInput,
   openSpecialEditor,
@@ -44,13 +45,36 @@ const terminalAllowed = () => {
 
 let registered = false;
 
+export function revealLabel() {
+  const os = (() => {
+    try {
+      return getPlatform().os;
+    } catch {
+      return "linux";
+    }
+  })();
+  return os === "mac" ? "Reveal in Finder" : os === "windows" ? "Reveal in File Explorer" : "Open Containing Folder";
+}
+
 export function registerBuiltinCommands() {
   if (registered) return;
   registered = true;
   const group = () => workbench.get().activeGroup;
 
   // ── File ──
-  registerCommand({ id: "workbench.action.files.openFolder", title: "Open Folder...", category: "File", keybinding: "mod+o", run: openFolder });
+  // VS Code's defaults: macOS ⌘O opens a folder; Windows/Linux Ctrl+O opens a file, Ctrl+K Ctrl+O a folder.
+  registerCommand({ id: "workbench.action.files.openFolder", title: "Open Folder...", category: "File", mac: "mod+o", win: "mod+k mod+o", run: openFolder });
+  registerCommand({ id: "workbench.action.files.openFile", title: "Open File...", category: "File", win: "mod+o", run: openFileDialog });
+  registerCommand({
+    id: "revealFileInOS",
+    title: revealLabel(),
+    category: "File",
+    enabled: () => !!getPlatform().reveal && (useWorkbench.getState().selection != null || !!activeFilePath()),
+    run: () => {
+      const target = activeFilePath() ?? useWorkbench.getState().selection;
+      if (target != null) void getPlatform().reveal?.(target);
+    },
+  });
   registerCommand({
     id: "explorer.newFile",
     title: "New File...",
@@ -255,10 +279,13 @@ export function registerBuiltinCommands() {
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });
   registerCommand({ id: "workbench.action.keybindingsReference", title: "Keyboard Shortcuts Reference", category: "Help", keybinding: "mod+k mod+s", run: () => openSpecialEditor("shortcuts") });
   registerCommand({ id: "workbench.action.openWelcome", title: "Welcome", category: "Help", run: () => openSpecialEditor("welcome") });
+  registerCommand({ id: "workbench.action.showAbout", title: "About", category: "Help", run: showAbout });
+  registerCommand({ id: "update.checkForUpdates", title: "Check for Updates...", category: "Help", enabled: updatesSupported, run: () => checkForUpdates({ manual: true }) });
   registerCommand({
-    id: "workbench.action.showAbout",
-    title: "About",
+    id: "update.restartToUpdate",
+    title: "Install Update and Restart",
     category: "Help",
-    run: () => notify("info", `TMCode ${getPlatform().version} — the New Generation Academy code editor for Task Mentor.`),
+    enabled: () => useUpdate.getState().status === "available",
+    run: installUpdate,
   });
 }

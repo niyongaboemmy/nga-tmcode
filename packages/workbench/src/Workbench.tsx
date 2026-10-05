@@ -8,6 +8,10 @@ import { registerBuiltinCommands } from "./commands/builtin";
 import { KeybindingResolver } from "./commands/registry";
 import { wireDocuments } from "./monaco/documents";
 import { wireRunServices } from "./run/wire";
+import { applyExternalChanges } from "./monaco/external";
+import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
+import { activeFilePath } from "./state/store";
+import { basename } from "./util/paths";
 import { isDarkTheme } from "./monaco/setup";
 import { ActivityBar } from "./parts/ActivityBar";
 import { EditorGroupView } from "./parts/editor/EditorGroupView";
@@ -60,7 +64,39 @@ export function Workbench() {
     registerBuiltinCommands();
     wireDocuments();
     wireRunServices();
+    startAutoUpdates();
+    const unwatch = platform.watch?.((paths) => void applyExternalChanges(paths));
+    return () => {
+      stopAutoUpdates();
+      unwatch?.();
+    };
+  }, [platform]);
+
+  // Size class for responsive layout; very narrow windows hide the side bar once.
+  const viewport = useWorkbench((s) => s.viewport);
+  useEffect(() => {
+    const classify = (w: number) => (w < 640 ? "xs" : w < 900 ? "sm" : w < 1200 ? "md" : "lg");
+    const update = () => {
+      const next = classify(window.innerWidth);
+      const prev = useWorkbench.getState().viewport;
+      if (next === prev) return;
+      useWorkbench.setState({ viewport: next });
+      if (next === "xs" && useWorkbench.getState().sidebarVisible) useWorkbench.setState({ sidebarVisible: false });
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, []);
+
+  // OS window title, VS Code style: "file — folder — TMCode".
+  const titleFile = useWorkbench((s) => activeFilePath(s));
+  const titleFolder = useWorkbench((s) => s.workspace?.name ?? null);
+  const titleDirty = useWorkbench((s) => (titleFile ? !!s.dirty[titleFile] : false));
+  useEffect(() => {
+    const parts = [titleFile ? `${titleDirty ? "● " : ""}${basename(titleFile)}` : null, titleFolder, "TMCode"].filter(Boolean);
+    document.title = parts.join(" — ");
+    platform.setTitle?.(document.title);
+  }, [titleFile, titleFolder, titleDirty, platform]);
 
   useEffect(() => {
     platform.setNativeTheme?.(isDarkTheme(theme) ? "dark" : "light");
@@ -107,6 +143,7 @@ export function Workbench() {
       data-os={platform.os}
       data-platform={platform.kind}
       data-motion={reduceMotion ? "reduced" : "full"}
+      data-size={viewport}
       onContextMenu={(e) => {
         // No browser context menu anywhere in the workbench (Monaco and inputs bring their own).
         if (!(e.target as HTMLElement).closest(".monaco-editor, input, textarea, .xterm")) e.preventDefault();
@@ -116,10 +153,10 @@ export function Workbench() {
       <div className="tm-main">
         <ActivityBar />
         <Allotment className="tm-split" proportionalLayout={false}>
-          <Allotment.Pane minSize={170} preferredSize={260} maxSize={720} visible={sidebarVisible} snap>
+          <Allotment.Pane minSize={170} preferredSize={viewport === "sm" ? 220 : 260} maxSize={720} visible={sidebarVisible} snap>
             <SideBar />
           </Allotment.Pane>
-          <Allotment.Pane minSize={300}>
+          <Allotment.Pane minSize={220}>
             <Allotment vertical className="tm-split" proportionalLayout={false}>
               <Allotment.Pane minSize={120} visible={!panelMaximized}>
                 <main className="tm-editor-area" aria-label="Editor">

@@ -16,6 +16,7 @@ const MENUS: { label: string; items: MenuSpec }[] = [
       "explorer.newFile",
       "explorer.newFolder",
       "-",
+      "workbench.action.files.openFile",
       "workbench.action.files.openFolder",
       "-",
       "workbench.action.files.save",
@@ -56,7 +57,19 @@ const MENUS: { label: string; items: MenuSpec }[] = [
   },
   { label: "Go", items: ["workbench.action.quickOpen", "workbench.action.gotoLine", "editor.action.revealDefinition"] },
   { label: "Terminal", items: ["workbench.action.terminal.new", "workbench.action.terminal.toggleTerminal"] },
-  { label: "Help", items: ["workbench.action.openWelcome", "workbench.action.showCommands", "workbench.action.keybindingsReference", "-", "workbench.action.showAbout"] },
+  {
+    label: "Help",
+    items: [
+      "workbench.action.openWelcome",
+      "workbench.action.showCommands",
+      "workbench.action.keybindingsReference",
+      "-",
+      "update.checkForUpdates",
+      "update.restartToUpdate",
+      "-",
+      "workbench.action.showAbout",
+    ],
+  },
 ];
 
 function menuItems(spec: MenuSpec): ContextMenuItem[] {
@@ -79,6 +92,35 @@ function menuItems(spec: MenuSpec): ContextMenuItem[] {
   }
   if (out[out.length - 1]?.kind === "separator") out.pop();
   return out;
+}
+
+/** Narrow windows: one ☰ button listing the menus (each opens its items). */
+function MenuButton() {
+  return (
+    <button
+      type="button"
+      data-menu-anchor
+      className="tm-action tm-menu-button"
+      aria-label="Application Menu"
+      title="Application Menu"
+      aria-haspopup="menu"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        openContextMenu(
+          r.left,
+          r.bottom,
+          MENUS.map((m) => ({
+            kind: "item" as const,
+            label: `${m.label}  ›`,
+            run: () => setTimeout(() => openContextMenu(r.left, r.bottom, menuItems(m.items)), 0),
+          })),
+        );
+      }}
+    >
+      <Codicon name="menu" />
+    </button>
+  );
 }
 
 function MenuBar() {
@@ -152,6 +194,7 @@ export function TitleBar({ focused }: { focused: boolean }) {
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const inExam = useExam((s) => !!s.quiz);
+  const compact = useWorkbench((s) => s.viewport === "xs" || s.viewport === "sm");
   const os = platform.os;
   const nativeMenus = platform.kind === "desktop" && os === "mac";
   const kb = (id: string) => {
@@ -165,7 +208,7 @@ export function TitleBar({ focused }: { focused: boolean }) {
         {!nativeMenus && (
           <>
             <Logo size={16} className="tm-app-icon" />
-            <MenuBar />
+            {compact ? <MenuButton /> : <MenuBar />}
           </>
         )}
       </div>

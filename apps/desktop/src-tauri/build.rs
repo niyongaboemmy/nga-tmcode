@@ -7,6 +7,9 @@ fn main() {
             "set_native_theme",
             "ws_open",
             "ws_reopen",
+            "ws_open_file",
+            "ws_open_path",
+            "ws_reveal",
             "ws_read_dir",
             "ws_read_file",
             "ws_write_file",
@@ -28,6 +31,8 @@ fn main() {
             "journal_load",
             "journal_append",
             "journal_mark_synced",
+            "update_check",
+            "update_install",
         ]),
     ))
     .expect("failed to run tauri-build");

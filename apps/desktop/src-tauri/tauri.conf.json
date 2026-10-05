@@ -31,12 +31,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "msi",
-      "dmg",
-      "app"
-    ],
+    "targets": "all",
     "publisher": "New Generation Academy",
     "copyright": "\u00a9 2026 New Generation Academy",
     "category": "DeveloperTool",
@@ -66,6 +61,41 @@
       "wix": {
         "language": "en-US"
       }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "py",
+          "js",
+          "mjs",
+          "ts",
+          "jsx",
+          "tsx",
+          "c",
+          "h",
+          "cpp",
+          "hpp",
+          "cc",
+          "java",
+          "html",
+          "htm",
+          "css",
+          "json",
+          "md",
+          "txt",
+          "sql",
+          "php"
+        ],
+        "name": "Source code",
+        "description": "Source code file",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ],
+    "linux": {
+      "deb": {
+        "section": "devel"
+      }
     }
   },
   "plugins": {
@@ -74,6 +104,15 @@
         "schemes": [
           "tmcode"
         ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ4OUZFN0VERDA4REIxODUKUldTRnNZM1E3ZWVmU01MN1B6aVMrYmVEQVlFOThMK2phVHVVTlFVTUhSMjZJM055N1NXRFdkRnUK",
+      "endpoints": [
+        "https://github.com/niyongaboemmy/nga-tmcode/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
