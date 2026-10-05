@@ -102,6 +102,17 @@
   --info: #3794ff;
   --success: #2ea043;
   --modified: #e2c08d;
+  /* git decorations (gitDecoration.*) and quick diff gutter (editorGutter.*) */
+  --git-modified: #e2c08d;
+  --git-added: #81b88b;
+  --git-deleted: #c74e39;
+  --git-untracked: #73c991;
+  --git-ignored: #8c8c8c;
+  --git-conflict: #e4676b;
+  --git-renamed: #73c991;
+  --gutter-added: #2ea043;
+  --gutter-modified: #0078d4;
+  --gutter-deleted: #f85149;
 
   --scrollbar: #79797966;
   --scrollbar-hover: #646464b3;
@@ -195,6 +206,17 @@
   --info: #1a85ff;
   --success: #388a34;
   --modified: #895503;
+  /* git decorations (gitDecoration.*) and quick diff gutter (editorGutter.*) */
+  --git-modified: #895503;
+  --git-added: #587c0c;
+  --git-deleted: #ad0707;
+  --git-untracked: #007100;
+  --git-ignored: #8e8e90;
+  --git-conflict: #ad0707;
+  --git-renamed: #007100;
+  --gutter-added: #2ea043;
+  --gutter-modified: #005fb8;
+  --gutter-deleted: #f85149;
 
   --scrollbar: #64646466;
   --scrollbar-hover: #646464b3;
@@ -288,6 +310,17 @@
   --info: #3794ff;
   --success: #89d185;
   --modified: #ffd370;
+  /* git decorations (gitDecoration.*) and quick diff gutter (editorGutter.*) */
+  --git-modified: #e2c08d;
+  --git-added: #a1e3ad;
+  --git-deleted: #c74e39;
+  --git-untracked: #73c991;
+  --git-ignored: #a7a8a9;
+  --git-conflict: #c74e39;
+  --git-renamed: #73c991;
+  --gutter-added: #487e02;
+  --gutter-modified: #1b81a8;
+  --gutter-deleted: #b42b2b;
 
   --scrollbar: #6fc3df99;
   --scrollbar-hover: #6fc3dfcc;

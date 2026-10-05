@@ -22,6 +22,9 @@ import {
 import { basename, dirname, isWithin, join, validateName } from "../../util/paths";
 import { ActionButton, FileIcon, FolderIcon, Codicon } from "../../widgets/icons";
 import type { DirEntry } from "../../platform/types";
+// ── git ──
+import { useGit, useGitAllowed } from "../../scm/gitService";
+import { isIgnored } from "../../scm/model";
 
 interface Row {
   entry: DirEntry;
@@ -129,6 +132,9 @@ export function ExplorerView() {
   const dirty = useWorkbench((s) => s.dirty);
   const problems = useWorkbench((s) => s.problems);
   const activePath = useWorkbench((s) => activeFilePath(s));
+  const gitAllowed = useGitAllowed();
+  const gitDecorations = useGit((s) => s.decorations);
+  const gitIgnored = useGit((s) => s.ignored);
   const os = getPlatform().os;
   const [collapsed, setCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -322,6 +328,8 @@ export function ExplorerView() {
     } else {
       const decoration = errorPaths.get(entry.path);
       const isDirty = !isDir && dirty[entry.path];
+      const git = gitAllowed ? gitDecorations[entry.path] : undefined;
+      const ignored = gitAllowed && isIgnored(entry.path, gitIgnored);
       out.push(
         <div
           key={entry.path}
@@ -337,6 +345,7 @@ export function ExplorerView() {
             activePath === entry.path ? "is-active-editor" : "",
             dropTarget === entry.path && isDir ? "is-drop-target" : "",
             decoration ? `has-${decoration}` : "",
+            git ? `git-${git.color}` : ignored ? "git-ignored" : "",
           ].join(" ")}
           style={{ paddingLeft: 8 + depth * 8 }}
           draggable
@@ -365,6 +374,12 @@ export function ExplorerView() {
           {isDirty && <span className="tm-dirty-dot" title="Unsaved changes" />}
           {decoration && !isDir && <span className={`tm-decoration-badge is-${decoration}`}>{problems.filter((p) => p.path === entry.path && p.severity === decoration).length}</span>}
           {decoration && isDir && <span className={`tm-decoration-dot is-${decoration}`} />}
+          {git?.letter && !isDir && (
+            <span className={`tm-git-letter is-${git.color}`} title={git.tooltip}>
+              {git.letter}
+            </span>
+          )}
+          {git && isDir && !decoration && <span className={`tm-git-dot is-${git.color}`} title={git.tooltip} />}
         </div>,
       );
       if (isDir && open) out.push(renderEditRow(entry.path, depth + 1));

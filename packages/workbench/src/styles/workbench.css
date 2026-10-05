@@ -2696,3 +2696,408 @@ kbd,
 .tm-status-update:hover {
   background: var(--accent-hover) !important;
 }
+
+/* ───────────────────────── shared: spin, skeleton, progress toasts, quick pick ───────────────────────── */
+.codicon-modifier-spin {
+  animation: tm-spin 1.5s steps(30) infinite;
+}
+@keyframes tm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tm-skeleton {
+  display: block;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--foreground) 7%, transparent) 25%,
+    color-mix(in srgb, var(--foreground) 14%, transparent) 50%,
+    color-mix(in srgb, var(--foreground) 7%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: tm-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes tm-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+/* Along the toast's bottom edge, after any buttons. */
+.tm-toast-progress {
+  grid-column: 1 / -1;
+  order: 10;
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  margin: 0 -8px -10px -12px;
+  border-radius: 0 0 8px 8px;
+}
+.tm-toast-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+.tm-toast-progress.is-infinite > span {
+  width: 2%;
+  animation: tm-progress-infinite 3s linear infinite;
+}
+@keyframes tm-progress-infinite {
+  from {
+    transform: translateX(0) scaleX(1);
+  }
+  to {
+    transform: translateX(5000%) scaleX(3);
+  }
+}
+.tm-qp-title {
+  padding: 0 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--description);
+}
+.tm-qp-progress {
+  height: 2px;
+  margin: -6px 6px 4px;
+  overflow: hidden;
+  position: relative;
+}
+.tm-qp-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2%;
+  background: var(--accent);
+  animation: tm-progress-infinite 3s linear infinite;
+}
+.tm-qp-skeleton {
+  cursor: default;
+}
+.tm-qp-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.tm-qp-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.tm-qi-item.has-detail {
+  height: 40px;
+}
+.tm-qp-detail {
+  font-size: 12px;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-qp-prompt {
+  padding: 0 12px 4px;
+  font-size: 12px;
+  color: var(--description);
+  white-space: normal;
+}
+.tm-qp-prompt.is-error {
+  color: var(--error);
+}
+.tm-qp-links {
+  padding: 2px 8px 2px;
+}
+.tm-input.has-error,
+.tm-qi-input-row .tm-input.has-error {
+  border-color: var(--error);
+}
+
+/* ───────────────────────── source control (scm/*) ───────────────────────── */
+.tm-scm {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tm-scm-empty ol {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+.tm-scm-empty code {
+  padding: 0 3px;
+  border-radius: 3px;
+  font: 12px var(--font-mono);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  user-select: text;
+}
+.tm-scm-empty .tm-button + .tm-button {
+  margin-top: 8px;
+}
+.tm-scm-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 10px 20px;
+}
+.tm-scm-input {
+  flex: none;
+  height: auto;
+  min-height: 26px;
+  resize: none;
+  overflow-y: auto;
+  padding: 4px 6px;
+  line-height: 18px;
+  font-family: var(--font-ui);
+}
+.tm-scm-input:focus {
+  border-color: var(--focus-border);
+  outline: none;
+}
+.tm-scm-primary {
+  width: 100%;
+  min-height: 26px;
+}
+.tm-scm-split {
+  display: flex;
+}
+.tm-scm-split .tm-scm-primary {
+  flex: 1;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.tm-scm-dropdown {
+  padding: 0 4px;
+  min-height: 26px;
+  border-left: 1px solid color-mix(in srgb, var(--button-fg) 40%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.tm-scm-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warning);
+}
+.tm-scm-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 20px;
+}
+.tm-scm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 12px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: var(--section-header-bg);
+}
+.tm-scm-section.is-graph {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+}
+.tm-scm-section.is-graph .tm-scm-section-header {
+  padding-right: 4px;
+}
+.tm-scm-section-header:focus-visible,
+.tm-scm-row:focus-visible {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-scm-section-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-scm-section-actions,
+.tm-scm-row-actions {
+  display: none;
+  gap: 2px;
+}
+.tm-scm-section-header:hover .tm-scm-section-actions,
+.tm-scm-section-header:focus-within .tm-scm-section-actions,
+.tm-scm-row:hover .tm-scm-row-actions,
+.tm-scm-row:focus-visible .tm-scm-row-actions,
+.tm-scm-row:focus-within .tm-scm-row-actions {
+  display: flex;
+}
+.tm-scm-count {
+  margin-left: 4px;
+}
+.tm-scm-row {
+  padding-left: 20px;
+  padding-right: 12px;
+}
+.tm-scm-name {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-scm-row.is-deleted .tm-scm-name {
+  text-decoration: line-through;
+}
+.tm-scm-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-scm-row-actions {
+  margin-left: auto;
+}
+.tm-scm-row-actions .tm-action {
+  width: 20px;
+  height: 20px;
+}
+.tm-scm-letter {
+  flex: none;
+  width: 12px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.tm-scm-row-actions + .tm-scm-letter {
+  margin-left: 2px;
+}
+.tm-scm-commit-row {
+  padding-left: 20px;
+  cursor: default;
+}
+.tm-scm-commit-icon {
+  color: var(--description);
+}
+.tm-scm-commit-row .tm-scm-name {
+  max-width: 60%;
+}
+.tm-scm-ref {
+  flex: none;
+  max-width: 90px;
+  padding: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+}
+.tm-list-row.is-selected .tm-scm-folder,
+.tm-list-row.is-selected .tm-scm-letter {
+  color: inherit;
+}
+
+/* gitDecoration.* colours: the SCM letters and the explorer names/badges */
+.is-modified.tm-scm-letter,
+.tm-scm-row.is-modified .tm-scm-name,
+.tm-tree-row.git-modified:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-modified,
+.tm-git-dot.is-modified {
+  color: var(--git-modified);
+}
+.is-added.tm-scm-letter,
+.tm-scm-row.is-added .tm-scm-name,
+.tm-tree-row.git-added:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-added,
+.tm-git-dot.is-added {
+  color: var(--git-added);
+}
+.is-deleted.tm-scm-letter,
+.tm-scm-row.is-deleted .tm-scm-name,
+.tm-tree-row.git-deleted:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-deleted,
+.tm-git-dot.is-deleted {
+  color: var(--git-deleted);
+}
+.is-untracked.tm-scm-letter,
+.tm-scm-row.is-untracked .tm-scm-name,
+.tm-tree-row.git-untracked:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-untracked,
+.tm-git-dot.is-untracked {
+  color: var(--git-untracked);
+}
+.is-renamed.tm-scm-letter,
+.tm-scm-row.is-renamed .tm-scm-name,
+.tm-tree-row.git-renamed:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-renamed,
+.tm-git-dot.is-renamed {
+  color: var(--git-renamed);
+}
+.is-conflict.tm-scm-letter,
+.tm-scm-row.is-conflict .tm-scm-name,
+.tm-tree-row.git-conflict .tm-tree-label,
+.tm-git-letter.is-conflict,
+.tm-git-dot.is-conflict {
+  color: var(--git-conflict);
+}
+.tm-tree-row.git-ignored .tm-tree-label {
+  color: var(--git-ignored);
+}
+.tm-tree-row.is-selected .tm-tree-label,
+.tm-tree-row.is-selected .tm-git-letter {
+  color: inherit !important;
+}
+.tm-git-letter {
+  flex: none;
+  width: 12px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.tm-decoration-badge ~ .tm-git-letter,
+.tm-dirty-dot ~ .tm-git-letter {
+  margin-left: 4px;
+}
+.tm-git-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* status bar */
+.tm-status-git [data-testid="git-ahead-behind"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* quick diff in the editor gutter (editorGutter.added/modified/deletedBackground) */
+.monaco-editor .tm-dirty-diff-added,
+.monaco-editor .tm-dirty-diff-modified {
+  left: 3px !important;
+  width: 3px !important;
+  margin-left: 0;
+}
+.monaco-editor .tm-dirty-diff-added {
+  background: var(--gutter-added);
+}
+.monaco-editor .tm-dirty-diff-modified {
+  background: var(--gutter-modified);
+}
+.monaco-editor .tm-dirty-diff-deleted::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  bottom: -4px;
+  z-index: 1;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 4px solid var(--gutter-deleted);
+}
+.monaco-editor .tm-dirty-diff-deleted.is-top::after {
+  top: 0;
+  bottom: auto;
+}
