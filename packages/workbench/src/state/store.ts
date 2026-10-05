@@ -4,8 +4,8 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task";
-export type PanelId = "problems" | "output" | "run" | "terminal";
+export type ViewId = "explorer" | "search" | "testing" | "task" | "debug";
+export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole";
 
 export type EditorInput =
   | { kind: "file"; id: string; path: string; preview: boolean }
@@ -37,6 +37,11 @@ export interface RunState {
   /** Label shown in the Run panel title, e.g. "Python 3: main.py". */
   label: string | null;
   lastExit: { code: number | null; timed_out: boolean; killed: boolean; duration_ms: number } | null;
+  /** Arguments / input file of the last run ("Run Again" repeats them). */
+  args?: string[];
+  inputFile?: string | null;
+  /** When the current run (or its run step) started, for the elapsed-time readout. */
+  startedAt?: number;
 }
 
 export interface EditorGroup {

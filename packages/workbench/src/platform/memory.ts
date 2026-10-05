@@ -1,4 +1,5 @@
 import { createJsWorkerRunner } from "./jsWorkerRunner";
+import { createSimulatedDebugHost } from "../debug/fakeAdapter";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -258,6 +259,15 @@ export default function App() {
 }
 `,
   "react-app/src/App.css": `main { font-family: system-ui, sans-serif; padding: 2rem; }\nbutton { font-size: 1rem; padding: .5rem 1rem; }\n`,
+  "py/stats.py": `# Straight-line code: try breakpoints (F9), stepping (F10) and the Debug Console.
+scores = [72, 85, 90]
+total = sum(scores)
+count = len(scores)
+mean = total / count
+print("mean:", mean)
+best = max(scores)
+print("best:", best)
+`,
   "src/utils.ts": `export function average(values: number[]): number {\n  return values.reduce((a, b) => a + b, 0) / values.length;\n}\n`,
 };
 
@@ -308,6 +318,8 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     fs,
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
+    // Dev server / e2e: a simulated Python debugger so Run and Debug can be exercised without processes.
+    ...(import.meta.env?.DEV ? { debug: createSimulatedDebugHost((p) => fs.readFile(p)) } : {}),
     exam,
     // Dev server / e2e only: a scripted updater (localStorage "tmcode:mock-update" = UpdateInfo JSON).
     ...(import.meta.env?.DEV

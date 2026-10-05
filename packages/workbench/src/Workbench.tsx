@@ -23,6 +23,11 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 import { ExamOverlay } from "./exam/ExamViews";
+// ── Run and Debug ──
+import { wireDebugServices } from "./debug/debugService";
+import { DebugToolbar } from "./debug/DebugToolbar";
+import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
+// ── end Run and Debug ──
 
 /**
  * Editor groups side by side. Always one Allotment with a stable key per group,
@@ -52,7 +57,8 @@ export function Workbench() {
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
-  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput);
+  const quickPick = useQuickPick((s) => !!s.request);
+  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput) || quickPick;
   const [chord, setChord] = useState<string | null>(null);
   const [focused, setFocused] = useState(true);
   const platform = getPlatform();
@@ -64,6 +70,7 @@ export function Workbench() {
     registerBuiltinCommands();
     wireDocuments();
     wireRunServices();
+    wireDebugServices();
     startAutoUpdates();
     const unwatch = platform.watch?.((paths) => void applyExternalChanges(paths));
     return () => {
@@ -161,6 +168,7 @@ export function Workbench() {
               <Allotment.Pane minSize={120} visible={!panelMaximized}>
                 <main className="tm-editor-area" aria-label="Editor">
                   <EditorArea />
+                  <DebugToolbar />
                 </main>
               </Allotment.Pane>
               <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>
@@ -172,6 +180,7 @@ export function Workbench() {
       </div>
       <StatusBar chord={chord} />
       <QuickInput />
+      <QuickPickHost />
       <ContextMenu />
       <Dialog />
       <ExamOverlay />

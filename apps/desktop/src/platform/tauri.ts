@@ -3,9 +3,61 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { fetch as httpFetch } from "@tauri-apps/plugin-http";
-import type { DirEntry, JournalEntry, Platform, RunEvent, TerminalSession, Toolchain, UpdateInfo, UpdateProgress } from "@tmcode/workbench";
+import type {
+  DebugHost,
+  DebugInstallEvent,
+  DebugPrepared,
+  DebugProbe,
+  DebugTransportEvent,
+  DirEntry,
+  JournalEntry,
+  Platform,
+  RunEvent,
+  TerminalSession,
+  Toolchain,
+  UpdateInfo,
+  UpdateProgress,
+} from "@tmcode/workbench";
 
 type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | null };
+
+/** Run and Debug over the Rust DAP bridge (src-tauri/src/debug.rs). */
+function createDebugHost(): DebugHost {
+  return {
+    kinds: ["python", "node", "native"],
+    probe: (kind) => invoke<DebugProbe>("debug_probe", { kind }),
+    async install(what, onEvent) {
+      const channel = new Channel<DebugInstallEvent>();
+      channel.onmessage = onEvent;
+      await invoke("debug_install", { what, onEvent: channel });
+    },
+    async prepare(request, onEvent) {
+      const channel = new Channel<RunEvent>();
+      channel.onmessage = onEvent;
+      return invoke<DebugPrepared>("debug_prepare", { request, onEvent: channel });
+    },
+    async start(kind, { parent }, onEvent) {
+      const channel = new Channel<DebugTransportEvent>();
+      channel.onmessage = onEvent;
+      const id = await invoke<number>("debug_start", { kind, parent: parent ?? null, onEvent: channel });
+      return {
+        id,
+        send: (message) => void invoke("debug_send", { id, message }).catch(() => {}),
+        stop: () => void invoke("debug_stop", { id }).catch(() => {}),
+      };
+    },
+    setExamPolicy: (allowed) => void invoke("debug_policy", { allowed }).catch(() => {}),
+    async runInTerminal(request, onEvent) {
+      const channel = new Channel<RunEvent>();
+      channel.onmessage = onEvent;
+      const id = await invoke<number>("debug_run_in_terminal", { request, onEvent: channel });
+      return {
+        input: (data) => void invoke("run_input", { id, data }).catch(() => {}),
+        kill: () => void invoke("run_kill", { id }).catch(() => {}),
+      };
+    },
+  };
+}
 
 /** The desktop platform: workbench calls → capability-gated Rust commands. */
 export interface DevOptions {
@@ -88,6 +140,8 @@ export async function createTauriPlatform(): Promise<Platform> {
     runner: {
       interactive: true,
       detect: (refresh = false) => invoke<Toolchain[]>("toolchains_detect", { refresh }),
+      candidates: (tool) => invoke<Toolchain[]>("toolchains_candidates", { tool }),
+      select: (tool, path) => invoke<Toolchain>("toolchains_select", { tool, path }),
       async start(request, onEvent) {
         const channel = new Channel<RunEvent>();
         channel.onmessage = onEvent;
@@ -111,6 +165,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       fetch: (url, init) => httpFetch(url, init),
       toolchains: async () => (await invoke<Toolchain[]>("toolchains_detect", { refresh: false })).map((t) => ({ tool: t.tool, version: t.version })),
     },
+    debug: createDebugHost(),
     preview: {
       publish: (root, entry, overlay, { internet }) => invoke<string>("preview_publish", { root, entry, overlay, internet }),
     },

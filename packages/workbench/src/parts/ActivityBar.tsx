@@ -3,11 +3,15 @@ import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } fro
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
 import { useUpdate } from "../update/updateService";
+import { debugAllowed } from "../debug/debugService";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
+  // ── Run and Debug ──
+  { id: "debug", icon: "debug-alt", label: "Run and Debug", command: "workbench.view.debug" },
+  // ── end Run and Debug ──
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
 
@@ -19,7 +23,11 @@ export function ActivityBar() {
   const os = getPlatform().os;
   const inExam = useExam((s) => !!s.quiz);
   const updateReady = useUpdate((s) => s.status === "available");
-  const views = inExam ? [TASK_VIEW, ...VIEWS] : VIEWS;
+  // Run and Debug is hidden in exams unless the policy allows the debugger.
+  useWorkbench((s) => s.policy);
+  useExam((s) => s.phase);
+  const allowed = VIEWS.filter((v) => v.id !== "debug" || debugAllowed());
+  const views = inExam ? [TASK_VIEW, ...allowed] : allowed;
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
