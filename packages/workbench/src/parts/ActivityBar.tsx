@@ -3,11 +3,15 @@ import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } fro
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
 import { useUpdate } from "../update/updateService";
+// ── git ──
+import { useGit, useGitAllowed } from "../scm/gitService";
+import { changeCount } from "../scm/model";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
+  { id: "scm", icon: "source-control", label: "Source Control", command: "workbench.view.scm" },
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
 
@@ -19,7 +23,9 @@ export function ActivityBar() {
   const os = getPlatform().os;
   const inExam = useExam((s) => !!s.quiz);
   const updateReady = useUpdate((s) => s.status === "available");
-  const views = inExam ? [TASK_VIEW, ...VIEWS] : VIEWS;
+  const gitAllowed = useGitAllowed();
+  const scmChanges = useGit((s) => changeCount(s.status));
+  const views = (inExam ? [TASK_VIEW, ...VIEWS] : VIEWS).filter((v) => v.id !== "scm" || gitAllowed);
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
@@ -45,6 +51,7 @@ export function ActivityBar() {
             >
               <Codicon name={v.icon} />
               {v.id === "explorer" && dirtyCount > 0 && <span className="tm-activity-badge">{dirtyCount}</span>}
+              {v.id === "scm" && scmChanges > 0 && <span className="tm-activity-badge">{scmChanges > 9999 ? "10k+" : scmChanges}</span>}
               {v.id === "testing" && failing > 0 && <span className="tm-activity-badge is-error">{failing}</span>}
             </button>
           );

@@ -52,7 +52,7 @@ test("Simple Browser opens a local URL with history and device sizes", async ({ 
   await command(page, "Simple Browser: Show");
   const host = new URL(baseURL!).host;
   await page.keyboard.type(host);
-  await expect(page.locator(".tm-qi-message")).toContainText(`Press Enter to use "${host}"`);
+  await expect(page.locator(".tm-quick-pick .tm-qi-item").first()).toContainText("Open this address");
   await page.keyboard.press("Enter");
   const frame = page.getByTestId("browser-frame");
   await expect(frame).toHaveAttribute("src", `http://${host}/`);

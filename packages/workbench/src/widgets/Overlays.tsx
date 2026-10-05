@@ -156,6 +156,32 @@ export function Notifications() {
           <button type="button" className="tm-action" aria-label="Clear Notification" title="Clear Notification" onClick={() => dismissNotification(n.id)}>
             <Codicon name="close" />
           </button>
+          {n.progress !== undefined && (
+            <div
+              className={`tm-toast-progress ${n.progress === null ? "is-infinite" : ""}`}
+              role="progressbar"
+              aria-label={n.message}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={n.progress ?? undefined}
+            >
+              <span style={n.progress === null ? undefined : { width: `${n.progress}%` }} />
+            </div>
+          )}
+          {n.cancel && (
+            <div className="tm-toast-actions">
+              <button
+                type="button"
+                className="tm-button tm-button--secondary"
+                onClick={() => {
+                  n.cancel?.();
+                  dismissNotification(n.id);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {n.actions?.length ? (
             <div className="tm-toast-actions">
               {n.actions.map((a) => (

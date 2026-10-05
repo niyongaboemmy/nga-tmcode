@@ -27,6 +27,9 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 import { ExamOverlay } from "./exam/ExamViews";
+// ── git (scm/*) ──
+import { wireScm } from "./scm/commands";
+import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
 
 /**
  * Editor groups side by side. Always one Allotment with a stable key per group,
@@ -56,7 +59,8 @@ export function Workbench() {
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
-  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput);
+  const quickPick = useQuickPick((s) => !!s.request);
+  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput) || quickPick;
   const [chord, setChord] = useState<string | null>(null);
   const [focused, setFocused] = useState(true);
   const platform = getPlatform();
@@ -72,6 +76,7 @@ export function Workbench() {
     enablePrettier();
     wireDocuments();
     wireRunServices();
+    wireScm();
     startAutoUpdates();
     // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
     let projectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -216,6 +221,7 @@ export function Workbench() {
       </div>
       <StatusBar chord={chord} />
       <QuickInput />
+      <QuickPickHost />
       <ContextMenu />
       <Dialog />
       <ExamOverlay />

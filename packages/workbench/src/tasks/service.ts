@@ -1,5 +1,5 @@
 import { getPlatform, notify, showPanel, useWorkbench } from "../state/store";
-import { showQuickPick } from "../widgets/quickPick";
+import { showQuickPick } from "../widgets/QuickPick";
 import { MANIFESTS, detectTasks, type Task } from "./detect";
 
 const SKIP = new Set(["node_modules", ".git", "dist", "build", "target", ".venv", "venv", "__pycache__", ".next", "out"]);
@@ -55,16 +55,18 @@ export async function pickAndRunTask() {
   }
   const recentTasks = recent.map((l) => tasks.find((t) => t.label === l)).filter((t): t is Task => !!t);
   const ordered = [...recentTasks, ...tasks.filter((t) => !recentTasks.includes(t))];
-  const choice = await showQuickPick(
-    "Select the task to run",
-    ordered.map((t, i) => ({
+  const groupOf = (t: Task, i: number) => (i < recentTasks.length ? "recently used tasks" : `${t.source} tasks`);
+  const choice = await showQuickPick({
+    placeholder: "Select the task to run",
+    matchOnDescription: true,
+    items: ordered.map((t, i) => ({
       id: t.label,
       label: t.label,
       description: t.detail ?? t.command,
       icon: t.icon,
-      group: i < recentTasks.length ? "recently used tasks" : `${t.source} tasks`,
+      separator: i === 0 || groupOf(t, i) !== groupOf(ordered[i - 1], i - 1) ? groupOf(t, i) : undefined,
     })),
-  );
+  });
   const task = tasks.find((t) => t.label === choice?.id);
   if (!task) return;
   recent.splice(0, recent.length, task.label, ...recent.filter((l) => l !== task.label).slice(0, 4));

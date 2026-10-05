@@ -1,4 +1,5 @@
 import { createJsWorkerRunner } from "./jsWorkerRunner";
+import { createMemoryGit } from "./memoryGit";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -312,6 +313,10 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
     exam,
+    // Dev server / e2e only: a mock git over this file system (`?git=none`: no repository yet).
+    ...(import.meta.env?.DEV
+      ? { git: createMemoryGit(fs, seed, { repo: typeof location === "undefined" || new URLSearchParams(location.search).get("git") !== "none" }) }
+      : {}),
     // Dev server / e2e only: a scripted updater (localStorage "tmcode:mock-update" = UpdateInfo JSON).
     ...(import.meta.env?.DEV
       ? {

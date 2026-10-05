@@ -5,7 +5,7 @@ import { pickAndRunTask } from "../tasks/service";
 import { openBrowser } from "../terminal/browser";
 import { clearCommandHistory, recentCommands } from "../terminal/history";
 import { normalizeUrl } from "../parts/editor/BrowserEditor";
-import { showQuickPick } from "../widgets/quickPick";
+import { showQuickPick } from "../widgets/QuickPick";
 import { inExam } from "../exam/state";
 
 const terminalAllowed = () => !!getPlatform().terminal && useWorkbench.getState().policy.terminal !== "off";
@@ -47,13 +47,14 @@ export function registerDeveloperCommands() {
     enabled: () => !inExam(),
     run: async () => {
       const suggestions = ["http://localhost:5173", "http://localhost:3000", "http://localhost:4200", "http://localhost:8080", "http://localhost:8000"];
-      const pick = await showQuickPick(
-        "Enter a URL to open (e.g. localhost:3000)",
-        suggestions.map((u) => ({ id: u, label: u.replace("http://", ""), description: hint(u), icon: "globe" })),
-        { allowCustom: true },
-      );
+      const pick = await showQuickPick({
+        placeholder: "Enter a URL to open (e.g. localhost:3000)",
+        items: suggestions.map((u) => ({ id: u, label: u.replace("http://", ""), description: hint(u), icon: "globe" })),
+        dynamicItems: (v) => (v.trim() ? [{ id: `url:${v.trim()}`, label: v.trim(), description: "Open this address", icon: "link-external", alwaysShow: true }] : []),
+        matchOnDescription: true,
+      });
       if (!pick) return;
-      const url = normalizeUrl(pick.id === "custom" ? pick.label : pick.id);
+      const url = normalizeUrl(pick.id.startsWith("url:") ? pick.id.slice(4) : pick.id);
       if (url) openBrowser(url, { toSide: false });
       else notify("warning", `"${pick.label}" is not a valid URL.`);
     },
@@ -79,10 +80,10 @@ export function registerDeveloperCommands() {
         notify("info", "Commands you type in the terminal will appear here.");
         return;
       }
-      const pick = await showQuickPick(
-        "Select a command to run (type to filter)",
-        list.map((c) => ({ id: c, label: c, icon: "history", group: "recent commands" })),
-      );
+      const pick = await showQuickPick({
+        placeholder: "Select a command to run (type to filter)",
+        items: list.map((c, i) => ({ id: c, label: c, icon: "history", separator: i === 0 ? "recent commands" : undefined })),
+      });
       if (!pick) return;
       showPanel("terminal");
       // The terminal may be mounting; let it subscribe first.

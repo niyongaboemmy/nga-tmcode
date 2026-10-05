@@ -37,6 +37,8 @@ percent-encoding = "2"
 base64 = "0.22"
 # canonicalize() without Windows "\\?\" verbatim paths, which compilers reject.
 dunce = "1"
+# Git & GitHub: the PAT lives in the OS keychain only; avatars come back as data: URLs.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

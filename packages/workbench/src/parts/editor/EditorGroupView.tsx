@@ -29,6 +29,9 @@ import { BrowserEditor } from "./BrowserEditor";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { profileForPath } from "@tmcode/profiles";
+// ── git ──
+import { GitDiffEditor } from "../../scm/GitDiffEditor";
+import { openGitDiff } from "../../scm/gitService";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
@@ -36,13 +39,14 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "testDiff") return `Test: ${useWorkbench.getState().tests.items.find((t) => t.id === e.testId)?.name ?? e.testId}`;
   if (e.kind === "browser") return e.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
   if (e.kind === "markdown" || e.kind === "image") return `Preview ${basename(e.path)}`;
+  if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   return "Welcome";
 }
 
 function iconOf(e: EditorInput) {
-  if (e.kind === "file") return <FileIcon path={e.path} />;
+  if (e.kind === "file" || e.kind === "gitDiff") return <FileIcon path={e.path} />;
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "testDiff") return <Codicon name="diff" className="tm-tab-codicon" />;
@@ -59,6 +63,7 @@ function descriptions(editors: EditorInput[]) {
     if ((names.get(titleOf(e)) ?? 0) < 2) return "";
     if (e.kind === "file") return dirname(e.path) || ".";
     if (e.kind === "preview") return e.root || ".";
+    if (e.kind === "gitDiff") return dirname(e.path) || ".";
     return "";
   };
 }
@@ -219,7 +224,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
           >
             {group.editors.map((input, i) => {
               const isActive = input.id === group.activeId;
-              const isDirty = input.kind === "file" && !!dirty[input.path];
+              const isDirty = (input.kind === "file" || (input.kind === "gitDiff" && input.mode === "working")) && !!dirty[input.path];
               const desc = describe(input);
               return (
                 <div
@@ -255,7 +260,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
                   onAuxClick={(e) => {
                     if (e.button === 1) void closeEditors(group.id, [input.id]);
                   }}
-                  onDoubleClick={() => input.kind === "file" && pinEditor(input.path)}
+                  onDoubleClick={() => (input.kind === "file" ? pinEditor(input.path) : input.kind === "gitDiff" && openGitDiff(input.path, input.mode, input.deleted, true))}
                   onContextMenu={(e) => tabMenu(e, input)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") activateEditor(group.id, input.id);
@@ -322,6 +327,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
         {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
         {active?.kind === "testDiff" && <TestDiffEditor key={active.id} input={active} />}
+        {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
         {!active && <Watermark />}
       </div>
     </section>
