@@ -1,4 +1,4 @@
-import { PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
+import { DapSession, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
 
 /**
  * Debug-build self-test (TMCODE_DEV_SELFTEST=1): exercises the runner,
@@ -28,6 +28,36 @@ export async function runSelfTest(platform: Platform, log: (msg: string) => void
         .catch(reject);
     });
     return JSON.stringify(out.trim());
+  });
+
+  // Run and Debug through the Rust DAP bridge: debugpy stops on a breakpoint in main.py.
+  await step("debug python", async () => {
+    const dbg = platform.debug;
+    if (!dbg) return "no debug host";
+    const probe = await dbg.probe("python");
+    if (!probe.available) return `skipped: ${probe.message}`;
+    const source = await platform.fs.readFile("main.py");
+    const line = source.split("\n").findIndex((l) => l.startsWith("def ")) + 1;
+    const prepared = await dbg.prepare({ entry: "main.py", build: [], run: { tool: "python", args: ["-u", "{entry}"] } }, () => {});
+    let dap: DapSession | null = null;
+    const conn = await dbg.start("python", {}, (e) => e.type === "message" && dap?.handleMessage(e.message));
+    dap = new DapSession({ send: (m) => conn.send(m) }, "python");
+    try {
+      await dap.initialize("debugpy", { runInTerminal: false });
+      const initialized = dap.once("initialized", 30_000);
+      const launched = dap.launch({ type: "python", request: "launch", name: "selftest", program: prepared.entry, python: [prepared.program], cwd: prepared.cwd, console: "internalConsole", justMyCode: true });
+      await initialized;
+      const bps = await dap.setBreakpoints({ path: prepared.entry }, [{ line }]);
+      const stopped = dap.once("stopped", 30_000);
+      await dap.configurationDone();
+      await launched;
+      const b = await stopped;
+      const [frame] = await dap.stackTrace(b.threadId ?? 1);
+      return `${probe.detail}; breakpoint verified=${bps[0]?.verified}; stopped (${b.reason}) at ${frame?.source?.name}:${frame?.line}`;
+    } finally {
+      await dap.disconnect(true).catch(() => {});
+      conn.stop();
+    }
   });
 
   await step("visible tests", async () => {

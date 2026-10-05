@@ -30,6 +30,10 @@ import { ExamOverlay } from "./exam/ExamViews";
 // ── git (scm/*) ──
 import { wireScm } from "./scm/commands";
 import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
+// ── Run and Debug ──
+import { wireDebugServices } from "./debug/debugService";
+import { DebugToolbar } from "./debug/DebugToolbar";
+// ── end Run and Debug ──
 
 /**
  * Editor groups side by side. Always one Allotment with a stable key per group,
@@ -77,6 +81,7 @@ export function Workbench() {
     wireDocuments();
     wireRunServices();
     wireScm();
+    wireDebugServices();
     startAutoUpdates();
     // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
     let projectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -210,6 +215,7 @@ export function Workbench() {
               <Allotment.Pane minSize={120} visible={!panelMaximized}>
                 <main className="tm-editor-area" aria-label="Editor">
                   <EditorArea />
+                  <DebugToolbar />
                 </main>
               </Allotment.Pane>
               <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>

@@ -66,6 +66,11 @@ export function clearConsole() {
   emit({ type: "clear" });
 }
 
+/** Writes to the Run console from elsewhere (debugger builds, debugpy installs, debuggee output). */
+export function writeConsole(e: ConsoleEvent) {
+  emit(e);
+}
+
 export function onConsole(l: (e: ConsoleEvent) => void) {
   transcript.forEach(l);
   listeners.add(l);
@@ -80,7 +85,7 @@ export function clearRunMarkers() {
   for (const m of monaco.editor.getModels()) monaco.editor.setModelMarkers(m, MARKER_OWNER, []);
 }
 
-async function showDiagnostics(output: string, entry: string) {
+export async function showDiagnostics(output: string, entry: string) {
   const ws = useWorkbench.getState().workspace;
   if (!ws) return 0;
   const byFile = new Map<string, monaco.editor.IMarkerData[]>();
@@ -151,7 +156,14 @@ export function startRun(req: RunRequest, onEvent: (e: RunEvent) => void): Promi
     .then((handle) => ({ handle, done }));
 }
 
-export async function runFile(path: string) {
+export interface RunOptions {
+  /** "Run with Arguments…" */
+  args?: string[];
+  /** "Run with Input File…": a workspace file fed to stdin (the run is not interactive then). */
+  inputFile?: string | null;
+}
+
+export async function runFile(path: string, opts: RunOptions = {}) {
   await saveAll();
   const target = await targetFor(path);
   if (!target) {
@@ -177,7 +189,21 @@ export async function runFile(path: string) {
   emit({ type: "clear" });
   showPanel("run");
   const label = `${target.profile.label}: ${basename(target.entry)}`;
-  setRunState({ status: local.build.length ? "building" : "running", entry: target.entry, label, lastExit: null });
+  const args = opts.args ?? [];
+  const inputFile = opts.inputFile ?? null;
+  let stdin = "";
+  if (inputFile) {
+    try {
+      stdin = await getPlatform().fs.readFile(inputFile);
+    } catch (e) {
+      notify("error", `Could not read the input file '${inputFile}': ${String((e as Error)?.message ?? e)}`);
+      return;
+    }
+  }
+  const interactive = runner.interactive && !inputFile;
+  setRunState({ status: local.build.length ? "building" : "running", entry: target.entry, label, lastExit: null, args, inputFile, startedAt: Date.now() });
+  if (inputFile) emit({ type: "info", text: `Input from ${inputFile}${args.length ? `; arguments: ${args.join(" ")}` : ""}` });
+  else if (args.length) emit({ type: "info", text: `Arguments: ${args.join(" ")}` });
   if (!runner.interactive) {
     emit({ type: "info", text: "Running in the browser: the program gets no keyboard input. Use the Testing view to run it with input, or the TMCode desktop app for interactive programs." });
   }
@@ -192,9 +218,10 @@ export async function runFile(path: string) {
         entry: target.entry,
         build: local.build,
         run: local.run,
-        mode: runner.interactive ? "pty" : "pipe",
-        stdin: "",
-        timeout_ms: runner.interactive ? undefined : target.profile.limits.wall_s * 1000,
+        mode: interactive ? "pty" : "pipe",
+        stdin,
+        args: args.length ? args : undefined,
+        timeout_ms: interactive ? undefined : Math.max(target.profile.limits.wall_s * 1000, inputFile ? 60_000 : 0),
         output_limit_kb: target.profile.limits.output_kb,
         cols: consoleSize.cols,
         rows: consoleSize.rows,
@@ -203,7 +230,7 @@ export async function runFile(path: string) {
         emit(e);
         if (e.type === "step") {
           phase = e.phase;
-          if (e.phase === "run") setRunState({ status: "running" });
+          if (e.phase === "run") setRunState({ status: "running", startedAt: Date.now() });
         } else if (e.type === "stdout" || e.type === "stderr") {
           if (phase === "build") buildOut += e.data;
           else runTail = (runTail + e.data).slice(-20000);
@@ -230,6 +257,33 @@ export async function runFile(path: string) {
       ? [{ label: "Refresh Toolchains", run: () => void refreshToolchains() }]
       : undefined);
   }
+}
+
+/**
+ * A debuggee started by a debug adapter (`runInTerminal`) runs in the Run
+ * console like a normal run: output, keyboard input, Stop.
+ */
+export async function attachDebuggeeRun(label: string, entry: string | null, start: (onEvent: (e: RunEvent) => void) => Promise<RunHandle>): Promise<RunHandle> {
+  if (current) {
+    current.kill();
+    current = null;
+  }
+  emit({ type: "clear" });
+  showPanel("run");
+  setRunState({ status: "running", entry: null, label, lastExit: null, args: [], inputFile: null, startedAt: Date.now() });
+  void entry;
+  const handle = await start((e) => {
+    emit(e);
+    if (e.type === "exit") {
+      if (current === handle) current = null;
+      setRunState({ status: "idle", lastExit: { code: e.code, timed_out: e.timed_out, killed: e.killed, duration_ms: e.duration_ms } });
+    }
+  }).catch((e) => {
+    setRunState({ status: "idle" });
+    throw e;
+  });
+  current = handle;
+  return handle;
 }
 
 export async function refreshToolchains() {

@@ -6,12 +6,16 @@ import { useUpdate } from "../update/updateService";
 // ── git ──
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { changeCount } from "../scm/model";
+import { debugAllowed } from "../debug/debugService";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
   { id: "scm", icon: "source-control", label: "Source Control", command: "workbench.view.scm" },
+  // ── Run and Debug ──
+  { id: "debug", icon: "debug-alt", label: "Run and Debug", command: "workbench.view.debug" },
+  // ── end Run and Debug ──
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
 
@@ -25,7 +29,11 @@ export function ActivityBar() {
   const updateReady = useUpdate((s) => s.status === "available");
   const gitAllowed = useGitAllowed();
   const scmChanges = useGit((s) => changeCount(s.status));
-  const views = (inExam ? [TASK_VIEW, ...VIEWS] : VIEWS).filter((v) => v.id !== "scm" || gitAllowed);
+  // Run and Debug is hidden in exams unless the policy allows the debugger.
+  useWorkbench((s) => s.policy);
+  useExam((s) => s.phase);
+  const allowed = VIEWS.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
+  const views = inExam ? [TASK_VIEW, ...allowed] : allowed;
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);

@@ -7,6 +7,11 @@ import { TerminalView } from "./TerminalView";
 import { RunConsole } from "./RunConsole";
 import { executeCommand } from "../../commands/registry";
 import { clearConsole } from "../../run/runService";
+// ── Run and Debug ──
+import { DebugConsole } from "../../debug/DebugConsole";
+import { clearDebugConsole, debugAllowed } from "../../debug/debugService";
+import { useExam } from "../../exam/state";
+// ── end Run and Debug ──
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -97,10 +102,14 @@ export function Panel() {
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const run = useWorkbench((s) => s.run);
   const [filter, setFilter] = useState("");
+  useExam((s) => s.phase);
+  useWorkbench((s) => s.policy);
+  const debugTab = debugAllowed();
 
   const tabs: { id: PanelId; label: string; badge?: number }[] = [
     { id: "problems", label: "Problems", badge: problemCount || undefined },
     { id: "output", label: "Output" },
+    ...(debugTab ? [{ id: "debugConsole" as const, label: "Debug Console" }] : []),
     { id: "run", label: "Run" },
     ...(terminalAllowed ? [{ id: "terminal" as const, label: "Terminal" }] : []),
   ];
@@ -143,6 +152,7 @@ export function Panel() {
             </div>
           )}
           {current === "output" && <ActionButton icon="clear-all" label="Clear Output" onClick={clearOutput} />}
+          {current === "debugConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearDebugConsole} />}
           {current === "terminal" && (
             <ActionButton icon="add" label="New Terminal" onClick={() => window.dispatchEvent(new CustomEvent("tmcode:new-terminal"))} />
           )}
@@ -153,6 +163,7 @@ export function Panel() {
       <div className="tm-panel-body">
         {current === "problems" && <ProblemsView filter={filter} />}
         {current === "output" && <OutputView filter={filter} />}
+        {debugTab && <DebugConsole visible={panelVisible && current === "debugConsole"} filter={filter} />}
         <RunConsole visible={panelVisible && current === "run"} />
         {terminalAllowed && <TerminalView visible={panelVisible && current === "terminal"} />}
       </div>

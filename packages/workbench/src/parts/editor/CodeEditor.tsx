@@ -7,6 +7,7 @@ import { defaultFontFamily, type Settings } from "../../state/settings";
 import { SkeletonLines } from "../../widgets/Skeleton";
 import { focusGroup, getPlatform, setCursor, setEditorInfo, useWorkbench } from "../../state/store";
 import type { OsKind } from "../../platform/types";
+import { attachDebugEditor } from "../../debug/editorContrib";
 
 const KEY_CODES: Record<string, number> = {
   "`": monaco.KeyCode.Backquote,
@@ -107,6 +108,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       }),
       ed.onDidFocusEditorText(() => focusGroup(groupId)),
       ed.onDidBlurEditorText(() => saveOnFocusChange()),
+      attachDebugEditor(ed),
     ];
 
     // Chorded workbench commands (⌘K ⌘T …) must be bound inside Monaco, which owns ⌘K while focused.

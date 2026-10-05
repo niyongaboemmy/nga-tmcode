@@ -3501,3 +3501,557 @@ kbd,
   top: 0;
   bottom: auto;
 }
+
+/* ═════════════════════════ Run and Debug ═════════════════════════ */
+
+.tm-debug-view {
+  overflow: hidden;
+}
+.tm-debug-configbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  flex: none;
+}
+.tm-debug-start .codicon {
+  color: var(--debug-start);
+}
+.tm-debug-config-select {
+  flex: 1;
+  min-width: 0;
+}
+.tm-debug-progress {
+  flex: none;
+  padding: 0 0 4px;
+}
+.tm-debug-progress .tm-progress.is-indeterminate::after {
+  animation-duration: 1s;
+}
+.tm-debug-progress .tm-progress:not(.is-indeterminate)::after {
+  display: none;
+}
+.tm-progress-bar {
+  height: 2px;
+  background: var(--accent);
+  transition: width var(--motion) linear;
+}
+.tm-debug-progress-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 0;
+  font-size: 12px;
+  min-width: 0;
+}
+.tm-debug-progress-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-debug-banner {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 4px 12px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+}
+.tm-debug-error {
+  color: var(--error);
+  white-space: normal;
+}
+.tm-debug-note {
+  font-size: 12px;
+  padding-top: 0;
+}
+.tm-debug-welcome .tm-link-button {
+  display: inline;
+}
+.tm-debug-sections {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tm-debug-section {
+  flex: 0 0 auto;
+  min-height: 22px;
+  border-top: 1px solid var(--border);
+}
+.tm-debug-section.is-open {
+  flex-basis: 0;
+  min-height: 64px;
+}
+.tm-debug-section-body {
+  overflow: auto;
+  padding-bottom: 4px;
+}
+.tm-debug-tree {
+  font-size: 13px;
+}
+.tm-debug-var {
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.tm-dv-name {
+  color: var(--debug-name);
+  flex: none;
+}
+.tm-dv-name::after {
+  content: ":";
+  color: var(--foreground);
+}
+.tm-debug-watch .tm-dv-name::after {
+  content: ":";
+}
+.tm-dv-name.is-virtual {
+  font-style: italic;
+  opacity: 0.8;
+}
+.tm-dv-v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-dv-number {
+  color: var(--debug-value-number);
+}
+.tm-dv-string {
+  color: var(--debug-value-string);
+}
+.tm-dv-boolean {
+  color: var(--debug-value-boolean);
+}
+.tm-dv-null,
+.tm-dv-unavailable {
+  color: var(--debug-value-null);
+}
+.tm-dv-unavailable {
+  font-style: italic;
+}
+.tm-dv-error {
+  color: var(--error);
+}
+.tm-dv-value {
+  color: var(--foreground);
+}
+.tm-debug-inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  font: 12px var(--font-mono);
+}
+.tm-debug-scope-name {
+  font-weight: 600;
+}
+.tm-row-actions {
+  display: none;
+  margin-left: auto;
+  gap: 2px;
+}
+.tm-list-row:hover .tm-row-actions,
+.tm-list-row:focus-within .tm-row-actions {
+  display: flex;
+}
+.tm-debug-thread {
+  padding-left: 4px;
+}
+.tm-debug-thread-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-debug-state {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--description);
+}
+.tm-debug-frame {
+  padding-left: 24px;
+  gap: 8px;
+}
+.tm-debug-frame.is-selected {
+  background: var(--list-active-bg);
+  color: var(--list-active-fg);
+}
+.tm-debug-frame.is-subtle {
+  opacity: 0.65;
+}
+.tm-debug-frame-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-debug-frame-loc {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--description);
+  white-space: pre;
+}
+.tm-debug-frame.is-selected .tm-debug-frame-loc {
+  color: inherit;
+}
+.tm-debug-bp {
+  padding-left: 12px;
+  gap: 6px;
+}
+.tm-checkbox {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  flex: none;
+}
+.tm-bp-icon {
+  color: var(--debug-bp);
+}
+.tm-bp-icon.is-muted {
+  color: var(--debug-bp-disabled);
+}
+.tm-debug-bp-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-debug-bp-dir {
+  font-size: 12px;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-debug-bp-line {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.tm-debug-bp:hover .tm-debug-bp-line {
+  display: none;
+}
+.tm-debug-bp-tools {
+  padding: 2px 12px;
+}
+.tm-debug-skeleton {
+  padding: 4px 12px;
+}
+/* .tm-skeleton: see "motion & loading (shared)". */
+
+/* gutter: breakpoints and the stopped line (Monaco decorations) */
+.monaco-editor .tm-bp,
+.monaco-editor .tm-bp-hint,
+.monaco-editor .tm-bp-frame {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+}
+.monaco-editor .tm-bp {
+  color: var(--debug-bp);
+}
+.monaco-editor .tm-bp.is-disabled {
+  color: var(--debug-bp-disabled);
+}
+.monaco-editor .tm-bp.is-unverified {
+  color: var(--debug-bp-unverified);
+}
+.monaco-editor .tm-bp-hint {
+  color: color-mix(in srgb, var(--debug-bp) 55%, transparent);
+}
+.monaco-editor .tm-bp-frame {
+  color: var(--debug-stackframe);
+}
+.monaco-editor .tm-debug-top-frame-line {
+  background: var(--debug-top-frame-line);
+}
+.monaco-editor .tm-debug-focused-frame-line {
+  background: var(--debug-focused-frame-line);
+}
+
+/* the floating debug toolbar */
+.tm-editor-area {
+  position: relative;
+}
+.tm-debug-toolbar {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 4px 0 0;
+  transform: translateX(-50%);
+  border: 1px solid var(--widget-border);
+  border-radius: 6px;
+  background: var(--debug-toolbar-bg);
+  box-shadow: 0 2px 8px var(--shadow);
+  animation: tm-toolbar-in 140ms ease-out;
+}
+@keyframes tm-toolbar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+.tm-debug-toolbar-grip {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 2px;
+  cursor: grab;
+  color: var(--description);
+  touch-action: none;
+}
+.tm-debug-toolbar .tm-action .codicon {
+  color: var(--debug-continue);
+}
+.tm-debug-toolbar .tm-action:disabled .codicon {
+  color: var(--disabled);
+}
+.tm-debug-toolbar .tm-dbg-restart .codicon {
+  color: var(--debug-start);
+}
+.tm-debug-toolbar .tm-dbg-stop .codicon {
+  color: var(--debug-stop);
+}
+
+/* status bar while debugging (VS Code's orange) */
+.tm-statusbar.is-debugging {
+  background: var(--debug-statusbar-bg);
+  color: var(--debug-statusbar-fg);
+  transition: background var(--motion) ease;
+}
+.tm-status-debug {
+  font-weight: 500;
+}
+
+/* the editor title's Run / Debug split button */
+.tm-split-action {
+  display: inline-flex;
+  align-items: center;
+}
+.tm-split-action .tm-split-action-more {
+  width: 16px;
+  min-width: 16px;
+}
+.tm-split-action .tm-split-action-more .codicon {
+  font-size: 12px;
+}
+
+/* the Debug Console */
+.tm-debug-console {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tm-dc-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 12px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.tm-dc-entry {
+  display: flex;
+  gap: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tm-dc-entry.is-output.cat-stderr,
+.tm-dc-entry.is-error {
+  color: var(--error);
+}
+.tm-dc-entry.is-output.cat-console,
+.tm-dc-entry.is-info {
+  color: var(--description);
+}
+.tm-dc-entry.is-output.cat-important {
+  color: var(--warning);
+}
+.tm-dc-entry.is-input {
+  color: var(--foreground);
+}
+.tm-dc-expandable,
+.tm-dc-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+}
+.tm-dc-entry.is-expandable,
+.tm-dc-entry:has(.tm-dc-expandable) {
+  flex-direction: column;
+  gap: 0;
+}
+.tm-dc-indent {
+  display: inline-block;
+  width: 16px;
+}
+.tm-dc-prompt {
+  flex: none;
+  color: var(--debug-continue);
+}
+.tm-dc-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 2px 12px 4px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+.tm-dc-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* quick pick extras (title, detail, error) */
+.tm-qp-title {
+  padding: 0 12px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--description);
+  text-align: center;
+}
+.tm-qp-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tm-qp-line {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.tm-qp-detail {
+  font-size: 12px;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-qi-item.has-detail {
+  height: 40px;
+}
+.tm-qp-error {
+  color: var(--error);
+}
+.tm-input.is-invalid {
+  border-color: var(--error) !important;
+}
+
+/* "how to install" card */
+.tm-install-card {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--widget-border);
+  border-radius: var(--radius-lg);
+  background: var(--widget-bg);
+  font-size: 12px;
+  line-height: 1.45;
+  animation: tm-card-in 160ms ease-out;
+}
+@keyframes tm-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.tm-install-card p {
+  margin: 6px 0;
+}
+.tm-install-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tm-install-card-head h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tm-install-card-icon {
+  color: var(--accent);
+}
+.tm-install-card-error {
+  color: var(--error);
+}
+.tm-install-os {
+  display: flex;
+  gap: 2px;
+  margin: 6px 0;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.tm-install-os-tab {
+  flex: 1;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--description);
+  font: 12px var(--font-ui);
+  cursor: pointer;
+}
+.tm-install-os-tab.is-active {
+  background: var(--button-secondary-bg);
+  color: var(--foreground);
+}
+.tm-install-steps {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.tm-install-steps li {
+  margin: 4px 0;
+}
+.tm-install-cmd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding: 2px 2px 2px 6px;
+  border-radius: var(--radius);
+  background: var(--input-bg);
+}
+.tm-install-cmd code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.tm-install-note {
+  font-size: 12px;
+}
+.tm-install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.tm-root[data-size="xs"] .tm-debug-toolbar,
+.tm-root[data-size="sm"] .tm-debug-toolbar {
+  max-width: calc(100% - 16px);
+}
+.tm-root[data-size="xs"] .tm-debug-frame-loc,
+.tm-root[data-size="xs"] .tm-debug-bp-dir {
+  display: none;
+}
