@@ -1202,6 +1202,19 @@ pub async fn git_clone(app: AppHandle, url: String, task: u32, on_event: Channel
     .await
 }
 
+/// Help and token pages only: github.com, docs.github.com, git-scm.com.
+pub fn allowed_help_url(url: &str) -> bool {
+    https_host(url).is_some_and(|h| ["github.com", "docs.github.com", "git-scm.com"].contains(&h.as_str())) && !url.contains('@')
+}
+
+#[tauri::command]
+pub fn git_open_url(url: String) -> Result<(), String> {
+    if !allowed_help_url(&url) {
+        return Err("This link can't be opened.".into());
+    }
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1353,6 +1366,16 @@ u UU N... 100644 100644 100644 100644 a b c conflict.c\0\
     }
 
     #[test]
+    fn only_help_pages_open_in_the_browser() {
+        assert!(allowed_help_url("https://github.com/settings/tokens/new?scopes=repo&description=TMCode"));
+        assert!(allowed_help_url("https://git-scm.com/downloads"));
+        assert!(!allowed_help_url("http://github.com/x"));
+        assert!(!allowed_help_url("https://evil.example/x"));
+        assert!(!allowed_help_url("https://github.com@evil.example/x"));
+        assert!(!allowed_help_url("file:///etc/passwd"));
+    }
+
+    #[test]
     fn version_is_parsed() {
         assert_eq!(parse_version("git version 2.50.1 (Apple Git-155)\n").as_deref(), Some("2.50.1"));
         assert_eq!(parse_version("git version 2.45.2.windows.1").as_deref(), Some("2.45.2.windows.1"));
@@ -1404,6 +1427,57 @@ u UU N... 100644 100644 100644 100644 a b c conflict.c\0\
         assert_eq!(star.x, "A");
         let a = st.entries.iter().find(|e| e.path == "a.txt").unwrap();
         assert_eq!(a.x, ".", "a.txt must not be staged by the '*' pathspec");
+    }
+
+    #[test]
+    fn real_repo_branch_upstream_and_ahead_behind() {
+        let info = detect();
+        let Some(exe) = info.path.map(PathBuf::from) else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let base = dunce::canonicalize(dir.path()).unwrap();
+        let quiet = |_: String| {};
+        let git = |cwd: &Path, args: &[&str]| {
+            let out = run(&exe, Invocation::new(cwd, args), &quiet).unwrap();
+            assert_eq!(out.code, Some(0), "git {args:?}: {}", out.stderr);
+            out
+        };
+        let commit = |cwd: &Path, file: &str, msg: &str| {
+            std::fs::write(cwd.join(file), msg).unwrap();
+            git(cwd, &["add", "-A", "--", file]);
+            git(cwd, &["-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "-m", msg]);
+        };
+        // A bare "remote", two clones of it: one pushes, the other falls behind and moves ahead.
+        let remote = base.join("remote.git");
+        git(&base, &["init", "-q", "--bare", "-b", "main", remote.to_str().unwrap()]);
+        let (a, b) = (base.join("a"), base.join("b"));
+        git(&base, &["clone", "-q", remote.to_str().unwrap(), a.to_str().unwrap()]);
+        git(&a, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        commit(&a, "one.txt", "one");
+        git(&a, &["push", "-q", "-u", "origin", "main"]);
+        git(&base, &["clone", "-q", remote.to_str().unwrap(), b.to_str().unwrap()]);
+        commit(&a, "two.txt", "two");
+        commit(&a, "three.txt", "three");
+        git(&a, &["push", "-q"]);
+        commit(&b, "local.txt", "local");
+        git(&b, &["fetch", "-q"]);
+        std::fs::write(b.join("untracked.txt"), "?").unwrap();
+        let st = parse_status(&git(&b, &["status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all"]).stdout);
+        assert_eq!(st.branch.as_deref(), Some("main"));
+        assert_eq!(st.upstream.as_deref(), Some("origin/main"));
+        assert_eq!((st.ahead, st.behind), (1, 2));
+        assert_eq!(st.entries.len(), 1);
+        assert_eq!((st.entries[0].path.as_str(), st.entries[0].kind), ("untracked.txt", "untracked"));
+        // A new local branch has no upstream until it is published.
+        git(&b, &["checkout", "-q", "-b", "feature/x"]);
+        let st = parse_status(&git(&b, &["status", "--porcelain=v2", "-z", "--branch"]).stdout);
+        assert_eq!(st.branch.as_deref(), Some("feature/x"));
+        assert_eq!(st.upstream, None);
+        assert_eq!((st.ahead, st.behind), (0, 0));
+        // Detached HEAD.
+        git(&b, &["checkout", "-q", "--detach", "HEAD~1"]);
+        let st = parse_status(&git(&b, &["status", "--porcelain=v2", "-z", "--branch"]).stdout);
+        assert_eq!(st.branch, None);
+        assert!(st.oid.is_some());
     }
 
     #[cfg(unix)]

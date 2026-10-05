@@ -237,6 +237,7 @@ pub fn run() {
             github::github_user,
             github::github_sign_out,
             github::github_repos,
+            git::git_open_url,
         ])
         .setup(|app| {
             // Windows/Linux dev builds register tmcode:// at runtime; installers register it for real

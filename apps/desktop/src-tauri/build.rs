@@ -57,6 +57,7 @@ fn main() {
             "github_user",
             "github_sign_out",
             "github_repos",
+            "git_open_url",
         ]),
     ))
     .expect("failed to run tauri-build");

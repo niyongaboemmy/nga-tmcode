@@ -83,6 +83,7 @@
     "allow-github-sign-in",
     "allow-github-user",
     "allow-github-sign-out",
-    "allow-github-repos"
+    "allow-github-repos",
+    "allow-git-open-url"
   ]
 }
