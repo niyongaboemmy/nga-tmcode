@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — 2026-10-05
+
+- Open the folder macOS hands over at cold start (open -a TMCode <folder>, Open With, Dock drops)
+
 ## 0.2.1 — 2026-10-05
 
 - Release script: bump only workspace entries in package-lock; refuse a lock npm ci would reject
