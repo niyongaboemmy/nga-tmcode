@@ -15,7 +15,7 @@ fn step(tool: &str, args: &[&str]) -> Step {
 /// Runs build + run for `file` (written with `source`) and returns stdout.
 fn run(lang: &str, file: &str, source: &str, build: Vec<Step>, run: Step, stdin: &str) -> Option<String> {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
     let entry = root.join(file);
     std::fs::write(&entry, source).unwrap();
     let out = root.join(".out");
@@ -109,7 +109,7 @@ fn java() {
 #[test]
 fn compile_errors_fail_the_build_with_parsable_output() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
     let Some(cc) = detect("cc") else { return };
     std::fs::write(root.join("main.c"), "int main(void) { return 0 }\n").unwrap();
     let events = Arc::new(Mutex::new(Vec::<RunEvent>::new()));

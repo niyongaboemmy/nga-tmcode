@@ -28,7 +28,10 @@ test("F5 runs a JavaScript file and shows the exit status", async ({ page }) => 
 test("runtime errors become Problems", async ({ page }) => {
   await open(page, "js", "js/sum.js");
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.press("Control+g");
+  await page.keyboard.type("3");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("End");
   await page.keyboard.type("\nnull.boom();");
   await page.keyboard.press("F5");
   await expect(page.getByTestId("run-console")).toContainText("exited with code 1");
@@ -101,7 +104,11 @@ test("React preview bundles offline with vendored React", async ({ page }) => {
 test("unknown packages give a clear React build error", async ({ page }) => {
   await open(page, "react-app", "react-app/src", "react-app/src/App.jsx");
   await page.locator(".monaco-editor .view-lines").click();
-  await page.keyboard.press("ControlOrMeta+Home");
+  // Go to line 1 (Ctrl/Cmd+Home isn't reliable across WebKit builds).
+  await page.keyboard.press("Control+g");
+  await page.keyboard.type("1");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Home");
   await page.keyboard.type('import axios from "axios";\n');
   await page.keyboard.press("F5");
   const frame = page.frameLocator('[data-testid="preview-frame"]');

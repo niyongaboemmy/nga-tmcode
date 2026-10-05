@@ -6,16 +6,18 @@
   "type": "module",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "services/*"
   ],
   "scripts": {
     "dev": "npm run dev -w @tmcode/desktop",
     "tauri:dev": "npm run tauri:dev -w @tmcode/desktop",
     "build": "npm run build -w @tmcode/desktop",
-    "typecheck": "tsc -p packages/protocol && tsc -p packages/profiles && tsc -p packages/workbench && tsc -p apps/desktop",
+    "typecheck": "tsc -p packages/protocol && tsc -p packages/profiles && tsc -p packages/workbench && tsc -p apps/desktop && tsc -p services/judge",
     "test": "vitest run",
     "test:e2e": "npm run test:e2e -w @tmcode/desktop",
-    "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
+    "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test:judge": "npm test -w @tmcode/judge"
   },
   "engines": {
     "node": ">=20"

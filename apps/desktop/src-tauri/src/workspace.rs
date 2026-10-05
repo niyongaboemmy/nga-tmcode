@@ -56,7 +56,7 @@ pub fn resolve(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let mut probe = out.as_path();
     loop {
         if probe.exists() {
-            let real = probe.canonicalize().map_err(|e| e.to_string())?;
+            let real = dunce::canonicalize(probe).map_err(|e| e.to_string())?;
             if !real.starts_with(root) {
                 return Err(format!("'{rel}' points outside the workspace."));
             }
@@ -83,8 +83,7 @@ fn rel_of(root: &Path, abs: &Path) -> String {
 }
 
 fn open_root(ws: &Workspace, path: PathBuf) -> Result<Opened, String> {
-    let root = path
-        .canonicalize()
+    let root = dunce::canonicalize(&path)
         .map_err(|e| format!("Cannot open '{}': {e}", path.display()))?;
     if !root.is_dir() {
         return Err(format!("'{}' is not a folder.", root.display()));
@@ -132,7 +131,7 @@ pub fn read_dir(root: &Path, path: &str) -> Result<Vec<DirEntry>, String> {
         let ft = entry.file_type().map_err(|e| e.to_string())?;
         // Follow symlinks only when they stay inside the workspace.
         let is_dir = if ft.is_symlink() {
-            match entry.path().canonicalize() {
+            match dunce::canonicalize(entry.path()) {
                 Ok(real) if real.starts_with(root) => real.is_dir(),
                 _ => continue,
             }
@@ -253,7 +252,7 @@ mod tests {
 
     fn root() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
         fs::create_dir(root.join("src")).unwrap();
         fs::write(root.join("main.py"), "print(1)\n").unwrap();
         (dir, root)

@@ -56,3 +56,34 @@ jobs:
       - run: npm run build
       - run: cargo test --locked
         working-directory: apps/desktop/src-tauri
+
+  judge:
+    name: tm-judge inside isolate (cgroup v2)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Language runtimes and isolate build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless
+      - name: Build and start isolate v2.7
+        run: |
+          git clone --depth 1 --branch v2.7 https://github.com/ioi/isolate /tmp/isolate
+          cd /tmp/isolate
+          make isolate isolate-cg-keeper
+          sudo make install
+          sudo systemctl daemon-reload
+          sudo systemctl start isolate.service
+          sudo systemctl status isolate.service --no-pager
+          isolate --version
+          isolate-check-environment || true
+      - run: npm ci
+      - name: Judge tests in real boxes
+        working-directory: services/judge
+        env:
+          JUDGE_TEST_SANDBOX: isolate
+        run: npx vitest run --config vitest.config.ts

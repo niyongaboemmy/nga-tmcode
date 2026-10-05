@@ -564,14 +564,17 @@ pub fn run_kill(runs: State<'_, Runs>, id: u32) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::sync::Mutex as StdMutex;
 
+    #[cfg(unix)]
     fn collect() -> (Arc<StdMutex<Vec<RunEvent>>>, impl Fn(RunEvent) + Sync) {
         let events = Arc::new(StdMutex::new(Vec::new()));
         let e2 = events.clone();
         (events, move |e| e2.lock().unwrap().push(e))
     }
 
+    #[cfg(unix)]
     fn stdout_of(events: &[RunEvent]) -> String {
         events
             .iter()

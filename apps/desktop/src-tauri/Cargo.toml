@@ -29,6 +29,8 @@ tauri-plugin-log = "2.10.0"
 tauri-plugin-dialog = "2"
 portable-pty = "0.9"
 percent-encoding = "2"
+# canonicalize() without Windows "\\?\" verbatim paths, which compilers reject.
+dunce = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
