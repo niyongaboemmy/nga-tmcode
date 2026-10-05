@@ -1,5 +1,6 @@
 #[cfg(target_os = "macos")]
 mod menus;
+mod debug;
 mod exam;
 mod preview;
 mod pty;
@@ -170,6 +171,7 @@ pub fn run() {
         .manage(pty::Terminals::default())
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
+        .manage(debug::Debuggers::default())
         .manage(preview::Preview::default())
         .manage(watcher::Watcher::default())
         .manage(updates::Pending::default())
@@ -199,6 +201,15 @@ pub fn run() {
             runner::run_start,
             runner::run_input,
             runner::run_kill,
+            toolchains::toolchains_candidates,
+            toolchains::toolchains_select,
+            debug::debug_probe,
+            debug::debug_install,
+            debug::debug_prepare,
+            debug::debug_start,
+            debug::debug_send,
+            debug::debug_stop,
+            debug::debug_run_in_terminal,
             preview::preview_publish,
             exam::exam_device,
             exam::exam_workspace,
@@ -239,6 +250,7 @@ pub fn run() {
         if let RunEvent::Exit = event {
             handle.state::<pty::Terminals>().kill_all();
             handle.state::<runner::Runs>().kill_all();
+            handle.state::<debug::Debuggers>().kill_all();
         }
     });
 }
