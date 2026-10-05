@@ -4,7 +4,7 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task";
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm";
 export type PanelId = "problems" | "output" | "run" | "terminal";
 
 export type EditorInput =
@@ -15,7 +15,9 @@ export type EditorInput =
   /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
   | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react"; preview: false }
   /** Expected vs actual output of one visible test. */
-  | { kind: "testDiff"; id: string; testId: string; preview: false };
+  | { kind: "testDiff"; id: string; testId: string; preview: false }
+  /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
+  | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean };
 
 export type TestStatus = "idle" | "queued" | "running" | "passed" | "failed" | "error";
 
@@ -59,6 +61,10 @@ export interface Notification {
   severity: "info" | "warning" | "error";
   message: string;
   actions?: { label: string; run: () => void }[];
+  /** A long operation: percentage, or null while it can't be measured (infinite bar). */
+  progress?: number | null;
+  /** Shows a Cancel button on a progress notification. */
+  cancel?: () => void;
 }
 
 export interface DialogButton {
@@ -620,15 +626,22 @@ export const saveHandlers: { save: (path: string) => Promise<void>; revert: (pat
   revert: () => {},
 };
 
-function openElsewhere(path: string, exceptGroup: number) {
-  return get().groups.some((g) => g.id !== exceptGroup && g.editors.some((e) => e.kind === "file" && e.path === path));
+/** The document an editor edits: a file, or the right side of a working-tree git diff. */
+function documentPath(e: EditorInput): string | null {
+  if (e.kind === "file") return e.path;
+  return e.kind === "gitDiff" && e.mode === "working" && !e.deleted ? e.path : null;
+}
+
+/** Still open in an editor that isn't closing (another group, or a diff/file tab of the same file). */
+function openElsewhere(path: string, exceptGroup: number, closingIds: string[] = []) {
+  return get().groups.some((g) => g.editors.some((e) => documentPath(e) === path && (g.id !== exceptGroup || !closingIds.includes(e.id))));
 }
 
 export async function closeEditors(groupId: number, ids: string[]) {
   const g = get().groups.find((x) => x.id === groupId);
   if (!g) return;
   const closing = g.editors.filter((e) => ids.includes(e.id));
-  const closingPaths = closing.flatMap((e) => (e.kind === "file" && !openElsewhere(e.path, groupId) ? [e.path] : []));
+  const closingPaths = [...new Set(closing.flatMap((e) => documentPath(e) ?? []))].filter((p) => !openElsewhere(p, groupId, ids));
   const choice = await confirmCloseDirty(closingPaths);
   if (choice === "cancel") return;
   if (choice === "discard") for (const p of closingPaths) if (get().dirty[p]) saveHandlers.revert(p);
@@ -804,6 +817,22 @@ export function notify(severity: Notification["severity"], message: string, acti
   log("Notifications", message, severity === "error" ? "error" : severity === "warning" ? "warn" : "info");
   if (severity === "info" && !actions?.length) setTimeout(() => dismissNotification(id), 6000);
   return id;
+}
+
+/**
+ * A progress notification (clone, pull, push…) with an optional Cancel, like
+ * VS Code's `withProgress({ location: Notification, cancellable })`.
+ */
+export function notifyProgress(message: string, opts: { cancel?: () => void } = {}) {
+  const id = ++notificationSeq;
+  set({ notifications: [...get().notifications, { id, severity: "info" as const, message, progress: null, cancel: opts.cancel }].slice(-5) });
+  return {
+    id,
+    update(patch: { message?: string; progress?: number | null }) {
+      set({ notifications: get().notifications.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
+    },
+    close: () => dismissNotification(id),
+  };
 }
 
 export function dismissNotification(id: number) {
