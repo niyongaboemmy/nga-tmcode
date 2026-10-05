@@ -34,7 +34,8 @@ writeFileSync(lock, readFileSync(lock, "utf8").replace(/(\[\[package\]\]\nname =
 const plock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 plock.version = version;
 for (const [k, v] of Object.entries(plock.packages ?? {})) {
-  if (k === "" || /^(apps|packages|services)\//.test(k)) v.version = version;
+  // Only the workspaces themselves, never their nested node_modules entries.
+  if (k === "" || /^(apps|packages|services)\/[^/]+$/.test(k)) v.version = version;
 }
 writeFileSync("package-lock.json", `${JSON.stringify(plock, null, 2)}\n`);
 
@@ -52,6 +53,14 @@ const log = sh("git", ["log", "--no-merges", "--format=- %s", since ? `${since}.
 const date = new Date().toISOString().slice(0, 10);
 const prev = existsSync("CHANGELOG.md") ? readFileSync("CHANGELOG.md", "utf8").replace(/^# Changelog\n+/, "") : "";
 writeFileSync("CHANGELOG.md", `# Changelog\n\n## ${version} — ${date}\n\n${log || "- Maintenance release"}\n\n${prev}`);
+
+// The release workflow runs `npm ci`: refuse to tag a lock file it would reject.
+try {
+  sh("npm", ["ci", "--dry-run", "--ignore-scripts", "--no-audit", "--no-fund"]);
+} catch (e) {
+  sh("git", ["checkout", "--", "."]);
+  fail(`package-lock.json would fail \`npm ci\` — nothing was committed.\n${e.stdout ?? e.message}`);
+}
 
 sh("git", ["add", "-A"]);
 sh("git", ["commit", "-m", `Release v${version}`]);
