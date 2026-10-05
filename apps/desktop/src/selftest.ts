@@ -112,3 +112,39 @@ export async function runExamSelfTest(link: string, log: (msg: string) => void) 
   const r = useExam.getState().results;
   log(`exam selftest result: phase=${useExam.getState().phase} score=${r?.score}/${r?.max_score} questions=${JSON.stringify(r?.questions?.map((q) => [q.question_id, q.points]))}`);
 }
+
+/**
+ * Git self-test (TMCODE_DEV_SELFTEST=git, TMCODE_DEV_WORKSPACE=<a scratch git repository>):
+ * every local git command through Rust in the real webview. Never touches a remote.
+ */
+export async function runGitSelfTest(platform: Platform, log: (msg: string) => void) {
+  const git = platform.git;
+  if (!git) return log("git selftest: FAILED no git host");
+  const step = async (name: string, fn: () => Promise<string>) => {
+    try {
+      log(`git selftest ${name}: ${await fn()}`);
+    } catch (e) {
+      log(`git selftest ${name}: FAILED ${String((e as Error)?.message ?? e)}`);
+    }
+  };
+  await step("info", async () => JSON.stringify(await git.info(true)));
+  await step("status", async () => {
+    const s = await git.status();
+    return s ? `branch=${s.branch} upstream=${s.upstream} ahead=${s.ahead} behind=${s.behind} entries=${s.entries.map((e) => `${e.x}${e.y}:${e.path}`).join(",")}` : "no repository";
+  });
+  await step("write+stage", async () => {
+    await platform.fs.writeFile("selftest.txt", `selftest ${new Date().toISOString()}\n`);
+    await git.stage(["selftest.txt"]);
+    const s = await git.status();
+    return s?.entries.find((e) => e.path === "selftest.txt")?.x ?? "missing";
+  });
+  await step("show index", async () => JSON.stringify((await git.show("selftest.txt", "index"))?.slice(0, 9)));
+  await step("commit", async () => {
+    await git.commit({ message: "TMCode git self-test" });
+    return (await git.log(1))[0]?.subject ?? "no commit";
+  });
+  await step("branches", async () => (await git.branches()).map((b) => `${b.current ? "*" : ""}${b.name}`).join(","));
+  await step("check-ignore", async () => JSON.stringify(await git.checkIgnore(["node_modules/", "selftest.txt"])));
+  await step("github user", async () => JSON.stringify((await git.github?.user())?.login ?? null));
+  log("git selftest done");
+}

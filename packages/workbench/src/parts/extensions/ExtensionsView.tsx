@@ -3,6 +3,7 @@ import { executeCommand } from "../../commands/registry";
 import { useExam } from "../../exam/state";
 import { getPlatform, openContextMenu, openEditorInput, useWorkbench } from "../../state/store";
 import { ActionButton, Codicon } from "../../widgets/icons";
+import { SkeletonCard } from "../../widgets/Skeleton";
 import { RECOMMENDED, formatCount, galleryIcon, getGalleryExtension, rememberGallery, searchGallery, type GalleryExtension } from "../../extensions/gallery";
 import { extensionHost, installExtension, setExtensionEnabled, uninstallExtension, useExtensions, type InstalledExtension } from "../../extensions/service";
 import { parseJsonc } from "../../textmate/jsonc";
@@ -175,18 +176,12 @@ function ExtensionRow({ ext, installed }: { ext: GalleryExtension | null; instal
   );
 }
 
-function SkeletonRows({ count = 4 }: { count?: number }) {
+/** Marketplace-row placeholders (the shared skeleton card). */
+function MarketplaceSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div aria-busy="true" aria-label="Loading extensions">
+    <div role="status" aria-label="Loading extensions">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="tm-ext-row is-skeleton" aria-hidden>
-          <span className="tm-skeleton" style={{ width: 42, height: 42 }} />
-          <div className="tm-ext-row-main">
-            <span className="tm-skeleton" style={{ width: "55%", height: 12 }} />
-            <span className="tm-skeleton" style={{ width: "90%", height: 10 }} />
-            <span className="tm-skeleton" style={{ width: "35%", height: 10 }} />
-          </div>
-        </div>
+        <SkeletonCard key={i} />
       ))}
     </div>
   );
@@ -328,7 +323,7 @@ export function ExtensionsView() {
           search.error ? (
             <p className="tm-ext-message is-error">{search.error}</p>
           ) : search.items === null ? (
-            <SkeletonRows count={6} />
+            <MarketplaceSkeleton count={6} />
           ) : search.items.length === 0 ? (
             <p className="tm-ext-message">No extensions found.</p>
           ) : (
@@ -343,7 +338,7 @@ export function ExtensionsView() {
             {!showRecommendedOnly && (
               <Section title="Installed" count={loaded ? filterInstalled(installed).length : undefined}>
                 {!loaded ? (
-                  <SkeletonRows count={2} />
+                  <MarketplaceSkeleton count={2} />
                 ) : installed.length === 0 ? (
                   <p className="tm-ext-message">No extensions installed. Themes, icon themes, languages and snippets from Open VSX work in TMCode.</p>
                 ) : (
@@ -356,7 +351,7 @@ export function ExtensionsView() {
                 {recommended.error ? (
                   <p className="tm-ext-message is-error">{recommended.error}</p>
                 ) : recommended.items === null ? (
-                  <SkeletonRows count={3} />
+                  <MarketplaceSkeleton count={3} />
                 ) : recommended.items.length === 0 ? (
                   <p className="tm-ext-message">All recommended extensions are installed.</p>
                 ) : (

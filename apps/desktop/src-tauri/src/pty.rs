@@ -75,6 +75,7 @@ pub fn pty_spawn(
     terms: State<'_, Terminals>,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
     let pty = native_pty_system()
@@ -82,7 +83,12 @@ pub fn pty_spawn(
         .map_err(|e| e.to_string())?;
     let mut cmd = default_shell();
     if let Ok(root) = ws.root() {
-        cmd.cwd(root);
+        // Tasks run in a project subfolder (client/, server/…); it must stay inside the workspace.
+        let dir = match cwd.as_deref().filter(|c| !c.is_empty()) {
+            Some(rel) => crate::workspace::resolve(&root, rel)?,
+            None => root,
+        };
+        cmd.cwd(dir);
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");

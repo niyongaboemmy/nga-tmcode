@@ -1,5 +1,6 @@
 import { createJsWorkerRunner } from "./jsWorkerRunner";
 import { createMemoryExtensionHost } from "./memoryExtensions";
+import { createMemoryGit } from "./memoryGit";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -266,6 +267,9 @@ export default function App() {
 /** Browser build: lets tests (and TMCode Web) simulate a change made outside the editor. */
 const watchers = new Set<(paths: string[]) => void>();
 export async function simulateExternalWrite(platform: Platform, path: string, content: string) {
+  // Like `git checkout` / `npm install`: missing folders are created too.
+  const parts = path.split("/");
+  for (let i = 1; i < parts.length; i++) await platform.fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
   await platform.fs.writeFile(path, content);
   watchers.forEach((w) => w([path]));
 }
@@ -311,6 +315,10 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     runner: createJsWorkerRunner(fs),
     exam,
     extensions: createMemoryExtensionHost(),
+    // Dev server / e2e only: a mock git over this file system (`?git=none`: no repository yet).
+    ...(import.meta.env?.DEV
+      ? { git: createMemoryGit(fs, seed, { repo: typeof location === "undefined" || new URLSearchParams(location.search).get("git") !== "none" }) }
+      : {}),
     // Dev server / e2e only: a scripted updater (localStorage "tmcode:mock-update" = UpdateInfo JSON).
     ...(import.meta.env?.DEV
       ? {

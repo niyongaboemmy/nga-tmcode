@@ -19,6 +19,7 @@ import {
 import { fuzzyMatch, highlightRuns } from "../util/fuzzy";
 import { basename, dirname } from "../util/paths";
 import { Codicon, FileIcon } from "./icons";
+import { SkeletonRows } from "./Skeleton";
 
 interface Item {
   id: string;
@@ -278,7 +279,8 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           <div className="tm-qi-message">{lineInfo?.text}</div>
         ) : (
           <div ref={listRef} id="tm-qi-list" className="tm-qi-list tm-scroll" role="listbox">
-            {items.length === 0 && (
+            {items.length === 0 && mode === "files" && files === null && hasWorkspace && <SkeletonRows rows={6} label="Loading files" />}
+            {items.length === 0 && !(mode === "files" && files === null && hasWorkspace) && (
               <div className="tm-qi-message">{mode === "commands" ? "No matching commands" : mode === "files" && files === null && hasWorkspace ? "Loading files…" : "No matching results"}</div>
             )}
             {items.map((it, i) => (

@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { executeCommand } from "../../commands/registry";
 import { Codicon } from "../../widgets/icons";
+import { SkeletonLines } from "../../widgets/Skeleton";
 import { cachedGalleryName, formatCount, getGalleryExtension, OPEN_VSX, type GalleryExtension } from "../../extensions/gallery";
 import { contributionSummary, parseManifest, type ExtensionManifest } from "../../extensions/manifest";
 import { extensionHost, installedExtension, installExtension, setExtensionEnabled, uninstallExtension, useExtensions } from "../../extensions/service";
@@ -276,11 +277,7 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
         <div className="tm-ext-main" role="tabpanel">
           {tab === "details" ? (
             d.readme === null ? (
-              <div aria-busy="true" aria-label="Loading README">
-                {[90, 75, 82, 60, 70].map((w, i) => (
-                  <span key={i} className="tm-skeleton tm-ext-skeleton-line" style={{ width: `${w}%` }} />
-                ))}
-              </div>
+              <SkeletonLines lines={6} label="Loading README" />
             ) : html ? (
               <div
                 ref={readmeRef}

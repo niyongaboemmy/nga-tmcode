@@ -4,6 +4,9 @@ import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
 import { showReleaseNotes, useUpdate } from "../update/updateService";
+// ── git ──
+import { useGit, useGitAllowed } from "../scm/gitService";
+import { branchLabel } from "../scm/model";
 
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
 const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
@@ -53,6 +56,39 @@ function UpdateItem() {
   return null;
 }
 
+/** VS Code's branch and Synchronize Changes items (practice mode only). */
+function GitItems() {
+  const allowed = useGitAllowed();
+  const status = useGit((s) => s.status);
+  const remoteOp = useGit((s) => s.remoteOp);
+  const busy = useGit((s) => s.busy);
+  if (!allowed || !status) return null;
+  const label = branchLabel(status);
+  const syncTitle = remoteOp
+    ? "Synchronizing Changes..."
+    : status.upstream
+      ? `${status.upstream}: ${status.behind} commit${status.behind === 1 ? "" : "s"} to pull, ${status.ahead} to push — Synchronize Changes`
+      : `Publish to ${status.remotes.length ? "a remote" : "GitHub"}`;
+  return (
+    <>
+      <Item className="tm-status-git" title={`${status.branch ?? "Detached HEAD"}, Checkout Branch/Tag...`} onClick={() => executeCommand("git.checkout")}>
+        <Codicon name={busy === "Checking out" ? "loading" : status.branch ? "git-branch" : "git-commit"} className={busy === "Checking out" ? "codicon-modifier-spin" : ""} />
+        <span data-testid="git-branch">{label}</span>
+      </Item>
+      {status.branch && (
+        <Item className="tm-status-git tm-prio-mid" title={syncTitle} onClick={() => executeCommand("git.sync")}>
+          <Codicon name={remoteOp ? "sync" : status.upstream ? "sync" : "cloud-upload"} className={remoteOp ? "codicon-modifier-spin" : ""} />
+          {status.upstream && (status.behind > 0 || status.ahead > 0) && (
+            <span data-testid="git-ahead-behind">
+              {status.behind}↓ {status.ahead}↑
+            </span>
+          )}
+        </Item>
+      )}
+    </>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -76,6 +112,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <Codicon name={MODE_ICON[mode]} />
           <span>{MODE_LABEL[mode]}</span>
         </Item>
+        <GitItems />
         <SyncStatus />
         <Item title={`Errors: ${errors}, Warnings: ${warnings}`} onClick={() => showPanel("problems")}>
           <Codicon name="error" /> {errors} <Codicon name="warning" /> {warnings}

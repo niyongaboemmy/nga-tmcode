@@ -5,16 +5,17 @@ import { composeReactPage, errorPage } from "../../preview/page";
 import { getPlatform, notify, useWorkbench, type EditorInput } from "../../state/store";
 import { isWithin, join } from "../../util/paths";
 import { ActionButton, Codicon } from "../../widgets/icons";
+import { SkeletonLines } from "../../widgets/Skeleton";
 
 type PreviewInput = Extract<EditorInput, { kind: "preview" }>;
 
-const DEVICES = {
+export const DEVICES = {
   responsive: { label: "Responsive", icon: "screen-full", width: 0, height: 0 },
   mobile: { label: "Mobile (375)", icon: "device-mobile", width: 375, height: 667 },
   tablet: { label: "Tablet (768)", icon: "device-mobile", width: 768, height: 1024 },
   desktop: { label: "Laptop (1280)", icon: "device-desktop", width: 1280, height: 800 },
 } as const;
-type Device = keyof typeof DEVICES;
+export type Device = keyof typeof DEVICES;
 
 interface LogLine {
   id: number;
@@ -207,6 +208,11 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
           />
         </div>
         {d.width > 0 && scale < 1 && <div className="tm-preview-scale">{Math.round(scale * 100)}%</div>}
+        {busy && frame.key === 0 && (
+          <div className="tm-preview-loading">
+            <SkeletonLines lines={7} label={input.profile === "bundle-react" ? "Building the React app" : "Loading the page"} />
+          </div>
+        )}
       </div>
       {consoleOpen && (
         <div className="tm-preview-console">

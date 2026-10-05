@@ -25,13 +25,22 @@ import { ShortcutsEditor } from "./ShortcutsEditor";
 import { WelcomePage } from "./WelcomePage";
 import { PreviewEditor } from "./PreviewEditor";
 import { TestDiffEditor } from "./TestDiffEditor";
+import { BrowserEditor } from "./BrowserEditor";
+import { MarkdownEditor } from "./MarkdownEditor";
+import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { profileForPath } from "@tmcode/profiles";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
+// ── git ──
+import { GitDiffEditor } from "../../scm/GitDiffEditor";
+import { openGitDiff } from "../../scm/gitService";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
   if (e.kind === "preview") return `Preview ${basename(e.entry)}`;
   if (e.kind === "testDiff") return `Test: ${useWorkbench.getState().tests.items.find((t) => t.id === e.testId)?.name ?? e.testId}`;
+  if (e.kind === "browser") return e.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (e.kind === "markdown" || e.kind === "image") return `Preview ${basename(e.path)}`;
+  if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   if (e.kind === "extension") return extensionTitle(e.extensionId);
@@ -39,11 +48,13 @@ function titleOf(e: EditorInput): string {
 }
 
 function iconOf(e: EditorInput) {
-  if (e.kind === "file") return <FileIcon path={e.path} />;
+  if (e.kind === "file" || e.kind === "gitDiff") return <FileIcon path={e.path} />;
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "testDiff") return <Codicon name="diff" className="tm-tab-codicon" />;
   if (e.kind === "extension") return <Codicon name="extensions" className="tm-tab-codicon" />;
+  if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
+  if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
 }
 
@@ -55,6 +66,7 @@ function descriptions(editors: EditorInput[]) {
     if ((names.get(titleOf(e)) ?? 0) < 2) return "";
     if (e.kind === "file") return dirname(e.path) || ".";
     if (e.kind === "preview") return e.root || ".";
+    if (e.kind === "gitDiff") return dirname(e.path) || ".";
     return "";
   };
 }
@@ -215,7 +227,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
           >
             {group.editors.map((input, i) => {
               const isActive = input.id === group.activeId;
-              const isDirty = input.kind === "file" && !!dirty[input.path];
+              const isDirty = (input.kind === "file" || (input.kind === "gitDiff" && input.mode === "working")) && !!dirty[input.path];
               const desc = describe(input);
               return (
                 <div
@@ -251,7 +263,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
                   onAuxClick={(e) => {
                     if (e.button === 1) void closeEditors(group.id, [input.id]);
                   }}
-                  onDoubleClick={() => input.kind === "file" && pinEditor(input.path)}
+                  onDoubleClick={() => (input.kind === "file" ? pinEditor(input.path) : input.kind === "gitDiff" && openGitDiff(input.path, input.mode, input.deleted, true))}
                   onContextMenu={(e) => tabMenu(e, input)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") activateEditor(group.id, input.id);
@@ -280,6 +292,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             {dragOver === group.editors.length && <div className="tm-tab-drop-end" />}
           </div>
           <div className="tm-tabs-actions">
+            {active?.kind === "file" && <SidePreviewButton path={active.path} />}
             {active?.kind === "file" && <RunButton path={active.path} />}
             <ActionButton icon="split-horizontal" label={`Split Editor Right (${formatKeybinding("mod+\\", os)})`} onClick={() => splitEditor()} />
             <ActionButton
@@ -303,17 +316,22 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
       {active?.kind === "file" && <Breadcrumbs path={active.path} />}
       <div className="tm-editor-content">
         {/* Keep Monaco mounted while switching between files of this group. */}
-        {group.editors.some((e) => e.kind === "file") && (
-          <div className="tm-editor-slot" hidden={active?.kind !== "file"}>
-            <CodeEditor groupId={group.id} path={active?.kind === "file" ? active.path : lastFile(group)} />
+        {group.editors.some((e) => e.kind === "file" && !isMediaFile(e.path)) && (
+          <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path)}>
+            <CodeEditor groupId={group.id} path={active?.kind === "file" && !isMediaFile(active.path) ? active.path : lastFile(group)} />
           </div>
         )}
+        {active?.kind === "file" && isMediaFile(active.path) && <MediaEditor key={active.path} path={active.path} />}
+        {active?.kind === "image" && <MediaEditor key={active.id} path={active.path} />}
+        {active?.kind === "markdown" && <MarkdownEditor key={active.id} input={active} />}
+        {active?.kind === "browser" && <BrowserEditor key={active.id} input={active} />}
         {active?.kind === "settings" && <SettingsEditor />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
         {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
         {active?.kind === "testDiff" && <TestDiffEditor key={active.id} input={active} />}
         {active?.kind === "extension" && <ExtensionEditor key={active.id} extensionId={active.extensionId} />}
+        {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
         {!active && <Watermark />}
       </div>
     </section>
@@ -336,7 +354,14 @@ function RunButton({ path }: { path: string }) {
   );
 }
 
+/** Markdown and SVG get VS Code's "Open Preview to the Side" (Ctrl+K V). */
+function SidePreviewButton({ path }: { path: string }) {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext !== "md" && ext !== "markdown" && ext !== "svg") return null;
+  return <ActionButton icon="open-preview" label="Open Preview to the Side (Ctrl+K V)" onClick={() => executeCommand("markdown.showPreviewToSide")} />;
+}
+
 function lastFile(group: EditorGroup) {
-  const f = [...group.editors].reverse().find((e) => e.kind === "file");
+  const f = [...group.editors].reverse().find((e) => e.kind === "file" && !isMediaFile(e.path));
   return f?.kind === "file" ? f.path : "";
 }

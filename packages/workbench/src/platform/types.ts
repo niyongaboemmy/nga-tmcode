@@ -21,6 +21,8 @@ export interface FileSystem {
   createDir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
+  /** Binary files (images) as base64; absent where unsupported. */
+  readBase64?(path: string): Promise<string>;
 }
 
 export interface TerminalSession {
@@ -32,6 +34,8 @@ export interface TerminalSession {
 export interface TerminalSpawnOptions {
   cols: number;
   rows: number;
+  /** Workspace-relative working directory (default: the workspace root). */
+  cwd?: string;
   onData(data: string): void;
   onExit(code: number | null): void;
 }
@@ -68,6 +72,8 @@ export interface Platform {
   watch?(onChange: (paths: string[]) => void): () => void;
   /** Signed in-app updates (desktop). */
   updater?: Updater;
+  /** Opens a URL in the system browser. */
+  openExternal?(url: string): Promise<void>;
   /** Sets the OS window title. */
   setTitle?(title: string): void;
   fs: FileSystem;
@@ -88,6 +94,8 @@ export interface Platform {
   /** VS Code extensions from Open VSX (declarative contributions only). */
   extensions?: ExtensionHost;
   // ── end extensions ──
+  /** Git & GitHub (desktop: the system git; dev browser build: a mock). Absent → no Source Control. */
+  git?: GitHost;
 }
 
 // ───────────── extensions ─────────────
@@ -228,4 +236,129 @@ export interface Updater {
   check(): Promise<UpdateInfo | null>;
   /** Downloads, verifies the signature, installs and restarts the app. */
   install(onProgress: (p: UpdateProgress) => void): Promise<void>;
+}
+
+// ───────────── git & GitHub ─────────────
+
+export interface GitInfo {
+  installed: boolean;
+  version: string | null;
+  path: string | null;
+}
+
+export type GitEntryKind = "changed" | "renamed" | "copied" | "unmerged" | "untracked" | "ignored";
+
+/** One `git status --porcelain=v2` entry; `x`/`y` are the index/worktree letters ("." = unchanged). */
+export interface GitEntry {
+  /** Workspace-relative. */
+  path: string;
+  orig_path?: string;
+  x: string;
+  y: string;
+  kind: GitEntryKind;
+}
+
+export interface GitStatus {
+  /** null when HEAD is detached. */
+  branch: string | null;
+  /** null on an unborn branch (no commits yet). */
+  oid: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  entries: GitEntry[];
+  truncated: boolean;
+  /** Absolute repository root and the workspace's path inside it ("" or "sub/"). */
+  root: string;
+  prefix: string;
+  remotes: string[];
+  merging: boolean;
+}
+
+export interface GitBranch {
+  name: string;
+  kind: "local" | "remote";
+  current: boolean;
+  commit: string;
+  upstream: string | null;
+  subject: string;
+  date: number;
+}
+
+export interface GitCommit {
+  hash: string;
+  short: string;
+  author: string;
+  email: string;
+  date: number;
+  refs: string;
+  subject: string;
+}
+
+export type GitEvent = { type: "step"; name: string } | { type: "progress"; line: string };
+
+/** A long-running git operation (clone, pull, push…). */
+export interface GitTask<T> {
+  done: Promise<T>;
+  cancel(): void;
+}
+
+export interface GitRemoteOptions {
+  remote?: string;
+  branch?: string;
+  /** First push of a branch: `push -u <remote> <branch>`. */
+  set_upstream?: boolean;
+}
+
+export interface GitHubUser {
+  login: string;
+  name?: string | null;
+  /** data: URL (the desktop CSP allows no remote images). */
+  avatar?: string | null;
+}
+
+export interface GitHubRepo {
+  full_name: string;
+  description?: string | null;
+  clone_url: string;
+  private: boolean;
+  updated_at?: string | null;
+}
+
+export interface GitHost {
+  info(refresh?: boolean): Promise<GitInfo>;
+  /** null when the workspace is not inside a repository. */
+  status(): Promise<GitStatus | null>;
+  /** A file at HEAD or in the index; null when it doesn't exist there. */
+  show(path: string, rev: "HEAD" | "index"): Promise<string | null>;
+  stage(paths: string[]): Promise<void>;
+  unstage(paths: string[]): Promise<void>;
+  /** Tracked files return to their index version; untracked ones are deleted. */
+  discard(tracked: string[], untracked: string[]): Promise<void>;
+  commit(options: { message: string; amend?: boolean; signoff?: boolean; all?: boolean }): Promise<void>;
+  branches(): Promise<GitBranch[]>;
+  checkout(name: string, options?: { create?: boolean; from?: string; remote?: boolean }): Promise<void>;
+  log(limit: number): Promise<GitCommit[]>;
+  init(): Promise<void>;
+  stash(action: "push" | "pop", message?: string): Promise<void>;
+  /** Which of these workspace paths git ignores (folders end with "/"). */
+  checkIgnore(paths: string[]): Promise<string[]>;
+  setIdentity(name: string, email: string): Promise<void>;
+  remote(op: "pull" | "push" | "fetch" | "sync", options: GitRemoteOptions, onEvent: (e: GitEvent) => void): GitTask<void>;
+  /** "Select as Repository Destination"; the next clone goes there. */
+  pickCloneParent(): Promise<string | null>;
+  /** Clones into the picked folder; resolves to the new folder's path. */
+  clone(url: string, onEvent: (e: GitEvent) => void): GitTask<string>;
+  /** Every git command line and its errors (redacted), for the Git output channel. */
+  onLog(cb: (line: string) => void): () => void;
+  /** Repository state changed outside TMCode (commit in a terminal, fetch…). */
+  onRepoChange?(cb: () => void): () => void;
+  /** Opens a help / token page (an allow-listed https URL) in the browser. */
+  openExternal?(url: string): void;
+  github?: {
+    signIn(token: string): Promise<GitHubUser>;
+    user(): Promise<GitHubUser | null>;
+    signOut(): Promise<void>;
+    repos(): Promise<GitHubRepo[]>;
+  };
 }

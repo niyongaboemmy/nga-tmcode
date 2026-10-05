@@ -34,11 +34,13 @@ tauri-plugin-log = "2.10.0"
 tauri-plugin-dialog = "2"
 portable-pty = "0.9"
 percent-encoding = "2"
+base64 = "0.22"
 # canonicalize() without Windows "\\?\" verbatim paths, which compilers reject.
 dunce = "1"
-# Extensions: unpacking .vsix files (deflate only) and base64 for icons/fonts.
+# Extensions: unpacking .vsix files (deflate only).
 zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
-base64 = "0.22"
+# Git & GitHub: the PAT lives in the OS keychain only; avatars come back as data: URLs.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

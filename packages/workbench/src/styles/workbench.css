@@ -2697,6 +2697,811 @@ kbd,
   background: var(--accent-hover) !important;
 }
 
+/* ───────────────────────── motion & loading (shared) ───────────────────────── */
+.tm-root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-med: 200ms;
+  --dur-slow: 320ms;
+}
+
+.tm-skeleton {
+  display: block;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--foreground) 7%, transparent) 25%,
+    color-mix(in srgb, var(--foreground) 14%, transparent) 37%,
+    color-mix(in srgb, var(--foreground) 7%, transparent) 63%
+  );
+  background-size: 400% 100%;
+  animation: tm-shimmer 1.4s ease infinite;
+}
+@keyframes tm-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+.tm-skeleton-list {
+  padding: 4px 0;
+}
+.tm-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding-right: 12px;
+}
+.tm-skeleton-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 3px;
+}
+.tm-skeleton-line {
+  height: 9px;
+}
+.tm-skeleton-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 20px;
+}
+.tm-skeleton-card {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.tm-skeleton-avatar {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 6px;
+}
+.tm-skeleton-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 3px;
+}
+
+/* Entrances: views, editors, panels, list items */
+@keyframes tm-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tm-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes tm-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+.tm-sidebar-content > * {
+  animation: tm-slide-in-left var(--dur-med) var(--ease-out);
+}
+.tm-editor-content > * {
+  animation: tm-fade-in var(--dur-fast) ease-out;
+}
+.tm-panel-body > * {
+  animation: tm-fade-in var(--dur-fast) ease-out;
+}
+.tm-tab {
+  animation: tm-rise-in var(--dur-med) var(--ease-out);
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+.tm-list-row,
+.tm-qi-item,
+.tm-menu-item,
+.tm-status-item,
+.tm-panel-tab,
+.tm-action,
+.tm-activity {
+  transition:
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    opacity var(--dur-fast) ease;
+}
+/* Active view indicator slides in, like VS Code's */
+.tm-activity::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  bottom: 50%;
+  width: 2px;
+  background: var(--activitybar-active-border);
+  transition:
+    top var(--dur-med) var(--ease-out),
+    bottom var(--dur-med) var(--ease-out);
+}
+.tm-activity.is-active::before {
+  top: 0;
+  bottom: 0;
+}
+.tm-tab.is-active::before {
+  transform-origin: center;
+  animation: tm-grow-x var(--dur-med) var(--ease-out);
+}
+@keyframes tm-grow-x {
+  from {
+    transform: scaleX(0.3);
+    opacity: 0;
+  }
+}
+.tm-menu,
+.tm-dialog {
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+@keyframes tm-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.tm-twistie .codicon {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.tm-button {
+  transition:
+    background var(--dur-fast),
+    transform var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+.tm-button:active {
+  transform: translateY(1px);
+}
+.tm-status-item .codicon-modifier-spin,
+.codicon-modifier-spin {
+  animation: codicon-spin 1.2s linear infinite;
+}
+.tm-editor-loading {
+  position: absolute;
+  inset: 0;
+  padding-top: 6px;
+  background: var(--editor-bg);
+  z-index: 2;
+}
+.tm-preview-loading {
+  position: absolute;
+  inset: 0;
+  padding: 24px;
+  background: var(--editor-bg);
+}
+
+/* ───────────────────────── simple browser ───────────────────────── */
+.tm-browser-address {
+  padding-right: 4px;
+}
+.tm-browser-url {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+}
+.tm-browser-address:focus-within {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+.tm-browser-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+/* ───────────────────────── media viewer + markdown preview ───────────────────────── */
+.tm-media {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--editor-bg);
+}
+.tm-media-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--description);
+}
+.tm-media-zoom {
+  min-width: 48px;
+  height: 22px;
+  border: 1px solid var(--widget-border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.tm-media-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.tm-media-stage.is-checker {
+  --checker: color-mix(in srgb, var(--foreground) 8%, transparent);
+  background-color: var(--editor-bg);
+  background-image:
+    linear-gradient(45deg, var(--checker) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--checker) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checker) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--checker) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.tm-media-stage img {
+  animation: tm-fade-in var(--dur-med, 180ms) var(--ease-out, ease-out);
+  cursor: zoom-in;
+}
+.tm-media-stage.is-fit img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.tm-media-stage:not(.is-fit) img {
+  cursor: zoom-out;
+}
+.tm-media-stage video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 6px 24px var(--shadow);
+}
+.tm-media-footer {
+  display: flex;
+  gap: 16px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--description);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tm-markdown-preview {
+  height: 100%;
+  overflow: auto;
+  background: var(--editor-bg);
+}
+.tm-markdown-body {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 32px 64px;
+  line-height: 1.6;
+  font-size: 14px;
+  animation: tm-fade-in var(--dur-med, 180ms) var(--ease-out, ease-out);
+}
+.tm-markdown-body h1,
+.tm-markdown-body h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.tm-markdown-body a {
+  color: var(--link);
+  cursor: pointer;
+}
+.tm-markdown-body img {
+  max-width: 100%;
+}
+.tm-markdown-body img.is-broken {
+  outline: 1px dashed var(--border);
+  min-width: 24px;
+  min-height: 24px;
+}
+.tm-markdown-body pre {
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.tm-markdown-body :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.tm-markdown-body blockquote {
+  margin: 0;
+  padding: 0 1em;
+  border-left: 4px solid var(--accent);
+  color: var(--description);
+}
+.tm-markdown-body table {
+  border-collapse: collapse;
+}
+.tm-markdown-body th,
+.tm-markdown-body td {
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+}
+@media (max-width: 640px) {
+  .tm-markdown-body {
+    padding: 16px;
+  }
+}
+
+/* ───────────────────────── zen mode ───────────────────────── */
+.tm-root[data-zen="on"] .tm-activitybar,
+.tm-root[data-zen="on"] .tm-statusbar {
+  display: none;
+}
+.tm-root[data-zen="on"] .tm-editor-area {
+  animation: tm-fade-in var(--dur-slow, 260ms) var(--ease-out, ease-out);
+}
+.tm-root[data-zen="on"] .tm-tabs {
+  opacity: 0.55;
+  transition: opacity var(--dur-med, 180ms);
+}
+.tm-root[data-zen="on"] .tm-tabs:hover {
+  opacity: 1;
+}
+
+/* ───────────────────────── terminal find ───────────────────────── */
+.tm-terminal {
+  position: relative;
+}
+.tm-terminal-find {
+  position: absolute;
+  top: 0;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--widget-border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--widget-bg, var(--editor-bg));
+  box-shadow: 0 2px 8px var(--shadow);
+  animation: tm-slide-down var(--dur-med, 180ms) var(--ease-out, ease-out);
+}
+.tm-terminal-find .tm-input-box {
+  display: flex;
+  align-items: center;
+  width: 240px;
+}
+.tm-terminal-find .tm-input {
+  flex: 1;
+  min-width: 0;
+}
+.tm-find-count {
+  min-width: 70px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--description);
+  white-space: nowrap;
+}
+.tm-find-count.is-empty {
+  color: var(--error, #f14c4c);
+}
+@keyframes tm-slide-down {
+  from {
+    transform: translateY(-100%);
+  }
+}
+@media (max-width: 640px) {
+  .tm-terminal-find {
+    left: 8px;
+    right: 8px;
+  }
+  .tm-terminal-find .tm-input-box {
+    width: auto;
+    flex: 1;
+  }
+}
+
+/* ───────────────────────── shared: spin, skeleton, progress toasts, quick pick ───────────────────────── */
+.codicon-modifier-spin {
+  animation: tm-spin 1.5s steps(30) infinite;
+}
+@keyframes tm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* .tm-skeleton and tm-shimmer: see "motion & loading (shared)" above. */
+/* Along the toast's bottom edge, after any buttons. */
+.tm-toast-progress {
+  grid-column: 1 / -1;
+  order: 10;
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  margin: 0 -8px -10px -12px;
+  border-radius: 0 0 8px 8px;
+}
+.tm-toast-progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+.tm-toast-progress.is-infinite > span {
+  width: 2%;
+  animation: tm-progress-infinite 3s linear infinite;
+}
+@keyframes tm-progress-infinite {
+  from {
+    transform: translateX(0) scaleX(1);
+  }
+  to {
+    transform: translateX(5000%) scaleX(3);
+  }
+}
+.tm-qp-title {
+  padding: 0 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--description);
+}
+.tm-qp-progress {
+  height: 2px;
+  margin: -6px 6px 4px;
+  overflow: hidden;
+  position: relative;
+}
+.tm-qp-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2%;
+  background: var(--accent);
+  animation: tm-progress-infinite 3s linear infinite;
+}
+.tm-qp-skeleton {
+  cursor: default;
+}
+.tm-qp-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.tm-qp-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.tm-qi-item.has-detail {
+  height: 40px;
+}
+.tm-qp-detail {
+  font-size: 12px;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-qp-prompt {
+  padding: 0 12px 4px;
+  font-size: 12px;
+  color: var(--description);
+  white-space: normal;
+}
+.tm-qp-prompt.is-error {
+  color: var(--error);
+}
+.tm-qp-links {
+  padding: 2px 8px 2px;
+}
+.tm-input.has-error,
+.tm-qi-input-row .tm-input.has-error {
+  border-color: var(--error);
+}
+
+/* ───────────────────────── source control (scm/*) ───────────────────────── */
+.tm-scm {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tm-scm-empty ol {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+.tm-scm-empty code {
+  padding: 0 3px;
+  border-radius: 3px;
+  font: 12px var(--font-mono);
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  user-select: text;
+}
+.tm-scm-empty .tm-button + .tm-button {
+  margin-top: 8px;
+}
+.tm-scm-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 10px 20px;
+}
+.tm-scm-input {
+  flex: none;
+  height: auto;
+  min-height: 26px;
+  resize: none;
+  overflow-y: auto;
+  padding: 4px 6px;
+  line-height: 18px;
+  font-family: var(--font-ui);
+}
+.tm-scm-input:focus {
+  border-color: var(--focus-border);
+  outline: none;
+}
+.tm-scm-primary {
+  width: 100%;
+  min-height: 26px;
+}
+.tm-scm-split {
+  display: flex;
+}
+.tm-scm-split .tm-scm-primary {
+  flex: 1;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.tm-scm-dropdown {
+  padding: 0 4px;
+  min-height: 26px;
+  border-left: 1px solid color-mix(in srgb, var(--button-fg) 40%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.tm-scm-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warning);
+}
+.tm-scm-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 20px;
+}
+.tm-scm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 12px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+  background: var(--section-header-bg);
+}
+.tm-scm-section.is-graph {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+}
+.tm-scm-section.is-graph .tm-scm-section-header {
+  padding-right: 4px;
+}
+.tm-scm-section-header:focus-visible,
+.tm-scm-row:focus-visible {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-scm-section-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-scm-section-actions,
+.tm-scm-row-actions {
+  display: none;
+  gap: 2px;
+}
+.tm-scm-section-header:hover .tm-scm-section-actions,
+.tm-scm-section-header:focus-within .tm-scm-section-actions,
+.tm-scm-row:hover .tm-scm-row-actions,
+.tm-scm-row:focus-visible .tm-scm-row-actions,
+.tm-scm-row:focus-within .tm-scm-row-actions {
+  display: flex;
+}
+.tm-scm-count {
+  margin-left: 4px;
+}
+.tm-scm-row {
+  padding-left: 20px;
+  padding-right: 12px;
+}
+.tm-scm-name {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-scm-row.is-deleted .tm-scm-name {
+  text-decoration: line-through;
+}
+.tm-scm-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-scm-row-actions {
+  margin-left: auto;
+}
+.tm-scm-row-actions .tm-action {
+  width: 20px;
+  height: 20px;
+}
+.tm-scm-letter {
+  flex: none;
+  width: 12px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.tm-scm-row-actions + .tm-scm-letter {
+  margin-left: 2px;
+}
+.tm-scm-commit-row {
+  padding-left: 20px;
+  cursor: default;
+}
+.tm-scm-commit-icon {
+  color: var(--description);
+}
+.tm-scm-commit-row .tm-scm-name {
+  max-width: 60%;
+}
+.tm-scm-ref {
+  flex: none;
+  max-width: 90px;
+  padding: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+}
+.tm-list-row.is-selected .tm-scm-folder,
+.tm-list-row.is-selected .tm-scm-letter {
+  color: inherit;
+}
+
+/* gitDecoration.* colours: the SCM letters and the explorer names/badges */
+.is-modified.tm-scm-letter,
+.tm-scm-row.is-modified .tm-scm-name,
+.tm-tree-row.git-modified:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-modified,
+.tm-git-dot.is-modified {
+  color: var(--git-modified);
+}
+.is-added.tm-scm-letter,
+.tm-scm-row.is-added .tm-scm-name,
+.tm-tree-row.git-added:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-added,
+.tm-git-dot.is-added {
+  color: var(--git-added);
+}
+.is-deleted.tm-scm-letter,
+.tm-scm-row.is-deleted .tm-scm-name,
+.tm-tree-row.git-deleted:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-deleted,
+.tm-git-dot.is-deleted {
+  color: var(--git-deleted);
+}
+.is-untracked.tm-scm-letter,
+.tm-scm-row.is-untracked .tm-scm-name,
+.tm-tree-row.git-untracked:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-untracked,
+.tm-git-dot.is-untracked {
+  color: var(--git-untracked);
+}
+.is-renamed.tm-scm-letter,
+.tm-scm-row.is-renamed .tm-scm-name,
+.tm-tree-row.git-renamed:not(.has-error):not(.has-warning) .tm-tree-label,
+.tm-git-letter.is-renamed,
+.tm-git-dot.is-renamed {
+  color: var(--git-renamed);
+}
+.is-conflict.tm-scm-letter,
+.tm-scm-row.is-conflict .tm-scm-name,
+.tm-tree-row.git-conflict .tm-tree-label,
+.tm-git-letter.is-conflict,
+.tm-git-dot.is-conflict {
+  color: var(--git-conflict);
+}
+.tm-tree-row.git-ignored .tm-tree-label {
+  color: var(--git-ignored);
+}
+.tm-tree-row.is-selected .tm-tree-label,
+.tm-tree-row.is-selected .tm-git-letter {
+  color: inherit !important;
+}
+.tm-git-letter {
+  flex: none;
+  width: 12px;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.tm-decoration-badge ~ .tm-git-letter,
+.tm-dirty-dot ~ .tm-git-letter {
+  margin-left: 4px;
+}
+.tm-git-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* status bar */
+.tm-status-git [data-testid="git-ahead-behind"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* quick diff in the editor gutter (editorGutter.added/modified/deletedBackground) */
+.monaco-editor .tm-dirty-diff-added,
+.monaco-editor .tm-dirty-diff-modified {
+  left: 3px !important;
+  width: 3px !important;
+  margin-left: 0;
+}
+.monaco-editor .tm-dirty-diff-added {
+  background: var(--gutter-added);
+}
+.monaco-editor .tm-dirty-diff-modified {
+  background: var(--gutter-modified);
+}
+.monaco-editor .tm-dirty-diff-deleted::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  bottom: -4px;
+  z-index: 1;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 4px solid var(--gutter-deleted);
+}
+.monaco-editor .tm-dirty-diff-deleted.is-top::after {
+  top: 0;
+  bottom: auto;
+}
+
 /* ───── file icon themes from extensions (themes/iconThemes.ts) ───── */
 .tm-themed-icon {
   display: inline-flex;
@@ -2713,21 +3518,6 @@ kbd,
 }
 
 /* ───── extensions (feat/extensions): Extensions view + details editor ───── */
-.tm-skeleton {
-  display: block;
-  border-radius: 3px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--foreground) 7%, transparent) 25%, color-mix(in srgb, var(--foreground) 14%, transparent) 50%, color-mix(in srgb, var(--foreground) 7%, transparent) 75%);
-  background-size: 200% 100%;
-  animation: tm-skeleton 1.4s ease-in-out infinite;
-}
-@keyframes tm-skeleton {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
 .tm-ext-view {
   overflow: hidden;
 }
@@ -2764,7 +3554,7 @@ kbd,
   box-sizing: border-box;
   cursor: pointer;
   outline: none;
-  transition: background var(--motion);
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .tm-ext-row:hover {
   background: var(--list-hover-bg);
@@ -2777,13 +3567,6 @@ kbd,
 .tm-ext-row.is-disabled .tm-ext-icon,
 .tm-ext-row.is-disabled .tm-ext-row-main {
   opacity: 0.6;
-}
-.tm-ext-row.is-skeleton {
-  cursor: default;
-}
-.tm-ext-row.is-skeleton .tm-ext-row-main {
-  gap: 7px;
-  justify-content: center;
 }
 .tm-ext-icon {
   flex: none;
@@ -3033,10 +3816,6 @@ kbd,
 }
 .tm-ext-readme-img-missing:empty {
   display: none;
-}
-.tm-ext-skeleton-line {
-  height: 12px;
-  margin: 0 0 12px;
 }
 .tm-ext-aside {
   flex: none;

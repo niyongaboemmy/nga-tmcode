@@ -5,6 +5,10 @@ import "@vscode/codicons/dist/codicon.css";
 import "./styles/theme.css";
 import "./styles/workbench.css";
 import { registerBuiltinCommands } from "./commands/builtin";
+import { registerDeveloperCommands } from "./commands/developer";
+import { toggleZenMode, useZen } from "./state/zen";
+import { acquireTypes, enableEmmet, enablePrettier, resetProjectConfig } from "./monaco/languageServices";
+import { setupMonaco } from "./monaco/setup";
 import { KeybindingResolver } from "./commands/registry";
 import { wireDocuments } from "./monaco/documents";
 import { wireRunServices } from "./run/wire";
@@ -27,6 +31,9 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 import { ExamOverlay } from "./exam/ExamViews";
+// ── git (scm/*) ──
+import { wireScm } from "./scm/commands";
+import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
 
 /**
  * Editor groups side by side. Always one Allotment with a stable key per group,
@@ -70,7 +77,8 @@ export function Workbench() {
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
-  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput);
+  const quickPick = useQuickPick((s) => !!s.request);
+  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput) || quickPick;
   const [chord, setChord] = useState<string | null>(null);
   const [focused, setFocused] = useState(true);
   const platform = getPlatform();
@@ -80,10 +88,26 @@ export function Workbench() {
 
   useEffect(() => {
     registerBuiltinCommands();
+    registerDeveloperCommands();
+    setupMonaco();
+    enableEmmet("standard"); // TextMate tokens (textmate/monacoTm.ts), not Monarch
+    enablePrettier();
     wireDocuments();
     wireRunServices();
+    wireScm();
     startAutoUpdates();
-    const unwatch = platform.watch?.((paths) => void applyExternalChanges(paths));
+    // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
+    let projectTimer: ReturnType<typeof setTimeout> | undefined;
+    const unwatch = platform.watch?.((paths) => {
+      void applyExternalChanges(paths);
+      if (paths.some((p) => /^(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig\.json|\.prettierrc(\.json)?)$/.test(p))) {
+        clearTimeout(projectTimer);
+        projectTimer = setTimeout(() => {
+          resetProjectConfig();
+          void acquireTypes().catch(() => {});
+        }, 1500);
+      }
+    });
     return () => {
       stopAutoUpdates();
       unwatch?.();
@@ -92,6 +116,7 @@ export function Workbench() {
 
   // Size class for responsive layout; very narrow windows hide the side bar once.
   const viewport = useWorkbench((s) => s.viewport);
+  const zen = useZen((s) => s.on);
   useEffect(() => {
     const classify = (w: number) => (w < 640 ? "xs" : w < 900 ? "sm" : w < 1200 ? "md" : "lg");
     const update = () => {
@@ -159,6 +184,29 @@ export function Workbench() {
     };
   }, []);
 
+  // A real project: its .prettierrc and the types of its installed packages.
+  const workspaceRoot = useWorkbench((s) => s.workspace?.root);
+  useEffect(() => {
+    resetProjectConfig();
+    if (!workspaceRoot) return;
+    const t = setTimeout(() => void acquireTypes().catch(() => {}), 800);
+    return () => clearTimeout(t);
+  }, [workspaceRoot]);
+
+  // Zen Mode: Escape twice leaves it, as in VS Code.
+  useEffect(() => {
+    if (!zen) return;
+    let last = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const now = Date.now();
+      if (now - last < 600) toggleZenMode(false);
+      last = now;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zen]);
+
   // Theme colours as CSS variables over the closest hand-styled base (empty for Dark/Light Modern and HC).
   const themeStyle = activeTheme?.cssVars as React.CSSProperties | undefined;
   if (!ready) return <div className="tm-root tm-booting" data-theme={theme} style={themeStyle} />;
@@ -173,6 +221,7 @@ export function Workbench() {
       data-platform={platform.kind}
       data-motion={reduceMotion ? "reduced" : "full"}
       data-size={viewport}
+      data-zen={zen ? "on" : undefined}
       onContextMenu={(e) => {
         // No browser context menu anywhere in the workbench (Monaco and inputs bring their own).
         if (!(e.target as HTMLElement).closest(".monaco-editor, input, textarea, .xterm")) e.preventDefault();
@@ -201,6 +250,7 @@ export function Workbench() {
       </div>
       <StatusBar chord={chord} />
       <QuickInput />
+      <QuickPickHost />
       <ContextMenu />
       <Dialog />
       <ExamOverlay />
