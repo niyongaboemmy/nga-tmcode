@@ -72,7 +72,11 @@ async function boot() {
     const { listen } = await import("@tauri-apps/api/event");
     void listen<string>("menu", (e) => executeCommand(e.payload));
     // A second `tmcode <path>`, or files dropped on the Dock icon / "Open With".
-    void listen<string>("open-path", (e) => void openPathFromOs(e.payload));
+    await listen<string>("open-path", (e) => void openPathFromOs(e.payload));
+    // Anything that arrived between startup and this listener.
+    const { invoke } = await import("@tauri-apps/api/core");
+    const late = await invoke<string[]>("take_pending_open").catch(() => []);
+    if (late.length) void openPathFromOs(late[late.length - 1]);
     // tmcode://launch links: the one that started the app, and any that arrive while it runs.
     const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
     const open = (urls: string[] | null) => {

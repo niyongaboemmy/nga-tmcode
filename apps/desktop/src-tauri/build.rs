@@ -4,6 +4,7 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "app_info",
+            "take_pending_open",
             "set_native_theme",
             "ws_open",
             "ws_reopen",

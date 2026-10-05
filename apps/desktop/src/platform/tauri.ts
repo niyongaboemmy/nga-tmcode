@@ -27,7 +27,9 @@ export async function createTauriPlatform(): Promise<Platform> {
     open_path: string | null;
   }>("app_info");
   devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, launch: info.dev_launch };
-  launchPath = info.open_path;
+  // Command-line path, else the last path macOS asked us to open before we were listening.
+  const queued = await invoke<string[]>("take_pending_open").catch(() => []);
+  launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
   const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
 

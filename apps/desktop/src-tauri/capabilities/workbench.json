@@ -60,6 +60,7 @@
     "allow-ws-reveal",
     "core:window:allow-set-title",
     "allow-update-check",
-    "allow-update-install"
+    "allow-update-install",
+    "allow-take-pending-open"
   ]
 }

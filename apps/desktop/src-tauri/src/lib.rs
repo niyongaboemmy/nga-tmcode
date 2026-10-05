@@ -24,6 +24,16 @@ pub mod test_support {
 }
 
 pub const WINDOW: &str = "main";
+
+/// Paths macOS asked us to open before the workbench was listening (cold-start
+/// "Open With", `open -a TMCode <folder>`, Dock drops). The workbench takes them once at startup.
+#[derive(Default)]
+pub struct PendingOpen(std::sync::Mutex<Vec<String>>);
+
+#[tauri::command]
+fn take_pending_open(pending: tauri::State<'_, PendingOpen>) -> Vec<String> {
+    std::mem::take(&mut *pending.0.lock().unwrap())
+}
 pub const WORKBENCH: &str = "workbench";
 
 #[derive(Serialize)]
@@ -163,10 +173,12 @@ pub fn run() {
         .manage(preview::Preview::default())
         .manage(watcher::Watcher::default())
         .manage(updates::Pending::default())
+        .manage(PendingOpen::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,
+            take_pending_open,
             workspace::ws_open,
             workspace::ws_reopen,
             workspace::ws_open_file,
@@ -217,7 +229,10 @@ pub fn run() {
         if let RunEvent::Opened { urls } = &event {
             for url in urls.iter().filter(|u| u.scheme() == "file") {
                 if let Ok(path) = url.to_file_path() {
-                    let _ = handle.emit_to(tauri::EventTarget::webview(WORKBENCH), "open-path", path.to_string_lossy().into_owned());
+                    let path = path.to_string_lossy().into_owned();
+                    // Queue it too: on a cold start nothing is listening yet.
+                    handle.state::<PendingOpen>().0.lock().unwrap().push(path.clone());
+                    let _ = handle.emit_to(tauri::EventTarget::webview(WORKBENCH), "open-path", path);
                 }
             }
         }
