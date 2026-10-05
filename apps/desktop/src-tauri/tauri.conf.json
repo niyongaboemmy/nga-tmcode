@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TMCode",
+  "mainBinaryName": "TMCode",
+  "version": "../package.json",
+  "identifier": "com.amashuri.tmcode",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1430",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "worker-src": "'self' blob:",
+        "img-src": "'self' data: blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost"
+      },
+      "capabilities": ["workbench"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "dmg", "app"],
+    "publisher": "New Generation Academy",
+    "copyright": "© 2026 New Generation Academy",
+    "category": "DeveloperTool",
+    "shortDescription": "The code editor for Task Mentor practicals and exams",
+    "longDescription": "TMCode is a Visual Studio Code-style editor for New Generation Academy coding students: write, run and preview code, and take Task Mentor coding tests and exams.",
+    "homepage": "https://taskmentor.amashuri.com",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": { "installMode": "currentUser", "displayLanguageSelector": false },
+      "wix": { "language": "en-US" }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "@tmcode/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p . && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "bundle": "tauri build",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
+    "@tauri-apps/plugin-log": "^2.10.0",
+    "@tauri-apps/plugin-store": "^2.5.0",
+    "@tmcode/protocol": "*",
+    "@tmcode/workbench": "*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@tauri-apps/cli": "^2.12.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "jsdom": "^27.0.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.11"
+  }
+}

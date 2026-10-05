@@ -1,0 +1,313 @@
+/*
+ * Workbench colour tokens, named after VS Code's theme keys so a theme JSON
+ * maps 1:1. Values: Dark Modern / Light Modern / Dark High Contrast.
+ */
+.tm-root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", system-ui, Ubuntu, "Droid Sans", sans-serif;
+  --font-mono: Menlo, Monaco, Consolas, "Courier New", monospace;
+  --radius: 4px;
+  --radius-lg: 6px;
+  --titlebar-h: 35px;
+  --statusbar-h: 22px;
+  --activitybar-w: 48px;
+  --tabs-h: 35px;
+  --motion: 120ms;
+}
+
+.tm-root[data-theme="dark-modern"] {
+  color-scheme: dark;
+  --foreground: #cccccc;
+  --description: #9d9d9d;
+  --disabled: #8b8b8b80;
+  --icon: #cccccc;
+  --focus-border: #0078d4;
+  --accent: #0078d4;
+  --accent-hover: #026ec1;
+  --accent-fg: #ffffff;
+  --border: #2b2b2b;
+  --widget-border: #313131;
+  --shadow: rgba(0, 0, 0, 0.36);
+  --link: #4daafc;
+
+  --titlebar-bg: #181818;
+  --titlebar-fg: #cccccc;
+  --titlebar-inactive-fg: #9d9d9d;
+  --commandcenter-bg: #222222;
+  --commandcenter-hover-bg: #2b2b2b;
+  --commandcenter-border: #3c3c3c;
+
+  --activitybar-bg: #181818;
+  --activitybar-fg: #d7d7d7;
+  --activitybar-inactive-fg: #868686;
+  --activitybar-active-border: #0078d4;
+  --badge-bg: #0078d4;
+  --badge-fg: #ffffff;
+
+  --sidebar-bg: #181818;
+  --sidebar-fg: #cccccc;
+  --sidebar-title-fg: #cccccc;
+  --section-header-bg: #181818;
+
+  --editor-bg: #1f1f1f;
+  --editor-fg: #cccccc;
+  --tabs-bg: #181818;
+  --tab-active-bg: #1f1f1f;
+  --tab-active-fg: #ffffff;
+  --tab-inactive-bg: #181818;
+  --tab-inactive-fg: #9d9d9d;
+  --tab-active-border-top: #0078d4;
+  --tab-unfocused-active-border-top: #4a4a4a;
+  --tab-hover-bg: #1f1f1f;
+  --breadcrumb-fg: #a9a9a9;
+
+  --panel-bg: #181818;
+  --panel-title-active-fg: #e7e7e7;
+  --panel-title-inactive-fg: #9d9d9d;
+  --panel-active-border: #0078d4;
+
+  --statusbar-bg: #181818;
+  --statusbar-fg: #cccccc;
+  --statusbar-hover-bg: #f1f1f11f;
+  --statusbar-border: #2b2b2b;
+
+  --input-bg: #313131;
+  --input-fg: #cccccc;
+  --input-border: #3c3c3c;
+  --input-placeholder: #989898;
+  --button-bg: #0078d4;
+  --button-fg: #ffffff;
+  --button-hover-bg: #026ec1;
+  --button-secondary-bg: #313131;
+  --button-secondary-fg: #cccccc;
+  --button-secondary-hover-bg: #3c3c3c;
+  --checkbox-bg: #313131;
+
+  --list-hover-bg: #2a2d2e;
+  --list-active-bg: #04395e;
+  --list-active-fg: #ffffff;
+  --list-inactive-bg: #37373d;
+  --list-focus-outline: #0078d4;
+  --list-highlight: #2aaaff;
+  --tree-indent-guide: #585858;
+
+  --widget-bg: #202020;
+  --quickinput-bg: #222222;
+  --menu-bg: #1f1f1f;
+  --menu-selection-bg: #0078d4;
+  --menu-selection-fg: #ffffff;
+  --menu-separator: #454545;
+
+  --error: #f85149;
+  --warning: #cca700;
+  --info: #3794ff;
+  --success: #2ea043;
+  --modified: #e2c08d;
+
+  --scrollbar: #79797966;
+  --scrollbar-hover: #646464b3;
+}
+
+.tm-root[data-theme="light-modern"] {
+  color-scheme: light;
+  --foreground: #3b3b3b;
+  --description: #717171;
+  --disabled: #61616180;
+  --icon: #3b3b3b;
+  --focus-border: #005fb8;
+  --accent: #005fb8;
+  --accent-hover: #0258a8;
+  --accent-fg: #ffffff;
+  --border: #e5e5e5;
+  --widget-border: #e5e5e5;
+  --shadow: rgba(0, 0, 0, 0.16);
+  --link: #005fb8;
+
+  --titlebar-bg: #f8f8f8;
+  --titlebar-fg: #1e1e1e;
+  --titlebar-inactive-fg: #8b949e;
+  --commandcenter-bg: #ffffff;
+  --commandcenter-hover-bg: #f2f2f2;
+  --commandcenter-border: #cecece;
+
+  --activitybar-bg: #f8f8f8;
+  --activitybar-fg: #1f1f1f;
+  --activitybar-inactive-fg: #616161;
+  --activitybar-active-border: #005fb8;
+  --badge-bg: #005fb8;
+  --badge-fg: #ffffff;
+
+  --sidebar-bg: #f8f8f8;
+  --sidebar-fg: #3b3b3b;
+  --sidebar-title-fg: #3b3b3b;
+  --section-header-bg: #f8f8f8;
+
+  --editor-bg: #ffffff;
+  --editor-fg: #3b3b3b;
+  --tabs-bg: #f8f8f8;
+  --tab-active-bg: #ffffff;
+  --tab-active-fg: #3b3b3b;
+  --tab-inactive-bg: #f8f8f8;
+  --tab-inactive-fg: #868686;
+  --tab-active-border-top: #005fb8;
+  --tab-unfocused-active-border-top: #c8c8c8;
+  --tab-hover-bg: #ffffff;
+  --breadcrumb-fg: #616161;
+
+  --panel-bg: #f8f8f8;
+  --panel-title-active-fg: #3b3b3b;
+  --panel-title-inactive-fg: #616161;
+  --panel-active-border: #005fb8;
+
+  --statusbar-bg: #f8f8f8;
+  --statusbar-fg: #3b3b3b;
+  --statusbar-hover-bg: #1f1f1f11;
+  --statusbar-border: #e5e5e5;
+
+  --input-bg: #ffffff;
+  --input-fg: #3b3b3b;
+  --input-border: #cecece;
+  --input-placeholder: #767676;
+  --button-bg: #005fb8;
+  --button-fg: #ffffff;
+  --button-hover-bg: #0258a8;
+  --button-secondary-bg: #e5e5e5;
+  --button-secondary-fg: #3b3b3b;
+  --button-secondary-hover-bg: #cccccc;
+  --checkbox-bg: #f8f8f8;
+
+  --list-hover-bg: #f2f2f2;
+  --list-active-bg: #e8e8e8;
+  --list-active-fg: #000000;
+  --list-inactive-bg: #e4e6f1;
+  --list-focus-outline: #005fb8;
+  --list-highlight: #0066bf;
+  --tree-indent-guide: #a9a9a9;
+
+  --widget-bg: #f8f8f8;
+  --quickinput-bg: #f8f8f8;
+  --menu-bg: #ffffff;
+  --menu-selection-bg: #005fb8;
+  --menu-selection-fg: #ffffff;
+  --menu-separator: #d4d4d4;
+
+  --error: #e51400;
+  --warning: #bf8803;
+  --info: #1a85ff;
+  --success: #388a34;
+  --modified: #895503;
+
+  --scrollbar: #64646466;
+  --scrollbar-hover: #646464b3;
+}
+
+.tm-root[data-theme="dark-hc"] {
+  color-scheme: dark;
+  --foreground: #ffffff;
+  --description: #ffffff;
+  --disabled: #a5a5a5;
+  --icon: #ffffff;
+  --focus-border: #f38518;
+  --accent: #f38518;
+  --accent-hover: #f38518;
+  --accent-fg: #000000;
+  --border: #6fc3df;
+  --widget-border: #6fc3df;
+  --shadow: transparent;
+  --link: #21a6ff;
+
+  --titlebar-bg: #000000;
+  --titlebar-fg: #ffffff;
+  --titlebar-inactive-fg: #ffffff;
+  --commandcenter-bg: #000000;
+  --commandcenter-hover-bg: #000000;
+  --commandcenter-border: #6fc3df;
+
+  --activitybar-bg: #000000;
+  --activitybar-fg: #ffffff;
+  --activitybar-inactive-fg: #ffffff;
+  --activitybar-active-border: #f38518;
+  --badge-bg: #000000;
+  --badge-fg: #ffffff;
+
+  --sidebar-bg: #000000;
+  --sidebar-fg: #ffffff;
+  --sidebar-title-fg: #ffffff;
+  --section-header-bg: #000000;
+
+  --editor-bg: #000000;
+  --editor-fg: #ffffff;
+  --tabs-bg: #000000;
+  --tab-active-bg: #000000;
+  --tab-active-fg: #ffffff;
+  --tab-inactive-bg: #000000;
+  --tab-inactive-fg: #ffffff;
+  --tab-active-border-top: #f38518;
+  --tab-unfocused-active-border-top: #6fc3df;
+  --tab-hover-bg: #000000;
+  --breadcrumb-fg: #ffffff;
+
+  --panel-bg: #000000;
+  --panel-title-active-fg: #ffffff;
+  --panel-title-inactive-fg: #ffffff;
+  --panel-active-border: #f38518;
+
+  --statusbar-bg: #000000;
+  --statusbar-fg: #ffffff;
+  --statusbar-hover-bg: #ffffff22;
+  --statusbar-border: #6fc3df;
+
+  --input-bg: #000000;
+  --input-fg: #ffffff;
+  --input-border: #6fc3df;
+  --input-placeholder: #ffffffb3;
+  --button-bg: #000000;
+  --button-fg: #ffffff;
+  --button-hover-bg: #000000;
+  --button-secondary-bg: #000000;
+  --button-secondary-fg: #ffffff;
+  --button-secondary-hover-bg: #000000;
+  --checkbox-bg: #000000;
+
+  --list-hover-bg: transparent;
+  --list-active-bg: transparent;
+  --list-active-fg: #ffffff;
+  --list-inactive-bg: transparent;
+  --list-focus-outline: #f38518;
+  --list-highlight: #f38518;
+  --tree-indent-guide: #a9a9a9;
+
+  --widget-bg: #0c141f;
+  --quickinput-bg: #000000;
+  --menu-bg: #000000;
+  --menu-selection-bg: transparent;
+  --menu-selection-fg: #ffffff;
+  --menu-separator: #6fc3df;
+
+  --error: #f48771;
+  --warning: #ffd370;
+  --info: #3794ff;
+  --success: #89d185;
+  --modified: #ffd370;
+
+  --scrollbar: #6fc3df99;
+  --scrollbar-hover: #6fc3dfcc;
+}
+
+/* High contrast: outlines replace fills, like VS Code. */
+.tm-root[data-theme="dark-hc"] .tm-list-row:hover,
+.tm-root[data-theme="dark-hc"] .tm-list-row.is-selected {
+  outline: 1px dashed var(--focus-border);
+  outline-offset: -1px;
+}
+
+.tm-root[data-motion="reduced"] * {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tm-root * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

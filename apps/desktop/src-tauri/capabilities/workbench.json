@@ -1,0 +1,34 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "workbench",
+  "description": "The TMCode workbench (local UI). Preview webviews load student code and get no permissions at all.",
+  "webviews": [
+    "workbench"
+  ],
+  "permissions": [
+    "core:default",
+    "log:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "store:default",
+    "allow-app-info",
+    "allow-set-native-theme",
+    "allow-ws-open",
+    "allow-ws-reopen",
+    "allow-ws-read-dir",
+    "allow-ws-read-file",
+    "allow-ws-write-file",
+    "allow-ws-create-file",
+    "allow-ws-create-dir",
+    "allow-ws-rename",
+    "allow-ws-remove",
+    "allow-pty-spawn",
+    "allow-pty-write",
+    "allow-pty-resize",
+    "allow-pty-kill"
+  ]
+}
