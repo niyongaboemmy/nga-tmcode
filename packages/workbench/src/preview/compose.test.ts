@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findModuleEntry, injectBeforeBodyEnd, injectIntoHead, inlineAssets, resolveRelative } from "./compose";
+import { CONSOLE_SHIM, findModuleEntry, injectBeforeBodyEnd, injectIntoHead, inlineAssets, resolveRelative, scrollTag } from "./compose";
 
 describe("preview composition", () => {
   it("injects into head or creates one", () => {
@@ -34,5 +34,11 @@ describe("preview composition", () => {
   it("finds a Vite-style module entry", () => {
     expect(findModuleEntry('<div id="root"></div><script type="module" src="/src/main.jsx"></script>')?.src).toBe("/src/main.jsx");
     expect(findModuleEntry("<p>no scripts</p>")).toBeNull();
+  });
+
+  it("ships a console shim that parses, and restores the scroll position", () => {
+    expect(() => new Function(CONSOLE_SHIM)).not.toThrow();
+    expect(scrollTag(10.4, 250)).toBe("<script>window.__tmcodeScroll={x:10,y:250};</script>");
+    expect(scrollTag(NaN, 0)).toBe("<script>window.__tmcodeScroll={x:0,y:0};</script>");
   });
 });
