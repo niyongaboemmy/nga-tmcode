@@ -16,10 +16,12 @@ test("saves appear in the Timeline, compare opens a diff, restore brings the old
   const editor = page.locator(".monaco-editor .view-lines").first();
   await expect(editor).toContainText("def letter");
   await editor.click();
-  await page.keyboard.press(`${mod}+Home`);
-  await page.keyboard.type("# version one\n");
+  // Select-all + type (Home/End keys differ between WebKit builds).
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("# version one");
   await page.keyboard.press(`${mod}+s`);
-  await page.keyboard.type("# version two\n");
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("# version two");
   await page.keyboard.press(`${mod}+s`);
 
   const timeline = page.getByTestId("timeline");
