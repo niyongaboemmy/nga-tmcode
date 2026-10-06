@@ -9,6 +9,7 @@ import type { TerminalSession } from "../../platform/types";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { enhanceTerminal, type EnhancedTerminal } from "../../terminal/enhance";
 import { recordCommand, CommandLineTracker } from "../../terminal/history";
+import { SkeletonLines } from "../../widgets/Skeleton";
 
 /** Terminal colours of the active colour theme (its terminal.* keys); the static palettes cover the moment before it loads. */
 export function terminalTheme(theme: string): ITheme {
@@ -88,6 +89,9 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [finding, setFinding] = useState(false);
+  // Terminals whose shell has printed something (until then a skeleton stands in for the prompt).
+  const [started, setStarted] = useState<ReadonlySet<number>>(() => new Set());
+  const markStarted = (id: number) => setStarted((s) => (s.has(id) ? s : new Set(s).add(id)));
   const theme = useThemes((s) => s.active?.id ?? "dark-modern");
   const fontSize = useWorkbench((s) => s.settings["terminal.integrated.fontSize"]);
   const workspace = useWorkbench((s) => s.workspace);
@@ -98,9 +102,14 @@ export function TerminalView({ visible }: { visible: boolean }) {
   live.current = instances;
   // One spawn at a time (StrictMode runs effects twice in development).
   const spawning = useRef(false);
+  // Bumped when the workspace changes: a shell still spawning for the old folder is discarded on arrival.
+  const epoch = useRef(0);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const create = async (req: NewTerminalRequest = {}) => {
     if (!platform.terminal || spawning.current) return;
     spawning.current = true;
+    const myEpoch = epoch.current;
     const term = new Terminal({
       fontFamily: defaultFontFamily(platform.os),
       fontSize,
@@ -121,19 +130,31 @@ export function TerminalView({ visible }: { visible: boolean }) {
     setInstances((list) => [...list, inst]);
     setActiveId(inst.id);
     try {
-      inst.session = await platform.terminal.spawn({
+      const session = await platform.terminal.spawn({
         cols: 80,
         rows: 24,
         cwd: req.cwd,
         onData: (d) => {
+          markStarted(inst.id);
           term.write(d);
           extras.observe(d);
         },
         onExit: (code) => {
+          markStarted(inst.id);
           inst.exited = true;
           term.write(`\r\n\x1b[90m[process exited with code ${code ?? "?"}]\x1b[0m\r\n`);
         },
       });
+      if (epoch.current !== myEpoch) {
+        // The folder changed while the shell started (session restore at launch): this one belongs to nothing.
+        session.kill();
+        extras.dispose();
+        term.dispose();
+        spawning.current = false;
+        if (visibleRef.current && live.current.length === 0) void create(req);
+        return;
+      }
+      inst.session = session;
       const tracker = new CommandLineTracker((cmd) => recordCommand(cmd));
       term.onData((d) => {
         tracker.feed(d);
@@ -147,10 +168,11 @@ export function TerminalView({ visible }: { visible: boolean }) {
       term.onResize(({ cols, rows }) => inst.session?.resize(cols, rows));
       log("Terminal", `Started terminal ${inst.id}`);
     } catch (e) {
+      markStarted(inst.id);
       term.write(`\x1b[31mCould not start a shell: ${String((e as Error)?.message ?? e)}\x1b[0m\r\n`);
       notify("error", "The terminal could not be started.");
     } finally {
-      spawning.current = false;
+      if (epoch.current === myEpoch) spawning.current = false;
     }
   };
 
@@ -158,8 +180,9 @@ export function TerminalView({ visible }: { visible: boolean }) {
   useEffect(() => {
     const el = host.current;
     const inst = instances.find((i) => i.id === activeId);
-    if (!el || !inst) return;
+    if (!el) return;
     el.replaceChildren();
+    if (!inst) return;
     if (!inst.term.element) inst.term.open(el);
     else el.appendChild(inst.term.element);
     requestAnimationFrame(() => {
@@ -235,6 +258,9 @@ export function TerminalView({ visible }: { visible: boolean }) {
       live.current = [];
       setInstances([]);
       setActiveId(null);
+      // A spawn in flight is now stale; let the new folder start its own shell right away.
+      epoch.current++;
+      spawning.current = false;
     };
   }, [workspace?.root]);
 
@@ -260,7 +286,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
 
   return (
     <div className="tm-terminal" hidden={!visible}>
-      <div ref={host} className="tm-terminal-host" />
+      <div ref={host} className="tm-terminal-host" data-testid="integrated-terminal" />
+      {activeInstance && !started.has(activeInstance.id) && <ShellStarting />}
       {finding && activeInstance && <TerminalFind key={activeInstance.id} inst={activeInstance} onClose={() => setFinding(false)} />}
       {instances.length > 1 && (
         <ul className="tm-terminal-list" aria-label="Terminals">
@@ -278,6 +305,20 @@ export function TerminalView({ visible }: { visible: boolean }) {
       )}
     </div>
   );
+}
+
+/** Shown only if the shell is slow to print its prompt (login shells, cold disks), so fast starts never flash. */
+function ShellStarting() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShow(true), 150);
+    return () => clearTimeout(t);
+  }, []);
+  return show ? (
+    <div className="tm-terminal-starting">
+      <SkeletonLines lines={3} label="Starting the shell" />
+    </div>
+  ) : null;
 }
 
 function shellName(os: string) {

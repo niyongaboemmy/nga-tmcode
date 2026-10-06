@@ -11,6 +11,7 @@ import {
   startExam,
   setWorkspace,
   startedWorkers,
+  watchCspViolations,
   type Platform,
 } from "@tmcode/workbench";
 
@@ -21,6 +22,8 @@ async function wireDesktopLogging() {
   const log = await import("@tauri-apps/plugin-log");
   window.addEventListener("error", (e) => void log.error(`webview error: ${e.message} @ ${e.filename}:${e.lineno}`));
   window.addEventListener("unhandledrejection", (e) => void log.error(`unhandled rejection: ${String(e.reason?.message ?? e.reason)}`));
+  // A refused stylesheet or script silently breaks the UI (the 0.3.0 invisible-cursor bug), so say so.
+  watchCspViolations((msg) => void log.warn(`content security policy: ${msg}`));
   return log;
 }
 
@@ -50,10 +53,12 @@ async function boot() {
     await setWorkspace({ name: "practice-project", root: "memory://practice-project" });
   }
   if (import.meta.env.DEV) {
-    const { simulateExternalWrite } = await import("@tmcode/workbench");
+    const { simulateExternalWrite, runUiProbe } = await import("@tmcode/workbench");
+    if (!inTauri) watchCspViolations();
     (window as unknown as { __TMCODE_DEBUG__: unknown }).__TMCODE_DEBUG__ = {
       startedWorkers,
       externalWrite: (path: string, content: string) => simulateExternalWrite(platform, path, content),
+      uiProbe: runUiProbe,
     };
   }
   createRoot(document.getElementById("root")!).render(
@@ -89,6 +94,9 @@ async function boot() {
   if (desktopLog && dev?.launch) {
     const { runExamSelfTest } = await import("./selftest");
     setTimeout(() => void runExamSelfTest(dev.launch!, (m) => void desktopLog.info(m)), 2000);
+  } else if (desktopLog && dev?.selftestUi) {
+    const { runUiSelfTest } = await import("./selftest");
+    setTimeout(() => void runUiSelfTest((m) => void desktopLog.info(m)), 2500);
   } else if (desktopLog && dev?.selftestGit) {
     const { runGitSelfTest } = await import("./selftest");
     setTimeout(() => void runGitSelfTest(platform, (m) => void desktopLog.info(m)), 2500);

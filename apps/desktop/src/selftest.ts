@@ -1,4 +1,4 @@
-import { DapSession, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
+import { DapSession, runUiProbe, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
 
 /**
  * Debug-build self-test (TMCODE_DEV_SELFTEST=1): exercises the runner,
@@ -177,4 +177,19 @@ export async function runGitSelfTest(platform: Platform, log: (msg: string) => v
   await step("check-ignore", async () => JSON.stringify(await git.checkIgnore(["node_modules/", "selftest.txt"])));
   await step("github user", async () => JSON.stringify((await git.github?.user())?.login ?? null));
   log("git selftest done");
+}
+
+/**
+ * Debug-build UI self-test (TMCODE_DEV_SELFTEST=ui): opens a file and the
+ * terminal in the real webview and logs what the user would see (cursor,
+ * current line, token colours, glyph alignment, CSP refusals, typing stalls).
+ */
+export async function runUiSelfTest(log: (msg: string) => void) {
+  try {
+    const checks = await runUiProbe({ file: "web/index.html", bigFile: "web/big.js", terminal: true });
+    for (const c of checks) log(`selftest ui ${c.name}: ${c.ok ? "ok" : "FAILED"} ${c.detail}`);
+    log(`selftest ui: ${checks.filter((c) => !c.ok).length} failed of ${checks.length}`);
+  } catch (e) {
+    log(`selftest ui: FAILED ${String((e as Error)?.message ?? e)}`);
+  }
 }
