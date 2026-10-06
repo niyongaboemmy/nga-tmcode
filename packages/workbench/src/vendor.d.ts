@@ -12,3 +12,14 @@ declare module "monaco-editor/languages/definitions/*" {
   export const language: import("monaco-editor").languages.IMonarchLanguage;
   export const conf: import("monaco-editor").languages.LanguageConfiguration;
 }
+
+// Monaco internals used by the Outline pane (outline/OutlinePane.tsx).
+declare module "monaco-editor/base/common/cancellation.js" {
+  export const CancellationToken: { None: unknown };
+}
+declare module "monaco-editor/editor/contrib/documentSymbols/browser/outlineModel.js" {
+  export const IOutlineModelService: unknown;
+}
+declare module "monaco-editor/editor/standalone/browser/standaloneServices.js" {
+  export const StandaloneServices: { get(id: unknown): unknown };
+}

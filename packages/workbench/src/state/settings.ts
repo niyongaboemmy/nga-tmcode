@@ -32,6 +32,10 @@ export interface Settings {
   "workbench.reduceMotion": boolean;
   /** "default": check at start and every 6 hours; "manual": only from the command; "none": never. */
   "update.mode": "default" | "manual" | "none";
+  /** Task Mentor projects: save automatically ("off", after each file save, or every 5 minutes). */
+  "projects.autoSave": "off" | "onSave" | "interval";
+  /** Share live status (open file, unsaved files, sync) with Task Mentor while a project is open. */
+  "projects.presence": boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -54,6 +58,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.fontSize": 13,
   "workbench.reduceMotion": false,
   "update.mode": "default",
+  "projects.autoSave": "off",
+  "projects.presence": true,
 };
 
 export type SettingKey = keyof Settings;
@@ -197,6 +203,28 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         type: "number",
         min: 200,
         max: 60000,
+      },
+    ],
+  },
+  {
+    title: "Projects",
+    settings: [
+      {
+        key: "projects.autoSave",
+        label: "Projects: Auto Save to Task Mentor",
+        description: "Save Task Mentor projects automatically. GitHub projects always use git push.",
+        type: "enum",
+        options: [
+          { value: "off", label: "off (Save to Task Mentor yourself)" },
+          { value: "onSave", label: "onSave (after each file save)" },
+          { value: "interval", label: "interval (every 5 minutes)" },
+        ],
+      },
+      {
+        key: "projects.presence",
+        label: "Projects: Share Live Status",
+        description: "Let Task Mentor show that the project is open, which file you are editing and whether it is synced.",
+        type: "boolean",
       },
     ],
   },

@@ -96,6 +96,8 @@ export interface Platform {
   // ── end extensions ──
   /** Git & GitHub (desktop: the system git; dev browser build: a mock). Absent → no Source Control. */
   git?: GitHost;
+  /** NGA account (MIS + Task Mentor) and Task Mentor projects; absent → no Projects view. */
+  account?: AccountHost;
   /** Run and Debug (Debug Adapter Protocol); absent where nothing can be debugged. */
   debug?: DebugHost;
 }
@@ -422,4 +424,74 @@ export interface GitHost {
     signOut(): Promise<void>;
     repos(): Promise<GitHubRepo[]>;
   };
+}
+
+// ───────────── NGA account + Task Mentor projects (docs/PROJECTS_PLAN.md) ─────────────
+
+export interface AccountUser {
+  id: number;
+  mis_user_id?: number | null;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  avatar_url?: string | null;
+  permissions: string[];
+}
+
+export interface AccountStatus {
+  signed_in: boolean;
+  user: AccountUser | null;
+  tm_api: string;
+  phase: "idle" | "waiting" | "completing";
+  error: string | null;
+}
+
+export interface TmRequest {
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Must start with /api/tmcode/. */
+  path: string;
+  json?: unknown;
+  /** Raw body (blob uploads), base64. */
+  body_base64?: string;
+  content_type?: string;
+  /** "base64": the body comes back as { base64 } (blob downloads). */
+  response?: "json" | "base64";
+}
+
+export interface TmResponse<T = unknown> {
+  status: number;
+  body: T;
+}
+
+export interface ScannedFile {
+  path: string;
+  sha256: string;
+  size: number;
+}
+
+export interface ProjectScan {
+  files: ScannedFile[];
+  truncated: string | null;
+  total_bytes: number;
+}
+
+export interface AccountHost {
+  status(refresh?: boolean): Promise<AccountStatus>;
+  /** Opens the browser; the result arrives through onChange. */
+  signIn(): Promise<void>;
+  cancel(): Promise<void>;
+  signOut(): Promise<void>;
+  onChange(cb: (s: AccountStatus) => void): () => void;
+  /** Authenticated Task Mentor request (/api/tmcode/… only). */
+  request<T = unknown>(req: TmRequest): Promise<TmResponse<T>>;
+  /** The open folder's files as git sees them (sha256 + size). */
+  scan(limits?: { maxFiles?: number; maxFileMb?: number; maxTotalMb?: number }): Promise<ProjectScan>;
+  /** [sha256, gzip+base64] of a workspace file. */
+  readBlob(path: string): Promise<[string, string]>;
+  /** Writes a downloaded gzip+base64 blob after checking its sha256. */
+  writeBlob(path: string, sha256: string, gzBase64: string): Promise<void>;
+  /** A new empty folder for a local copy (default ~/TMCode Projects/<slug>). Absolute path. */
+  newFolder(slug: string, base?: string): Promise<string>;
+  /** The next git clone goes into ~/TMCode Projects (instead of a picked folder). */
+  useProjectsFolderForClone?(): Promise<string>;
 }

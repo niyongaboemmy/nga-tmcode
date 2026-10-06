@@ -10,6 +10,8 @@ import type {
   DebugProbe,
   DebugTransportEvent,
   DirEntry,
+  AccountHost,
+  AccountStatus,
   GitEvent,
   GitHost,
   GitTask,
@@ -69,9 +71,11 @@ export interface DevOptions {
   selftest: boolean;
   /** TMCODE_DEV_SELFTEST=git */
   selftestGit: boolean;
+  /** TMCODE_DEV_SELFTEST=projects */
+  selftestProjects: boolean;
   launch: string | null;
 }
-export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, launch: null };
+export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, selftestProjects: false, launch: null };
 /** Folder or file passed on the command line (`tmcode ~/project`). */
 export let launchPath: string | null = null;
 
@@ -82,10 +86,11 @@ export async function createTauriPlatform(): Promise<Platform> {
     dev_workspace: string | null;
     dev_selftest: boolean;
     dev_selftest_git: boolean;
+    dev_selftest_projects: boolean;
     dev_launch: string | null;
     open_path: string | null;
   }>("app_info");
-  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, launch: info.dev_launch };
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestProjects: info.dev_selftest_projects, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
@@ -206,6 +211,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
     },
     git: createTauriGit(),
+    account: createTauriAccount(),
   };
 }
 
@@ -267,5 +273,30 @@ function createTauriGit(): GitHost {
       signOut: () => invoke("github_sign_out"),
       repos: () => invoke("github_repos"),
     },
+  };
+}
+
+// ───────────── NGA account + projects (account.rs, projects.rs) ─────────────
+function createTauriAccount(): AccountHost {
+  return {
+    status: (refresh = false) => invoke("auth_status", { refresh }),
+    signIn: () => invoke("auth_sign_in"),
+    cancel: () => invoke("auth_cancel"),
+    signOut: () => invoke("auth_sign_out"),
+    onChange(cb) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      void listen<AccountStatus>("account-changed", (e) => cb(e.payload)).then((u) => (stopped ? u() : (un = u)));
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
+    request: (request) => invoke("tm_api", { request }),
+    scan: (l = {}) => invoke("proj_scan", { maxFiles: l.maxFiles ?? null, maxFileMb: l.maxFileMb ?? null, maxTotalMb: l.maxTotalMb ?? null }),
+    readBlob: (path) => invoke("proj_read_blob", { path }),
+    writeBlob: (path, sha256, gzBase64) => invoke("proj_write_blob", { path, sha256, gzBase64 }),
+    newFolder: (slug, base) => invoke("proj_new_folder", { slug, base: base ?? null }),
+    useProjectsFolderForClone: () => invoke("proj_use_projects_folder"),
   };
 }

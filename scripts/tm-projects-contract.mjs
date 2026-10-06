@@ -1,0 +1,64 @@
+// Contract check against a running Task Mentor (feat/tmcode-projects) with a mock MIS token: node scripts/tm-projects-contract.mjs
+import { createHash } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
+import http from "node:http";
+const API = "http://127.0.0.1:5098/api/tmcode";
+const ok = (c, m) => { if (!c) throw new Error(m); console.log("  ✓", m); };
+const ex = await fetch(`${API}/auth/exchange`, { method: "POST", headers: { Authorization: "Bearer dev-mis-token-selftest", "content-type": "application/json" }, body: "{}" });
+const { token, user } = await ex.json();
+ok(ex.status === 200 && token, `exchange → user ${user.id} (${user.email})`);
+const H = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+const call = async (method, path, body, raw) => {
+  const r = await fetch(`${API}${path}`, { method, headers: raw ? { Authorization: H.Authorization, "content-type": "application/gzip" } : H, body: raw ?? (body ? JSON.stringify(body) : undefined) });
+  const t = r.headers.get("content-type")?.includes("json") ? await r.json() : Buffer.from(await r.arrayBuffer());
+  return { status: r.status, body: t };
+};
+const me = await call("GET", "/auth/me");
+ok(me.status === 200 && me.body.token_kind === "tmcode-user", "auth/me with the TMCode user token");
+const created = await call("POST", "/projects", { name: `Contract ${Date.now()}`, kind: "tm", language: "cpp" });
+ok(created.status === 201, `create → project ${created.body.project.id}`);
+const pid = created.body.project.id;
+const files = { "main.cpp": "int main(){return 0;}\n", "src/util.h": "#pragma once\n" };
+const entries = Object.entries(files).map(([path, text]) => ({ path, sha256: createHash("sha256").update(text).digest("hex"), size: Buffer.byteLength(text) }));
+const missing = await call("POST", `/projects/${pid}/blobs/missing`, { sha256: entries.map((e) => e.sha256) });
+ok(missing.body.missing.length === 2, "blobs/missing reports both new blobs");
+const pre = await call("POST", `/projects/${pid}/revisions`, { base_revision_id: null, message: "x", files: entries, source: "save" });
+ok(pre.status === 422 && pre.body.error_code === "BLOBS_MISSING", "commit before upload → 422 BLOBS_MISSING");
+for (const e of entries) {
+  const put = await call("PUT", `/projects/${pid}/blobs/${e.sha256}`, null, gzipSync(Buffer.from(files[e.path])));
+  ok(put.status === 201 || put.status === 200, `PUT blob ${e.path} → ${put.status} (${put.body.stored})`);
+}
+const bad = await call("PUT", `/projects/${pid}/blobs/${"0".repeat(64)}`, null, gzipSync(Buffer.from("nope")));
+ok(bad.status === 422, `wrong hash → ${bad.status} ${bad.body.error_code}`);
+const r1 = await call("POST", `/projects/${pid}/revisions`, { base_revision_id: null, message: "first", files: entries, source: "save" });
+ok(r1.status === 201 && r1.body.revision.number === 1, "revision 1");
+const man = await call("GET", `/projects/${pid}/revisions/head/manifest`);
+ok(man.status === 200 && man.body.files.length === 2 && man.body.revision.id === r1.body.revision.id, `head manifest (${man.body.files.map((f) => f.path).join(", ")})`);
+const conflict = await call("POST", `/projects/${pid}/revisions`, { base_revision_id: null, message: "stale", files: entries, source: "save" });
+ok(conflict.status === 409 && conflict.body.error_code === "REVISION_CONFLICT", "stale base → 409 REVISION_CONFLICT");
+const same = await call("POST", `/projects/${pid}/revisions`, { base_revision_id: r1.body.revision.id, message: "same", files: entries, source: "save" });
+ok(same.body.unchanged === true, "identical files → unchanged, no new revision");
+const blob = await call("GET", `/projects/${pid}/blobs/${entries[0].sha256}`);
+ok(gunzipSync(blob.body).toString() === files["main.cpp"], "GET blob returns the gzip content");
+const file = await call("GET", `/projects/${pid}/files/src/util.h?rev=head`);
+ok(file.status === 200, `files/src/util.h → ${file.status}`);
+const badPath = await call("POST", `/projects/${pid}/revisions`, { base_revision_id: r1.body.revision.id, message: "x", files: [{ path: "../etc/passwd", sha256: entries[0].sha256, size: 1 }], source: "save" });
+ok(badPath.status === 422, `path escape → ${badPath.status} ${badPath.body.error_code}`);
+// Live stream: open SSE, then send presence, expect a presence event.
+const events = [];
+const sse = http.get(`${API}/projects/${pid}/live`, { headers: { Authorization: H.Authorization } }, (res) => res.on("data", (d) => events.push(d.toString())));
+await new Promise((r) => setTimeout(r, 500));
+const pres = await call("PUT", `/projects/${pid}/presence`, { device_id: "contract-device", app_version: "0.4.0", state: { open: true, file: "main.cpp", dirty: 1, sync: "local-changes", device_name: "Mac" } });
+ok(pres.status === 200 && pres.body.presence.some((p) => p.online), "presence → online");
+await new Promise((r) => setTimeout(r, 700));
+sse.destroy();
+const joined = events.join("");
+ok(joined.includes("event: hello") && joined.includes("event: presence"), "SSE delivered hello + presence");
+const list = await call("GET", "/projects?scope=mine");
+const row = list.body.projects.find((p) => p.id === pid);
+ok(row && row.head?.number === 1 && row.presence.online, `list: head r${row?.head?.number}, online ${row?.presence.online}, file ${row?.presence.file}`);
+const git = await call("POST", `/projects/${pid}/git`, { branch: "main", head_commit: "abc", ahead: 0, behind: 0, changes: 0, remote_url: null });
+ok(git.status === 409 || git.status === 200, `git report on a tm project → ${git.status} ${git.body.error_code ?? ""}`);
+const del = await call("DELETE", `/projects/${pid}`);
+ok(del.status === 200 || del.status === 204, `delete → ${del.status}`);
+console.log("CONTRACT OK");

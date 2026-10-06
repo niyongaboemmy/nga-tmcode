@@ -7,6 +7,8 @@ import {
   initWorkbench,
   openPathFromOs,
   parseLaunchLink,
+  parseProjectLink,
+  openProjectLink,
   selfCheckWorkers,
   startExam,
   setWorkspace,
@@ -67,6 +69,11 @@ async function boot() {
     const link = parseLaunchLink(launch);
     if (link) void startExam(link.api, link.ticket);
   }
+  const projectLink = params.get("project");
+  if (platform.kind === "web" && projectLink) {
+    const link = parseProjectLink(projectLink);
+    if (link) setTimeout(() => void openProjectLink(link), 500);
+  }
   if (inTauri) {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");
@@ -80,6 +87,9 @@ async function boot() {
     // tmcode://launch links: the one that started the app, and any that arrive while it runs.
     const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
     const open = (urls: string[] | null) => {
+      // tmcode://project?id=…&api=… (Task Mentor "Open in TMCode") before exam launch links.
+      const project = urls?.map(parseProjectLink).find(Boolean);
+      if (project) return void openProjectLink(project);
       const link = urls?.map(parseLaunchLink).find(Boolean);
       if (link) void startExam(link.api, link.ticket);
     };
@@ -89,6 +99,9 @@ async function boot() {
   if (desktopLog && dev?.launch) {
     const { runExamSelfTest } = await import("./selftest");
     setTimeout(() => void runExamSelfTest(dev.launch!, (m) => void desktopLog.info(m)), 2000);
+  } else if (desktopLog && dev?.selftestProjects) {
+    const { runProjectsSelfTest } = await import("./selftest");
+    setTimeout(() => void runProjectsSelfTest(platform, (m) => void desktopLog.info(m)), 3000);
   } else if (desktopLog && dev?.selftestGit) {
     const { runGitSelfTest } = await import("./selftest");
     setTimeout(() => void runGitSelfTest(platform, (m) => void desktopLog.info(m)), 2500);

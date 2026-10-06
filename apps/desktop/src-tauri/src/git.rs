@@ -124,6 +124,11 @@ pub struct Git {
 }
 
 impl Git {
+    /// Task Mentor projects clone into TMCode's own folder (`~/TMCode Projects`), not a picked one.
+    pub fn set_clone_parent(&self, parent: PathBuf) {
+        *self.clone_parent.lock().unwrap() = Some(parent);
+    }
+
     fn info(&self, refresh: bool) -> GitInfo {
         let mut guard = self.info.lock().unwrap();
         if refresh || guard.is_none() {
