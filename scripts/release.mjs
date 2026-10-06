@@ -52,7 +52,10 @@ const log = sh("git", ["log", "--no-merges", "--format=- %s", since ? `${since}.
   .join("\n");
 const date = new Date().toISOString().slice(0, 10);
 const prev = existsSync("CHANGELOG.md") ? readFileSync("CHANGELOG.md", "utf8").replace(/^# Changelog\n+/, "") : "";
-writeFileSync("CHANGELOG.md", `# Changelog\n\n## ${version} — ${date}\n\n${log || "- Maintenance release"}\n\n${prev}`);
+// Hand-written highlights (docs/releases/<version>.md) come first; the commit list follows.
+const highlightsFile = `docs/releases/${version}.md`;
+const highlights = existsSync(highlightsFile) ? `${readFileSync(highlightsFile, "utf8").trim()}\n\n### All changes\n\n` : "";
+writeFileSync("CHANGELOG.md", `# Changelog\n\n## ${version} — ${date}\n\n${highlights}${log || "- Maintenance release"}\n\n${prev}`);
 
 // The release workflow runs `npm ci`: refuse to tag a lock file it would reject.
 try {
