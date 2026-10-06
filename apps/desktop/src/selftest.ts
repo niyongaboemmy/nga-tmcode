@@ -1,4 +1,4 @@
-import { projectsForSelfTest as P, DapSession, runUiProbe, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
+import { exthostForSelfTest, projectsForSelfTest as P, DapSession, runUiProbe, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
 
 /**
  * Debug-build self-test (TMCODE_DEV_SELFTEST=1): exercises the runner,
@@ -270,4 +270,101 @@ export async function runProjectsSelfTest(platform: Platform, log: (msg: string)
     return `${folder}: selftest-project.txt = ${JSON.stringify(text.trim())}; state ${P.useProjects.getState().sync}`;
   });
   log("projects selftest done");
+}
+
+/**
+ * Extension host self-test (TMCODE_DEV_SELFTEST=exthost, TMCODE_DEV_WORKSPACE=<folder with app.js>):
+ * installs real extensions from Open VSX, runs them in the Node.js extension
+ * host and checks they work: Code Formatter & Minifier's Beautify/Minify
+ * commands and Path Intellisense's completions.
+ */
+export async function runExthostSelfTest(platform: Platform, log: (msg: string) => void) {
+  const X = exthostForSelfTest;
+  const step = async (name: string, fn: () => Promise<string>) => {
+    try {
+      log(`exthost selftest ${name}: ${await fn()}`);
+    } catch (e) {
+      log(`exthost selftest ${name}: FAILED ${String((e as Error)?.message ?? e)}`);
+    }
+  };
+  const wait = async (what: string, pred: () => boolean, ms = 60_000) => {
+    const end = Date.now() + ms;
+    while (!pred()) {
+      if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  };
+  // Debug builds share the user's app data: remember what to put back afterwards.
+  const ext = platform.extensions!;
+  const hadTrust = await platform.store.get<boolean>("extensions.codeTrustAcknowledged");
+  const before = new Set((await ext.list()).map((e) => e.id));
+  // The one-time trust notice counts as accepted (it is a dialog nobody can click here).
+  await platform.store.set("extensions.codeTrustAcknowledged", true);
+  for (const id of ["lyuwenhan.code-formatter-and-minifier", "christian-kohler.path-intellisense"]) {
+    await step(`install ${id}`, async () => {
+      const [ns, name] = id.split(".");
+      const d = JSON.parse(await ext.fetch(`https://open-vsx.org/api/${ns}/${name}`, "text")) as { version: string; displayName: string; files: { download: string } };
+      // Through Rust directly (errors are reported here), twice on a slow network.
+      let last: unknown;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await ext.install(id, d.files.download);
+          await X.loadInstalledExtensions();
+          return `v${d.version}${attempt > 1 ? ` (attempt ${attempt})` : ""}`;
+        } catch (e) {
+          last = e;
+        }
+      }
+      throw last;
+    });
+  }
+  await step("node host", async () => {
+    await wait("the extension host", () => X.useExtHost.getState().status === "running");
+    return X.useExtHost.getState().nodeInfo ?? "?";
+  });
+  await step("code formatter & minifier", async () => {
+    X.openFile("app.js", { pinned: true });
+    const id = "lyuwenhan.code-formatter-and-minifier";
+    await wait("activation", () => !!X.useExtHost.getState().runtime[id]?.state && X.useExtHost.getState().runtime[id]?.state !== "activating");
+    const rt = X.useExtHost.getState().runtime[id];
+    if (rt?.state !== "activated") throw new Error(`state ${rt?.state}: ${rt?.error}`);
+    const model = await X.ensureDocument("app.js");
+    const before = model.getValue();
+    await X.executeExtensionCommand("minifier.beautify", [{ $path: "app.js" }]);
+    await wait("beautified text", () => model.getValue() !== before, 20_000);
+    const beautified = model.getValue();
+    await X.executeExtensionCommand("minifier.minify", [{ $path: "app.js" }]);
+    await wait("minified text", () => model.getValue() !== beautified, 20_000);
+    return `activated in ${rt.activationTime}ms; beautify → ${beautified.split("\n").length} lines; minify → ${JSON.stringify(model.getValue().slice(0, 60))}`;
+  });
+  await step("path intellisense", async () => {
+    const id = "christian-kohler.path-intellisense";
+    await wait("activation", () => X.useExtHost.getState().runtime[id]?.state === "activated");
+    const model = await X.ensureDocument("main.js");
+    model.setValue("import x from './'\n");
+    // Through Monaco's own suggest: trigger at the slash and read the widget's items.
+    X.openFile("main.js", { pinned: true });
+    await new Promise((r) => setTimeout(r, 800));
+    const editor = X.monaco.editor.getEditors().find((e) => e.getModel() === model);
+    if (!editor) throw new Error("no editor for main.js");
+    editor.focus();
+    editor.setPosition({ lineNumber: 1, column: 18 });
+    editor.trigger("selftest", "editor.action.triggerSuggest", {});
+    let labels: string[] = [];
+    await wait("suggestions", () => {
+      labels = [...document.querySelectorAll(".suggest-widget .monaco-list-row")].map((e) => e.getAttribute("aria-label") ?? e.textContent ?? "");
+      return labels.length > 0;
+    }, 15_000).catch((e) => {
+      const host = X.useWorkbench.getState().output.filter((l) => l.channel === "Extension Host" || l.channel === "Path Intellisense").slice(-8).map((l) => l.text);
+      throw new Error(`${(e as Error).message}; host log: ${host.join(" | ")}`);
+    });
+    return `suggestions: ${labels.join(", ")}`;
+  });
+  await step("cleanup", async () => {
+    const added = (await ext.list()).map((e) => e.id).filter((id) => !before.has(id));
+    for (const id of added) await ext.uninstall(id);
+    if (!hadTrust) await platform.store.set("extensions.codeTrustAcknowledged", false);
+    return `removed ${added.join(", ") || "nothing"}`;
+  });
+  log("exthost selftest done");
 }

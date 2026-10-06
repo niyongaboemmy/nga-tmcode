@@ -60,6 +60,8 @@ struct AppInfo {
     dev_selftest_ui: bool,
     /// Debug builds only: `TMCODE_DEV_SELFTEST=projects` runs the Task Mentor projects self-test.
     dev_selftest_projects: bool,
+    /// Debug builds only: `TMCODE_DEV_SELFTEST=exthost` installs real extensions and runs their code.
+    dev_selftest_exthost: bool,
     /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
     dev_launch: Option<String>,
     /// A folder or file given on the command line (`tmcode ~/project`).
@@ -94,6 +96,7 @@ fn app_info() -> AppInfo {
         dev_selftest_git: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("git"),
         dev_selftest_ui: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("ui"),
         dev_selftest_projects: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("projects"),
+        dev_selftest_exthost: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("exthost"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
     }
