@@ -162,7 +162,8 @@ test("TypeScript with imports runs in the JavaScript Console, errors mapped to t
   await open(page, "ts", "ts/main.ts");
   await page.getByTestId("editor-run-button").click();
   const jsc = page.getByTestId("js-console");
-  await expect(jsc).toContainText("(2) [4, 2]");
+  // The first TypeScript run loads esbuild-wasm, which can take several seconds in a cold WebKit.
+  await expect(jsc).toContainText("(2) [4, 2]", { timeout: 30_000 });
   await expect(jsc.locator(".tm-jsc-entry.is-error:not(.is-system)")).toContainText("Uncaught RangeError: negative");
   await expect(jsc.locator(".tm-jsv-link", { hasText: "ts/math.ts:2" }).first()).toBeVisible();
 });

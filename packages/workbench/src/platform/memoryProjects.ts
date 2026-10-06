@@ -171,7 +171,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       const proj = projects.find((x) => x.id === Number(m![1]));
       if (!proj) return err(404, "NOT_FOUND", "Project not found");
       const a = assignmentOfProject(proj);
-      if (body.share_presence === false && a && a.status !== "completed") return err(409, "PRESENCE_REQUIRED", "Live status stays shared while the assignment is open.");
+      if (body.share_presence === false && a && a.status !== "completed") return err(409, "PRESENCE_LOCKED", "Live status stays on while the assignment is open, so your teacher can follow the practical.");
       if (typeof body.share_presence === "boolean") proj.share_presence = body.share_presence;
       return { status: 200, body: { project: projectOut(proj) } };
     }

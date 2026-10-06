@@ -14,11 +14,12 @@ import { openAssignmentInTaskMentor } from "./commands";
 type Input = Extract<EditorInput, { kind: "assignment" }>;
 
 interface Workspace {
-  user: { id: number; name: string };
+  /** id is null for enrolled students who never signed in to Task Mentor. */
+  user: { id: number | null; mis_user_id?: number | null; name: string };
   project_id: number | null;
   state: keyof typeof STATE_LABEL;
   last_activity_at: string | null;
-  presence: { online: boolean } | null;
+  presence: { online: boolean; shared?: boolean } | null;
   revision_number: number | null;
   submitted_at: string | null;
   grade: number | null;
@@ -65,10 +66,15 @@ function Workspaces({ id }: { id: number }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((w) => (
-          <tr key={w.user.id}>
+        {rows.map((w, i) => (
+          <tr key={w.user.id ?? `m${w.user.mis_user_id ?? i}`}>
             <td>
               {w.presence?.online && <span className="tm-live-dot" title="Working in TMCode now" />} {w.user.name}
+              {w.presence?.shared === false && (
+                <span className="tm-chip" title="This student doesn't share their live status">
+                  Live status off
+                </span>
+              )}
             </td>
             <td>
               {STATE_LABEL[w.state] ?? w.state}
