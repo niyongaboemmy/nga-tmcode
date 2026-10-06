@@ -575,6 +575,27 @@ export async function runExtensionsSelfTest(platform: Platform, log: (msg: strin
     return "Code Spell Checker removed, its diagnostics cleared";
   });
 
+  // 9. Webviews in the native window (tmwebview://): Git Graph draws the repository.
+  await step("webview (Git Graph)", async () => {
+    const id = "mhutchie.git-graph";
+    const [ns, name] = id.split(".");
+    const d = JSON.parse(await ext.fetch(`https://open-vsx.org/api/${ns}/${name}`, "text")) as { version: string; files: { download: string } };
+    if (!(await X.installExtension({ id, displayName: "Git Graph", downloadUrl: d.files.download, version: d.version }))) throw new Error("install failed");
+    (IDS as Record<string, string>).gitgraph = id;
+    await until("Git Graph activation", () => rt(id)?.state === "activated" || rt(id)?.state === "failed", 45_000).catch(() => {});
+    await X.executeExtensionCommand("git-graph.view", []);
+    let handle = "";
+    await until("the Git Graph panel", () => {
+      handle = Object.values(X.useWebviews.getState().entries).find((e) => e.extensionId === id)?.handle ?? "";
+      return !!handle;
+    }, 20_000);
+    const frame = () => document.querySelector<HTMLIFrameElement>("iframe[src^='tmwebview:'], iframe[src*='tmwebview'], iframe[srcdoc]");
+    await until("its page talking to the extension", () => (X.webviewMessageCounts.get(handle) ?? 0) > 0, 20_000).catch(() => {
+      throw new Error(`no messages from the webview (iframe ${frame()?.getAttribute("src")?.slice(0, 60) ?? "missing"})`);
+    });
+    return `panel ${handle}: ${X.webviewMessageCounts.get(handle)} message(s) from its page, iframe ${frame()?.getAttribute("src")?.split("/").slice(0, 3).join("/")}`;
+  });
+
   // Put everything back.
   X.updateSetting("workbench.colorTheme", savedTheme);
   X.updateSetting("workbench.iconTheme", savedIcons);

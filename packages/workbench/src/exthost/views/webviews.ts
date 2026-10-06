@@ -392,6 +392,9 @@ function handleOf(source: MessageEventSource | null): string | null {
   return null;
 }
 
+/** Messages each webview posted (self-tests: proof that its page loaded and its script runs). */
+export const webviewMessageCounts = new Map<string, number>();
+
 function onMessage(ev: MessageEvent) {
   const d = ev.data as { __tmwebview?: number; type?: string; data?: unknown; href?: string } | null;
   if (!d || d.__tmwebview !== 1) return;
@@ -406,6 +409,7 @@ function onMessage(ev: MessageEvent) {
       for (const m of r.queue.splice(0)) r.frame?.contentWindow?.postMessage({ __tmwebview: 1, type: "message", data: m }, "*");
       return;
     case "message":
+      webviewMessageCounts.set(handle, (webviewMessageCounts.get(handle) ?? 0) + 1);
       void e.link.rpc.request("$webviewMessage", [handle, d.data]).catch(() => {});
       return;
     case "setState":
