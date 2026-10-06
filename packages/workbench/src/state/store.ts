@@ -5,7 +5,7 @@ import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
-export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | `ext:${string}`;
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | `ext:${string}`;
 export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole" | `ext:${string}`;
 
 export type EditorInput =
@@ -27,6 +27,8 @@ export type EditorInput =
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
   | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false }
+  /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
+  | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
   /** Details of a VS Code extension ("extension:<publisher.name>"). */
   | { kind: "extension"; id: string; extensionId: string; preview: false }
   /** An extension's webview panel ("webview:<handle>", exthost/views/webviews.ts). */
@@ -160,6 +162,8 @@ export interface WorkbenchState {
   viewport: "xs" | "sm" | "md" | "lg";
   /** Editors are read-only (exam time is up or submitted). */
   readOnly: boolean;
+  /** Why the editor is read-only (shown when typing is refused); null = the exam's time is up. */
+  readOnlyReason: string | null;
   tests: { entry: string | null; items: TestItem[]; running: boolean; source: string | null };
 }
 
@@ -207,6 +211,7 @@ const initialState: WorkbenchState = {
   contextMenu: null,
   run: { status: "idle", entry: null, label: null, lastExit: null },
   readOnly: false,
+  readOnlyReason: null,
   viewport: "lg",
   tests: { entry: null, items: [], running: false, source: null },
 };
@@ -574,7 +579,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();

@@ -12,6 +12,7 @@ import { ScmTitleActions, ScmView } from "../scm/ScmView";
 import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsView";
 import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
+import { AssignmentsView } from "../projects/AssignmentsView";
 import { TimelinePane } from "../history/TimelinePane";
 import { OutlinePane } from "../outline/OutlinePane";
 import type { ContextMenuItem, ViewId } from "../state/store";
@@ -19,7 +20,7 @@ import type { ContextMenuItem, ViewId } from "../state/store";
 import { ExtViewPanes } from "../exthost/views/ViewPanes";
 import { useViews } from "../exthost/views/model";
 
-const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects", assignments: "Assignments" } as const;
 
 /** The title bar's "…" menu, per view. */
 function moreActions(view: ViewId): ContextMenuItem[] {
@@ -30,8 +31,17 @@ function moreActions(view: ViewId): ContextMenuItem[] {
       { kind: "item", label: "Connect This Folder to Task Mentor…", run: () => executeCommand("projects.connectFolder") },
       { kind: "item", label: "Refresh", run: () => executeCommand("projects.refresh") },
       { kind: "item", label: "Open Project in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
+      { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
       { kind: "separator" },
       { kind: "item", label: "Sign Out of NGA", run: () => executeCommand("projects.signOut") },
+    ];
+  }
+  if (view === "assignments") {
+    return [
+      { kind: "item", label: "Refresh", run: () => executeCommand("assignments.refresh") },
+      { kind: "item", label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") },
+      { kind: "separator" },
+      { kind: "item", label: "Hide Primary Side Bar", run: () => executeCommand("workbench.action.toggleSidebarVisibility") },
     ];
   }
   if (view === "debug") {
@@ -115,6 +125,8 @@ export function SideBar() {
           <ExtensionsView />
         ) : view === "projects" ? (
           <ProjectsView />
+        ) : view === "assignments" ? (
+          <AssignmentsView />
         ) : view.startsWith("ext:") ? (
           <ExtViewPanes container={view} fill />
         ) : (

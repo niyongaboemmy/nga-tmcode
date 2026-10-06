@@ -76,6 +76,12 @@ export interface Project {
   owner: { id: number; name: string; avatar_url: string | null };
   my_role: "owner" | "collaborator" | "viewer" | null;
   head?: Revision | null;
+  /** The assignment this project is a student's workspace for (Task Mentor practicals). */
+  assignment?: { id: number; title: string; status: string; kind?: string | null } | null;
+  /** Its assignment is completed: Task Mentor refuses saves and submissions. */
+  read_only?: boolean;
+  /** Live status reaches teachers' monitors (owners always see their own). */
+  share_presence?: boolean;
   presence?: PresenceSummary;
   links?: { total: number; submitted: number; items: LinkItem[] } | Link[];
 }

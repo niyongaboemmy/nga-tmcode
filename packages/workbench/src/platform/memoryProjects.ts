@@ -6,7 +6,11 @@ import type { AccountHost, AccountStatus, FileSystem, ScannedFile, TmRequest, Tm
  * TMCode's Projects view end to end in a browser.
  *
  * Test hooks on `window.__TMCODE_PROJECTS__`: `remoteSave(projectId, files)`
- * (another computer saved), `state()`.
+ * (another computer saved), `state()`, `setAssignmentStatus(id, status)`,
+ * `grade(assignmentId, grade, feedback)`, `setTeacher(on)`.
+ *
+ * Assignments follow docs/ASSIGNMENTS_PLAN.md: practical 51 has starter files,
+ * case study 52 has none.
  */
 
 const IGNORED = new Set([".git", "node_modules", "dist", "build", "out", "target", ".venv", "venv", "__pycache__", ".next", ".gradle", ".idea", ".DS_Store", ".tmcode"]);
@@ -31,7 +35,7 @@ interface Rev {
   created_at: string;
 }
 
-export function createMemoryAccountHost(fs: FileSystem): AccountHost {
+export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string): Promise<string> }): AccountHost {
   const user = { id: 7, mis_user_id: 1007, name: "Ada Student", email: "ada@nga.test", role: "student", avatar_url: null, permissions: ["PROJECTS_USE"] };
   let signedIn = localStorage.getItem("tmcode:mock-account") === "signed-in";
   let phase: AccountStatus["phase"] = "idle";
@@ -48,19 +52,72 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
     { activity_type: "quiz", activity_id: 77, title: "Python Practical 2", course_name: "Programming 101", due_date: null, open: true },
   ];
   let seq = 100;
+  let teacher = false;
+  const day = 86_400_000;
+  const assignments: Record<string, unknown>[] = [
+    { id: 51, title: "Build a to-do list", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 2 * day).toISOString(), points: 20, language: "javascript", description_html: '<p>Build a <b>to-do list</b> page. <a href="https://developer.mozilla.org/">MDN</a> helps.</p><script>alert(1)</script>', instructions: "1. Open `index.html`\n2. Make **Add** work\n3. Submit", attachments: [], rubric: null, starter_project_id: 0 },
+    { id: 52, title: "Library case study", kind: "case_study", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() - day).toISOString(), points: 10, language: null, description_html: "<p>Model a small library.</p>", instructions: null, attachments: [], rubric: null, starter_project_id: null },
+  ];
+  const grades = new Map<number, { grade: number; feedback: string }>();
   const now = () => new Date().toISOString();
   const head = (pid: number) => revisions.filter((r) => r.project_id === pid).sort((a, b) => b.number - a.number)[0] ?? null;
   const revOut = (r: Rev | null) => (r ? { id: r.id, project_id: r.project_id, number: r.number, parent_id: r.parent_id, author_id: r.author_id, author_name: user.name, message: r.message, file_count: r.files.length, size_bytes: r.files.reduce((n, f) => n + f.size, 0), source: r.source, git_commit: null, created_at: r.created_at } : null);
   const projectOut = (p: Record<string, unknown>) => ({
     ...p,
+    share_presence: p.share_presence !== false,
+    assignment: (() => {
+      const a = assignments.find((x) => x.id === p.assignment_id);
+      return a ? { id: a.id, title: a.title, status: a.status, kind: a.kind } : null;
+    })(),
+    read_only: assignments.find((x) => x.id === p.assignment_id)?.status === "completed",
     head: revOut(head(p.id as number)),
     head_revision_id: head(p.id as number)?.id ?? null,
-    links: links.filter((l) => l.project_id === p.id).map((l) => ({ ...l, activity: { title: activities.find((a) => a.activity_id === l.activity_id)?.title, course_id: 1, open: true, due_date: null } })),
+    links: links.filter((l) => l.project_id === p.id).map((l) => ({ ...l, activity: { title: activities.find((a) => a.activity_id === l.activity_id)?.title ?? assignments.find((a) => a.id === l.activity_id)?.title, course_id: 1, open: true, due_date: null } })),
     presence: { online: false, devices_online: 0, last_seen_at: null, file: null, dirty: null },
   });
   const err = (status: number, error_code: string, message: string, extra: object = {}): TmResponse => ({ status, body: { error_code, message, ...extra } });
 
+  // Practical 51's starter: the teacher's project (owner 9), revision 1.
+  const starterFiles: Record<string, string> = { "index.html": '<!doctype html>\n<ul id="todos"></ul>\n<script src="app.js"></script>\n', "app.js": "// TODO: add items\n" };
+  const seeded = (async () => {
+    const id = ++seq;
+    projects.push({ id, name: "To-do starter", slug: "to-do-starter", description: null, language: "javascript", kind: "tm", visibility: "course", repo_url: null, repo_full_name: null, default_branch: null, size_bytes: 0, file_count: 2, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: 9, name: "Mr Teacher", avatar_url: null }, my_role: "viewer", assignment_id: null, share_presence: true, hidden: true });
+    const files: ScannedFile[] = [];
+    for (const [path, text] of Object.entries(starterFiles)) {
+      const sha = await sha256(text);
+      blobs.set(sha, text);
+      files.push({ path, sha256: sha, size: text.length });
+    }
+    revisions.push({ id: ++seq, project_id: id, number: 1, parent_id: null, author_id: 9, message: "Starter", files, source: "save", created_at: now() });
+    assignments[0].starter_project_id = id;
+  })();
+  const workspaceOf = (aid: number) => projects.find((x) => x.assignment_id === aid && (x.owner as { id: number }).id === user.id);
+  const assignmentSummary = (a: Record<string, unknown>, scope: "student" | "teaching") => {
+    const ws = workspaceOf(a.id as number);
+    const link = ws ? links.find((l) => l.project_id === ws.id) : undefined;
+    const g = grades.get(a.id as number);
+    const state = g ? "graded" : link?.status === "submitted" ? "submitted" : ws ? "in_progress" : "not_started";
+    const { description_html: _d, instructions: _i, attachments: _a, rubric: _r, starter_project_id: _s, ...rest } = a;
+    return {
+      ...rest,
+      read_only: a.status === "completed",
+      late: !!a.due_date && Date.parse(a.due_date as string) < Date.now(),
+      my:
+        scope === "student"
+          ? { project_id: ws?.id ?? null, link_id: link?.id ?? null, state, submitted_at: link?.submitted_at ?? null, revision_number: link?.revision_number ?? null, grade: g?.grade ?? null, max_points: g ? a.points : null, feedback: g?.feedback ?? null }
+          : null,
+      ...(scope === "teaching" ? { teaching: { students: 24, started: ws ? 1 : 0, submitted: link?.status === "submitted" ? 1 : 0, graded: g ? 1 : 0 } } : {}),
+    };
+  };
+  const assignmentDetail = (a: Record<string, unknown>) => {
+    const sid = a.starter_project_id as number | null;
+    const h = sid ? head(sid) : null;
+    return { ...assignmentSummary(a, teacher ? "teaching" : "student"), description_html: a.description_html, instructions: a.instructions, attachments: a.attachments, rubric: a.rubric, starter: h ? { project_id: sid, revision_id: h.id, file_count: h.files.length, size_bytes: h.files.reduce((n, f) => n + f.size, 0) } : null };
+  };
+  const assignmentOfProject = (proj: Record<string, unknown>) => assignments.find((a) => a.id === proj.assignment_id);
+
   async function route(req: TmRequest): Promise<TmResponse> {
+    await seeded;
     if (!signedIn) return err(401, "UNAUTHENTICATED", "Sign in");
     const url = new URL(req.path, API);
     const p = url.pathname.replace(/^\/api\/tmcode/, "");
@@ -69,7 +126,7 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
     if (p === "/auth/me") return { status: 200, body: { user, token_kind: "tmcode-user" } };
     if (p === "/projects" && req.method === "GET") {
       const scope = url.searchParams.get("scope");
-      return { status: 200, body: { projects: scope === "shared" ? [] : projects.map(projectOut), stats: {} } };
+      return { status: 200, body: { projects: scope === "shared" ? [] : projects.filter((x) => !x.hidden).map(projectOut), stats: {} } };
     }
     if (p === "/projects" && req.method === "POST") {
       const id = ++seq;
@@ -77,6 +134,46 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
       const proj = { id, name: body.name, slug, description: body.description ?? null, language: body.language ?? null, kind: body.kind, visibility: "private", repo_url: body.repo_url ?? null, repo_full_name: body.repo_url ? String(body.repo_url).replace("https://github.com/", "") : null, default_branch: null, size_bytes: 0, file_count: 0, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: user.id, name: user.name, avatar_url: null }, my_role: "owner" };
       projects.push(proj);
       return { status: 201, body: { project: projectOut(proj) } };
+    }
+    if ((m = p.match(/^\/assignments$/)) && req.method === "GET") {
+      const scope = url.searchParams.get("scope") === "teaching" ? "teaching" : "student";
+      if (scope === "teaching") return { status: 200, body: { assignments: teacher ? assignments.map((a) => assignmentSummary(a, "teaching")) : [] } };
+      return { status: 200, body: { assignments: teacher ? [] : assignments.map((a) => assignmentSummary(a, "student")) } };
+    }
+    if ((m = p.match(/^\/assignments\/(\d+)$/))) {
+      const a = assignments.find((x) => x.id === Number(m![1]));
+      return a ? { status: 200, body: { assignment: assignmentDetail(a) } } : err(404, "NOT_FOUND", "Assignment not found");
+    }
+    if ((m = p.match(/^\/assignments\/(\d+)\/start$/)) && req.method === "POST") {
+      const a = assignments.find((x) => x.id === Number(m![1]));
+      if (!a) return err(404, "NOT_FOUND", "Assignment not found");
+      const existing = workspaceOf(a.id as number);
+      if (existing) return { status: 200, body: { project: projectOut(existing), created: false } };
+      if (a.status === "completed") return err(409, "ASSIGNMENT_COMPLETED", "This assignment is completed.");
+      const id = ++seq;
+      const proj = { id, name: a.title, slug: String(a.title).toLowerCase().replace(/[^a-z0-9]+/g, "-"), description: null, language: a.language, kind: "tm", visibility: "course", repo_url: null, repo_full_name: null, default_branch: null, size_bytes: 0, file_count: 0, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: user.id, name: user.name, avatar_url: null }, my_role: "owner", assignment_id: a.id, share_presence: true };
+      projects.push(proj);
+      const sh = a.starter_project_id ? head(a.starter_project_id as number) : null;
+      if (sh) revisions.push({ id: ++seq, project_id: id, number: 1, parent_id: null, author_id: user.id, message: "Starter files", files: sh.files, source: "save", created_at: now() });
+      links.push({ id: ++seq, project_id: id, activity_type: "assignment", activity_id: a.id, status: "linked", revision_id: null, revision_number: null, git_commit: null, submitted_at: null, linked_by: user.id, created_at: now() });
+      return { status: 201, body: { project: projectOut(proj), created: true } };
+    }
+    if ((m = p.match(/^\/assignments\/(\d+)\/tmcode$/)) && req.method === "PUT") {
+      const a = assignments.find((x) => x.id === Number(m![1]));
+      if (!a || !teacher) return err(403, "FORBIDDEN", "Only the assignment's teachers can change it.");
+      Object.assign(a, { kind: body.kind ?? a.kind, language: body.language ?? a.language, starter_project_id: body.starter_project_id ?? null, instructions: body.instructions ?? a.instructions });
+      return { status: 200, body: { assignment: assignmentDetail(a) } };
+    }
+    if ((m = p.match(/^\/assignments\/(\d+)\/workspaces$/))) {
+      return { status: 200, body: { workspaces: [{ user: { id: 7, name: "Ada Student" }, project_id: 140, state: "submitted", last_activity_at: now(), presence: { online: true }, revision_number: 2, submitted_at: now(), grade: null }, { user: { id: 8, name: "Ben Learner" }, project_id: null, state: "not_started", last_activity_at: null, presence: null, revision_number: null, submitted_at: null, grade: null }] } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)$/)) && req.method === "PATCH") {
+      const proj = projects.find((x) => x.id === Number(m![1]));
+      if (!proj) return err(404, "NOT_FOUND", "Project not found");
+      const a = assignmentOfProject(proj);
+      if (body.share_presence === false && a && a.status !== "completed") return err(409, "PRESENCE_REQUIRED", "Live status stays shared while the assignment is open.");
+      if (typeof body.share_presence === "boolean") proj.share_presence = body.share_presence;
+      return { status: 200, body: { project: projectOut(proj) } };
     }
     if ((m = p.match(/^\/projects\/(\d+)$/))) {
       const proj = projects.find((x) => x.id === Number(m![1]));
@@ -100,6 +197,8 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
     if ((m = p.match(/^\/projects\/(\d+)\/revisions$/)) && req.method === "POST") {
       const pid = Number(m[1]);
       const h = head(pid);
+      const owner = projects.find((x) => x.id === pid);
+      if (owner && assignmentOfProject(owner)?.status === "completed") return err(409, "ASSIGNMENT_READ_ONLY", "This assignment is completed: its workspace is read-only.");
       if ((body.base_revision_id ?? null) !== (h?.id ?? null)) return err(409, "REVISION_CONFLICT", "Task Mentor has newer changes.", { head: revOut(h) });
       const files = body.files as ScannedFile[];
       const missing = files.filter((f) => !blobs.has(f.sha256)).map((f) => f.sha256);
@@ -117,6 +216,8 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
     if ((m = p.match(/^\/projects\/(\d+)\/links\/(\d+)\/submit$/))) {
       const link = links.find((l) => l.id === Number(m![2]));
       if (!link) return err(404, "NOT_FOUND", "No link");
+      const owner = projects.find((x) => x.id === Number(m![1]));
+      if (owner && assignmentOfProject(owner)?.status === "completed") return err(409, "ASSIGNMENT_COMPLETED", "This assignment is completed: it can no longer be submitted.");
       const h = head(Number(m[1]));
       Object.assign(link, { status: "submitted", revision_id: h?.id ?? null, revision_number: h?.number ?? null, submitted_at: now() });
       return { status: 200, body: { link, submission: { id: 1, status: "submitted", is_late: false } } };
@@ -149,7 +250,19 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
       }
       revisions.push({ id: ++seq, project_id: projectId, number: (h?.number ?? 0) + 1, parent_id: h?.id ?? null, author_id: user.id, message: "Saved on another computer", files: [...map.values()], source: "save", created_at: now() });
     },
-    state: () => ({ projects, revisions: revisions.map((r) => ({ id: r.id, number: r.number, project_id: r.project_id, files: r.files.map((f) => f.path) })), links }),
+    setAssignmentStatus(id: number, status: string) {
+      const a = assignments.find((x) => x.id === id);
+      if (a) a.status = status;
+    },
+    grade(id: number, grade: number, feedback: string) {
+      grades.set(id, { grade, feedback });
+    },
+    setTeacher(on: boolean) {
+      teacher = on;
+    },
+    assignments: () => assignments,
+    // The student's view of the data: the teacher's starter project is not theirs.
+    state: () => ({ projects: projects.filter((x) => !x.hidden), revisions: revisions.filter((r) => !projects.find((x) => x.id === r.project_id)?.hidden).map((r) => ({ id: r.id, number: r.number, project_id: r.project_id, files: r.files.map((f) => f.path) })), links }),
   };
 
   return {
@@ -198,8 +311,9 @@ export function createMemoryAccountHost(fs: FileSystem): AccountHost {
         await fs.writeFile(path, text);
       });
     },
-    async newFolder() {
-      throw new Error("New folders need the TMCode desktop app.");
+    async newFolder(name) {
+      if (!folders) throw new Error("New folders need the TMCode desktop app.");
+      return folders.newFolder(name);
     },
   };
 }
