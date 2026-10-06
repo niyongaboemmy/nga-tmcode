@@ -2,7 +2,7 @@ import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
 import { terminalTheme } from "../parts/panel/TerminalView";
 import { useThemes } from "../themes/themeService";
-import { openFile, showPanel, useWorkbench } from "../state/store";
+import { getPlatform, openFile, showPanel, useWorkbench } from "../state/store";
 
 /**
  * Measures the editor and terminal as the user sees them, inside whatever
@@ -329,6 +329,19 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
         await wait(200);
         const all = drawn();
         check("terminal selection", api.hasSelection() && all.n > 0 && visible(all.bg), `selectAll: hasSelection=${api.hasSelection()} (${api.getSelection().length} chars), ${all.n} boxes ${all.bg}`);
+        // ⌘C / Ctrl+C on the terminal reaches the system clipboard (WebKit copies nothing for xterm's selection).
+        const clip = getPlatform().clipboard;
+        if (clip) {
+          const saved = await clip.readText().catch(() => "");
+          const mac = getPlatform().os === "mac";
+          const textarea = document.querySelector<HTMLTextAreaElement>("[data-testid=integrated-terminal] .xterm-helper-textarea");
+          textarea?.focus();
+          textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "c", code: "KeyC", metaKey: mac, ctrlKey: !mac, bubbles: true, cancelable: true }));
+          await wait(300);
+          const copied = await clip.readText().catch(() => "");
+          check("terminal copy", copied.trim().length > 0 && copied.trim() === api.getSelection().trim(), `clipboard has ${copied.trim().length} of ${api.getSelection().trim().length} selected chars`);
+          await clip.writeText(saved).catch(() => {});
+        }
         api.clearSelection();
       }
     }
