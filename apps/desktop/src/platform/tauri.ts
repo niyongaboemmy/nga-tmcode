@@ -10,6 +10,7 @@ import type {
   DebugProbe,
   DebugTransportEvent,
   DirEntry,
+  ExtHostTransportEvent,
   AccountHost,
   AccountStatus,
   GitEvent,
@@ -75,6 +76,8 @@ export interface DevOptions {
   selftestUi: boolean;
   /** TMCODE_DEV_SELFTEST=projects */
   selftestProjects: boolean;
+  /** TMCODE_DEV_SELFTEST=exthost */
+  selftestExthost?: boolean;
   launch: string | null;
 }
 export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, selftestUi: false, selftestProjects: false, launch: null };
@@ -90,10 +93,11 @@ export async function createTauriPlatform(): Promise<Platform> {
     dev_selftest_git: boolean;
     dev_selftest_ui: boolean;
     dev_selftest_projects: boolean;
+    dev_selftest_exthost?: boolean;
     dev_launch: string | null;
     open_path: string | null;
   }>("app_info");
-  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, launch: info.dev_launch };
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, selftestExthost: !!info.dev_selftest_exthost, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
@@ -114,6 +118,10 @@ export async function createTauriPlatform(): Promise<Platform> {
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
     openExternal: (url) => invoke("open_external", { url }),
+    clipboard: {
+      readText: async () => (await import("@tauri-apps/plugin-clipboard-manager")).readText().then((t) => t ?? ""),
+      writeText: async (text) => (await import("@tauri-apps/plugin-clipboard-manager")).writeText(text),
+    },
     watch(onChange) {
       let un: (() => void) | null = null;
       let stopped = false;
@@ -140,6 +148,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       createFile: (path) => invoke("ws_create_file", { path }),
       createDir: (path) => invoke("ws_create_dir", { path }),
       rename: (from, to) => invoke("ws_rename", { from, to }),
+      copy: (from, to) => invoke("ws_copy", { from, to }),
       remove: (path) => invoke("ws_remove", { path }),
     },
     terminal: {
@@ -212,6 +221,22 @@ export async function createTauriPlatform(): Promise<Platform> {
       install: (id, downloadUrl) => invoke<StoredExtension>("ext_install", { id, url: downloadUrl }),
       uninstall: (id) => invoke("ext_uninstall", { id }),
       readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
+      // ── extension host (feat/exthost): Node.js over stdio, src-tauri/src/exthost.rs ──
+      async startNodeHost(onEvent) {
+        const channel = new Channel<ExtHostTransportEvent>();
+        channel.onmessage = onEvent;
+        const r = await invoke<{ id: number; extensions_dir: string; storage_dir: string; node: string; node_version: string }>("exthost_start", { onEvent: channel });
+        return {
+          extensionsDir: r.extensions_dir,
+          storageDir: r.storage_dir,
+          node: r.node,
+          nodeVersion: r.node_version,
+          send: (message) => void invoke("exthost_send", { id: r.id, message }).catch(() => {}),
+          stop: () => void invoke("exthost_stop", { id: r.id }).catch(() => {}),
+        };
+      },
+      setHostPolicy: (allowed) => void invoke("exthost_policy", { allowed }).catch(() => {}),
+      secrets: (op, extension, key, value) => invoke("exthost_secret", { op, extension, key: key ?? null, value: value ?? null }),
     },
     git: createTauriGit(),
     account: createTauriAccount(),

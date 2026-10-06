@@ -168,6 +168,25 @@ export function galleryIcon(host: ExtensionHost, url: string): Promise<string | 
  * and workspace recommendations). Declarative ones that work fully in TMCode.
  */
 export const RECOMMENDED = [
+  // Verified in TMCode's extension host (docs/RECOMMENDED_EXTENSIONS.md).
+  "esbenp.prettier-vscode",
+  "dbaeumer.vscode-eslint",
+  "usernamehw.errorlens",
+  "streetsidesoftware.code-spell-checker",
+  "christian-kohler.path-intellisense",
+  "formulahendry.auto-rename-tag",
+  "bradlc.vscode-tailwindcss",
+  "dsznajder.es7-react-js-snippets",
+  "ritwickdey.liveserver",
+  "humao.rest-client",
+  "formulahendry.code-runner",
+  "eamodio.gitlens",
+  "aaron-bond.better-comments",
+  "wayou.vscode-todo-highlight",
+  "oderwat.indent-rainbow",
+  "naumovs.color-highlight",
+  "lyuwenhan.code-formatter-and-minifier",
+  // Themes and icons (declarative, fully supported).
   "github.github-vscode-theme",
   "dracula-theme.theme-dracula",
   "akamud.vscode-theme-onedark",

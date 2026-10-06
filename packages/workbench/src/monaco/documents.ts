@@ -23,6 +23,8 @@ import { recordSave } from "../history/localHistory";
 interface Doc {
   model: monaco.editor.ITextModel;
   savedVersion: number;
+  /** The text TMCode last read from or wrote to disk: a watcher event for exactly this is our own echo. */
+  diskText: string;
 }
 
 const docs = new Map<string, Doc>();
@@ -62,6 +64,11 @@ export function languageLabel(id: string | null): string {
   return lang?.aliases?.[0] ?? id;
 }
 
+/** What TMCode last read from or wrote to disk for an open file (null when not open). */
+export function lastDiskText(path: string): string | null {
+  return docs.get(path)?.diskText ?? null;
+}
+
 export function getDocument(path: string) {
   return docs.get(path)?.model ?? null;
 }
@@ -77,7 +84,7 @@ export function ensureDocument(path: string): Promise<monaco.editor.ITextModel> 
     .fs.readFile(path)
     .then((content) => {
       const model = createTrackedModel(path, content);
-      docs.set(path, { model, savedVersion: model.getAlternativeVersionId() });
+      docs.set(path, { model, savedVersion: model.getAlternativeVersionId(), diskText: content });
       return model;
     })
     .finally(() => pending.delete(path));
@@ -93,6 +100,20 @@ export function onDocumentChanged(l: (path: string) => void) {
     changeListeners.delete(l);
   };
 }
+
+const saveListeners = new Set<(path: string) => void>();
+/** Fires after a file is written by TMCode (live preview "on save"). */
+export function onDocumentSaved(l: (path: string) => void) {
+  saveListeners.add(l);
+  return () => {
+    saveListeners.delete(l);
+  };
+}
+
+// ── extension host (feat/exthost) ──
+/** Problems for files that have no model (extension diagnostics of unopened files). */
+export const extraProblems: { get: () => Problem[] } = { get: () => [] };
+// ── end extension host ──
 
 function createTrackedModel(path: string, content: string) {
   const model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
@@ -113,11 +134,18 @@ export async function saveDocument(path: string) {
   const value = doc.model.getValue();
   const version = doc.model.getAlternativeVersionId();
   try {
-    await getPlatform().fs.writeFile(path, value);
+    // Set before the write: the watcher may report it before writeFile resolves.
+    const previous = doc.diskText;
+    doc.diskText = value;
+    await getPlatform().fs.writeFile(path, value).catch((e) => {
+      doc.diskText = previous;
+      throw e;
+    });
     void recordSave(path, value);
     doc.savedVersion = version;
     changeListeners.forEach((l) => l(path));
     setDirty(path, doc.model.getAlternativeVersionId() !== doc.savedVersion);
+    saveListeners.forEach((l) => l(path));
   } catch (e) {
     notify("error", `Failed to save '${path}': ${String((e as Error)?.message ?? e)}`);
     throw e;
@@ -134,6 +162,7 @@ export function markSaved(path: string) {
   const doc = docs.get(path);
   if (!doc) return;
   doc.savedVersion = doc.model.getAlternativeVersionId();
+  doc.diskText = doc.model.getValue();
   setDirty(path, false);
 }
 
@@ -144,6 +173,7 @@ export function revertDocument(path: string) {
     .fs.readFile(path)
     .then((content) => {
       doc.model.setValue(content);
+      doc.diskText = content;
       doc.savedVersion = doc.model.getAlternativeVersionId();
       setDirty(path, false);
     })
@@ -196,7 +226,7 @@ export function wireDocuments() {
       doc.model.dispose();
       docs.delete(path);
       // A model can't change its URI, so a renamed file gets a fresh one that keeps the dirty state.
-      docs.set(next, { model, savedVersion: dirty ? -1 : model.getAlternativeVersionId() });
+      docs.set(next, { model, savedVersion: dirty ? -1 : model.getAlternativeVersionId(), diskText: doc.diskText });
     }
   });
 
@@ -204,22 +234,26 @@ export function wireDocuments() {
     for (const p of [...docs.keys()]) if (isWithin(p, path)) disposeDoc(p);
   });
 
-  monaco.editor.onDidChangeMarkers(() => {
-    const problems: Problem[] = monaco.editor
-      .getModelMarkers({})
-      // Hints (unused variables etc.) show in the editor but not in Problems, as in VS Code.
-      .filter((m) => m.resource.scheme === SCHEME && m.severity !== monaco.MarkerSeverity.Hint)
-      .map((m) => ({
-        path: pathOfUri(m.resource),
-        message: m.message,
-        severity: m.severity === monaco.MarkerSeverity.Error ? "error" : m.severity === monaco.MarkerSeverity.Warning ? "warning" : "info",
-        line: m.startLineNumber,
-        column: m.startColumn,
-        source: m.source,
-      }));
-    setProblems(problems);
-  });
+  monaco.editor.onDidChangeMarkers(() => recomputeProblems());
 
   window.addEventListener("blur", saveOnFocusChange);
   log("Workbench", "Editor services ready");
+}
+
+/** Problems = Monaco markers of open files (+ extension diagnostics of files that are not open). */
+export function recomputeProblems() {
+  const problems: Problem[] = monaco.editor
+    .getModelMarkers({})
+    // Hints (unused variables etc.) show in the editor but not in Problems, as in VS Code.
+    .filter((m) => m.resource.scheme === SCHEME && m.severity !== monaco.MarkerSeverity.Hint)
+    .map((m) => ({
+      path: pathOfUri(m.resource),
+      message: m.message,
+      severity: m.severity === monaco.MarkerSeverity.Error ? "error" : m.severity === monaco.MarkerSeverity.Warning ? "warning" : "info",
+      line: m.startLineNumber,
+      column: m.startColumn,
+      source: m.source,
+    }));
+  const open = new Set(problems.map((p) => p.path));
+  setProblems([...problems, ...extraProblems.get().filter((p) => !open.has(p.path) && !getDocument(p.path))]);
 }

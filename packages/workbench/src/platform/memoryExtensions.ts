@@ -50,6 +50,8 @@ function save(installed: Installed) {
 export function createMemoryExtensionHost(): ExtensionHost {
   const installed = restore();
   const decoder = new TextDecoder();
+  // ExtensionContext.secrets: this tab only (the desktop uses the OS keychain).
+  const secrets = new Map<string, string>();
 
   async function get(url: string) {
     assertGalleryUrl(url);
@@ -86,6 +88,14 @@ export function createMemoryExtensionHost(): ExtensionHost {
       const data = installed.get(id.toLowerCase())?.files.get(path);
       if (!data) throw new Error(`${id} has no file ${path}`);
       return as === "text" ? decoder.decode(data) : toBase64(data);
+    },
+    async secrets(op, extension, key = "", value) {
+      const k = `${extension}/${key}`;
+      if (op === "get") return secrets.get(k) ?? null;
+      if (op === "store") secrets.set(k, value ?? "");
+      if (op === "delete") secrets.delete(k);
+      if (op === "keys") return [...secrets.keys()].filter((x) => x.startsWith(`${extension}/`)).map((x) => x.slice(extension.length + 1));
+      return null;
     },
   };
 }

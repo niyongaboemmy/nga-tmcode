@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { getDocument, onDocumentChanged } from "../../monaco/documents";
-import { PREVIEW_MESSAGE_KEY, injectIntoHead, inlineAssets, resolveRelative, shimTag } from "../../preview/compose";
+import { getDocument, onDocumentChanged, onDocumentSaved } from "../../monaco/documents";
+import { revealInEditor } from "../../monaco/reveal";
+import { PREVIEW_MESSAGE_KEY, injectIntoHead, inlineAssets, resolveRelative, scrollTag, shimTag } from "../../preview/compose";
+import type { JsValue } from "../../run/jsInspect";
+import { JsArgs } from "../panel/JsConsoleView";
 import { composeReactPage, errorPage } from "../../preview/page";
-import { getPlatform, notify, useWorkbench, type EditorInput } from "../../state/store";
+import { getPlatform, notify, updateSetting, useWorkbench, type EditorInput } from "../../state/store";
 import { isWithin, join } from "../../util/paths";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { SkeletonLines } from "../../widgets/Skeleton";
@@ -22,6 +25,30 @@ interface LogLine {
   level: "log" | "info" | "warn" | "error" | "debug";
   text: string;
   count: number;
+  /** Structured values from the page (objects expand). */
+  args?: JsValue[];
+  /** Where an uncaught error was thrown (a URL of the preview origin). */
+  source?: { file: string; line: number; column: number };
+}
+
+const noLoad = async () => [] as [string, JsValue][];
+
+/** Opens the file behind a preview URL ("http://127.0.0.1:port/…/js/app.js") at a line, if it is in the project. */
+async function revealPreviewSource(root: string, source: NonNullable<LogLine["source"]>) {
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(source.file).pathname);
+  } catch {
+    return;
+  }
+  const parts = path.split("/").filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    const candidate = join(root, parts.slice(i).join("/"));
+    if (getDocument(candidate) || (await getPlatform().fs.readFile(candidate).then(() => true, () => false))) {
+      revealInEditor(candidate, source.line, source.column);
+      return;
+    }
+  }
 }
 
 let logSeq = 0;
@@ -39,10 +66,17 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const internet = useWorkbench((s) => s.policy.internet_in_preview);
+  const updateOn = useWorkbench((s) => s.settings["livePreview.updateOn"]);
+  const follow = useWorkbench((s) => s.settings["livePreview.followActiveFile"]);
+  // Where the student had scrolled: a live reload puts the page back there.
+  const scroll = useRef({ x: 0, y: 0 });
   const platform = getPlatform();
   const generation = useRef(0);
 
   useEffect(() => setEntry(input.entry), [input.entry]);
+  useEffect(() => {
+    scroll.current = { x: 0, y: 0 };
+  }, [entry]);
 
   /** Project-relative read that prefers unsaved editor contents. */
   const read = useCallback(
@@ -65,7 +99,7 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
       html = await composeReactPage(html, entry, read);
       if (gen !== generation.current) return;
     }
-    html = injectIntoHead(html, shimTag());
+    html = injectIntoHead(html, scrollTag(scroll.current.x, scroll.current.y) + shimTag());
     try {
       if (platform.preview) {
         // Unsaved edits inside the project are served instead of what's on disk.
@@ -95,25 +129,26 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
     void compose();
   }, [compose]);
 
-  // Live reload while typing (debounced), for any file of this project.
+  // Live reload while typing (debounced) or on save (setting), for any file of this project.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const off = onDocumentChanged((path) => {
+    const listen = updateOn === "onSave" ? onDocumentSaved : onDocumentChanged;
+    const off = listen((path) => {
       if (!isWithin(path, input.root)) return;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void compose(), 450);
+      timer = setTimeout(() => void compose(), updateOn === "onSave" ? 60 : 450);
     });
     return () => {
       off();
       if (timer) clearTimeout(timer);
     };
-  }, [compose, input.root]);
+  }, [compose, input.root, updateOn]);
 
-  function pushLog(level: LogLine["level"], text: string) {
+  function pushLog(level: LogLine["level"], text: string, extra: Pick<LogLine, "args" | "source"> = {}) {
     setLogs((list) => {
       const last = list[list.length - 1];
       if (last && last.text === text && last.level === level) return [...list.slice(0, -1), { ...last, count: last.count + 1 }];
-      return [...list, { id: ++logSeq, level, text, count: 1 }].slice(-500);
+      return [...list, { id: ++logSeq, level, text, count: 1, ...extra }].slice(-500);
     });
   }
 
@@ -123,7 +158,13 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
       if (e.source !== iframeRef.current?.contentWindow) return;
       const d = e.data as Record<string, unknown> | null;
       if (!d || !d[PREVIEW_MESSAGE_KEY]) return;
-      if (d.kind === "console") pushLog((d.level as LogLine["level"]) ?? "log", String(d.text ?? ""));
+      if (d.kind === "console") {
+        const source = d.source as LogLine["source"] | undefined;
+        pushLog((d.level as LogLine["level"]) ?? "log", String(d.text ?? ""), {
+          args: Array.isArray(d.args) ? (d.args as JsValue[]) : undefined,
+          source: source && /^https?:/.test(source.file) ? source : undefined,
+        });
+      } else if (d.kind === "scroll") scroll.current = { x: Number(d.x) || 0, y: Number(d.y) || 0 };
       else if (d.kind === "loaded") setTitle(String(d.title ?? ""));
       else if (d.kind === "navigate") {
         const next = resolveRelative(entry, String(d.href));
@@ -185,6 +226,20 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
             </button>
           ))}
         </div>
+        <ActionButton
+          icon={updateOn === "onSave" ? "save" : "zap"}
+          label={updateOn === "onSave" ? "Updates on Save (click to update as you type)" : "Updates as You Type (click to update on save)"}
+          onClick={() => updateSetting("livePreview.updateOn", updateOn === "onSave" ? "onType" : "onSave")}
+        />
+        {input.profile === "static" && (
+          <ActionButton
+            icon="arrow-swap"
+            label="Follow Active HTML File"
+            active={follow}
+            aria-pressed={follow}
+            onClick={() => updateSetting("livePreview.followActiveFile", !follow)}
+          />
+        )}
         <button type="button" className={`tm-preview-console-toggle ${consoleOpen ? "is-on" : ""}`} onClick={() => setConsoleOpen(!consoleOpen)} aria-pressed={consoleOpen}>
           <Codicon name="debug-console" /> Console
           {errors > 0 && <span className="tm-badge tm-badge--error">{errors}</span>}
@@ -225,7 +280,17 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
             {logs.map((l) => (
               <div key={l.id} className={`tm-console-line is-${l.level}`}>
                 {(l.level === "error" || l.level === "warn") && <Codicon name={l.level === "error" ? "error" : "warning"} />}
-                <span className="tm-console-text">{l.text}</span>
+                <span className="tm-console-text">
+                  {l.args?.length ? <JsArgs args={l.args} load={noLoad} /> : l.text}
+                  {l.source && (
+                    <>
+                      {" "}
+                      <button type="button" className="tm-jsv-link" title="Go to the line" onClick={() => void revealPreviewSource(input.root, l.source!)}>
+                        {l.source.file.split("/").pop()}:{l.source.line}
+                      </button>
+                    </>
+                  )}
+                </span>
                 {l.count > 1 && <span className="tm-console-count">{l.count}</span>}
               </div>
             ))}

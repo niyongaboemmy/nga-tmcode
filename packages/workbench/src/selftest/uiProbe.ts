@@ -1,8 +1,9 @@
 import { codeEditorFor } from "../monaco/editors";
+import { executeCommand } from "../commands/registry";
 import { monaco } from "../monaco/setup";
 import { terminalTheme } from "../parts/panel/TerminalView";
 import { useThemes } from "../themes/themeService";
-import { openFile, showPanel, useWorkbench } from "../state/store";
+import { getPlatform, openFile, showPanel, useWorkbench } from "../state/store";
 
 /**
  * Measures the editor and terminal as the user sees them, inside whatever
@@ -229,6 +230,53 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
     check("scrolling", scroll.worst < 120, `longest frame gap ${scroll.worst}ms over 60 scroll steps${scroll.stalls.length ? ` (${scroll.stalls.slice(0, 4).join(", ")})` : ""}`);
   }
 
+  // Selection and clipboard: what ⌘C / ⌘X / ⌘V (the native Edit menu) and Delete reach inside the editor.
+  // The large-file step may have replaced the editor: measure the live one, back on the probe file.
+  {
+    openFile(opts.file, { pinned: true });
+    await wait(300);
+    ed = codeEditorFor(useWorkbench.getState().activeGroup) ?? ed;
+    const root = ed.getDomNode()!;
+    const bg = getComputedStyle(root.querySelector(".monaco-editor-background") ?? root).backgroundColor;
+    const model = ed.getModel()!;
+    ed.focus();
+    ed.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 3, endColumn: 1 });
+    await wait(250);
+    const selEls = [...root.querySelectorAll<HTMLElement>(".selected-text")];
+    const selBg = selEls[0] ? getComputedStyle(selEls[0]).backgroundColor : "";
+    check("selection highlight", selEls.length > 0 && visible(selBg) && selBg !== bg, selEls.length ? `${selEls.length} boxes, ${selBg} on ${bg}` : "no .selected-text drawn");
+    const input = root.querySelector<HTMLElement>("textarea.inputarea, textarea, .native-edit-context");
+    const focused = document.activeElement === input || !!input?.contains(document.activeElement);
+    const selected = model.getValueInRange(ed.getSelection()!);
+    const dt = new DataTransfer();
+    input?.dispatchEvent(new ClipboardEvent("copy", { clipboardData: dt, bubbles: true, cancelable: true }));
+    const copied = dt.getData("text/plain");
+    check("input mode", true, `EditContext in this WebKit: ${"EditContext" in window}; editor input: ${root.querySelector("textarea") ? "textarea" : root.querySelector(".native-edit-context") ? "edit-context" : "none"}`);
+    check("copy", !!copied && copied.replace(/\r/g, "") === selected.replace(/\r/g, ""), `input ${input?.tagName.toLowerCase()}${input?.className ? "." + String(input.className).split(" ")[0] : ""} focused=${focused}; copied ${copied.length} of ${selected.length} chars; execCommand(copy) supported=${document.queryCommandSupported?.("copy")}`);
+    const version = model.getAlternativeVersionId();
+    const pdt = new DataTransfer();
+    pdt.setData("text/plain", "/*tmcode-paste*/");
+    input?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: pdt, bubbles: true, cancelable: true }));
+    await wait(150);
+    check("paste", model.getValue().includes("/*tmcode-paste*/"), model.getValue().includes("/*tmcode-paste*/") ? "pasted text replaced the selection" : "paste event did not insert text");
+    ed.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 4 });
+    const lineBefore = model.getLineContent(1);
+    ed.trigger("ui-probe", "deleteLeft", null);
+    await wait(50);
+    check("delete selection", model.getLineContent(1) !== lineBefore, `line 1 ${JSON.stringify(lineBefore.slice(0, 20))} → ${JSON.stringify(model.getLineContent(1).slice(0, 20))}`);
+    // Edit › Select All (the native menu runs this command): the whole document.
+    ed.focus();
+    ed.setPosition({ lineNumber: 1, column: 1 });
+    executeCommand("workbench.action.selectAllInFocus");
+    await wait(100);
+    const all = ed.getSelection()!;
+    const full = model.getFullModelRange();
+    check("select all (editor)", all.startLineNumber === 1 && all.startColumn === 1 && all.endLineNumber === full.endLineNumber && all.endColumn === full.endColumn, `selection ${all.startLineNumber}:${all.startColumn}-${all.endLineNumber}:${all.endColumn} of ${full.endLineNumber}:${full.endColumn}`);
+    // Leave the file as it was.
+    for (let i = 0; i < 6 && model.getAlternativeVersionId() !== version; i++) ed.trigger("ui-probe", "undo", null);
+    ed.setPosition({ lineNumber: 2, column: 1 });
+  }
+
   if (opts.terminal) {
     showPanel("terminal");
     let term: HTMLElement | null = null;
@@ -264,6 +312,52 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
       const cs = tCursor ? getComputedStyle(tCursor) : null;
       cursorColor = !cs ? "" : cs.boxShadow !== "none" ? cs.boxShadow.match(/rgba?\([^)]*\)/)?.[0] ?? "" : cs.outlineStyle !== "none" ? cs.outlineColor : cs.backgroundColor;
       if (!visible(cursorColor)) await wait(50);
+    }
+    // Terminal selection: drag across the first prompt row; xterm draws its own selection layer.
+    {
+      const screen = document.querySelector<HTMLElement>("[data-testid=integrated-terminal] .xterm-screen");
+      const firstRow = rowEls[0]?.getBoundingClientRect();
+      if (screen && firstRow) {
+        const y = firstRow.top + firstRow.height / 2;
+        const opts = (x: number) => ({ clientX: x, clientY: y, bubbles: true, button: 0, buttons: 1, detail: 1, view: window });
+        screen.dispatchEvent(new MouseEvent("mousedown", opts(firstRow.left + 2)));
+        document.dispatchEvent(new MouseEvent("mousemove", opts(firstRow.left + Math.min(200, firstRow.width - 4))));
+        document.dispatchEvent(new MouseEvent("mouseup", opts(firstRow.left + Math.min(200, firstRow.width - 4))));
+        await wait(200);
+      }
+      const drawn = () => {
+        const divs = [...document.querySelectorAll<HTMLElement>("[data-testid=integrated-terminal] .xterm-selection div")];
+        return { n: divs.length, bg: divs[0] ? getComputedStyle(divs[0]).backgroundColor : "" };
+      };
+      const dragged = drawn();
+      check("terminal selection (mouse)", dragged.n > 0 && visible(dragged.bg), dragged.n ? `${dragged.n} boxes, ${dragged.bg}` : "no selection drawn after a drag");
+      // The same through xterm's API: separates drawing from mouse handling.
+      const api = (window as unknown as { __TMCODE_TERM__?: { selectAll(): void; hasSelection(): boolean; getSelection(): string; clearSelection(): void } }).__TMCODE_TERM__;
+      if (api) {
+        api.selectAll();
+        await wait(200);
+        const all = drawn();
+        check("terminal selection", api.hasSelection() && all.n > 0 && visible(all.bg), `selectAll: hasSelection=${api.hasSelection()} (${api.getSelection().length} chars), ${all.n} boxes ${all.bg}`);
+        api.clearSelection();
+        document.querySelector<HTMLTextAreaElement>("[data-testid=integrated-terminal] .xterm-helper-textarea")?.focus();
+        executeCommand("workbench.action.selectAllInFocus");
+        await wait(150);
+        check("select all (terminal)", api.hasSelection(), `hasSelection=${api.hasSelection()} (${api.getSelection().length} chars)`);
+        // ⌘C / Ctrl+C on the terminal reaches the system clipboard (WebKit copies nothing for xterm's selection).
+        const clip = getPlatform().clipboard;
+        if (clip) {
+          const saved = await clip.readText().catch(() => "");
+          const mac = getPlatform().os === "mac";
+          const textarea = document.querySelector<HTMLTextAreaElement>("[data-testid=integrated-terminal] .xterm-helper-textarea");
+          textarea?.focus();
+          textarea?.dispatchEvent(new KeyboardEvent("keydown", { key: "c", code: "KeyC", metaKey: mac, ctrlKey: !mac, bubbles: true, cancelable: true }));
+          await wait(300);
+          const copied = await clip.readText().catch(() => "");
+          check("terminal copy", copied.trim().length > 0 && copied.trim() === api.getSelection().trim(), `clipboard has ${copied.trim().length} of ${api.getSelection().trim().length} selected chars`);
+          await clip.writeText(saved).catch(() => {});
+        }
+        api.clearSelection();
+      }
     }
     check("terminal cursor", !!tCursor && visible(cursorColor), tCursor ? `${tCursor.className.trim()} (${cursorColor})` : `no cursor: focus on ${document.activeElement?.className}; hidden by ${helper?.closest("[hidden]")?.className ?? "nothing"}`);
   }

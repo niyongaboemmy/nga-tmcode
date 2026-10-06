@@ -22,6 +22,8 @@ import {
 import { basename, dirname, isWithin, join, validateName } from "../../util/paths";
 import { ActionButton, FileIcon, FolderIcon, Codicon } from "../../widgets/icons";
 import { SkeletonRows } from "../../widgets/Skeleton";
+import { writeClipboardText } from "../../util/clipboard";
+import { copyEntries, cutEntries, duplicateEntry, pasteEntries, useFileClipboard } from "./fileClipboard";
 import type { DirEntry } from "../../platform/types";
 // ── git ──
 import { useGit, useGitAllowed } from "../../scm/gitService";
@@ -187,10 +189,21 @@ export function ExplorerView() {
         ...(getPlatform().reveal
           ? ([{ kind: "item", label: revealLabel(), run: () => void getPlatform().reveal?.(entry.path) }] as ContextMenuItem[])
           : []),
+        { kind: "separator" },
+        { kind: "item", label: "Cut", keybinding: os === "mac" ? "⌘X" : "Ctrl+X", run: () => cutEntries([entry.path]) },
+        { kind: "item", label: "Copy", keybinding: os === "mac" ? "⌘C" : "Ctrl+C", run: () => copyEntries([entry.path]) },
+        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", disabled: !useFileClipboard.getState(), run: () => void pasteEntries(entry.kind === "dir" ? entry.path : dirname(entry.path)) },
+        { kind: "item", label: "Duplicate", run: () => void duplicateEntry(entry.path) },
+        { kind: "separator" },
+        {
+          kind: "item",
+          label: "Copy Path",
+          run: () => void writeClipboardText(getPlatform().kind === "desktop" ? `${useWorkbench.getState().workspace?.root ?? ""}/${entry.path}` : entry.path).catch(() => notify("warning", "Clipboard is not available.")),
+        },
         {
           kind: "item",
           label: "Copy Relative Path",
-          run: () => void navigator.clipboard?.writeText(entry.path).catch(() => notify("warning", "Clipboard is not available.")),
+          run: () => void writeClipboardText(entry.path).catch(() => notify("warning", "Clipboard is not available.")),
         },
         { kind: "separator" },
         { kind: "item", label: "Rename...", keybinding: "F2", run: () => void beginExplorerEdit({ mode: "rename", target: entry.path }) },
@@ -253,6 +266,16 @@ export function ExplorerView() {
         if (row && (e.metaKey || e.ctrlKey)) void deleteEntry(row.entry.path);
         else return;
         break;
+      case "c":
+      case "x":
+      case "v": {
+        // VS Code's Explorer clipboard (files, not text): ⌘C / ⌘X / ⌘V, Ctrl elsewhere.
+        if (!(os === "mac" ? e.metaKey : e.ctrlKey) || e.altKey || e.shiftKey) return;
+        if (e.key === "v") void pasteEntries(row ? (row.entry.kind === "dir" ? row.entry.path : dirname(row.entry.path)) : "");
+        else if (row) (e.key === "c" ? copyEntries : cutEntries)([row.entry.path]);
+        else return;
+        break;
+      }
       default:
         return;
     }

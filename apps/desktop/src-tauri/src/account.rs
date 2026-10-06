@@ -247,9 +247,14 @@ fn server_message(body: &[u8], fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_string())
 }
 
-#[derive(Deserialize)]
-struct Redeemed {
-    token: String,
+/// MIS answers `{ success, data: { token, user } }` (older builds: `{ token }`).
+pub fn redeemed_token(body: &[u8]) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    v.pointer("/data/token")
+        .or_else(|| v.get("token"))
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
 }
 
 #[derive(Deserialize)]
@@ -273,9 +278,12 @@ async fn complete(code: &str, verifier: &str) -> Result<(String, String, Account
     if !status.is_success() {
         return Err(server_message(&body, "NGA (MIS) did not accept the sign-in. Try again."));
     }
-    let mis: Redeemed = serde_json::from_slice(&body).map_err(|_| "NGA (MIS) sent an unexpected sign-in reply.".to_string())?;
-    let (tm, user) = exchange(&mis.token).await?;
-    Ok((mis.token, tm, user))
+    let mis = redeemed_token(&body).ok_or_else(|| {
+        log::warn!("account: MIS redeem reply without a token ({} bytes)", body.len());
+        "NGA (MIS) sent an unexpected sign-in reply.".to_string()
+    })?;
+    let (tm, user) = exchange(&mis).await?;
+    Ok((mis, tm, user))
 }
 
 /// MIS token → TMCode user token (Task Mentor creates the local account on first use).
@@ -597,6 +605,14 @@ mod tests {
         assert_eq!(accept_signin("POST /evil HTTP/1.1\r\n", &body, "s1"), None);
         assert_eq!(accept_signin("POST /signin HTTP/1.1\r\n", "code=short&state=s1", "s1"), None);
         assert_eq!(accept_signin("POST /signin HTTP/1.1\r\n", "code=a.b.c%3Cscript%3E&state=s1", "s1"), None);
+    }
+
+    #[test]
+    fn mis_redeem_reply_shapes() {
+        assert_eq!(redeemed_token(br#"{"success":true,"data":{"token":"a.b.c","user":{}}}"#).as_deref(), Some("a.b.c"));
+        assert_eq!(redeemed_token(br#"{"token":"x.y.z"}"#).as_deref(), Some("x.y.z"));
+        assert_eq!(redeemed_token(br#"{"success":true,"data":{}}"#), None);
+        assert_eq!(redeemed_token(b"not json"), None);
     }
 
     #[test]

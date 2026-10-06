@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p . && vite build",
+    "build": "node ../../packages/exthost/build.mjs && tsc -p . && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.4.1",
     "@tauri-apps/plugin-deep-link": "^2.6.1",
     "@tauri-apps/plugin-dialog": "^2.8.1",
     "@tauri-apps/plugin-http": "^2.8.0",

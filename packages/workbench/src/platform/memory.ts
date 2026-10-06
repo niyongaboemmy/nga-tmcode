@@ -3,6 +3,7 @@ import { createMemoryExtensionHost } from "./memoryExtensions";
 import { createMemoryGit } from "./memoryGit";
 import { createMemoryAccountHost } from "./memoryProjects";
 import { createSimulatedDebugHost } from "../debug/fakeAdapter";
+import { createSimulatedTerminal } from "./memoryTerminal";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -67,6 +68,19 @@ export class MemoryFileSystem implements FileSystem {
     this.dirs.add(path);
   }
 
+  async copy(from: string, to: string) {
+    this.assertFree(to);
+    if (to === from || to.startsWith(`${from}/`)) throw new Error(`Cannot copy '${from}' into itself.`);
+    if (this.files.has(from)) {
+      this.files.set(to, this.files.get(from)!);
+      return;
+    }
+    if (!this.dirs.has(from)) throw new Error(`'${from}' does not exist`);
+    const copied = (p: string) => to + p.slice(from.length);
+    for (const d of [...this.dirs]) if (d === from || d.startsWith(`${from}/`)) this.dirs.add(copied(d));
+    for (const [f, c] of [...this.files]) if (f.startsWith(`${from}/`)) this.files.set(copied(f), c);
+  }
+
   async rename(from: string, to: string) {
     if (from === to) return;
     this.assertFree(to);
@@ -119,6 +133,9 @@ export class SwitchableFileSystem implements FileSystem {
   }
   rename(a: string, b: string) {
     return this.target.rename(a, b);
+  }
+  copy(a: string, b: string) {
+    return this.target.copy ? this.target.copy(a, b) : Promise.reject(new Error("Copying is not supported here."));
   }
   remove(p: string) {
     return this.target.remove(p);
@@ -324,6 +341,10 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     fs,
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
+    // Dev server / e2e only (`?terminal=sim`): a pretend shell for the Run hub's dev-server flow.
+    ...(import.meta.env?.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).get("terminal") === "sim"
+      ? { terminal: createSimulatedTerminal(fs) }
+      : {}),
     // Dev server / e2e: a simulated Python debugger so Run and Debug can be exercised without processes.
     ...(import.meta.env?.DEV ? { debug: createSimulatedDebugHost((p) => fs.readFile(p)) } : {}),
     exam,

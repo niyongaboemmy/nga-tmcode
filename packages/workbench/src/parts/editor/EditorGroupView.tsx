@@ -29,12 +29,13 @@ import { BrowserEditor } from "./BrowserEditor";
 import { HistoryDiffEditor } from "../../history/HistoryDiffEditor";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
-import { profileForPath } from "@tmcode/profiles";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
+import { ExtensionTitleActions } from "../../exthost/ui";
 // ── git ──
 import { GitDiffEditor } from "../../scm/GitDiffEditor";
+// ── Run hub ──
+import { RunSplitButton } from "../../run/RunHubViews";
 import { openGitDiff } from "../../scm/gitService";
-import { debugAllowed, debugKindForPath, runWithoutDebugging, startDebugging, useDebug } from "../../debug/debugService";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
@@ -296,8 +297,9 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             {dragOver === group.editors.length && <div className="tm-tab-drop-end" />}
           </div>
           <div className="tm-tabs-actions">
+            {active?.kind === "file" && <ExtensionTitleActions path={active.path} />}
             {active?.kind === "file" && <SidePreviewButton path={active.path} />}
-            {active?.kind === "file" && <RunButton path={active.path} />}
+            {active?.kind === "file" && <RunSplitButton path={active.path} />}
             <ActionButton icon="split-horizontal" label={`Split Editor Right (${formatKeybinding("mod+\\", os)})`} onClick={() => splitEditor()} />
             <ActionButton
               icon="ellipsis"
@@ -340,50 +342,6 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {!active && <Watermark />}
       </div>
     </section>
-  );
-}
-
-const WEB_EXTS = ["html", "htm", "css", "jsx", "tsx"];
-
-/**
- * ▶ in the editor title, like VS Code's "Run Python File" (■ while running).
- * When the file can be debugged it is a split button (Run File / Debug File)
- * that remembers the last choice.
- */
-function RunButton({ path }: { path: string }) {
-  const running = useWorkbench((s) => s.run.status !== "idle");
-  const last = useDebug((s) => s.lastEditorAction);
-  useWorkbench((s) => s.policy);
-  const os = getPlatform().os;
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  const web = WEB_EXTS.includes(ext);
-  if (!web && !profileForPath(path)?.local) return null;
-  if (running && !web) return <ActionButton icon="debug-stop" label="Stop (Shift+F5)" className="tm-stop" onClick={() => executeCommand("tmcode.stop")} />;
-  if (web) return <ActionButton icon="open-preview" label="Open Preview to the Side (F5)" onClick={() => executeCommand("tmcode.run")} />;
-  const kind = debugKindForPath(path);
-  const canDebug = debugAllowed() && !!kind && !!getPlatform().debug?.kinds.includes(kind);
-  const runLabel = `Run File (${formatKeybinding("ctrl+f5", os)})`;
-  if (!canDebug) return <ActionButton icon="play" label={runLabel} className="tm-run" onClick={() => executeCommand("tmcode.run")} />;
-  return (
-    <span className="tm-split-action">
-      {last === "debug" ? (
-        <ActionButton icon="debug-alt" label={`Debug File (${formatKeybinding("f5", os)})`} className="tm-run" onClick={() => void startDebugging()} />
-      ) : (
-        <ActionButton icon="play" label={runLabel} className="tm-run" onClick={() => void runWithoutDebugging()} />
-      )}
-      <ActionButton
-        icon="chevron-down"
-        label="Run or Debug..."
-        className="tm-split-action-more"
-        onClick={(e) => {
-          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          openContextMenu(r.left, r.bottom + 2, [
-            { kind: "item", label: "Run File", keybinding: formatKeybinding("ctrl+f5", os), run: () => void runWithoutDebugging() },
-            { kind: "item", label: "Debug File", keybinding: formatKeybinding("f5", os), run: () => void startDebugging() },
-          ]);
-        }}
-      />
-    </span>
   );
 }
 

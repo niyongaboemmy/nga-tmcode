@@ -31,6 +31,10 @@ export interface QuickPickOptions {
   /** Extra items computed from the typed text (e.g. "Clone from URL <typed>"), shown first. */
   dynamicItems?: (value: string) => PickItem[];
   matchOnDescription?: boolean;
+  /** Checkboxes: Space or click toggles, Enter accepts the checked items (extensions' canPickMany). */
+  canPickMany?: boolean;
+  /** Ids checked when a multi-select picker opens. */
+  initiallyPicked?: string[];
 }
 
 export interface InputBoxOptions {
@@ -40,12 +44,14 @@ export interface InputBoxOptions {
   value?: string;
   password?: boolean;
   validate?: (value: string) => string | null;
+  /** Validation that needs a round trip (an extension's validateInput); checked while typing and before accepting. */
+  validateAsync?: (value: string) => Promise<string | null>;
   /** Small links under the prompt (e.g. "Create a token on GitHub"). */
   links?: { label: string; run: () => void }[];
 }
 
 type Request = { id: number } & (
-  | { kind: "pick"; options: QuickPickOptions; resolve: (item: PickItem | undefined) => void }
+  | { kind: "pick"; options: QuickPickOptions; resolve: (item: PickItem | PickItem[] | undefined) => void }
   | { kind: "input"; options: InputBoxOptions; resolve: (value: string | undefined) => void }
 );
 let seq = 0;
@@ -64,7 +70,9 @@ function close() {
   useQuickPick.setState({ request: null });
 }
 
-export function showQuickPick(options: QuickPickOptions): Promise<PickItem | undefined> {
+export function showQuickPick(options: QuickPickOptions & { canPickMany: true }): Promise<PickItem[] | undefined>;
+export function showQuickPick(options: QuickPickOptions): Promise<PickItem | undefined>;
+export function showQuickPick(options: QuickPickOptions): Promise<PickItem | PickItem[] | undefined> {
   return new Promise((resolve) => open({ kind: "pick", options, resolve }));
 }
 
@@ -104,6 +112,8 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
   const [items, setItems] = useState<PickItem[] | null>(Array.isArray(options.items) ? options.items : null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
+  const [checked, setChecked] = useState<Set<string>>(() => new Set(options.initiallyPicked ?? []));
+  const many = !!options.canPickMany;
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -123,6 +133,17 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
   const finish = (item: PickItem | undefined) => {
     close();
     req.resolve(item);
+  };
+  const toggle = (item: PickItem) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  const accept = () => {
+    close();
+    req.resolve((items ?? []).filter((it) => checked.has(it.id)));
   };
 
   const shown = useMemo(() => {
@@ -166,7 +187,8 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
             else if (e.key === "ArrowUp") setIndex((i) => (n ? (i - 1 + n) % n : 0));
             else if (e.key === "PageDown") setIndex((i) => Math.min(n - 1, i + 10));
             else if (e.key === "PageUp") setIndex((i) => Math.max(0, i - 10));
-            else if (e.key === "Enter") shown[index] && finish(shown[index].it);
+            else if (e.key === "Enter") (many ? accept() : shown[index] && finish(shown[index].it));
+            else if (many && e.key === " " && !value && shown[index]) toggle(shown[index].it);
             else if (e.key === "Escape") finish(undefined);
             else return;
             e.preventDefault();
@@ -174,6 +196,14 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
           }}
         />
       </div>
+      {many && (
+        <div className="tm-qp-many-bar">
+          <span className="tm-muted">{checked.size} Selected</span>
+          <button type="button" className="tm-button" onClick={accept}>
+            OK
+          </button>
+        </div>
+      )}
       {loading && <div className="tm-qp-progress" role="progressbar" aria-label="Loading" />}
       <div ref={listRef} id="tm-qp-list" className="tm-qi-list tm-scroll" role="listbox">
         {loading &&
@@ -194,8 +224,9 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
             aria-selected={i === index}
             className={`tm-qi-item ${it.detail ? "has-detail" : ""} ${i === index ? "is-focused" : ""} ${it.separator && i > 0 ? "has-separator" : ""}`}
             onMouseMove={() => i !== index && setIndex(i)}
-            onClick={() => finish(it)}
+            onClick={() => (many ? toggle(it) : finish(it))}
           >
+            {many && <Codicon name={checked.has(it.id) ? "pass-filled" : "circle-large-outline"} className="tm-qp-check" />}
             {it.icon ? <Codicon name={it.icon} /> : null}
             <span className="tm-qp-text">
               <span className="tm-qp-line">
@@ -222,12 +253,22 @@ function InputWidget({ req }: { req: Extract<Request, { kind: "input" }> }) {
   const { options } = req;
   const [value, setValue] = useState(options.value ?? "");
   const [touched, setTouched] = useState(false);
+  const [asyncError, setAsyncError] = useState<string | null>(null);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     ref.current?.focus();
     ref.current?.select();
   }, []);
-  const error = touched ? (options.validate?.(value) ?? null) : null;
+  useEffect(() => {
+    if (!options.validateAsync || !touched) return;
+    let live = true;
+    const t = setTimeout(() => void options.validateAsync!(value).then((e) => live && setAsyncError(e)), 120);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [value, touched, options]);
+  const error = touched ? (options.validate?.(value) ?? asyncError ?? null) : null;
   const finish = (v: string | undefined) => {
     close();
     req.resolve(v);
@@ -253,7 +294,10 @@ function InputWidget({ req }: { req: Extract<Request, { kind: "input" }> }) {
             if (e.key === "Enter") {
               const err = options.validate?.(value) ?? null;
               setTouched(true);
-              if (!err) finish(value);
+              if (!err && options.validateAsync) {
+                const v = value;
+                void options.validateAsync(v).then((e2) => (e2 ? setAsyncError(e2) : finish(v)));
+              } else if (!err) finish(value);
             } else if (e.key === "Escape") finish(undefined);
             else return;
             e.preventDefault();

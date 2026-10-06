@@ -4,20 +4,36 @@
  * editor. Pure functions, unit-tested.
  */
 import { dirname } from "../util/paths";
+import { inspectValue } from "../run/jsInspect";
 
 export const PREVIEW_MESSAGE_KEY = "__tmcodePreview";
 
-/** Injected first in <head>: forwards console/errors and keeps navigation inside the preview. */
+/**
+ * Injected first in <head>: forwards console output (as structured values the
+ * console renders like devtools), errors with their source position, link
+ * clicks and the scroll position, so a live reload can put the page back
+ * where the student was.
+ */
 export const CONSOLE_SHIM = `(function(){
 var K=${JSON.stringify(PREVIEW_MESSAGE_KEY)};
+var inspect=${String(inspectValue)};
 function str(a){try{if(typeof a==="string")return a;if(a instanceof Error)return a.stack||String(a);if(a===undefined)return "undefined";if(typeof a==="function")return String(a);return JSON.stringify(a);}catch(e){return String(a);}}
-function send(m){try{m[K]=1;parent.postMessage(m,"*");}catch(e){}}
-["log","info","warn","error","debug"].forEach(function(l){var o=console[l];console[l]=function(){send({kind:"console",level:l,text:[].slice.call(arguments).map(str).join(" ")});return o&&o.apply(console,arguments);};});
-addEventListener("error",function(e){send({kind:"console",level:"error",text:"Uncaught "+(e.message||"error")+(e.lineno?" ("+String(e.filename||"").split("/").pop()+":"+e.lineno+")":"")});});
-addEventListener("unhandledrejection",function(e){var r=e.reason;send({kind:"console",level:"error",text:"Uncaught (in promise) "+(r&&r.message||str(r))});});
+function ser(list){try{return list.map(function(a){return inspect(a,3,null);});}catch(e){return undefined;}}
+function send(m){m[K]=1;try{parent.postMessage(m,"*");}catch(e){try{delete m.args;parent.postMessage(m,"*");}catch(e2){}}}
+["log","info","warn","error","debug"].forEach(function(l){var o=console[l];console[l]=function(){var a=[].slice.call(arguments);send({kind:"console",level:l,text:a.map(str).join(" "),args:ser(a)});return o&&o.apply(console,arguments);};});
+addEventListener("error",function(e){send({kind:"console",level:"error",text:"Uncaught "+(e.message||"error")+(e.lineno?" ("+String(e.filename||"").split("/").pop()+":"+e.lineno+")":""),source:e.lineno?{file:String(e.filename||""),line:e.lineno,column:e.colno||1}:undefined});});
+addEventListener("unhandledrejection",function(e){var r=e.reason;send({kind:"console",level:"error",text:"Uncaught (in promise) "+(r&&r.message||str(r)),args:ser(["Uncaught (in promise)",r])});});
 document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a[href]");if(!a)return;var h=a.getAttribute("href");if(!h||h.charAt(0)==="#")return;if(/^[a-z][a-z0-9+.-]*:/i.test(h)){e.preventDefault();send({kind:"external",href:h});return;}e.preventDefault();send({kind:"navigate",href:h});},true);
-addEventListener("load",function(){send({kind:"loaded",title:document.title});});
+var st=null;addEventListener("scroll",function(){if(st)return;st=setTimeout(function(){st=null;send({kind:"scroll",x:scrollX,y:scrollY});},120);},{passive:true});
+function restore(){var p=window.__tmcodeScroll;if(p&&(p.x||p.y))scrollTo(p.x,p.y);}
+document.addEventListener("DOMContentLoaded",restore);
+addEventListener("load",function(){restore();send({kind:"loaded",title:document.title});});
 })();`;
+
+/** Sets the scroll position the shim restores after a live reload. */
+export function scrollTag(x: number, y: number) {
+  return `<script>window.__tmcodeScroll={x:${Math.round(x) || 0},y:${Math.round(y) || 0}};</script>`;
+}
 
 /** Inserts `snippet` as the first thing in <head> (or the document). */
 export function injectIntoHead(html: string, snippet: string): string {

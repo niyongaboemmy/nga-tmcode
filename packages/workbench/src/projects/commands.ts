@@ -167,7 +167,7 @@ export function registerProjectCommands() {
   registerCommand({ id: "projects.signOut", title: "Sign Out of NGA", category: "Accounts", enabled: () => signedIn(), run: signOut });
   registerCommand({ id: "projects.new", title: "New Project…", category: "Projects", enabled: usable, run: newProject });
   registerCommand({ id: "projects.connectFolder", title: "Connect This Folder to Task Mentor…", category: "Projects", enabled: () => usable() && !!useWorkbench.getState().workspace, run: connect });
-  registerCommand({ id: "projects.save", title: "Save to Task Mentor", category: "Projects", keybinding: "mod+alt+s", enabled: bound, run: () => saveToTaskMentor() });
+  registerCommand({ id: "projects.save", title: "Save to Task Mentor", category: "Projects", keybinding: "mod+alt+u", enabled: bound, run: () => saveToTaskMentor() });
   registerCommand({ id: "projects.pull", title: "Get Latest from Task Mentor", category: "Projects", enabled: bound, run: () => pullFromTaskMentor() });
   registerCommand({ id: "projects.refresh", title: "Refresh Projects", category: "Projects", enabled: () => usable() && signedIn(), run: async () => (await refreshProjects(), await checkSync()) });
   registerCommand({ id: "projects.linkActivity", title: "Link to an Activity…", category: "Projects", enabled: bound, run: linkToActivity });

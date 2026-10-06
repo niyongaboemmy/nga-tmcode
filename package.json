@@ -13,12 +13,13 @@
     "dev": "npm run dev -w @tmcode/desktop",
     "tauri:dev": "npm run tauri:dev -w @tmcode/desktop",
     "build": "npm run build -w @tmcode/desktop",
-    "typecheck": "tsc -p packages/protocol && tsc -p packages/profiles && tsc -p packages/workbench && tsc -p apps/desktop && tsc -p services/judge",
+    "typecheck": "tsc -p packages/protocol && tsc -p packages/profiles && tsc -p packages/exthost && tsc -p packages/workbench && tsc -p apps/desktop && tsc -p services/judge",
     "test": "vitest run",
     "test:e2e": "npm run test:e2e -w @tmcode/desktop",
     "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:judge": "npm test -w @tmcode/judge",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "test:exthost:real": "node packages/exthost/test/real-extensions.mjs"
   },
   "engines": {
     "node": ">=20"

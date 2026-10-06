@@ -42,6 +42,14 @@ test("opens an exam: task view, timer, exam policy", async ({ page }) => {
   // terminal: "off" in the exam policy
   await page.keyboard.press("ControlOrMeta+j");
   await expect(page.locator(".tm-panel-tab", { hasText: "Terminal" })).toHaveCount(0);
+  // Run hub: running code is allowed, terminals, tasks and dev servers are not.
+  await page.getByTestId("editor-run-menu").click();
+  const menu = page.getByTestId("run-menu");
+  await expect(menu.getByRole("menuitem", { name: /in JavaScript Console/ })).toHaveAttribute("aria-disabled", "false");
+  await expect(menu.getByRole("menuitem", { name: /Node\.js REPL/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(menu.getByRole("menuitem", { name: /Node\.js REPL/ })).toHaveAttribute("title", "Not available during an exam");
+  await expect(menu.getByRole("menuitem", { name: "Run Task..." })).toHaveCount(0);
+  await page.keyboard.press("Escape");
 });
 
 test("run, local tests, submit and see released results", async ({ page }) => {

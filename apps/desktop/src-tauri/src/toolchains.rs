@@ -15,7 +15,7 @@ use std::time::Duration;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Toolchain {
-    /// "python", "node", "cc", "cxx", "javac" or "java".
+    /// "python", "node", "cc", "cxx", "javac", "java", "go" or "rustc".
     pub tool: String,
     pub path: String,
     /// Arguments that always come first (the Windows `py` launcher needs `-3`).
@@ -46,7 +46,7 @@ impl Toolchains {
     }
 }
 
-pub const TOOLS: &[&str] = &["python", "node", "cc", "cxx", "javac", "java"];
+pub const TOOLS: &[&str] = &["python", "node", "cc", "cxx", "javac", "java", "go", "rustc"];
 
 fn names(tool: &str) -> &'static [&'static str] {
     match tool {
@@ -65,6 +65,8 @@ fn names(tool: &str) -> &'static [&'static str] {
         "cxx" => &["g++", "clang++", "c++"],
         "javac" => &["javac"],
         "java" => &["java"],
+        "go" => &["go"],
+        "rustc" => &["rustc"],
         _ => &[],
     }
 }
@@ -103,6 +105,20 @@ fn command_line_tools_installed() -> bool {
 fn extra_dirs(tool: &str) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let h = home();
+    // rustup and the Go installer put their tools in the same places on every OS.
+    if tool == "rustc" {
+        if let Some(h) = &h {
+            dirs.push(h.join(".cargo").join("bin"));
+        }
+    }
+    if tool == "go" {
+        if cfg!(windows) {
+            dirs.push(PathBuf::from(r"C:\Program Files\Go\bin"));
+        } else {
+            dirs.push(PathBuf::from("/usr/local/go/bin"));
+            dirs.push(PathBuf::from("/opt/homebrew/opt/go/bin"));
+        }
+    }
     #[cfg(target_os = "macos")]
     {
         dirs.push(PathBuf::from("/opt/homebrew/bin"));
@@ -195,7 +211,11 @@ fn executable(dir: &Path, name: &str) -> Option<PathBuf> {
 /// Runs `path --version` (or `-version` for Java) with a short timeout and
 /// returns the first meaningful line; None means "not really usable".
 fn probe_version(tool: &str, path: &Path, prefix: &[String]) -> Option<String> {
-    let flag = if tool == "java" || tool == "javac" { "-version" } else { "--version" };
+    let flag = match tool {
+        "java" | "javac" => "-version",
+        "go" => "version",
+        _ => "--version",
+    };
     let mut child = Command::new(path)
         .args(prefix)
         .arg(flag)

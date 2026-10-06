@@ -1,5 +1,8 @@
 import { registerCommand } from "./registry";
-import { activeFilePath, getPlatform, notify, openEditorInput, showPanel, useWorkbench } from "../state/store";
+import { monaco } from "../monaco/setup";
+import { codeEditorFor } from "../monaco/editors";
+import { activeTerminal } from "../terminal/active";
+import { activeFilePath, getPlatform, notify, openEditorInput, showPanel, useWorkbench, workbench } from "../state/store";
 import { toggleZenMode, useZen } from "../state/zen";
 import { pickAndRunTask } from "../tasks/service";
 import { openBrowser } from "../terminal/browser";
@@ -12,7 +15,38 @@ const terminalAllowed = () => !!getPlatform().terminal && useWorkbench.getState(
 const previewable = () => /\.(md|markdown|svg)$/i.test(activeFilePath() ?? "");
 
 /** Developer conveniences from VS Code: previews, Simple Browser, tasks, recent commands, Zen Mode. */
+/** Edit › Select All (⌘A / Ctrl+A from the native menu): whatever has focus, as in VS Code. */
+export function selectAllInFocus() {
+  const el = document.activeElement as HTMLElement | null;
+  if (el?.closest(".xterm")) {
+    activeTerminal()?.selectAll();
+    return "terminal";
+  }
+  const focused = monaco.editor.getEditors().find((e) => e.hasTextFocus());
+  if (focused) {
+    focused.trigger("menu", "editor.action.selectAll", null);
+    return "editor";
+  }
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    el.select();
+    return "input";
+  }
+  if (el?.isContentEditable) {
+    document.execCommand("selectAll");
+    return "content";
+  }
+  // Nothing text-like focused (a list, the preview): the active editor, like VS Code's menu.
+  const ed = codeEditorFor(workbench.get().activeGroup);
+  if (ed) {
+    ed.focus();
+    ed.trigger("menu", "editor.action.selectAll", null);
+    return "editor";
+  }
+  return null;
+}
+
 export function registerDeveloperCommands() {
+  registerCommand({ id: "workbench.action.selectAllInFocus", title: "Select All", category: "Edit", hidden: true, run: () => void selectAllInFocus() });
   registerCommand({
     id: "markdown.showPreviewToSide",
     title: "Open Preview to the Side",

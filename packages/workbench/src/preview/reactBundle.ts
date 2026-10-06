@@ -1,6 +1,6 @@
 /// <reference path="../vendor.d.ts" />
-import * as esbuild from "esbuild-wasm";
-import wasmURL from "esbuild-wasm/esbuild.wasm?url";
+import type * as esbuild from "esbuild-wasm";
+import { ensureEsbuild, esbuild as esb } from "./esbuildInit";
 // Provided by the host's Vite config (apps/desktop/build/reactVendorPlugin.ts).
 import {
   jsxRuntime as jsxRuntimeSrc,
@@ -26,11 +26,7 @@ const VENDOR: Record<string, string> = {
   scheduler: schedulerSrc,
 };
 
-let ready: Promise<void> | null = null;
-function init() {
-  ready ??= esbuild.initialize({ wasmURL, worker: true });
-  return ready;
-}
+const init = ensureEsbuild;
 
 const RESOLVE_EXTS = ["", ".jsx", ".js", ".tsx", ".ts", "/index.jsx", "/index.js", "/index.tsx", "/index.ts"];
 const LOADERS: Record<string, esbuild.Loader> = { js: "jsx", jsx: "jsx", ts: "tsx", tsx: "tsx", css: "css", json: "json", mjs: "js" };
@@ -63,7 +59,7 @@ export async function bundleReact(entry: string, read: (path: string) => Promise
   };
 
   try {
-    const result = await esbuild.build({
+    const result = await esb.build({
       entryPoints: [entry],
       bundle: true,
       write: false,

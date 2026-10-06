@@ -20,6 +20,8 @@ export interface FileSystem {
   createFile(path: string): Promise<void>;
   createDir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
+  /** Copies a file or folder (recursively, binary-safe). */
+  copy?(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;
@@ -74,6 +76,8 @@ export interface Platform {
   updater?: Updater;
   /** Opens a URL in the system browser. */
   openExternal?(url: string): Promise<void>;
+  /** The system clipboard as text (the terminal's selection is not a DOM selection WebKit can copy). */
+  clipboard?: { readText(): Promise<string>; writeText(text: string): Promise<void> };
   /** Sets the OS window title. */
   setTitle?(title: string): void;
   fs: FileSystem;
@@ -124,6 +128,28 @@ export interface ExtensionHost {
   uninstall(id: string): Promise<void>;
   /** A file of an installed extension (path relative to its root): text, or base64 for images and fonts. */
   readFile(id: string, path: string, as: "text" | "base64"): Promise<string>;
+  // ── extension host (feat/exthost) ──
+  /** Desktop: runs extensions' code in Node.js (src-tauri/src/exthost.rs). Absent in the browser build (Web Worker host only). */
+  startNodeHost?(onEvent: (e: ExtHostTransportEvent) => void): Promise<ExtHostProcess>;
+  /** Exams switch the extension host off on the native side too. */
+  setHostPolicy?(allowed: boolean): void;
+  /** `ExtensionContext.secrets` (desktop: the OS keychain). */
+  secrets?(op: "get" | "store" | "delete" | "keys", extension: string, key?: string, value?: string): Promise<unknown>;
+  // ── end extension host ──
+}
+
+/** From the Node extension host: one JSON-RPC message (text), its stderr, or its exit. */
+export type ExtHostTransportEvent = { type: "message"; message: string } | { type: "stderr"; data: string } | { type: "exit"; code: number | null };
+
+export interface ExtHostProcess {
+  /** Absolute folder holding installed extensions (`<dir>/<publisher.name>`). */
+  extensionsDir: string;
+  /** Absolute folder for extension storage. */
+  storageDir: string;
+  node: string;
+  nodeVersion: string;
+  send(message: string): void;
+  stop(): void;
 }
 
 // ───────────── running code (plan §8) ─────────────
