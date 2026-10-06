@@ -1311,28 +1311,29 @@ var FilePermission = /* @__PURE__ */ ((FilePermission2) => {
 })(FilePermission || {});
 var FileSystemError = class _FileSystemError extends Error {
   static FileExists(messageOrUri) {
-    return new _FileSystemError(messageOrUri, "EntryExists");
+    return new _FileSystemError(messageOrUri, "EntryExists", "FileExists");
   }
   static FileNotFound(messageOrUri) {
-    return new _FileSystemError(messageOrUri, "EntryNotFound");
+    return new _FileSystemError(messageOrUri, "EntryNotFound", "FileNotFound");
   }
   static FileNotADirectory(messageOrUri) {
-    return new _FileSystemError(messageOrUri, "EntryNotADirectory");
+    return new _FileSystemError(messageOrUri, "EntryNotADirectory", "FileNotADirectory");
   }
   static FileIsADirectory(messageOrUri) {
-    return new _FileSystemError(messageOrUri, "EntryIsADirectory");
+    return new _FileSystemError(messageOrUri, "EntryIsADirectory", "FileIsADirectory");
   }
   static NoPermissions(messageOrUri) {
-    return new _FileSystemError(messageOrUri, "NoPermissions");
+    return new _FileSystemError(messageOrUri, "NoPermissions", "NoPermissions");
   }
   static Unavailable(messageOrUri) {
-    return new _FileSystemError(messageOrUri, "Unavailable");
+    return new _FileSystemError(messageOrUri, "Unavailable", "Unavailable");
   }
+  /** The factory's name ("FileNotFound"), as VS Code sets it; `name` carries the provider code. */
   code;
-  constructor(uriOrMessage, code = "Unknown") {
+  constructor(uriOrMessage, providerCode = "Unknown", code = "Unknown") {
     super(Uri.isUri(uriOrMessage) ? uriOrMessage.toString(true) : uriOrMessage);
     this.code = code;
-    this.name = code ? `${code} (FileSystemError)` : "FileSystemError";
+    this.name = providerCode ? `${providerCode} (FileSystemError)` : "FileSystemError";
   }
 };
 var ExtensionMode = /* @__PURE__ */ ((ExtensionMode2) => {

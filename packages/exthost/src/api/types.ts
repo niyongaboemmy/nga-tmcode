@@ -930,28 +930,29 @@ export enum FilePermission {
 
 export class FileSystemError extends Error {
   static FileExists(messageOrUri?: string | Uri) {
-    return new FileSystemError(messageOrUri, "EntryExists");
+    return new FileSystemError(messageOrUri, "EntryExists", "FileExists");
   }
   static FileNotFound(messageOrUri?: string | Uri) {
-    return new FileSystemError(messageOrUri, "EntryNotFound");
+    return new FileSystemError(messageOrUri, "EntryNotFound", "FileNotFound");
   }
   static FileNotADirectory(messageOrUri?: string | Uri) {
-    return new FileSystemError(messageOrUri, "EntryNotADirectory");
+    return new FileSystemError(messageOrUri, "EntryNotADirectory", "FileNotADirectory");
   }
   static FileIsADirectory(messageOrUri?: string | Uri) {
-    return new FileSystemError(messageOrUri, "EntryIsADirectory");
+    return new FileSystemError(messageOrUri, "EntryIsADirectory", "FileIsADirectory");
   }
   static NoPermissions(messageOrUri?: string | Uri) {
-    return new FileSystemError(messageOrUri, "NoPermissions");
+    return new FileSystemError(messageOrUri, "NoPermissions", "NoPermissions");
   }
   static Unavailable(messageOrUri?: string | Uri) {
-    return new FileSystemError(messageOrUri, "Unavailable");
+    return new FileSystemError(messageOrUri, "Unavailable", "Unavailable");
   }
+  /** The factory's name ("FileNotFound"), as VS Code sets it; `name` carries the provider code. */
   readonly code: string;
-  constructor(uriOrMessage?: string | Uri, code = "Unknown") {
+  constructor(uriOrMessage?: string | Uri, providerCode = "Unknown", code = "Unknown") {
     super(Uri.isUri(uriOrMessage) ? uriOrMessage.toString(true) : uriOrMessage);
     this.code = code;
-    this.name = code ? `${code} (FileSystemError)` : "FileSystemError";
+    this.name = providerCode ? `${providerCode} (FileSystemError)` : "FileSystemError";
   }
 }
 
