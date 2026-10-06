@@ -74,6 +74,8 @@ export interface Platform {
   updater?: Updater;
   /** Opens a URL in the system browser. */
   openExternal?(url: string): Promise<void>;
+  /** The system clipboard as text (the terminal's selection is not a DOM selection WebKit can copy). */
+  clipboard?: { readText(): Promise<string>; writeText(text: string): Promise<void> };
   /** Sets the OS window title. */
   setTitle?(title: string): void;
   fs: FileSystem;

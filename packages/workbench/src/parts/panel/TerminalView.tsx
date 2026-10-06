@@ -183,6 +183,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
     if (!el) return;
     el.replaceChildren();
     if (!inst) return;
+    // Dev builds: the UI probe drives the active terminal directly (selection drawing vs mouse input).
+    if (import.meta.env?.DEV) (window as unknown as { __TMCODE_TERM__?: Terminal }).__TMCODE_TERM__ = inst.term;
     if (!inst.term.element) inst.term.open(el);
     else el.appendChild(inst.term.element);
     requestAnimationFrame(() => {

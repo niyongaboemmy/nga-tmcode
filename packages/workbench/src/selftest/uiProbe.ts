@@ -230,7 +230,13 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
   }
 
   // Selection and clipboard: what ⌘C / ⌘X / ⌘V (the native Edit menu) and Delete reach inside the editor.
+  // The large-file step may have replaced the editor: measure the live one, back on the probe file.
   {
+    openFile(opts.file, { pinned: true });
+    await wait(300);
+    ed = codeEditorFor(useWorkbench.getState().activeGroup) ?? ed;
+    const root = ed.getDomNode()!;
+    const bg = getComputedStyle(root.querySelector(".monaco-editor-background") ?? root).backgroundColor;
     const model = ed.getModel()!;
     ed.focus();
     ed.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 3, endColumn: 1 });
@@ -244,6 +250,7 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
     const dt = new DataTransfer();
     input?.dispatchEvent(new ClipboardEvent("copy", { clipboardData: dt, bubbles: true, cancelable: true }));
     const copied = dt.getData("text/plain");
+    check("input mode", true, `EditContext in this WebKit: ${"EditContext" in window}; editor input: ${root.querySelector("textarea") ? "textarea" : root.querySelector(".native-edit-context") ? "edit-context" : "none"}`);
     check("copy", !!copied && copied.replace(/\r/g, "") === selected.replace(/\r/g, ""), `input ${input?.tagName.toLowerCase()}${input?.className ? "." + String(input.className).split(" ")[0] : ""} focused=${focused}; copied ${copied.length} of ${selected.length} chars; execCommand(copy) supported=${document.queryCommandSupported?.("copy")}`);
     const version = model.getAlternativeVersionId();
     const pdt = new DataTransfer();
@@ -303,15 +310,27 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
       const firstRow = rowEls[0]?.getBoundingClientRect();
       if (screen && firstRow) {
         const y = firstRow.top + firstRow.height / 2;
-        const opts = (x: number) => ({ clientX: x, clientY: y, bubbles: true, button: 0, buttons: 1 });
+        const opts = (x: number) => ({ clientX: x, clientY: y, bubbles: true, button: 0, buttons: 1, detail: 1, view: window });
         screen.dispatchEvent(new MouseEvent("mousedown", opts(firstRow.left + 2)));
         document.dispatchEvent(new MouseEvent("mousemove", opts(firstRow.left + Math.min(200, firstRow.width - 4))));
         document.dispatchEvent(new MouseEvent("mouseup", opts(firstRow.left + Math.min(200, firstRow.width - 4))));
         await wait(200);
       }
-      const selDivs = [...document.querySelectorAll<HTMLElement>("[data-testid=integrated-terminal] .xterm-selection div")];
-      const tSel = selDivs[0] ? getComputedStyle(selDivs[0]).backgroundColor : "";
-      check("terminal selection", selDivs.length > 0 && visible(tSel), selDivs.length ? `${selDivs.length} boxes, ${tSel}` : "no selection drawn after a drag");
+      const drawn = () => {
+        const divs = [...document.querySelectorAll<HTMLElement>("[data-testid=integrated-terminal] .xterm-selection div")];
+        return { n: divs.length, bg: divs[0] ? getComputedStyle(divs[0]).backgroundColor : "" };
+      };
+      const dragged = drawn();
+      check("terminal selection (mouse)", dragged.n > 0 && visible(dragged.bg), dragged.n ? `${dragged.n} boxes, ${dragged.bg}` : "no selection drawn after a drag");
+      // The same through xterm's API: separates drawing from mouse handling.
+      const api = (window as unknown as { __TMCODE_TERM__?: { selectAll(): void; hasSelection(): boolean; getSelection(): string; clearSelection(): void } }).__TMCODE_TERM__;
+      if (api) {
+        api.selectAll();
+        await wait(200);
+        const all = drawn();
+        check("terminal selection", api.hasSelection() && all.n > 0 && visible(all.bg), `selectAll: hasSelection=${api.hasSelection()} (${api.getSelection().length} chars), ${all.n} boxes ${all.bg}`);
+        api.clearSelection();
+      }
     }
     check("terminal cursor", !!tCursor && visible(cursorColor), tCursor ? `${tCursor.className.trim()} (${cursorColor})` : `no cursor: focus on ${document.activeElement?.className}; hidden by ${helper?.closest("[hidden]")?.className ?? "nothing"}`);
   }

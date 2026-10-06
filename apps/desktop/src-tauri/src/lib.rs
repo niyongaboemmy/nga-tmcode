@@ -178,6 +178,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
@@ -287,6 +288,14 @@ pub fn run() {
                 let _ = app.deep_link().register_all();
             }
             build_main_window(app)?;
+            // Debug self-tests measure rendering: a window behind other apps is throttled by
+            // macOS (no frames, no timers), so bring it forward and keep it there.
+            if cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").is_ok() {
+                if let Some(w) = app.get_webview_window(WORKBENCH) {
+                    let _ = w.set_always_on_top(true);
+                    let _ = w.set_focus();
+                }
+            }
             log::info!("TMCode {} started", env!("CARGO_PKG_VERSION"));
             Ok(())
         })

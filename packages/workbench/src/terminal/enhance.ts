@@ -38,6 +38,53 @@ function announceServer(url: string) {
   ]);
 }
 
+/**
+ * VS Code's terminal clipboard keys: ⌘C / ⌘V on macOS; on Windows and Linux
+ * Ctrl+Shift+C / Ctrl+Shift+V, plus Ctrl+C when text is selected (otherwise
+ * Ctrl+C stays an interrupt for the shell) and Ctrl+V.
+ */
+export function clipboardAction(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">, mac: boolean, hasSelection: boolean): "copy" | "paste" | null {
+  const key = e.key.toLowerCase();
+  if (e.altKey) return null;
+  if (mac) {
+    if (!e.metaKey || e.ctrlKey) return null;
+    if (key === "c") return hasSelection ? "copy" : null;
+    if (key === "v") return "paste";
+    return null;
+  }
+  if (!e.ctrlKey || e.metaKey) return null;
+  if (key === "c" && (e.shiftKey || hasSelection)) return hasSelection ? "copy" : null;
+  if (key === "v") return "paste";
+  return null;
+}
+
+async function copySelection(term: Terminal) {
+  const text = term.getSelection();
+  if (!text) return;
+  const clip = getPlatform().clipboard;
+  try {
+    if (clip) await clip.writeText(text);
+    else await navigator.clipboard.writeText(text);
+  } catch {
+    notify("warning", "Could not copy the terminal selection to the clipboard.");
+  }
+}
+
+async function pasteInto(term: Terminal) {
+  // Exams that only allow pasting what was copied inside the exam keep outside text out of the shell too.
+  if (useWorkbench.getState().policy.paste !== "allow") {
+    notify("info", "Pasting from outside is turned off for this exam.");
+    return;
+  }
+  const clip = getPlatform().clipboard;
+  try {
+    const text = clip ? await clip.readText() : await navigator.clipboard.readText();
+    if (text) term.paste(text);
+  } catch {
+    notify("warning", "Could not read the clipboard.");
+  }
+}
+
 /** VS Code's terminal conveniences: Ctrl/Cmd-click links, file:line links, find, wide-char widths, server detection. */
 export function enhanceTerminal(term: Terminal): EnhancedTerminal {
   const search = new SearchAddon();
@@ -78,14 +125,23 @@ export function enhanceTerminal(term: Terminal): EnhancedTerminal {
     },
   });
 
-  // Ctrl/Cmd+F inside the terminal opens Find instead of reaching the shell.
   term.attachCustomKeyEventHandler((e) => {
-    const mod = getPlatform().os === "mac" ? e.metaKey : e.ctrlKey;
-    if (e.type === "keydown" && mod && !e.altKey && e.key.toLowerCase() === "f") {
+    if (e.type !== "keydown") return true;
+    const mac = getPlatform().os === "mac";
+    const mod = mac ? e.metaKey : e.ctrlKey;
+    const key = e.key.toLowerCase();
+    // Ctrl/Cmd+F inside the terminal opens Find instead of reaching the shell.
+    if (mod && !e.altKey && key === "f") {
       window.dispatchEvent(new CustomEvent("tmcode:terminal-find"));
       return false;
     }
-    return true;
+    const action = clipboardAction(e, mac, term.hasSelection());
+    if (!action) return true;
+    // Handled here: keep the native Edit menu from also acting (WebKit copies nothing for xterm's selection).
+    e.preventDefault();
+    if (action === "copy") void copySelection(term);
+    else void pasteInto(term);
+    return false;
   });
 
   let tail = "";
