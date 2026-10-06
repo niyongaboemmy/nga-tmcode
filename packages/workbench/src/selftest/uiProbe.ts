@@ -153,7 +153,13 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
   );
 
   // Syntax colours: tokens must render in several distinct colours.
-  const colors = new Set([...root.querySelectorAll<HTMLElement>(".view-lines span[class^='mtk'], .view-lines span[class*=' mtk']")].map((s) => getComputedStyle(s).color));
+  // Grammars and the Oniguruma wasm load lazily on first use, which takes a while on a cold or slow machine.
+  const tokenColors = () => new Set([...root.querySelectorAll<HTMLElement>(".view-lines span[class^='mtk'], .view-lines span[class*=' mtk']")].map((s) => getComputedStyle(s).color));
+  let colors = tokenColors();
+  for (let i = 0; i < 80 && colors.size < 3; i++) {
+    await wait(100);
+    colors = tokenColors();
+  }
   check("syntax colours", colors.size >= 3, `${colors.size} distinct token colours`);
 
   // Glyph alignment: Monaco's measured character width must match what the browser paints,
