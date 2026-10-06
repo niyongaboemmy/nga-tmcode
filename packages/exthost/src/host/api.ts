@@ -121,7 +121,7 @@ export function createApi(host: ExtHost, ext: ExtState) {
       ),
     executeCommand: (id: string, ...args: unknown[]) => host.executeCommand(id, ...args),
     getCommands: async (filterInternal?: boolean) => {
-      const remote = await rpc.request<string[]>("$main.getCommands", []).catch(() => [] as string[]);
+      const remote = (await rpc.request<string[] | null>("$main.getCommands", []).catch(() => null)) ?? [];
       return filterInternal ? remote.filter((c) => !c.startsWith("_")) : remote;
     },
     registerDiffInformationCommand: () => {

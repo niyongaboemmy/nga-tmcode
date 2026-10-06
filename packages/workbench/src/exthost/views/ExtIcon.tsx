@@ -35,6 +35,8 @@ export function ExtIcon({ icon, className = "", mask = false, size = 16 }: { ico
     const color = "color" in icon && icon.color ? themeColor(icon.color) : undefined;
     return <Codicon name={icon.codicon.replace(/~spin$/, "")} className={`${className} ${/~spin$/.test(icon.codicon) ? "codicon-modifier-spin" : ""}`} style={color ? { color } : undefined} />;
   }
+  // Web images (avatars) are outside the workbench's CSP: a neutral glyph stands in.
+  if (!src && ref && "url" in ref && /^https?:/.test(ref.url)) return <Codicon name={/avatar|gravatar/i.test(ref.url) ? "account" : "circle-outline"} className={className} />;
   if (!src) return <span className={`tm-ext-icon ${className}`} style={{ width: size, height: size }} aria-hidden />;
   if (mask) return <span className={`tm-ext-icon is-mask ${className}`} style={{ width: size, height: size, WebkitMaskImage: `url("${src}")`, maskImage: `url("${src}")` }} aria-hidden />;
   return <img className={`tm-ext-icon ${className}`} src={src} width={size} height={size} alt="" aria-hidden draggable={false} />;

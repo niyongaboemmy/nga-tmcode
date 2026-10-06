@@ -33,7 +33,7 @@ export function describeExtension(dir) {
 }
 
 export class FakeWorkbench {
-  constructor({ root, extensions, documents = {}, configuration = {}, onRequest } = {}) {
+  constructor({ root, extensions, documents = {}, configuration = {}, onRequest, env = {} } = {}) {
     this.root = root;
     this.docs = new Map(Object.entries(documents).map(([path, d]) => [path, { text: d.text, languageId: d.languageId, version: 1 }]));
     this.providers = new Map();
@@ -63,7 +63,7 @@ export class FakeWorkbench {
         workspace: root ? { name: "ws", root } : null,
         configuration: { defaults: { "editor.tabSize": 4, "editor.insertSpaces": true, "files.exclude": { "**/.git": true }, "search.exclude": { "**/node_modules": true } }, user: configuration },
         state: { global: {}, workspace: {} },
-        env: { appName: "TMCode", appRoot: "", appHost: "desktop", language: "en", machineId: "m", sessionId: "s", uiKind: 1, shell: "/bin/sh", version: "0.0.0", storagePath: mkdtempSync(resolve(tmpdir(), "tmcode-exthost-storage-")), workspaceKey: "ws", webviewBase: "tmwebview://localhost", webviewCspSource: "tmwebview://localhost tmwebview:", os: process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux" },
+        env: { appName: "TMCode", appRoot: "", appHost: "desktop", language: "en", machineId: "m", sessionId: "s", uiKind: 1, shell: "/bin/sh", version: "0.0.0", storagePath: mkdtempSync(resolve(tmpdir(), "tmcode-exthost-storage-")), workspaceKey: "ws", webviewBase: "tmwebview://localhost", webviewCspSource: "tmwebview://localhost tmwebview:", os: process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux", ...env },
         documents: [...this.docs].map(([path, d]) => ({ path, languageId: d.languageId, version: 1, text: d.text, eol: "\n", isDirty: false })),
         editors: [...this.docs.keys()].slice(0, 1).map((path) => ({ id: "g0", path, selections: [{ anchor: [0, 0], active: [0, 0] }], visibleRanges: [[0, 0, 10, 0]], options: { tabSize: 4, insertSpaces: true }, viewColumn: 1 })),
         activeEditor: this.docs.size ? "g0" : null,

@@ -2919,7 +2919,7 @@ function createApi(host2, ext) {
     ),
     executeCommand: (id, ...args) => host2.executeCommand(id, ...args),
     getCommands: async (filterInternal) => {
-      const remote = await rpc.request("$main.getCommands", []).catch(() => []);
+      const remote = await rpc.request("$main.getCommands", []).catch(() => null) ?? [];
       return filterInternal ? remote.filter((c) => !c.startsWith("_")) : remote;
     },
     registerDiffInformationCommand: () => {
@@ -3471,6 +3471,54 @@ function createApi(host2, ext) {
 
 // packages/exthost/src/host/views.ts
 var isObj2 = (v) => !!v && typeof v === "object";
+var TYPED = {
+  Uint8Array,
+  Int8Array,
+  Uint8ClampedArray,
+  Uint16Array,
+  Int16Array,
+  Uint32Array,
+  Int32Array,
+  Float32Array,
+  Float64Array,
+  BigInt64Array,
+  BigUint64Array,
+  DataView
+};
+function toBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 32768) s += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  return btoa(s);
+}
+function fromBase64(b64) {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out.buffer;
+}
+function encodeWebviewMessage(v, depth = 0) {
+  if (v instanceof ArrayBuffer) return { $$tmbuf: toBase64(new Uint8Array(v)), t: "ArrayBuffer" };
+  if (ArrayBuffer.isView(v)) return { $$tmbuf: toBase64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)), t: v.constructor.name };
+  if (depth > 64 || !v || typeof v !== "object" || typeof v.toJSON === "function") return v;
+  if (Array.isArray(v)) return v.map((x) => encodeWebviewMessage(x, depth + 1));
+  const out = {};
+  for (const [k, x] of Object.entries(v)) out[k] = encodeWebviewMessage(x, depth + 1);
+  return out;
+}
+function decodeWebviewMessage(v, depth = 0) {
+  if (depth > 64 || !v || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map((x) => decodeWebviewMessage(x, depth + 1));
+  const o = v;
+  if (typeof o.$$tmbuf === "string" && typeof o.t === "string") {
+    const buf = fromBase64(o.$$tmbuf);
+    if (o.t === "ArrayBuffer") return buf;
+    const Ctor = TYPED[o.t] ?? Uint8Array;
+    return new Ctor(buf);
+  }
+  const out = {};
+  for (const [k, x] of Object.entries(o)) out[k] = decodeWebviewMessage(x, depth + 1);
+  return out;
+}
 function errorText(e) {
   return String(e?.stack || e?.message || e);
 }
@@ -3797,7 +3845,7 @@ var WebviewImpl = class {
   }
   async postMessage(message) {
     if (this.disposed) return false;
-    return !!await this.views.rpc.request("$main.webviewPost", [this.handle, message]).catch(() => false);
+    return !!await this.views.rpc.request("$main.webviewPost", [this.handle, encodeWebviewMessage(message)]).catch(() => false);
   }
 };
 var ViewsHost = class {
@@ -3817,7 +3865,7 @@ var ViewsHost = class {
     r.register("$treeCheckbox", ([id, changes]) => this.#trees.get(String(id))?.setCheckboxes(changes ?? []));
     r.register("$treeCommand", ([id, handle]) => tree(id).command(String(handle)));
     r.register("$treeMenuCommand", ([id, command2, handle, selected]) => tree(id).menuCommand(String(command2), String(handle), selected ?? []));
-    r.register("$webviewMessage", ([handle, message]) => this.#webviews.get(String(handle))?.onDidReceiveMessage.fire(message));
+    r.register("$webviewMessage", ([handle, message]) => this.#webviews.get(String(handle))?.onDidReceiveMessage.fire(decodeWebviewMessage(message)));
     r.register("$resolveWebviewView", ([viewId]) => this.#resolveView(String(viewId)));
     r.register("$webviewViewVisible", ([handle, visible]) => {
       const v = this.#webviewViews.get(String(handle));

@@ -41,10 +41,41 @@ const SCRIPT = `(function (cfg, defaultStyles) {
   "use strict";
   var host = window.parent;
   var post = function (m) { host.postMessage(Object.assign({ __tmwebview: 1 }, m), "*"); };
+  // ArrayBuffers and typed arrays cross the (JSON) extension host link as {$$tmbuf: base64, t: type}.
+  function encode(v, depth) {
+    depth = depth || 0;
+    if (v instanceof ArrayBuffer) return { $$tmbuf: b64(new Uint8Array(v)), t: "ArrayBuffer" };
+    if (ArrayBuffer.isView(v)) return { $$tmbuf: b64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)), t: v.constructor.name };
+    if (depth > 64 || !v || typeof v !== "object" || typeof v.toJSON === "function") return v;
+    if (Array.isArray(v)) return v.map(function (x) { return encode(x, depth + 1); });
+    var out = {};
+    for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) out[k] = encode(v[k], depth + 1);
+    return out;
+  }
+  function decode(v, depth) {
+    depth = depth || 0;
+    if (depth > 64 || !v || typeof v !== "object") return v;
+    if (Array.isArray(v)) return v.map(function (x) { return decode(x, depth + 1); });
+    if (typeof v.$$tmbuf === "string" && typeof v.t === "string") {
+      var s = atob(v.$$tmbuf), bytes = new Uint8Array(s.length);
+      for (var i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+      if (v.t === "ArrayBuffer") return bytes.buffer;
+      var Ctor = typeof window[v.t] === "function" ? window[v.t] : Uint8Array;
+      return new Ctor(bytes.buffer);
+    }
+    var out = {};
+    for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) out[k] = decode(v[k], depth + 1);
+    return out;
+  }
+  function b64(bytes) {
+    var s = "";
+    for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
   var state = cfg.state;
   var acquired = false;
   var api = Object.freeze({
-    postMessage: function (message) { post({ type: "message", data: message }); },
+    postMessage: function (message) { post({ type: "message", data: encode(message) }); },
     setState: function (s) { state = s; post({ type: "setState", data: s }); return s; },
     getState: function () { return state; },
   });
@@ -60,7 +91,7 @@ const SCRIPT = `(function (cfg, defaultStyles) {
     var d = e.data;
     if (e.source !== host || !d || d.__tmwebview !== 1) return;
     e.stopImmediatePropagation();
-    if (d.type === "message") window.dispatchEvent(new MessageEvent("message", { data: d.data }));
+    if (d.type === "message") window.dispatchEvent(new MessageEvent("message", { data: decode(d.data) }));
     else if (d.type === "theme") applyTheme(d.theme);
   }, true);
   function applyTheme(t) {

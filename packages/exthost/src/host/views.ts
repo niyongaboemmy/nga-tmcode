@@ -37,6 +37,53 @@ interface Node {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
 
+// ───────────── webview messages: binary data over JSON ─────────────
+// postMessage carries ArrayBuffers and typed arrays (GitLens sends its RPC as
+// Uint8Array). The RPC is JSON, so they travel as {$$tmbuf: base64, t: type};
+// the webview prelude converts them back (and the page's own the same way).
+
+const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
+  Uint8Array, Int8Array, Uint8ClampedArray, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array, DataView,
+} as unknown as Record<string, new (b: ArrayBuffer) => ArrayBufferView>;
+
+function toBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+function fromBase64(b64: string): ArrayBuffer {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out.buffer;
+}
+
+export function encodeWebviewMessage(v: unknown, depth = 0): unknown {
+  if (v instanceof ArrayBuffer) return { $$tmbuf: toBase64(new Uint8Array(v)), t: "ArrayBuffer" };
+  if (ArrayBuffer.isView(v)) return { $$tmbuf: toBase64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)), t: v.constructor.name };
+  if (depth > 64 || !v || typeof v !== "object" || typeof (v as { toJSON?: unknown }).toJSON === "function") return v;
+  if (Array.isArray(v)) return v.map((x) => encodeWebviewMessage(x, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v)) out[k] = encodeWebviewMessage(x, depth + 1);
+  return out;
+}
+
+export function decodeWebviewMessage(v: unknown, depth = 0): unknown {
+  if (depth > 64 || !v || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map((x) => decodeWebviewMessage(x, depth + 1));
+  const o = v as Record<string, unknown>;
+  if (typeof o.$$tmbuf === "string" && typeof o.t === "string") {
+    const buf = fromBase64(o.$$tmbuf);
+    if (o.t === "ArrayBuffer") return buf;
+    const Ctor = TYPED[o.t] ?? Uint8Array;
+    return new Ctor(buf);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(o)) out[k] = decodeWebviewMessage(x, depth + 1);
+  return out;
+}
+
 function errorText(e: unknown): string {
   return String((e as Error)?.stack || (e as Error)?.message || e);
 }
@@ -392,7 +439,7 @@ class WebviewImpl {
 
   async postMessage(message: unknown): Promise<boolean> {
     if (this.disposed) return false;
-    return !!(await this.views.rpc.request<boolean>("$main.webviewPost", [this.handle, message]).catch(() => false));
+    return !!(await this.views.rpc.request<boolean>("$main.webviewPost", [this.handle, encodeWebviewMessage(message)]).catch(() => false));
   }
 }
 
@@ -440,7 +487,7 @@ export class ViewsHost {
     r.register("$treeCheckbox", ([id, changes]) => this.#trees.get(String(id))?.setCheckboxes((changes as [string, boolean][]) ?? []));
     r.register("$treeCommand", ([id, handle]) => tree(id).command(String(handle)));
     r.register("$treeMenuCommand", ([id, command, handle, selected]) => tree(id).menuCommand(String(command), String(handle), (selected as string[]) ?? []));
-    r.register("$webviewMessage", ([handle, message]) => this.#webviews.get(String(handle))?.onDidReceiveMessage.fire(message));
+    r.register("$webviewMessage", ([handle, message]) => this.#webviews.get(String(handle))?.onDidReceiveMessage.fire(decodeWebviewMessage(message)));
     r.register("$resolveWebviewView", ([viewId]) => this.#resolveView(String(viewId)));
     r.register("$webviewViewVisible", ([handle, visible]) => {
       const v = this.#webviewViews.get(String(handle));
