@@ -75,7 +75,7 @@ function createNodeLoader(apiFor: (id: string) => unknown, locations: () => { id
   return {
     async load(location, entry) {
       const file = path.resolve(location, entry);
-      const require = Module.createRequire(path.join(location, "package.json"));
+      const require = Module.createRequire(path.resolve(location, "package.json"));
       return require(file) as never;
     },
   };

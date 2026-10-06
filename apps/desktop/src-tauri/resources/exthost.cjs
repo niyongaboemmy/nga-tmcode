@@ -3203,6 +3203,10 @@ var ExtHost = class {
       d.isDirty = false;
       this.onDidSaveTextDocument.fire(d.document);
     });
+    r.register("$documentDirty", ([path3, dirty]) => {
+      const d = this.#docs.get(String(path3));
+      if (d) d.isDirty = !!dirty;
+    });
     r.register("$documentClosed", ([path3]) => this.#documentClosed(String(path3)));
     r.register("$documentLanguageChanged", ([path3, languageId]) => {
       const d = this.#docs.get(String(path3));
@@ -4265,7 +4269,7 @@ function createNodeLoader(apiFor, locations2) {
   return {
     async load(location2, entry) {
       const file = path2.resolve(location2, entry);
-      const require2 = import_node_module.default.createRequire(path2.join(location2, "package.json"));
+      const require2 = import_node_module.default.createRequire(path2.resolve(location2, "package.json"));
       return require2(file);
     }
   };
