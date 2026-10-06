@@ -66,6 +66,23 @@ function ownerOf(file: string, locations: { id: string; location: string }[]): s
 const IDENT = /^[A-Za-z_$][\w$]*$/;
 
 /**
+ * VS Code runs extensions on its bundled Node; TMCode uses the one installed.
+ * Node 25 removed `buffer.SlowBuffer`, which popular extensions still bundle
+ * (REST Client via buffer-equal-constant-time): put the old alias back.
+ */
+function restoreRemovedNodeApis() {
+  const buffer = require("node:buffer") as { SlowBuffer?: unknown; Buffer: unknown };
+  if (buffer.SlowBuffer === undefined) {
+    try {
+      Object.defineProperty(buffer, "SlowBuffer", { value: buffer.Buffer, configurable: true, writable: true });
+    } catch {
+      /* frozen module namespace: nothing to do */
+    }
+  }
+}
+restoreRemovedNodeApis();
+
+/**
  * `require('vscode')` (CommonJS) and `import … from "vscode"` (ES modules,
  * through Node's synchronous module hooks where available) from a module
  * inside an extension's folder return that extension's API.

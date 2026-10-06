@@ -86,7 +86,17 @@ export class Uri implements UriComponents {
   readonly query: string;
   readonly fragment: string;
 
-  protected constructor(scheme: string, authority?: string, path?: string, query?: string, fragment?: string, strict = false) {
+  protected constructor(schemeOrData: string | UriComponents, authority?: string, path?: string, query?: string, fragment?: string, strict = false) {
+    // VS Code also takes the components object (subclasses call super({ scheme, … }), e.g. GitLens' GitUri).
+    if (typeof schemeOrData === "object" && schemeOrData) {
+      this.scheme = schemeOrData.scheme || "";
+      this.authority = schemeOrData.authority || "";
+      this.path = schemeOrData.path || "";
+      this.query = schemeOrData.query || "";
+      this.fragment = schemeOrData.fragment || "";
+      return;
+    }
+    const scheme = schemeOrData;
     this.scheme = scheme || (strict ? "" : "file");
     if (strict && !scheme) throw new Error(`[UriError]: Scheme is missing: {scheme: "", authority: "${authority}", path: "${path}"}`);
     if (this.scheme && !SCHEME_RE.test(this.scheme)) throw new Error("[UriError]: Scheme contains illegal characters.");

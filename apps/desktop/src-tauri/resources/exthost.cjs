@@ -285,7 +285,16 @@ var Uri = class _Uri {
   path;
   query;
   fragment;
-  constructor(scheme, authority, path3, query, fragment, strict = false) {
+  constructor(schemeOrData, authority, path3, query, fragment, strict = false) {
+    if (typeof schemeOrData === "object" && schemeOrData) {
+      this.scheme = schemeOrData.scheme || "";
+      this.authority = schemeOrData.authority || "";
+      this.path = schemeOrData.path || "";
+      this.query = schemeOrData.query || "";
+      this.fragment = schemeOrData.fragment || "";
+      return;
+    }
+    const scheme = schemeOrData;
     this.scheme = scheme || (strict ? "" : "file");
     if (strict && !scheme) throw new Error(`[UriError]: Scheme is missing: {scheme: "", authority: "${authority}", path: "${path3}"}`);
     if (this.scheme && !SCHEME_RE.test(this.scheme)) throw new Error("[UriError]: Scheme contains illegal characters.");
@@ -4847,6 +4856,16 @@ function ownerOf(file, locations2) {
   return locations2.sort((a, b) => b.location.length - a.location.length).find((l) => file === l.location || file.startsWith(l.location.endsWith(sep3) ? l.location : l.location + sep3))?.id;
 }
 var IDENT = /^[A-Za-z_$][\w$]*$/;
+function restoreRemovedNodeApis() {
+  const buffer = require("node:buffer");
+  if (buffer.SlowBuffer === void 0) {
+    try {
+      Object.defineProperty(buffer, "SlowBuffer", { value: buffer.Buffer, configurable: true, writable: true });
+    } catch {
+    }
+  }
+}
+restoreRemovedNodeApis();
 function createNodeLoader(apiFor, locations2) {
   const M = import_node_module.default;
   const original = M._load;
