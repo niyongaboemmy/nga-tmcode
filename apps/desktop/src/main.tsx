@@ -89,6 +89,9 @@ async function boot() {
   if (desktopLog && dev?.launch) {
     const { runExamSelfTest } = await import("./selftest");
     setTimeout(() => void runExamSelfTest(dev.launch!, (m) => void desktopLog.info(m)), 2000);
+  } else if (desktopLog && dev?.selftestGit) {
+    const { runGitSelfTest } = await import("./selftest");
+    setTimeout(() => void runGitSelfTest(platform, (m) => void desktopLog.info(m)), 2500);
   } else if (desktopLog && dev?.selftest) {
     const { runSelfTest } = await import("./selftest");
     setTimeout(() => void runSelfTest(platform, (m) => void desktopLog.info(m)), 2500);

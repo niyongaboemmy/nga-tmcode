@@ -3,13 +3,23 @@ import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } fro
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
 import { useUpdate } from "../update/updateService";
+// ── git ──
+import { useGit, useGitAllowed } from "../scm/gitService";
+import { changeCount } from "../scm/model";
+import { debugAllowed } from "../debug/debugService";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
+  { id: "scm", icon: "source-control", label: "Source Control", command: "workbench.view.scm" },
+  // ── Run and Debug ──
+  { id: "debug", icon: "debug-alt", label: "Run and Debug", command: "workbench.view.debug" },
+  // ── end Run and Debug ──
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
+// ── extensions (feat/extensions): hidden during exams ──
+const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
 
 export function ActivityBar() {
   const activeView = useWorkbench((s) => s.activeView);
@@ -19,7 +29,14 @@ export function ActivityBar() {
   const os = getPlatform().os;
   const inExam = useExam((s) => !!s.quiz);
   const updateReady = useUpdate((s) => s.status === "available");
-  const views = inExam ? [TASK_VIEW, ...VIEWS] : VIEWS;
+  const practice = useWorkbench((s) => s.policy.mode === "practice");
+  const gitAllowed = useGitAllowed();
+  const scmChanges = useGit((s) => changeCount(s.status));
+  // Run and Debug is hidden in exams unless the policy allows the debugger.
+  useWorkbench((s) => s.policy);
+  useExam((s) => s.phase);
+  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, EXTENSIONS_VIEW] : VIEWS;
+  const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
@@ -45,6 +62,7 @@ export function ActivityBar() {
             >
               <Codicon name={v.icon} />
               {v.id === "explorer" && dirtyCount > 0 && <span className="tm-activity-badge">{dirtyCount}</span>}
+              {v.id === "scm" && scmChanges > 0 && <span className="tm-activity-badge">{scmChanges > 9999 ? "10k+" : scmChanges}</span>}
               {v.id === "testing" && failing > 0 && <span className="tm-activity-badge is-error">{failing}</span>}
             </button>
           );
@@ -64,6 +82,7 @@ export function ActivityBar() {
               { kind: "separator" },
               { kind: "item", label: "Settings", keybinding: formatKeybinding("mod+,", os), run: () => executeCommand("workbench.action.openSettings") },
               { kind: "item", label: "Keyboard Shortcuts", keybinding: formatKeybinding("mod+k mod+s", os), run: () => executeCommand("workbench.action.keybindingsReference") },
+              ...(practice && !inExam ? [{ kind: "item" as const, label: "Extensions", keybinding: formatKeybinding("mod+shift+x", os), run: () => executeCommand("workbench.view.extensions") }] : []),
               { kind: "separator" },
               { kind: "item", label: "Themes", keybinding: formatKeybinding("mod+k mod+t", os), run: () => executeCommand("workbench.action.selectTheme") },
               { kind: "separator" },

@@ -18,6 +18,7 @@ function reset() {
     offline: false, // simulate the network being down for snapshot uploads
     submitted: null,
     released: true,
+    debugger: false, // policy.debugger: Run and Debug allowed in the exam
   };
 }
 reset();
@@ -152,7 +153,7 @@ createServer(async (req, res) => {
           quiz: { id: 77, title: "Practical 1 — JavaScript basics", type: "Exam" },
           deadline: new Date(state.deadlineMs).toISOString(),
           server_time: new Date().toISOString(),
-          policy: { mode: "monitored", intelligence: "basic", paste: "internal_only", terminal: "off", internet_in_preview: false, require_seb: false, allow_offline_grace_minutes: 10, locked_settings: [] },
+          policy: { mode: "monitored", intelligence: "basic", paste: "internal_only", terminal: "off", internet_in_preview: false, require_seb: false, allow_offline_grace_minutes: 10, locked_settings: [], ...(state.debugger ? { debugger: true } : {}) },
           journal_nonce: s.nonce,
           profiles: [PROFILE],
           toolchains: ["node"],

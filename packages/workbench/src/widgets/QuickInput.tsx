@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { allCommands, executeCommand, formatKeybinding, isEnabled, keybindingFor } from "../commands/registry";
 import { codeEditorFor } from "../monaco/editors";
 import { listFiles } from "../parts/search/search";
-import type { ThemeId } from "../state/settings";
+import { allThemes, useThemes } from "../themes/themeService";
+import { allIconThemes, useIconTheme } from "../themes/iconThemes";
 import {
   activeFilePath,
   closeQuickInput,
   getPlatform,
   openFile,
+  setPreviewIconTheme,
   setPreviewTheme,
   updateSetting,
   useWorkbench,
@@ -17,6 +19,7 @@ import {
 import { fuzzyMatch, highlightRuns } from "../util/fuzzy";
 import { basename, dirname } from "../util/paths";
 import { Codicon, FileIcon } from "./icons";
+import { SkeletonRows } from "./Skeleton";
 
 interface Item {
   id: string;
@@ -33,11 +36,14 @@ interface Item {
 const recentCommands: string[] = [];
 const recentFiles: string[] = [];
 
-const THEMES: { id: ThemeId; label: string; group: string }[] = [
-  { id: "light-modern", label: "Light Modern", group: "light themes" },
-  { id: "dark-modern", label: "Dark Modern", group: "dark themes" },
-  { id: "dark-hc", label: "Dark High Contrast", group: "high contrast themes" },
-];
+/** Colour themes grouped like VS Code's picker: light, dark, high contrast (built-ins first, then extensions). */
+function themeItems() {
+  const group = (ui: string) => (ui === "vs" ? "light themes" : ui === "vs-dark" ? "dark themes" : "high contrast themes");
+  const order = ["light themes", "dark themes", "high contrast themes"];
+  return allThemes()
+    .map((t) => ({ id: t.id, label: t.label, group: group(t.uiTheme), description: t.extensionName }))
+    .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+}
 
 function Highlighted({ text, indices }: { text: string; indices?: number[] }) {
   if (!indices?.length) return <>{text}</>;
@@ -58,7 +64,7 @@ function Highlighted({ text, indices }: { text: string; indices?: number[] }) {
 
 /** Switches modes the way VS Code does when the user types a prefix. */
 function modeFromValue(value: string, base: QuickInputMode): { mode: QuickInputMode; query: string } {
-  if (base === "theme") return { mode: "theme", query: value };
+  if (base === "theme" || base === "iconTheme") return { mode: base, query: value };
   if (value.startsWith(">")) return { mode: "commands", query: value.slice(1).trim() };
   if (value.startsWith(":")) return { mode: "line", query: value.slice(1).trim() };
   return { mode: "files", query: value.trim() };
@@ -79,6 +85,9 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const currentTheme = useWorkbench((s) => s.settings["workbench.colorTheme"]);
+  const currentIconTheme = useWorkbench((s) => s.settings["workbench.iconTheme"]);
+  const themesVersion = useThemes((s) => s.version);
+  const iconThemesVersion = useIconTheme((s) => s.version);
   const hasWorkspace = useWorkbench((s) => !!s.workspace);
   const { mode, query } = modeFromValue(value, baseMode);
 
@@ -149,21 +158,41 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
       }));
     }
     if (mode === "theme") {
-      return THEMES.filter((t) => fuzzyMatch(query, t.label)).map((t, i, arr) => ({
-        id: t.id,
-        label: t.label,
-        indices: fuzzyMatch(query, t.label)?.indices,
-        group: i === 0 || arr[i - 1].group !== t.group ? t.group : undefined,
-        icon: t.id === currentTheme ? <Codicon name="check" /> : <span className="tm-qi-icon-spacer" />,
-        run: () => {
-          setPreviewTheme(null);
-          updateSetting("workbench.colorTheme", t.id);
-          closeQuickInput();
-        },
-      }));
+      return themeItems()
+        .filter((t) => fuzzyMatch(query, t.label))
+        .map((t, i, arr) => ({
+          id: t.id,
+          label: t.label,
+          description: t.description,
+          indices: fuzzyMatch(query, t.label)?.indices,
+          group: i === 0 || arr[i - 1].group !== t.group ? t.group : undefined,
+          icon: t.id === currentTheme ? <Codicon name="check" /> : <span className="tm-qi-icon-spacer" />,
+          run: () => {
+            setPreviewTheme(null);
+            updateSetting("workbench.colorTheme", t.id);
+            closeQuickInput();
+          },
+        }));
+    }
+    if (mode === "iconTheme") {
+      return allIconThemes()
+        .filter((t) => fuzzyMatch(query, t.label))
+        .map((t, i) => ({
+          id: t.id,
+          label: t.id === "none" ? "None" : t.label,
+          description: t.id === "none" ? "Disable File Icons" : t.extensionName,
+          indices: fuzzyMatch(query, t.label)?.indices,
+          group: i === 0 ? "file icon themes" : undefined,
+          icon: t.id === currentIconTheme ? <Codicon name="check" /> : <span className="tm-qi-icon-spacer" />,
+          run: () => {
+            setPreviewIconTheme(null);
+            updateSetting("workbench.iconTheme", t.id);
+            closeQuickInput();
+          },
+        }));
     }
     return [];
-  }, [mode, query, files, os, currentTheme]);
+  }, [mode, query, files, os, currentTheme, currentIconTheme, themesVersion, iconThemesVersion]);
 
   // Line mode: a single synthetic row.
   const lineInfo = useMemo(() => {
@@ -193,7 +222,8 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
 
   // Live theme preview while moving through the list.
   useEffect(() => {
-    if (mode === "theme" && items[index]) setPreviewTheme(items[index].id as ThemeId);
+    if (mode === "theme" && items[index]) setPreviewTheme(items[index].id);
+    if (mode === "iconTheme" && items[index]) setPreviewIconTheme(items[index].id);
   }, [mode, index, items]);
 
   useEffect(() => {
@@ -208,7 +238,9 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
   const placeholder =
     mode === "theme"
       ? "Select Color Theme (Up/Down Keys to Preview)"
-      : mode === "files"
+      : mode === "iconTheme"
+        ? "Select File Icon Theme (Up/Down Keys to Preview)"
+        : mode === "files"
         ? hasWorkspace
           ? "Search files by name (append : to go to line, or start with > for commands)"
           : "Open a folder to search its files, or type > for commands"
@@ -247,7 +279,8 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           <div className="tm-qi-message">{lineInfo?.text}</div>
         ) : (
           <div ref={listRef} id="tm-qi-list" className="tm-qi-list tm-scroll" role="listbox">
-            {items.length === 0 && (
+            {items.length === 0 && mode === "files" && files === null && hasWorkspace && <SkeletonRows rows={6} label="Loading files" />}
+            {items.length === 0 && !(mode === "files" && files === null && hasWorkspace) && (
               <div className="tm-qi-message">{mode === "commands" ? "No matching commands" : mode === "files" && files === null && hasWorkspace ? "Loading files…" : "No matching results"}</div>
             )}
             {items.map((it, i) => (

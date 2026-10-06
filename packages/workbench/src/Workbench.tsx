@@ -5,6 +5,10 @@ import "@vscode/codicons/dist/codicon.css";
 import "./styles/theme.css";
 import "./styles/workbench.css";
 import { registerBuiltinCommands } from "./commands/builtin";
+import { registerDeveloperCommands } from "./commands/developer";
+import { toggleZenMode, useZen } from "./state/zen";
+import { acquireTypes, enableEmmet, enablePrettier, resetProjectConfig } from "./monaco/languageServices";
+import { setupMonaco } from "./monaco/setup";
 import { KeybindingResolver } from "./commands/registry";
 import { wireDocuments } from "./monaco/documents";
 import { wireRunServices } from "./run/wire";
@@ -12,7 +16,11 @@ import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
 import { activeFilePath } from "./state/store";
 import { basename } from "./util/paths";
-import { isDarkTheme } from "./monaco/setup";
+import { applyTheme, useThemes } from "./themes/themeService";
+import { applyIconTheme, useIconTheme } from "./themes/iconThemes";
+import { startupHooks } from "./state/store";
+import { loadInstalledExtensions } from "./extensions/service";
+import "./extensions/monacoContributions";
 import { ActivityBar } from "./parts/ActivityBar";
 import { EditorGroupView } from "./parts/editor/EditorGroupView";
 import { Panel } from "./parts/panel/Panel";
@@ -23,6 +31,13 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 import { ExamOverlay } from "./exam/ExamViews";
+// ── git (scm/*) ──
+import { wireScm } from "./scm/commands";
+import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
+// ── Run and Debug ──
+import { wireDebugServices } from "./debug/debugService";
+import { DebugToolbar } from "./debug/DebugToolbar";
+// ── end Run and Debug ──
 
 /**
  * Editor groups side by side. Always one Allotment with a stable key per group,
@@ -41,18 +56,33 @@ function EditorArea() {
   );
 }
 
+// Colour and icon themes (and the extensions that contribute them) load before the first paint.
+startupHooks.beforeReady = async () => {
+  // A slow or broken extension store must not hold the workbench back.
+  await Promise.race([loadInstalledExtensions(), new Promise((r) => setTimeout(r, 3000))]);
+  const s = useWorkbench.getState().settings;
+  await Promise.all([applyTheme(s["workbench.colorTheme"]), applyIconTheme(s["workbench.iconTheme"])]);
+};
+
 /**
  * The whole VS Code-style workbench. The host calls `initWorkbench(platform)`
  * before rendering this.
  */
 export function Workbench() {
   const ready = useWorkbench((s) => s.ready);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
+  const themeId = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
+  const themesVersion = useThemes((s) => s.version);
+  const activeTheme = useThemes((s) => s.active);
+  const iconThemeId = useWorkbench((s) => s.previewIconTheme ?? s.settings["workbench.iconTheme"]);
+  const iconThemesVersion = useIconTheme((s) => s.version);
+  const theme = activeTheme?.cssBase ?? "dark-modern";
+  const dark = activeTheme ? activeTheme.uiTheme === "vs-dark" || activeTheme.uiTheme === "hc-black" : true;
   const reduceMotion = useWorkbench((s) => s.settings["workbench.reduceMotion"]);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
-  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput);
+  const quickPick = useQuickPick((s) => !!s.request);
+  const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput) || quickPick;
   const [chord, setChord] = useState<string | null>(null);
   const [focused, setFocused] = useState(true);
   const platform = getPlatform();
@@ -62,10 +92,27 @@ export function Workbench() {
 
   useEffect(() => {
     registerBuiltinCommands();
+    registerDeveloperCommands();
+    setupMonaco();
+    enableEmmet("standard"); // TextMate tokens (textmate/monacoTm.ts), not Monarch
+    enablePrettier();
     wireDocuments();
     wireRunServices();
+    wireScm();
+    wireDebugServices();
     startAutoUpdates();
-    const unwatch = platform.watch?.((paths) => void applyExternalChanges(paths));
+    // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
+    let projectTimer: ReturnType<typeof setTimeout> | undefined;
+    const unwatch = platform.watch?.((paths) => {
+      void applyExternalChanges(paths);
+      if (paths.some((p) => /^(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|tsconfig\.json|\.prettierrc(\.json)?)$/.test(p))) {
+        clearTimeout(projectTimer);
+        projectTimer = setTimeout(() => {
+          resetProjectConfig();
+          void acquireTypes().catch(() => {});
+        }, 1500);
+      }
+    });
     return () => {
       stopAutoUpdates();
       unwatch?.();
@@ -74,6 +121,7 @@ export function Workbench() {
 
   // Size class for responsive layout; very narrow windows hide the side bar once.
   const viewport = useWorkbench((s) => s.viewport);
+  const zen = useZen((s) => s.on);
   useEffect(() => {
     const classify = (w: number) => (w < 640 ? "xs" : w < 900 ? "sm" : w < 1200 ? "md" : "lg");
     const update = () => {
@@ -99,9 +147,16 @@ export function Workbench() {
   }, [titleFile, titleFolder, titleDirty, platform]);
 
   useEffect(() => {
-    platform.setNativeTheme?.(isDarkTheme(theme) ? "dark" : "light");
-    document.documentElement.style.colorScheme = isDarkTheme(theme) ? "dark" : "light";
-  }, [theme, platform]);
+    void applyTheme(themeId);
+  }, [themeId, themesVersion]);
+  useEffect(() => {
+    void applyIconTheme(iconThemeId);
+  }, [iconThemeId, iconThemesVersion]);
+
+  useEffect(() => {
+    platform.setNativeTheme?.(dark ? "dark" : "light");
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  }, [dark, platform]);
 
   // Global keybindings, in the capture phase so they win over focused widgets.
   useEffect(() => {
@@ -134,16 +189,44 @@ export function Workbench() {
     };
   }, []);
 
-  if (!ready) return <div className="tm-root tm-booting" data-theme={theme} />;
+  // A real project: its .prettierrc and the types of its installed packages.
+  const workspaceRoot = useWorkbench((s) => s.workspace?.root);
+  useEffect(() => {
+    resetProjectConfig();
+    if (!workspaceRoot) return;
+    const t = setTimeout(() => void acquireTypes().catch(() => {}), 800);
+    return () => clearTimeout(t);
+  }, [workspaceRoot]);
+
+  // Zen Mode: Escape twice leaves it, as in VS Code.
+  useEffect(() => {
+    if (!zen) return;
+    let last = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const now = Date.now();
+      if (now - last < 600) toggleZenMode(false);
+      last = now;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zen]);
+
+  // Theme colours as CSS variables over the closest hand-styled base (empty for Dark/Light Modern and HC).
+  const themeStyle = activeTheme?.cssVars as React.CSSProperties | undefined;
+  if (!ready) return <div className="tm-root tm-booting" data-theme={theme} style={themeStyle} />;
 
   return (
     <div
       className="tm-root"
       data-theme={theme}
+      data-color-theme={activeTheme?.id}
+      style={themeStyle}
       data-os={platform.os}
       data-platform={platform.kind}
       data-motion={reduceMotion ? "reduced" : "full"}
       data-size={viewport}
+      data-zen={zen ? "on" : undefined}
       onContextMenu={(e) => {
         // No browser context menu anywhere in the workbench (Monaco and inputs bring their own).
         if (!(e.target as HTMLElement).closest(".monaco-editor, input, textarea, .xterm")) e.preventDefault();
@@ -161,6 +244,7 @@ export function Workbench() {
               <Allotment.Pane minSize={120} visible={!panelMaximized}>
                 <main className="tm-editor-area" aria-label="Editor">
                   <EditorArea />
+                  <DebugToolbar />
                 </main>
               </Allotment.Pane>
               <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>
@@ -172,6 +256,7 @@ export function Workbench() {
       </div>
       <StatusBar chord={chord} />
       <QuickInput />
+      <QuickPickHost />
       <ContextMenu />
       <Dialog />
       <ExamOverlay />

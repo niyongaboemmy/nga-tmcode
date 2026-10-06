@@ -4,8 +4,8 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task";
-export type PanelId = "problems" | "output" | "run" | "terminal";
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions";
+export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole";
 
 export type EditorInput =
   | { kind: "file"; id: string; path: string; preview: boolean }
@@ -15,7 +15,17 @@ export type EditorInput =
   /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
   | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react"; preview: false }
   /** Expected vs actual output of one visible test. */
-  | { kind: "testDiff"; id: string; testId: string; preview: false };
+  | { kind: "testDiff"; id: string; testId: string; preview: false }
+  /** Simple Browser on a local dev server (Vite, Next, Angular, Spring…). */
+  | { kind: "browser"; id: string; url: string; preview: false }
+  /** Rendered Markdown beside its source, live while typing. */
+  | { kind: "markdown"; id: string; path: string; preview: false }
+  /** Rendered image beside its source (SVG). Binary images open as ordinary "file" editors. */
+  | { kind: "image"; id: string; path: string; preview: false }
+  /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
+  | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
+  /** Details of a VS Code extension ("extension:<publisher.name>"). */
+  | { kind: "extension"; id: string; extensionId: string; preview: false };
 
 export type TestStatus = "idle" | "queued" | "running" | "passed" | "failed" | "error";
 
@@ -37,6 +47,11 @@ export interface RunState {
   /** Label shown in the Run panel title, e.g. "Python 3: main.py". */
   label: string | null;
   lastExit: { code: number | null; timed_out: boolean; killed: boolean; duration_ms: number } | null;
+  /** Arguments / input file of the last run ("Run Again" repeats them). */
+  args?: string[];
+  inputFile?: string | null;
+  /** When the current run (or its run step) started, for the elapsed-time readout. */
+  startedAt?: number;
 }
 
 export interface EditorGroup {
@@ -59,6 +74,10 @@ export interface Notification {
   severity: "info" | "warning" | "error";
   message: string;
   actions?: { label: string; run: () => void }[];
+  /** A long operation: percentage, or null while it can't be measured (infinite bar). */
+  progress?: number | null;
+  /** Shows a Cancel button on a progress notification. */
+  cancel?: () => void;
 }
 
 export interface DialogButton {
@@ -84,7 +103,7 @@ export interface ExplorerEdit {
   error?: string | null;
 }
 
-export type QuickInputMode = "files" | "commands" | "line" | "theme";
+export type QuickInputMode = "files" | "commands" | "line" | "theme" | "iconTheme";
 
 export interface OutputLine {
   t: number;
@@ -117,6 +136,8 @@ export interface WorkbenchState {
   settings: Settings;
   /** Theme shown while the theme picker is open (live preview). */
   previewTheme: Settings["workbench.colorTheme"] | null;
+  /** File icon theme shown while its picker is open. */
+  previewIconTheme: string | null;
 
   cursor: { line: number; column: number; selected: number };
   activeLanguage: string | null;
@@ -169,6 +190,7 @@ const initialState: WorkbenchState = {
   activePanel: "terminal",
   settings: DEFAULT_SETTINGS,
   previewTheme: null,
+  previewIconTheme: null,
   cursor: { line: 1, column: 1, selected: 0 },
   activeLanguage: null,
   eol: "LF",
@@ -217,6 +239,8 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
     panelVisible: ui.layout?.panelVisible ?? false,
     activePanel: ui.layout?.activePanel ?? "terminal",
   });
+  // The colour theme is ready before the first paint (no flash of the default theme).
+  await startupHooks.beforeReady();
   const last = get().recent[0];
   if (opts.autoOpenLast && last) {
     const ws = await p.reopenFolder(last.root).catch(() => null);
@@ -225,6 +249,9 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
   if (!get().workspace) openSpecialEditor("welcome");
   set({ ready: true });
 }
+
+/** Set by modules the store must not import (themes, extensions), run during initWorkbench. */
+export const startupHooks: { beforeReady: () => Promise<void> } = { beforeReady: async () => {} };
 
 export function resetWorkbenchForTests() {
   platform = null;
@@ -411,6 +438,13 @@ export async function renameEntry(from: string, newName: string) {
 }
 
 /** Renames or moves a file/folder and keeps editors, dirty flags and the tree in step. */
+function renamedId(id: string | null, from: string, to: string) {
+  if (!id) return id;
+  const m = /^(markdown|image):(.*)$/.exec(id);
+  if (m && isWithin(m[2], from)) return `${m[1]}:${rebase(m[2], from, to)}`;
+  return isWithin(id, from) ? rebase(id, from, to) : id;
+}
+
 export async function moveEntry(from: string, to: string) {
   if (to === from) return;
   if (isWithin(to, from)) throw new Error(`Cannot move '${from}' into itself.`);
@@ -418,8 +452,12 @@ export async function moveEntry(from: string, to: string) {
   const s = get();
   const groups = s.groups.map((g) => ({
     ...g,
-    editors: g.editors.map((e) => (e.kind === "file" && isWithin(e.path, from) ? { ...e, path: rebase(e.path, from, to), id: rebase(e.path, from, to) } : e)),
-    activeId: g.activeId && isWithin(g.activeId, from) ? rebase(g.activeId, from, to) : g.activeId,
+    editors: g.editors.map((e): EditorInput => {
+      if (e.kind === "file" && isWithin(e.path, from)) return { ...e, path: rebase(e.path, from, to), id: rebase(e.path, from, to) };
+      if ((e.kind === "markdown" || e.kind === "image") && isWithin(e.path, from)) return { ...e, path: rebase(e.path, from, to), id: `${e.kind}:${rebase(e.path, from, to)}` };
+      return e;
+    }),
+    activeId: renamedId(g.activeId, from, to),
   }));
   const dirty: Record<string, true> = {};
   for (const p of Object.keys(s.dirty)) dirty[rebase(p, from, to)] = true;
@@ -450,7 +488,7 @@ export async function deleteEntry(path: string) {
   await getPlatform().fs.remove(path);
   const s = get();
   const groups = s.groups.map((g) => {
-    const editors = g.editors.filter((e) => !(e.kind === "file" && isWithin(e.path, path)));
+    const editors = g.editors.filter((e) => !((e.kind === "file" || e.kind === "markdown" || e.kind === "image") && isWithin(e.path, path)));
     const activeId = editors.some((e) => e.id === g.activeId) ? g.activeId : (editors[editors.length - 1]?.id ?? null);
     return { ...g, editors, activeId };
   });
@@ -530,7 +568,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();
@@ -620,15 +658,22 @@ export const saveHandlers: { save: (path: string) => Promise<void>; revert: (pat
   revert: () => {},
 };
 
-function openElsewhere(path: string, exceptGroup: number) {
-  return get().groups.some((g) => g.id !== exceptGroup && g.editors.some((e) => e.kind === "file" && e.path === path));
+/** The document an editor edits: a file, or the right side of a working-tree git diff. */
+function documentPath(e: EditorInput): string | null {
+  if (e.kind === "file") return e.path;
+  return e.kind === "gitDiff" && e.mode === "working" && !e.deleted ? e.path : null;
+}
+
+/** Still open in an editor that isn't closing (another group, or a diff/file tab of the same file). */
+function openElsewhere(path: string, exceptGroup: number, closingIds: string[] = []) {
+  return get().groups.some((g) => g.editors.some((e) => documentPath(e) === path && (g.id !== exceptGroup || !closingIds.includes(e.id))));
 }
 
 export async function closeEditors(groupId: number, ids: string[]) {
   const g = get().groups.find((x) => x.id === groupId);
   if (!g) return;
   const closing = g.editors.filter((e) => ids.includes(e.id));
-  const closingPaths = closing.flatMap((e) => (e.kind === "file" && !openElsewhere(e.path, groupId) ? [e.path] : []));
+  const closingPaths = [...new Set(closing.flatMap((e) => documentPath(e) ?? []))].filter((p) => !openElsewhere(p, groupId, ids));
   const choice = await confirmCloseDirty(closingPaths);
   if (choice === "cancel") return;
   if (choice === "discard") for (const p of closingPaths) if (get().dirty[p]) saveHandlers.revert(p);
@@ -769,6 +814,10 @@ export function setPreviewTheme(theme: Settings["workbench.colorTheme"] | null) 
   set({ previewTheme: theme });
 }
 
+export function setPreviewIconTheme(theme: string | null) {
+  set({ previewIconTheme: theme });
+}
+
 export function setPolicy(policy: Policy) {
   set({ policy });
 }
@@ -806,6 +855,22 @@ export function notify(severity: Notification["severity"], message: string, acti
   return id;
 }
 
+/**
+ * A progress notification (clone, pull, push…) with an optional Cancel, like
+ * VS Code's `withProgress({ location: Notification, cancellable })`.
+ */
+export function notifyProgress(message: string, opts: { cancel?: () => void } = {}) {
+  const id = ++notificationSeq;
+  set({ notifications: [...get().notifications, { id, severity: "info" as const, message, progress: null, cancel: opts.cancel }].slice(-5) });
+  return {
+    id,
+    update(patch: { message?: string; progress?: number | null }) {
+      set({ notifications: get().notifications.map((n) => (n.id === id ? { ...n, ...patch } : n)) });
+    },
+    close: () => dismissNotification(id),
+  };
+}
+
 export function dismissNotification(id: number) {
   set({ notifications: get().notifications.filter((n) => n.id !== id) });
 }
@@ -829,7 +894,7 @@ export function openQuickInput(mode: QuickInputMode, initial?: string) {
 }
 
 export function closeQuickInput() {
-  set({ quickInput: null, previewTheme: null });
+  set({ quickInput: null, previewTheme: null, previewIconTheme: null });
 }
 
 export function openContextMenu(x: number, y: number, items: ContextMenuItem[]) {

@@ -224,9 +224,12 @@ fn probe_version(tool: &str, path: &Path, prefix: &[String]) -> Option<String> {
     text.lines().map(str::trim).find(|l| !l.is_empty()).map(|l| l.to_string())
 }
 
-fn detect(tool: &str) -> Option<Toolchain> {
+/// Executables that could be `tool`, in preference order (not yet probed).
+fn possible(tool: &str) -> Vec<(PathBuf, Vec<String>)> {
     let mut dirs = path_dirs();
-    dirs.extend(extra_dirs(tool));
+    let extra = extra_dirs(tool);
+    dirs.extend(extra.iter().cloned());
+    let mut out = Vec::new();
     for name in names(tool) {
         for dir in &dirs {
             let Some(path) = executable(dir, name) else { continue };
@@ -235,21 +238,37 @@ fn detect(tool: &str) -> Option<Toolchain> {
                 continue;
             }
             #[cfg(target_os = "macos")]
-            if path.starts_with("/usr/bin") && !extra_dirs(tool).iter().any(|d| d == Path::new("/usr/bin")) {
+            if path.starts_with("/usr/bin") && !extra.iter().any(|d| d == Path::new("/usr/bin")) {
                 continue;
             }
             let prefix: Vec<String> = if *name == "py" { vec!["-3".into()] } else { vec![] };
-            if let Some(version) = probe_version(tool, &path, &prefix) {
-                return Some(Toolchain {
-                    tool: tool.to_string(),
-                    path: path.to_string_lossy().into_owned(),
-                    prefix_args: prefix,
-                    version,
-                });
-            }
+            out.push((path, prefix));
         }
     }
-    None
+    out
+}
+
+fn detect(tool: &str) -> Option<Toolchain> {
+    possible(tool).into_iter().find_map(|(path, prefix)| {
+        let version = probe_version(tool, &path, &prefix)?;
+        Some(Toolchain { tool: tool.to_string(), path: path.to_string_lossy().into_owned(), prefix_args: prefix, version })
+    })
+}
+
+/// Every working copy of `tool` (for "Select Interpreter"), duplicates (symlinks) removed.
+pub fn candidates(tool: &str) -> Vec<Toolchain> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (path, prefix) in possible(tool) {
+        let real = dunce::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if !seen.insert((real, prefix.clone())) {
+            continue;
+        }
+        if let Some(version) = probe_version(tool, &path, &prefix) {
+            out.push(Toolchain { tool: tool.to_string(), path: path.to_string_lossy().into_owned(), prefix_args: prefix, version });
+        }
+    }
+    out
 }
 
 fn detect_all() -> HashMap<String, Toolchain> {
@@ -270,6 +289,38 @@ fn detect_all() -> HashMap<String, Toolchain> {
     found
 }
 
+impl Toolchains {
+    /// Uses `tc` for its tool from now on (until the next refresh).
+    pub fn select(&self, tc: Toolchain) {
+        let mut guard = self.0.lock().unwrap();
+        guard.get_or_insert_with(detect_all).insert(tc.tool.clone(), tc);
+    }
+}
+
+#[tauri::command]
+pub async fn toolchains_candidates(tool: String) -> Result<Vec<Toolchain>, String> {
+    if !TOOLS.contains(&tool.as_str()) {
+        return Err(format!("Unknown tool '{tool}'."));
+    }
+    tauri::async_runtime::spawn_blocking(move || candidates(&tool)).await.map_err(|e| e.to_string())
+}
+
+/// "Select Interpreter": only a copy `candidates` found can be chosen (never an arbitrary program).
+#[tauri::command]
+pub async fn toolchains_select(app: tauri::AppHandle, tool: String, path: String) -> Result<Toolchain, String> {
+    use tauri::Manager;
+    if !TOOLS.contains(&tool.as_str()) {
+        return Err(format!("Unknown tool '{tool}'."));
+    }
+    let tc = tauri::async_runtime::spawn_blocking(move || candidates(&tool).into_iter().find(|t| t.path == path))
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("That program is not a usable toolchain on this computer.")?;
+    log::info!("toolchains: selected {}={} ({})", tc.tool, tc.path, tc.version);
+    app.state::<Toolchains>().select(tc.clone());
+    Ok(tc)
+}
+
 #[tauri::command]
 pub fn toolchains_detect(state: tauri::State<'_, Toolchains>, refresh: bool) -> Vec<Toolchain> {
     state.all(refresh)
@@ -284,6 +335,19 @@ mod tests {
         let mut v = vec!["v9.1.0", "v18.20.1", "v22.3.0"];
         v.sort_by_key(|s| version_key(s));
         assert_eq!(v, vec!["v9.1.0", "v18.20.1", "v22.3.0"]);
+    }
+
+    #[test]
+    fn candidates_include_the_detected_tool_once() {
+        for tool in TOOLS {
+            let Some(found) = detect(tool) else { continue };
+            let all = candidates(tool);
+            assert!(all.iter().any(|c| c.path == found.path), "{tool}: {all:?}");
+            let mut reals: Vec<_> = all.iter().map(|c| dunce::canonicalize(&c.path).unwrap()).collect();
+            let n = reals.len();
+            reals.dedup();
+            assert_eq!(reals.len(), n, "{tool}: duplicates in {all:?}");
+        }
     }
 
     #[test]

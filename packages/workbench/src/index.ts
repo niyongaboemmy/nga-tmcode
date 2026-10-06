@@ -14,3 +14,4 @@ export { getPlatform as getPlatformForSelfTest } from "./state/store";
 export type { JournalEntry } from "./platform/types";
 export { useExam } from "./exam/state";
 export { isAllowedApi } from "./exam/api";
+export { DapSession } from "./debug/dapSession";

@@ -24,6 +24,8 @@ export const PolicySchema = z.object({
   allow_offline_grace_minutes: z.number().int().min(0).max(30),
   /** Settings the student may not change during the session. */
   locked_settings: z.array(z.string()).default([]),
+  /** Run and Debug (breakpoints, stepping) in an exam. Off unless the teacher turns it on. */
+  debugger: z.boolean().optional(),
 });
 export type Policy = z.infer<typeof PolicySchema>;
 

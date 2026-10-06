@@ -1,4 +1,4 @@
-import { PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
+import { DapSession, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
 
 /**
  * Debug-build self-test (TMCODE_DEV_SELFTEST=1): exercises the runner,
@@ -16,6 +16,22 @@ export async function runSelfTest(platform: Platform, log: (msg: string) => void
 
   await step("toolchains", async () => (await platform.runner!.detect(true)).map((t) => `${t.tool}=${t.version}`).join("; "));
 
+  // Extensions (Rust: Open VSX only, unpacked under app data): search, install, read, refuse escapes, uninstall.
+  await step("extensions", async () => {
+    const ext = platform.extensions!;
+    const hits = JSON.parse(await ext.fetch("https://open-vsx.org/api/-/search?query=dracula&size=3", "text")) as { totalSize: number };
+    const details = JSON.parse(await ext.fetch("https://open-vsx.org/api/dracula-theme/theme-dracula", "text")) as { files: { download: string; icon: string } };
+    const icon = await ext.fetch(details.files.icon, "base64");
+    const stored = await ext.install("dracula-theme.theme-dracula", details.files.download);
+    const theme = JSON.parse(await ext.readFile(stored.id, "theme/dracula.json", "text").catch(() => "{}")) as { colors?: object };
+    const escape = await ext.readFile(stored.id, "../../device-id", "text").then(() => "READ OUTSIDE!", () => "refused");
+    const offsite = await ext.fetch("https://example.com/", "text").then(() => "FETCHED OFFSITE!", () => "refused");
+    const listed = (await ext.list()).map((e) => `${e.id}@${e.version}`).join(",");
+    await ext.uninstall(stored.id);
+    const after = (await ext.list()).length;
+    return `search ${hits.totalSize} hits; icon ${icon.length}b64; installed ${stored.id}@${stored.version}; theme colors ${Object.keys(theme.colors ?? {}).length}; escape ${escape}; offsite ${offsite}; listed [${listed}]; after uninstall ${after}`;
+  });
+
   await step("python run", async () => {
     let out = "";
     await new Promise<void>((resolve, reject) => {
@@ -28,6 +44,36 @@ export async function runSelfTest(platform: Platform, log: (msg: string) => void
         .catch(reject);
     });
     return JSON.stringify(out.trim());
+  });
+
+  // Run and Debug through the Rust DAP bridge: debugpy stops on a breakpoint in main.py.
+  await step("debug python", async () => {
+    const dbg = platform.debug;
+    if (!dbg) return "no debug host";
+    const probe = await dbg.probe("python");
+    if (!probe.available) return `skipped: ${probe.message}`;
+    const source = await platform.fs.readFile("main.py");
+    const line = source.split("\n").findIndex((l) => l.startsWith("def ")) + 1;
+    const prepared = await dbg.prepare({ entry: "main.py", build: [], run: { tool: "python", args: ["-u", "{entry}"] } }, () => {});
+    let dap: DapSession | null = null;
+    const conn = await dbg.start("python", {}, (e) => e.type === "message" && dap?.handleMessage(e.message));
+    dap = new DapSession({ send: (m) => conn.send(m) }, "python");
+    try {
+      await dap.initialize("debugpy", { runInTerminal: false });
+      const initialized = dap.once("initialized", 30_000);
+      const launched = dap.launch({ type: "python", request: "launch", name: "selftest", program: prepared.entry, python: [prepared.program], cwd: prepared.cwd, console: "internalConsole", justMyCode: true });
+      await initialized;
+      const bps = await dap.setBreakpoints({ path: prepared.entry }, [{ line }]);
+      const stopped = dap.once("stopped", 30_000);
+      await dap.configurationDone();
+      await launched;
+      const b = await stopped;
+      const [frame] = await dap.stackTrace(b.threadId ?? 1);
+      return `${probe.detail}; breakpoint verified=${bps[0]?.verified}; stopped (${b.reason}) at ${frame?.source?.name}:${frame?.line}`;
+    } finally {
+      await dap.disconnect(true).catch(() => {});
+      conn.stop();
+    }
   });
 
   await step("visible tests", async () => {
@@ -95,4 +141,40 @@ export async function runExamSelfTest(link: string, log: (msg: string) => void) 
   for (let i = 0; i < 30 && useExam.getState().results?.status !== "released"; i++) await new Promise((r) => setTimeout(r, 1000));
   const r = useExam.getState().results;
   log(`exam selftest result: phase=${useExam.getState().phase} score=${r?.score}/${r?.max_score} questions=${JSON.stringify(r?.questions?.map((q) => [q.question_id, q.points]))}`);
+}
+
+/**
+ * Git self-test (TMCODE_DEV_SELFTEST=git, TMCODE_DEV_WORKSPACE=<a scratch git repository>):
+ * every local git command through Rust in the real webview. Never touches a remote.
+ */
+export async function runGitSelfTest(platform: Platform, log: (msg: string) => void) {
+  const git = platform.git;
+  if (!git) return log("git selftest: FAILED no git host");
+  const step = async (name: string, fn: () => Promise<string>) => {
+    try {
+      log(`git selftest ${name}: ${await fn()}`);
+    } catch (e) {
+      log(`git selftest ${name}: FAILED ${String((e as Error)?.message ?? e)}`);
+    }
+  };
+  await step("info", async () => JSON.stringify(await git.info(true)));
+  await step("status", async () => {
+    const s = await git.status();
+    return s ? `branch=${s.branch} upstream=${s.upstream} ahead=${s.ahead} behind=${s.behind} entries=${s.entries.map((e) => `${e.x}${e.y}:${e.path}`).join(",")}` : "no repository";
+  });
+  await step("write+stage", async () => {
+    await platform.fs.writeFile("selftest.txt", `selftest ${new Date().toISOString()}\n`);
+    await git.stage(["selftest.txt"]);
+    const s = await git.status();
+    return s?.entries.find((e) => e.path === "selftest.txt")?.x ?? "missing";
+  });
+  await step("show index", async () => JSON.stringify((await git.show("selftest.txt", "index"))?.slice(0, 9)));
+  await step("commit", async () => {
+    await git.commit({ message: "TMCode git self-test" });
+    return (await git.log(1))[0]?.subject ?? "no commit";
+  });
+  await step("branches", async () => (await git.branches()).map((b) => `${b.current ? "*" : ""}${b.name}`).join(","));
+  await step("check-ignore", async () => JSON.stringify(await git.checkIgnore(["node_modules/", "selftest.txt"])));
+  await step("github user", async () => JSON.stringify((await git.github?.user())?.login ?? null));
+  log("git selftest done");
 }

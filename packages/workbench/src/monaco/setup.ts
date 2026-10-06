@@ -4,7 +4,8 @@ import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import CssWorker from "monaco-editor/language/css/css.worker?worker";
 import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
-import type { ThemeId } from "../state/settings";
+import { currentMonacoTheme, installTextmate } from "../textmate/monacoTm";
+import { isDarkThemeId } from "../themes/themeService";
 
 let started = false;
 /** Labels of workers that started; the Phase 0 spike checks this on WKWebView. */
@@ -39,8 +40,8 @@ export function setupMonaco() {
       }
     },
   };
-  defineThemes();
   configureLanguages();
+  installTextmate();
   return monaco;
 }
 
@@ -60,63 +61,6 @@ function configureLanguages() {
   ts.javascriptDefaults.setCompilerOptions({ ...compilerOptions, strict: false, checkJs: false });
   ts.javascriptDefaults.setEagerModelSync(true);
   ts.typescriptDefaults.setEagerModelSync(true);
-}
-
-/** Editor colours from VS Code's Dark Modern / Light Modern themes. */
-function defineThemes() {
-  monaco.editor.defineTheme("tm-dark-modern", {
-    base: "vs-dark",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#1F1F1F",
-      "editor.foreground": "#CCCCCC",
-      "editorLineNumber.foreground": "#6E7681",
-      "editorLineNumber.activeForeground": "#CCCCCC",
-      "editorGutter.background": "#1F1F1F",
-      "editorWidget.background": "#202020",
-      "editorWidget.border": "#313131",
-      "editorSuggestWidget.background": "#202020",
-      "editorSuggestWidget.selectedBackground": "#04395E",
-      "editorHoverWidget.background": "#202020",
-      "editorStickyScroll.background": "#1F1F1F",
-      "editorStickyScrollHover.background": "#2A2D2E",
-      "editor.lineHighlightBorder": "#282828",
-      "editorIndentGuide.background1": "#404040",
-      "editorIndentGuide.activeBackground1": "#707070",
-      "minimap.background": "#1F1F1F",
-      "scrollbarSlider.background": "#79797966",
-      "scrollbarSlider.hoverBackground": "#646464B3",
-      focusBorder: "#0078D4",
-      "input.background": "#313131",
-      "input.border": "#3C3C3C",
-      "list.activeSelectionBackground": "#04395E",
-      "list.hoverBackground": "#2A2D2E",
-    },
-  });
-  monaco.editor.defineTheme("tm-light-modern", {
-    base: "vs",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#FFFFFF",
-      "editor.foreground": "#3B3B3B",
-      "editorLineNumber.foreground": "#6E7681",
-      "editorLineNumber.activeForeground": "#171184",
-      "editorGutter.background": "#FFFFFF",
-      "editorWidget.background": "#F8F8F8",
-      "editorWidget.border": "#E5E5E5",
-      "editorSuggestWidget.background": "#F8F8F8",
-      "editorStickyScroll.background": "#FFFFFF",
-      "editor.lineHighlightBorder": "#EEEEEE",
-      "minimap.background": "#FFFFFF",
-      focusBorder: "#005FB8",
-      "input.background": "#FFFFFF",
-      "input.border": "#CECECE",
-      "list.hoverBackground": "#F2F2F2",
-    },
-  });
-  monaco.editor.defineTheme("tm-dark-hc", { base: "hc-black", inherit: true, rules: [], colors: {} });
 }
 
 /**
@@ -145,12 +89,13 @@ export async function selfCheckWorkers(): Promise<string> {
   }
 }
 
-export function monacoThemeFor(theme: ThemeId) {
-  return theme === "light-modern" ? "tm-light-modern" : theme === "dark-hc" ? "tm-dark-hc" : "tm-dark-modern";
+/** Monaco's theme is global and set by the theme service; editors created later just pick it up. */
+export function monacoThemeFor(_theme?: string) {
+  return currentMonacoTheme();
 }
 
-export function isDarkTheme(theme: ThemeId) {
-  return theme !== "light-modern";
+export function isDarkTheme(theme: string) {
+  return isDarkThemeId(theme);
 }
 
 export { monaco };

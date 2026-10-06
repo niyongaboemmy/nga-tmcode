@@ -32,6 +32,14 @@ pub fn relevant(root: &Path, path: &Path) -> Option<String> {
     Some(parts.join("/"))
 }
 
+/// Changes inside `.git` that move the repository state (commits, staging,
+/// branch switches, fetches) — e.g. `git commit` typed in the terminal.
+pub fn git_state_changed(root: &Path, path: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(root.join(".git")) else { return false };
+    let s = rel.to_string_lossy().replace('\\', "/");
+    matches!(s.as_str(), "index" | "HEAD" | "MERGE_HEAD" | "FETCH_HEAD" | "ORIG_HEAD" | "packed-refs") || s.starts_with("refs/")
+}
+
 impl Watcher {
     /// Starts watching `root` (replacing any previous watch).
     pub fn watch(&self, app: &AppHandle, root: PathBuf) {
@@ -41,6 +49,9 @@ impl Watcher {
         let root2 = root.clone();
         let debouncer = new_debouncer(Duration::from_millis(250), move |res: DebounceEventResult| {
             let Ok(events) = res else { return };
+            if events.iter().any(|e| git_state_changed(&root2, &e.path)) {
+                let _ = app.emit_to(EventTarget::webview(WORKBENCH), "git-changed", ());
+            }
             let mut paths: Vec<String> = events.iter().filter_map(|e| relevant(&root2, &e.path)).collect();
             paths.sort();
             paths.dedup();
@@ -63,7 +74,7 @@ impl Watcher {
 
 #[cfg(test)]
 mod tests {
-    use super::relevant;
+    use super::{git_state_changed, relevant};
     use std::path::Path;
 
     #[test]
@@ -75,5 +86,16 @@ mod tests {
         assert_eq!(relevant(root, Path::new("/w/.git/HEAD")), None);
         assert_eq!(relevant(root, Path::new("/w/.main.py.tmcode-tmp")), None);
         assert_eq!(relevant(root, Path::new("/elsewhere/a")), None);
+    }
+
+    #[test]
+    fn notices_repository_state_changes_only() {
+        let root = Path::new("/w");
+        assert!(git_state_changed(root, Path::new("/w/.git/index")));
+        assert!(git_state_changed(root, Path::new("/w/.git/HEAD")));
+        assert!(git_state_changed(root, Path::new("/w/.git/refs/heads/main")));
+        assert!(!git_state_changed(root, Path::new("/w/.git/objects/ab/cdef")));
+        assert!(!git_state_changed(root, Path::new("/w/.git/index.lock")));
+        assert!(!git_state_changed(root, Path::new("/w/src/.git/index")));
     }
 }

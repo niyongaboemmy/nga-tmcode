@@ -34,8 +34,18 @@ tauri-plugin-log = "2.10.0"
 tauri-plugin-dialog = "2"
 portable-pty = "0.9"
 percent-encoding = "2"
+base64 = "0.22"
 # canonicalize() without Windows "\\?\" verbatim paths, which compilers reject.
 dunce = "1"
+# Extensions: unpacking .vsix files (deflate only).
+zip = { version = "4.6", default-features = false, features = ["deflate-flate2"] }
+# Git & GitHub: the PAT lives in the OS keychain only; avatars come back as data: URLs.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
+# Debugging: js-debug is downloaded once, checked against a pinned SHA-256 and unpacked.
+sha2 = "0.10"
+hex = "0.4"
+flate2 = "1"
+tar = "0.4"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

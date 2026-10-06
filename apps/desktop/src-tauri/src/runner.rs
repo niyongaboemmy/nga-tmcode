@@ -46,6 +46,9 @@ pub struct RunRequest {
     pub output_limit_kb: Option<usize>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    /// "Run with Arguments…": appended to the run step as-is (no token expansion).
+    #[serde(default)]
+    pub args: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Debug, PartialEq)]
@@ -76,7 +79,19 @@ pub struct Tree {
 }
 
 impl Tree {
-    fn kill(&self) {
+    /// The tree led by `pid` (a process group leader on Unix; assigned to a new Job Object on Windows).
+    pub(crate) fn of(pid: u32) -> Tree {
+        #[cfg(unix)]
+        {
+            Tree { pgid: pid as i32 }
+        }
+        #[cfg(windows)]
+        {
+            job_for(pid).unwrap_or(Tree { job: 0 })
+        }
+    }
+
+    pub(crate) fn kill(&self) {
         #[cfg(unix)]
         unsafe {
             libc::killpg(self.pgid, libc::SIGKILL);
@@ -128,6 +143,19 @@ pub struct Runs {
 }
 
 impl Runs {
+    /// Registers a run started elsewhere (a debuggee in the Run console) so
+    /// `run_input` / `run_kill` reach it. Returns its id and stop flag.
+    pub(crate) fn register(&self) -> (u32, Arc<AtomicBool>) {
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let stop = Arc::new(AtomicBool::new(false));
+        self.sessions.lock().unwrap().insert(id, Session { stdin: None, tree: None, stop: stop.clone() });
+        (id, stop)
+    }
+
+    pub(crate) fn finish(&self, id: u32) {
+        self.sessions.lock().unwrap().remove(&id);
+    }
+
     pub fn kill_all(&self) {
         for (_, s) in self.sessions.lock().unwrap().drain() {
             s.stop.store(true, Ordering::SeqCst);
@@ -218,7 +246,7 @@ pub fn missing_tool_message(tool: &str) -> String {
     format!("TMCode could not find {what} on this computer. Install it (or ask your teacher for the TMCode toolchain pack), then choose \"Refresh Toolchains\".")
 }
 
-fn display(program: &Path, args: &[String], root: &Path) -> String {
+pub(crate) fn display_command(program: &Path, args: &[String], root: &Path) -> String {
     let short = |s: &str| {
         let p = Path::new(s);
         p.strip_prefix(root).map(|r| r.to_string_lossy().into_owned()).unwrap_or_else(|_| s.to_string())
@@ -233,7 +261,7 @@ fn display(program: &Path, args: &[String], root: &Path) -> String {
         .join(" ")
 }
 
-const INHERITED_NOISE: &[&str] = &["FORCE_COLOR", "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS"];
+pub(crate) const INHERITED_NOISE: &[&str] = &["FORCE_COLOR", "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME", "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS"];
 
 fn spawn_pipe(program: &Path, args: &[String], cwd: &Path) -> std::io::Result<std::process::Child> {
     let mut cmd = Command::new(program);
@@ -379,7 +407,7 @@ pub fn run_piped(
     }
 }
 
-fn build_dir(app: &AppHandle, root: &Path) -> Result<PathBuf, String> {
+pub(crate) fn build_dir(app: &AppHandle, root: &Path) -> Result<PathBuf, String> {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     root.hash(&mut h);
@@ -420,7 +448,8 @@ pub fn run_start(
     for step in &request.build {
         build.push(program_for(&ctx, step, &entry)?);
     }
-    let run = program_for(&ctx, &request.run, &entry)?;
+    let mut run = program_for(&ctx, &request.run, &entry)?;
+    run.1.extend(request.args.iter().cloned());
     let timeout = Duration::from_millis(request.timeout_ms.unwrap_or(10_000).clamp(500, 120_000));
     let limit = request.output_limit_kb.unwrap_or(256).clamp(4, 4096) * 1024;
     let app2 = app.clone();
@@ -443,7 +472,7 @@ pub fn run_start(
                 let _ = std::fs::create_dir_all(&out);
             }
             for (program, args) in &build {
-                emit(RunEvent::Step { phase: "build".into(), command: display(program, args, &root) });
+                emit(RunEvent::Step { phase: "build".into(), command: display_command(program, args, &root) });
                 let exit = run_piped(program, args, &cwd, "build", None, Duration::from_secs(60), 512 * 1024, &stop, &mut |t| set_tree(t), &emit);
                 let failed = !matches!(&exit, RunEvent::Exit { code: Some(0), .. });
                 emit(exit);
@@ -453,9 +482,10 @@ pub fn run_start(
                 }
             }
             let (program, args) = run;
-            emit(RunEvent::Step { phase: "run".into(), command: display(&program, &args, &root) });
+            emit(RunEvent::Step { phase: "run".into(), command: display_command(&program, &args, &root) });
             if request.mode == "pty" {
-                run_pty(&program, &args, &cwd, &request, &stop, id, &runs, &emit);
+                let size = (request.cols.unwrap_or(80), request.rows.unwrap_or(24));
+                run_pty(&program, &args, &cwd, size, &[], &stop, id, &runs, &emit);
             } else {
                 let exit = run_piped(&program, &args, &cwd, "run", request.stdin.as_deref(), timeout, limit, &stop, &mut |t| set_tree(t), &emit);
                 emit(exit);
@@ -466,16 +496,18 @@ pub fn run_start(
     Ok(id)
 }
 
+/// Runs `program` on a pty, streaming output; `env` is applied after the
+/// inherited noise is removed (a debug adapter's NODE_OPTIONS must survive).
 #[allow(clippy::too_many_arguments)]
-fn run_pty(program: &Path, args: &[String], cwd: &Path, request: &RunRequest, stop: &Arc<AtomicBool>, id: u32, runs: &Runs, emit: &dyn Fn(RunEvent)) {
+pub(crate) fn run_pty(program: &Path, args: &[String], cwd: &Path, size: (u16, u16), env: &[(String, String)], stop: &Arc<AtomicBool>, id: u32, runs: &Runs, emit: &dyn Fn(RunEvent)) {
     let started = Instant::now();
     let fail = |message: String| {
         emit(RunEvent::Error { message });
         emit(RunEvent::Exit { phase: "run".into(), code: None, timed_out: false, truncated: false, killed: false, duration_ms: 0 });
     };
     let pty = match native_pty_system().openpty(PtySize {
-        rows: request.rows.unwrap_or(24),
-        cols: request.cols.unwrap_or(80),
+        rows: size.1,
+        cols: size.0,
         pixel_width: 0,
         pixel_height: 0,
     }) {
@@ -491,16 +523,16 @@ fn run_pty(program: &Path, args: &[String], cwd: &Path, request: &RunRequest, st
     for var in INHERITED_NOISE {
         cmd.env_remove(var);
     }
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
     let mut child = match pty.slave.spawn_command(cmd) {
         Ok(c) => c,
         Err(e) => return fail(format!("Could not start {}: {e}", program.display())),
     };
     drop(pty.slave);
     let pid = child.process_id().unwrap_or(0);
-    #[cfg(unix)]
-    let tree = Tree { pgid: pid as i32 }; // the pty child leads its own session
-    #[cfg(windows)]
-    let tree = job_for(pid).unwrap_or(Tree { job: 0 });
+    let tree = Tree::of(pid); // the pty child leads its own session (Unix)
     let writer = pty.master.take_writer().ok();
     if let Some(s) = runs.sessions.lock().unwrap().get_mut(&id) {
         s.tree = Some(tree);

@@ -4,6 +4,10 @@ import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
 import { showReleaseNotes, useUpdate } from "../update/updateService";
+// ── git ──
+import { useGit, useGitAllowed } from "../scm/gitService";
+import { branchLabel } from "../scm/model";
+import { useDebug } from "../debug/debugService";
 
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
 const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
@@ -53,6 +57,51 @@ function UpdateItem() {
   return null;
 }
 
+/** VS Code's branch and Synchronize Changes items (practice mode only). */
+function GitItems() {
+  const allowed = useGitAllowed();
+  const status = useGit((s) => s.status);
+  const remoteOp = useGit((s) => s.remoteOp);
+  const busy = useGit((s) => s.busy);
+  if (!allowed || !status) return null;
+  const label = branchLabel(status);
+  const syncTitle = remoteOp
+    ? "Synchronizing Changes..."
+    : status.upstream
+      ? `${status.upstream}: ${status.behind} commit${status.behind === 1 ? "" : "s"} to pull, ${status.ahead} to push — Synchronize Changes`
+      : `Publish to ${status.remotes.length ? "a remote" : "GitHub"}`;
+  return (
+    <>
+      <Item className="tm-status-git" title={`${status.branch ?? "Detached HEAD"}, Checkout Branch/Tag...`} onClick={() => executeCommand("git.checkout")}>
+        <Codicon name={busy === "Checking out" ? "loading" : status.branch ? "git-branch" : "git-commit"} className={busy === "Checking out" ? "codicon-modifier-spin" : ""} />
+        <span data-testid="git-branch">{label}</span>
+      </Item>
+      {status.branch && (
+        <Item className="tm-status-git tm-prio-mid" title={syncTitle} onClick={() => executeCommand("git.sync")}>
+          <Codicon name={remoteOp ? "sync" : status.upstream ? "sync" : "cloud-upload"} className={remoteOp ? "codicon-modifier-spin" : ""} />
+          {status.upstream && (status.behind > 0 || status.ahead > 0) && (
+            <span data-testid="git-ahead-behind">
+              {status.behind}↓ {status.ahead}↑
+            </span>
+          )}
+        </Item>
+      )}
+    </>
+  );
+}
+
+// ── Run and Debug: the orange bar and the session name, as in VS Code ──
+function DebugStatus() {
+  const name = useDebug((s) => (s.phase === "inactive" ? null : s.sessionName));
+  if (!name) return null;
+  return (
+    <Item className="tm-status-debug" title="Select and Start Debug Configuration" onClick={() => executeCommand("workbench.view.debug")}>
+      <Codicon name="debug-alt" /> {name}
+    </Item>
+  );
+}
+// ── end Run and Debug ──
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -66,16 +115,18 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
   const run = useWorkbench((s) => s.run);
+  const debugging = useDebug((s) => s.phase !== "inactive");
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
   return (
-    <footer className={`tm-statusbar is-${mode}`} role="status" aria-label="Status Bar">
+    <footer className={`tm-statusbar is-${mode} ${debugging ? "is-debugging" : ""}`} role="status" aria-label="Status Bar">
       <div className="tm-status-left">
         <Item className="tm-status-mode" title={`TMCode — ${MODE_LABEL[mode]}`}>
           <Codicon name={MODE_ICON[mode]} />
           <span>{MODE_LABEL[mode]}</span>
         </Item>
+        <GitItems />
         <SyncStatus />
         <Item title={`Errors: ${errors}, Warnings: ${warnings}`} onClick={() => showPanel("problems")}>
           <Codicon name="error" /> {errors} <Codicon name="warning" /> {warnings}
@@ -85,6 +136,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
             <Codicon name="circle-filled" className="tm-status-unsaved" /> {dirtyCount} unsaved
           </Item>
         )}
+        <DebugStatus />
         {run.status !== "idle" && (
           <Item title="Show the Run panel" onClick={() => showPanel("run")} className="tm-status-running">
             <Codicon name="loading" className="codicon-modifier-spin" />

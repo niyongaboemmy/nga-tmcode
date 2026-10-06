@@ -4,8 +4,10 @@ import { ensureDocument, languageForPath, saveOnFocusChange } from "../../monaco
 import { registerCodeEditor } from "../../monaco/editors";
 import { monaco, monacoThemeFor, setupMonaco } from "../../monaco/setup";
 import { defaultFontFamily, type Settings } from "../../state/settings";
+import { SkeletonLines } from "../../widgets/Skeleton";
 import { focusGroup, getPlatform, setCursor, setEditorInfo, useWorkbench } from "../../state/store";
 import type { OsKind } from "../../platform/types";
+import { attachDebugEditor } from "../../debug/editorContrib";
 
 const KEY_CODES: Record<string, number> = {
   "`": monaco.KeyCode.Backquote,
@@ -76,9 +78,9 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const viewStates = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const currentPath = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const settings = useWorkbench((s) => s.settings);
   const readOnly = useWorkbench((s) => s.readOnly);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
   const os = getPlatform().os;
 
   // Create the editor once per group.
@@ -87,7 +89,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     const ed = monaco.editor.create(host.current!, {
       ...editorOptions(useWorkbench.getState().settings, os),
       model: null,
-      theme: monacoThemeFor(useWorkbench.getState().settings["workbench.colorTheme"]),
+      theme: monacoThemeFor(),
       ariaLabel: "Editor content",
     });
     editorRef.current = ed;
@@ -105,6 +107,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       }),
       ed.onDidFocusEditorText(() => focusGroup(groupId)),
       ed.onDidBlurEditorText(() => saveOnFocusChange()),
+      attachDebugEditor(ed),
     ];
 
     // Chorded workbench commands (⌘K ⌘T …) must be bound inside Monaco, which owns ⌘K while focused.
@@ -129,6 +132,8 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     if (!ed) return;
     let cancelled = false;
     setError(null);
+    // Only show the skeleton if loading is slow enough to notice (large or remote files).
+    const slow = setTimeout(() => !cancelled && setLoading(true), 150);
     if (currentPath.current) viewStates.current.set(currentPath.current, ed.saveViewState());
     ensureDocument(path)
       .then((model) => {
@@ -143,9 +148,14 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
         if (pos) setCursor({ line: pos.lineNumber, column: pos.column, selected: 0 });
         setEditorInfo({ language: model.getLanguageId() || languageForPath(path), eol: model.getEOL() === "\r\n" ? "CRLF" : "LF" });
       })
-      .catch((e) => !cancelled && setError(String(e?.message ?? e)));
+      .catch((e) => !cancelled && setError(String(e?.message ?? e)))
+      .finally(() => {
+        clearTimeout(slow);
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
+      clearTimeout(slow);
     };
   }, [path]);
 
@@ -153,13 +163,15 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     editorRef.current?.updateOptions({ ...editorOptions(settings, os), readOnly, readOnlyMessage: { value: "Time is up — your code can no longer be changed." } });
   }, [settings, os, readOnly]);
 
-  useEffect(() => {
-    monaco.editor.setTheme(monacoThemeFor(theme));
-  }, [theme]);
 
   return (
     <div className="tm-code-editor">
       <div ref={host} className="tm-monaco-host" data-testid="monaco-host" />
+      {loading && (
+        <div className="tm-editor-loading">
+          <SkeletonLines lines={12} label="Opening file" />
+        </div>
+      )}
       {error && (
         <div className="tm-editor-error" role="alert">
           <p>The editor could not be opened due to an unexpected error:</p>

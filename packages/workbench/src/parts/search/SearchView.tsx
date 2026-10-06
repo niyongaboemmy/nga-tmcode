@@ -4,6 +4,7 @@ import { codeEditorFor } from "../../monaco/editors";
 import { getPlatform, openFile, useWorkbench, workbench } from "../../state/store";
 import { basename, dirname } from "../../util/paths";
 import { Codicon, FileIcon } from "../../widgets/icons";
+import { SkeletonRows } from "../../widgets/Skeleton";
 import { MAX_MATCHES, buildRegExp, listFiles, searchText, type FileMatches, type SearchOptions } from "./search";
 
 function Toggle({ icon, label, on, onChange }: { icon: string; label: string; on: boolean; onChange: (v: boolean) => void }) {
@@ -97,6 +98,7 @@ export function SearchView() {
         </div>
       </div>
       {busy && <div className="tm-progress" role="progressbar" aria-label="Searching" />}
+      {busy && results.length === 0 && <SkeletonRows rows={5} label="Searching" />}
       {message && <div className="tm-search-message">{message}</div>}
       <div className="tm-pane-body tm-scroll" role="tree" aria-label="Search results">
         {results.map((file) => {

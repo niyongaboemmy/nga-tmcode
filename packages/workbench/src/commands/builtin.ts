@@ -1,9 +1,14 @@
 import { registerCommand } from "./registry";
+import { registerExtensionCommands } from "../extensions/commands";
 import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
 import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
 import { loadTests, runTests } from "../run/testService";
 import { submitExam } from "../exam/session";
+// ── Run and Debug ──
+import { registerDebugCommands } from "../debug/commands";
+import { runWithoutDebugging } from "../debug/debugService";
+// ── end Run and Debug ──
 import { inExam } from "../exam/state";
 import { checkForUpdates, installUpdate, showAbout, updatesSupported, useUpdate } from "../update/updateService";
 import {
@@ -32,10 +37,6 @@ import {
   workbench,
 } from "../state/store";
 
-const executeRun = () => {
-  const path = activeFilePath();
-  if (path) void runFile(path);
-};
 const hasWorkspace = () => !!useWorkbench.getState().workspace;
 const hasActiveFile = () => !!activeFilePath();
 const terminalAllowed = () => {
@@ -60,6 +61,8 @@ export function registerBuiltinCommands() {
   if (registered) return;
   registered = true;
   const group = () => workbench.get().activeGroup;
+  // Run and Debug first: while debugging, F5 / Shift+F5 belong to the debugger (first enabled binding wins).
+  registerDebugCommands();
 
   // ── File ──
   // VS Code's defaults: macOS ⌘O opens a folder; Windows/Linux Ctrl+O opens a file, Ctrl+K Ctrl+O a folder.
@@ -153,6 +156,8 @@ export function registerBuiltinCommands() {
   registerCommand({ id: "workbench.action.quickOpen", title: "Go to File...", category: "Go", keybinding: "mod+p", enabled: hasWorkspace, run: () => openQuickInput("files") });
   registerCommand({ id: "workbench.action.gotoLine", title: "Go to Line/Column...", category: "Go", keybinding: "ctrl+g", enabled: hasActiveFile, run: () => openQuickInput("line") });
   registerCommand({ id: "workbench.action.selectTheme", title: "Color Theme", category: "Preferences", keybinding: "mod+k mod+t", run: () => openQuickInput("theme") });
+  registerCommand({ id: "workbench.action.selectIconTheme", title: "File Icon Theme", category: "Preferences", run: () => openQuickInput("iconTheme") });
+  registerExtensionCommands(); // feat/extensions
 
   // ── View ──
   registerCommand({ id: "workbench.action.toggleSidebarVisibility", title: "Toggle Primary Side Bar Visibility", category: "View", keybinding: "mod+b", run: () => toggleSidebar() });
@@ -236,22 +241,22 @@ export function registerBuiltinCommands() {
     id: "tmcode.run",
     title: "Run File",
     category: "Run",
-    keybinding: "f5",
+    // F5 is `tmcode.f5` (Start Debugging, or Run when no debugger applies); Ctrl+F5 always runs.
     enabled: hasActiveFile,
     run: () => {
       const path = activeFilePath();
       if (path) void runFile(path);
     },
   });
-  registerCommand({ id: "tmcode.runNoDebug", title: "Run Without Debugging", category: "Run", hidden: true, keybinding: "ctrl+f5", enabled: hasActiveFile, run: () => executeRun() });
+  registerCommand({ id: "tmcode.runNoDebug", title: "Run Without Debugging", category: "Run", hidden: true, keybinding: "ctrl+f5", enabled: hasActiveFile, run: runWithoutDebugging });
   registerCommand({
     id: "tmcode.rerun",
     title: "Run Again",
     category: "Run",
     enabled: () => !!useWorkbench.getState().run.entry,
     run: () => {
-      const entry = useWorkbench.getState().run.entry;
-      if (entry) void runFile(entry);
+      const { entry, args, inputFile } = useWorkbench.getState().run;
+      if (entry) void runFile(entry, { args, inputFile });
     },
   });
   registerCommand({ id: "tmcode.stop", title: "Stop", category: "Run", keybinding: "shift+f5", enabled: isRunning, run: stopRun });

@@ -4,7 +4,17 @@ The New Generation Academy code editor for Task Mentor: a Visual Studio Code–s
 desktop app (Tauri 2 + Monaco) for coding practicals and exams that Task Mentor
 launches, controls and grades.
 
-It is also a general-purpose editor you can use instead of VS Code. It has an explorer, search, terminal, run (F5), tests, and live web/React preview for Python, JavaScript, TypeScript, C, C++, Java and HTML/CSS. It works offline and updates itself.
+It is also a general-purpose editor you can use instead of VS Code:
+
+- **Code:** Monaco with TextMate grammars, IntelliSense from your `node_modules`, Prettier, Emmet and snippets.
+- **Git:** clone from GitHub, the Source Control view, diffs, branches, push/pull. Your GitHub token is kept in the OS keychain.
+- **Run & Debug:** F5 for Python, JavaScript/TypeScript, C, C++ and Java; breakpoints and the Debug Console (Python, Node, C/C++); `launch.json`.
+- **Projects:** Run Task… finds npm/yarn/pnpm scripts, Maven/Gradle (Spring Boot), Make, Cargo, Go, Django and .NET.
+- **Previews:** live HTML/React preview, a built-in browser for your dev server (the port is detected automatically), Markdown, images and SVG.
+- **Extensions:** install VS Code themes, icon themes, grammars and snippets from Open VSX.
+- **Terminal:** clickable links and `file:line`, Find, Run Recent Command.
+
+It works offline and updates itself.
 
 ## Download
 

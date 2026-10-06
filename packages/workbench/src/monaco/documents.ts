@@ -12,7 +12,8 @@ import {
   useWorkbench,
   type Problem,
 } from "../state/store";
-import { extname, isWithin, rebase } from "../util/paths";
+import { basename, extname, isWithin, rebase } from "../util/paths";
+import { setIconLanguageResolver } from "../themes/iconThemes";
 
 /**
  * One Monaco text model per open file. The workbench store only knows paths
@@ -40,8 +41,18 @@ const EXTRA_LANGS: Record<string, string> = { jsx: "javascript", tsx: "typescrip
 export function languageForPath(path: string): string {
   const ext = extname(path);
   if (EXTRA_LANGS[ext]) return EXTRA_LANGS[ext];
-  const hit = monaco.languages.getLanguages().find((l) => l.extensions?.some((e) => e.slice(1).toLowerCase() === ext));
-  return hit?.id ?? "plaintext";
+  // File names first (Makefile), then the longest matching extension (".blade.php" before ".php");
+  // on a tie the later registration (an extension's language) wins, as in VS Code.
+  const name = basename(path).toLowerCase();
+  let best: { id: string; len: number } | null = null;
+  for (const l of monaco.languages.getLanguages()) {
+    if (l.filenames?.some((f) => f.toLowerCase() === name)) return l.id;
+    for (const e of l.extensions ?? []) {
+      const el = e.toLowerCase();
+      if (name.endsWith(el) && (!best || el.length >= best.len)) best = { id: l.id, len: el.length };
+    }
+  }
+  return best?.id ?? "plaintext";
 }
 
 export function languageLabel(id: string | null): string {
@@ -162,6 +173,7 @@ export function wireDocuments() {
   if (wired) return;
   wired = true;
   setupMonaco();
+  setIconLanguageResolver((p) => languageForPath(p));
   saveHandlers.save = saveDocument;
   saveHandlers.revert = (path) => {
     // Closing without saving: drop the model so the next open re-reads disk.

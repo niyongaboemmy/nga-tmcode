@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { codeEditorFor } from "../../monaco/editors";
-import { clearOutput, openFile, showPanel, togglePanel, togglePanelMaximized, useWorkbench, workbench, type PanelId } from "../../state/store";
+import { revealInEditor } from "../../monaco/reveal";
+import { clearOutput, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
 import { basename, dirname } from "../../util/paths";
 import { ActionButton, Codicon, FileIcon } from "../../widgets/icons";
 import { TerminalView } from "./TerminalView";
 import { RunConsole } from "./RunConsole";
 import { executeCommand } from "../../commands/registry";
 import { clearConsole } from "../../run/runService";
+// ── Run and Debug ──
+import { DebugConsole } from "../../debug/DebugConsole";
+import { clearDebugConsole, debugAllowed } from "../../debug/debugService";
+import { useExam } from "../../exam/state";
+// ── end Run and Debug ──
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -26,18 +31,7 @@ function ProblemsView({ filter }: { filter: string }) {
     return <div className="tm-panel-empty">{problems.length ? "No results found with provided filter criteria." : "No problems have been detected in the workspace."}</div>;
   }
 
-  const reveal = (path: string, line: number, column: number) => {
-    openFile(path, { pinned: true });
-    const go = (n = 0) => {
-      const ed = codeEditorFor(workbench.get().activeGroup);
-      if (ed?.getModel()?.uri.path === `/${path}`) {
-        ed.setPosition({ lineNumber: line, column });
-        ed.revealLineInCenterIfOutsideViewport(line);
-        ed.focus();
-      } else if (n < 20) setTimeout(() => go(n + 1), 25);
-    };
-    go();
-  };
+  const reveal = (path: string, line: number, column: number) => revealInEditor(path, line, column);
 
   return (
     <div className="tm-problems tm-scroll" role="tree" aria-label="Problems">
@@ -108,10 +102,14 @@ export function Panel() {
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const run = useWorkbench((s) => s.run);
   const [filter, setFilter] = useState("");
+  useExam((s) => s.phase);
+  useWorkbench((s) => s.policy);
+  const debugTab = debugAllowed();
 
   const tabs: { id: PanelId; label: string; badge?: number }[] = [
     { id: "problems", label: "Problems", badge: problemCount || undefined },
     { id: "output", label: "Output" },
+    ...(debugTab ? [{ id: "debugConsole" as const, label: "Debug Console" }] : []),
     { id: "run", label: "Run" },
     ...(terminalAllowed ? [{ id: "terminal" as const, label: "Terminal" }] : []),
   ];
@@ -154,6 +152,7 @@ export function Panel() {
             </div>
           )}
           {current === "output" && <ActionButton icon="clear-all" label="Clear Output" onClick={clearOutput} />}
+          {current === "debugConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearDebugConsole} />}
           {current === "terminal" && (
             <ActionButton icon="add" label="New Terminal" onClick={() => window.dispatchEvent(new CustomEvent("tmcode:new-terminal"))} />
           )}
@@ -164,6 +163,7 @@ export function Panel() {
       <div className="tm-panel-body">
         {current === "problems" && <ProblemsView filter={filter} />}
         {current === "output" && <OutputView filter={filter} />}
+        {debugTab && <DebugConsole visible={panelVisible && current === "debugConsole"} filter={filter} />}
         <RunConsole visible={panelVisible && current === "run"} />
         {terminalAllowed && <TerminalView visible={panelVisible && current === "terminal"} />}
       </div>

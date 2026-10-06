@@ -1,6 +1,11 @@
 #[cfg(target_os = "macos")]
 mod menus;
+pub mod askpass;
+mod debug;
 mod exam;
+mod extensions;
+mod git;
+mod github;
 mod preview;
 mod pty;
 mod runner;
@@ -45,6 +50,8 @@ struct AppInfo {
     /// real WKWebView / WebView2 where nobody can click.
     dev_workspace: Option<String>,
     dev_selftest: bool,
+    /// Debug builds only: `TMCODE_DEV_SELFTEST=git` runs the git self-test instead.
+    dev_selftest_git: bool,
     /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
     dev_launch: Option<String>,
     /// A folder or file given on the command line (`tmcode ~/project`).
@@ -76,6 +83,7 @@ fn app_info() -> AppInfo {
         },
         dev_workspace: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_WORKSPACE").ok() } else { None },
         dev_selftest: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("1"),
+        dev_selftest_git: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("git"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
     }
@@ -170,10 +178,13 @@ pub fn run() {
         .manage(pty::Terminals::default())
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
+        .manage(debug::Debuggers::default())
         .manage(preview::Preview::default())
         .manage(watcher::Watcher::default())
         .manage(updates::Pending::default())
         .manage(PendingOpen::default())
+        .manage(git::Git::default())
+        .manage(github::GitHub::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
@@ -184,6 +195,8 @@ pub fn run() {
             workspace::ws_open_file,
             workspace::ws_open_path,
             workspace::ws_reveal,
+            workspace::ws_read_base64,
+            workspace::open_external,
             workspace::ws_read_dir,
             workspace::ws_read_file,
             workspace::ws_write_file,
@@ -199,6 +212,16 @@ pub fn run() {
             runner::run_start,
             runner::run_input,
             runner::run_kill,
+            toolchains::toolchains_candidates,
+            toolchains::toolchains_select,
+            debug::debug_probe,
+            debug::debug_install,
+            debug::debug_prepare,
+            debug::debug_start,
+            debug::debug_send,
+            debug::debug_stop,
+            debug::debug_run_in_terminal,
+            debug::debug_policy,
             preview::preview_publish,
             exam::exam_device,
             exam::exam_workspace,
@@ -207,6 +230,34 @@ pub fn run() {
             exam::journal_mark_synced,
             updates::update_check,
             updates::update_install,
+            extensions::ext_fetch,
+            extensions::ext_list,
+            extensions::ext_install,
+            extensions::ext_uninstall,
+            extensions::ext_read_file,
+            git::git_info,
+            git::git_status,
+            git::git_show,
+            git::git_stage,
+            git::git_unstage,
+            git::git_discard,
+            git::git_commit,
+            git::git_branches,
+            git::git_checkout,
+            git::git_log,
+            git::git_init,
+            git::git_stash,
+            git::git_check_ignore,
+            git::git_set_identity,
+            git::git_remote,
+            git::git_cancel,
+            git::git_pick_clone_parent,
+            git::git_clone,
+            github::github_sign_in,
+            github::github_user,
+            github::github_sign_out,
+            github::github_repos,
+            git::git_open_url,
         ])
         .setup(|app| {
             // Windows/Linux dev builds register tmcode:// at runtime; installers register it for real
@@ -239,6 +290,7 @@ pub fn run() {
         if let RunEvent::Exit = event {
             handle.state::<pty::Terminals>().kill_all();
             handle.state::<runner::Runs>().kill_all();
+            handle.state::<debug::Debuggers>().kill_all();
         }
     });
 }
