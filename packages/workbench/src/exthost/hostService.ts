@@ -5,6 +5,7 @@ import { activeExtensions, extensionsBlocked, useExtensions, type InstalledExten
 import { useExam } from "../exam/state";
 import type { ExtensionManifest } from "../extensions/manifest";
 import { documentSnapshot, editorSnapshot, wireDocumentSync } from "./documentSync";
+import { wireWorkbenchDiagnostics, workbenchDiagnosticsSnapshot } from "./workbenchDiagnostics";
 import { disposeProviders, editApplier, setHostLink } from "./languageBridge";
 import { applyWorkspaceEdit, clearDiagnosticsOf, installMainThread, type MainContext } from "./mainThread";
 import { builtinDefaults, loadExtensionSettings, onConfigurationChanged, useExtConfig } from "./config";
@@ -253,6 +254,8 @@ async function connect(conn: Conn, data: InitData, nodeInfo: string | null) {
   if (extensionsBlocked()) return;
   if (nodeInfo) useExtHost.setState({ nodeInfo });
   log(HOST_CHANNEL, `Started the ${conn.kind === "node" ? "Node.js" : "Web Worker"} extension host${nodeInfo ? ` (${nodeInfo})` : ""} for ${conn.extensions.map((e) => e.id).join(", ")}`);
+  // The workbench's own problems so far (later changes stream through wireWorkbenchDiagnostics).
+  conn.rpc.notify("$workbenchDiagnostics", [workbenchDiagnosticsSnapshot()]);
   // Activation runs in the background; the UI follows $main.extensionState.
   void conn.rpc.request("$startup", []).catch((e) => log(HOST_CHANNEL, `Startup activation failed: ${String((e as Error)?.message ?? e)}`, "error"));
 }
@@ -387,6 +390,7 @@ function wireOnce() {
   if (wired) return;
   wired = true;
   wireDocumentSync(broadcast);
+  wireWorkbenchDiagnostics(broadcast);
   editApplier.apply = applyWorkspaceEdit;
   onConfigurationChanged(({ user, defaults, keys }) => {
     broadcast("$defaultsChanged", [defaults]);

@@ -368,3 +368,217 @@ export async function runExthostSelfTest(platform: Platform, log: (msg: string) 
   });
   log("exthost selftest done");
 }
+
+/**
+ * Extensions end to end, as a user experiences them (TMCODE_DEV_SELFTEST=extensions,
+ * debug builds, a workspace with the files below): install real extensions from
+ * Open VSX through the Install button's service, then check what each one does in
+ * the editor — formatting, inline errors, diagnostics, decorations, auto edits,
+ * themes and icons — and the lifecycle (disable, enable, restart, uninstall).
+ * Restores the user's settings and installed extensions afterwards.
+ */
+export async function runExtensionsSelfTest(platform: Platform, log: (msg: string) => void) {
+  const X = exthostForSelfTest;
+  const results: boolean[] = [];
+  const step = async (name: string, fn: () => Promise<string>) => {
+    try {
+      log(`extensions selftest ${name}: ok ${await fn()}`);
+      results.push(true);
+    } catch (e) {
+      log(`extensions selftest ${name}: FAILED ${String((e as Error)?.message ?? e)}`);
+      results.push(false);
+    }
+  };
+  const until = async (what: string, pred: () => boolean, ms = 30_000) => {
+    const end = Date.now() + ms;
+    while (!pred()) {
+      if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const ext = platform.extensions!;
+  const before = new Set((await ext.list()).map((e) => e.id));
+  const hadTrust = await platform.store.get<boolean>("extensions.codeTrustAcknowledged");
+  const settings = X.useWorkbench.getState().settings;
+  const savedTheme = settings["workbench.colorTheme"];
+  const savedIcons = settings["workbench.iconTheme"];
+  await platform.store.set("extensions.codeTrustAcknowledged", true);
+
+  const IDS = {
+    prettier: "esbenp.prettier-vscode",
+    errorlens: "usernamehw.errorlens",
+    cspell: "streetsidesoftware.code-spell-checker",
+    comments: "aaron-bond.better-comments",
+    rename: "formulahendry.auto-rename-tag",
+    dracula: "dracula-theme.theme-dracula",
+    icons: "pkief.material-icon-theme",
+  };
+  const rt = (id: string) => X.useExtHost.getState().runtime[id];
+  const editorFor = async (path: string) => {
+    X.openFile(path, { pinned: true });
+    let ed: ReturnType<typeof X.codeEditorFor> = null;
+    await until(`an editor for ${path}`, () => !!(ed = X.codeEditorFor(X.workbench.get().activeGroup)) && ed.getModel()?.uri.path === `/${path}` && !!ed.getDomNode()?.querySelector(".view-line"));
+    return ed!;
+  };
+
+  // 1. Install, through the same service as the Extensions view's Install button.
+  for (const id of Object.values(IDS)) {
+    await step(`install ${id}`, async () => {
+      const [ns, name] = id.split(".");
+      const d = JSON.parse(await ext.fetch(`https://open-vsx.org/api/${ns}/${name}`, "text")) as { version: string; displayName?: string; files: { download: string } };
+      const t0 = performance.now();
+      let ok = false;
+      for (let attempt = 1; attempt <= 2 && !ok; attempt++) ok = await X.installExtension({ id, displayName: d.displayName ?? name, downloadUrl: d.files.download, version: d.version });
+      if (!ok) throw new Error("installExtension returned false");
+      const item = X.useExtensions.getState().installed.find((e) => e.id === id);
+      if (!item?.enabled) throw new Error(`installed but ${item ? "disabled" : "missing from the list"}`);
+      return `v${d.version} in ${Math.round(performance.now() - t0)}ms`;
+    });
+  }
+  await step("extension host", async () => {
+    await until("the Node extension host", () => X.useExtHost.getState().status === "running", 60_000);
+    return X.useExtHost.getState().nodeInfo ?? "running";
+  });
+
+  // 2. Prettier formats the document (Format Document → the extension's provider).
+  await step("prettier formats", async () => {
+    const ed = await editorFor("messy.js");
+    await until("Prettier activation", () => rt(IDS.prettier)?.state === "activated" || rt(IDS.prettier)?.state === "failed", 45_000);
+    if (rt(IDS.prettier)?.state !== "activated") throw new Error(`Prettier ${rt(IDS.prettier)?.state}: ${rt(IDS.prettier)?.error}`);
+    const model = ed.getModel()!;
+    const src = model.getValue();
+    ed.focus();
+    await ed.getAction("editor.action.formatDocument")!.run();
+    await until("formatted text", () => model.getValue() !== src, 20_000);
+    const out = model.getValue();
+    if (!out.includes("const a = { b: 1, c: [1, 2] };")) throw new Error(`unexpected result ${JSON.stringify(out)}`);
+    const prettierLog = X.useWorkbench.getState().output.filter((l) => /prettier/i.test(l.channel)).map((l) => l.text).join(" ");
+    return `${JSON.stringify(out.split("\n")[0])}; Prettier log ${/Formatting|format/i.test(prettierLog) ? "shows it formatted" : "silent"}`;
+  });
+
+  // 3. Error Lens: the TypeScript error (Monaco's own diagnostic) at the end of its line.
+  await step("error lens inline error", async () => {
+    const ed = await editorFor("broken.ts");
+    const model = ed.getModel()!;
+    await until("the TypeScript error", () => X.monaco.editor.getModelMarkers({ resource: model.uri }).some((m) => m.severity === 8), 30_000);
+    await until("Error Lens activation", () => rt(IDS.errorlens)?.state === "activated", 30_000);
+    let text = "";
+    await until("an inline message", () => {
+      for (const el of ed.getDomNode()!.querySelectorAll<HTMLElement>(".view-lines span[class*='-after'], .view-lines span[class*='after']")) {
+        const c = getComputedStyle(el, "::after").content;
+        if (c && c !== "none" && c !== "normal" && /assignable|Type/.test(c)) {
+          text = c;
+          return true;
+        }
+      }
+      return false;
+    }, 20_000);
+    return `line 1 ends with ${text.slice(0, 80)}`;
+  });
+
+  // 4. Code Spell Checker: a misspelling in Problems.
+  await step("spell checker diagnostics", async () => {
+    const ed = await editorFor("notes.md");
+    const uri = ed.getModel()!.uri;
+    let msg = "";
+    await until("a spelling diagnostic", () => {
+      const m = X.monaco.editor.getModelMarkers({ resource: uri }).find((x) => x.owner.startsWith("ext:") && /speling/i.test(x.message));
+      msg = m?.message ?? "";
+      return !!m;
+    }, 45_000);
+    return msg;
+  });
+
+  // 5. Better Comments: coloured comment decorations.
+  await step("better comments colours", async () => {
+    const ed = await editorFor("comments.js");
+    let found = "";
+    await until("coloured comment text", () => {
+      const spans = [...ed.getDomNode()!.querySelectorAll<HTMLElement>(".view-lines span[class*='tmx-']")];
+      const c = spans.map((s) => getComputedStyle(s).color).find((c) => c && c !== getComputedStyle(ed.getDomNode()!).color);
+      found = c ?? "";
+      return !!c;
+    }, 30_000).catch(async () => {
+      const decos = ed.getModel()!.getAllDecorations().filter((d) => d.options.inlineClassName).map((d) => d.options.inlineClassName);
+      throw new Error(`no coloured spans; decorations: ${decos.slice(0, 5).join(", ") || "none"}`);
+    });
+    return `comment colour ${found}`;
+  });
+
+  // 6. Auto Rename Tag: renaming the opening tag renames the closing one.
+  await step("auto rename tag", async () => {
+    const ed = await editorFor("page.html");
+    const model = ed.getModel()!;
+    await sleep(1500);
+    ed.focus();
+    // Select "div" in "<div>" and type a new name, as the user would.
+    ed.setSelection({ startLineNumber: 1, startColumn: 2, endLineNumber: 1, endColumn: 5 });
+    ed.trigger("keyboard", "type", { text: "section" });
+    await until("the closing tag renamed", () => model.getLineContent(3).includes("</section>"), 15_000).catch(() => {
+      throw new Error(`closing line is ${JSON.stringify(model.getLineContent(3))} (state ${rt(IDS.rename)?.state})`);
+    });
+    return model.getValue().replace(/\n/g, " ").slice(0, 60);
+  });
+
+  // 7. Themes and icons from extensions recolour the workbench.
+  await step("color theme (Dracula)", async () => {
+    const theme = X.allThemes().find((t) => /dracula/i.test(t.label) && !/soft/i.test(t.label));
+    if (!theme) throw new Error(`no Dracula theme among ${X.allThemes().map((t) => t.label).join(", ")}`);
+    X.updateSetting("workbench.colorTheme", theme.id as never);
+    const ed = await editorFor("messy.js");
+    let bg = "";
+    await until("the Dracula background", () => (bg = getComputedStyle(ed.getDomNode()!.querySelector(".monaco-editor-background")!).backgroundColor) === "rgb(40, 42, 54)", 15_000).catch(() => {
+      throw new Error(`editor background ${bg}`);
+    });
+    return `${theme.label}: editor ${bg}`;
+  });
+  await step("file icon theme (Material)", async () => {
+    const icons = X.allIconThemes().find((t) => /material/i.test(t.label));
+    if (!icons) throw new Error("no Material icon theme");
+    X.updateSetting("workbench.iconTheme", icons.id as never);
+    X.showView("explorer");
+    let how = "";
+    await until("Material file icons in the Explorer", () => {
+      const row = document.querySelector<HTMLElement>('.tm-explorer [data-path="messy.js"]');
+      const img = row?.querySelector<HTMLElement>("img, [style*='background-image'], [style*='mask']");
+      how = img ? img.tagName.toLowerCase() : "";
+      return !!img;
+    }, 15_000);
+    return `${icons.label}: explorer uses ${how} icons`;
+  });
+
+  // 8. Lifecycle: disable stops it, enable brings it back, restart reactivates, uninstall removes.
+  await step("disable / enable", async () => {
+    await X.setExtensionEnabled(IDS.prettier, false);
+    await until("Prettier stopped", () => !rt(IDS.prettier) || rt(IDS.prettier)?.state !== "activated", 20_000);
+    const prettierItems = () => Object.values(X.useExtStatusBar.getState().items).filter((i) => /prettier/i.test(`${i.id} ${i.text} ${i.name ?? ""}`)).length;
+    const afterDisable = prettierItems();
+    await X.setExtensionEnabled(IDS.prettier, true);
+    await editorFor("messy.js");
+    await until("Prettier active again", () => rt(IDS.prettier)?.state === "activated", 45_000);
+    return `disabled → ${afterDisable} Prettier status items; re-enabled → activated`;
+  });
+  await step("restart extension host", async () => {
+    const gen = X.useExtHost.getState().generation;
+    await X.restartExtensionHosts();
+    await until("a new host", () => X.useExtHost.getState().generation !== gen && X.useExtHost.getState().status === "running", 60_000);
+    await editorFor("broken.ts");
+    await until("Error Lens active again", () => rt(IDS.errorlens)?.state === "activated", 45_000);
+    return `generation ${gen} → ${X.useExtHost.getState().generation}`;
+  });
+  await step("uninstall", async () => {
+    const ed = await editorFor("notes.md");
+    await X.uninstallExtension(IDS.cspell);
+    if (X.useExtensions.getState().installed.some((e) => e.id === IDS.cspell)) throw new Error("still listed");
+    await until("its diagnostics gone", () => !X.monaco.editor.getModelMarkers({ resource: ed.getModel()!.uri }).some((m) => /speling/i.test(m.message)), 30_000);
+    return "Code Spell Checker removed, its diagnostics cleared";
+  });
+
+  // Put everything back.
+  X.updateSetting("workbench.colorTheme", savedTheme);
+  X.updateSetting("workbench.iconTheme", savedIcons);
+  for (const id of Object.values(IDS)) if (!before.has(id) && X.useExtensions.getState().installed.some((e) => e.id === id)) await X.uninstallExtension(id);
+  await platform.store.set("extensions.codeTrustAcknowledged", hadTrust ?? false);
+  log(`extensions selftest: ${results.filter((r) => !r).length} failed of ${results.length}`);
+}

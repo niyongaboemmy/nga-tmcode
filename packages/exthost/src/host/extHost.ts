@@ -26,6 +26,7 @@ import type {
   ContentChangeDTO,
   DecorationOptionsDTO,
   DecorationRangeDTO,
+  DiagnosticDTO,
   DocumentDTO,
   EditorDTO,
   ExtensionDescription,
@@ -431,6 +432,9 @@ export class ExtHost {
       this.windowFocused = !!focused;
       this.onDidChangeWindowState.fire({ focused: this.windowFocused, active: this.windowFocused });
     });
+    // The workbench's own problems (TypeScript, CSS, JSON… from Monaco, run errors): VS Code's
+    // languages.getDiagnostics() includes the built-in extensions' too (Error Lens relies on it).
+    r.register("$workbenchDiagnostics", ([entries]) => this.#workbenchDiagnostics(entries as [string, DiagnosticDTO[]][]));
     r.register("$fileEvents", ([events]) => this.#fileEvents(events as { path: string; type: "create" | "change" | "delete" }[]));
     r.register("$provide", ([handle, method, args], cancel) => {
       const src = new CancellationTokenSource();
@@ -985,6 +989,30 @@ export class ExtHost {
       },
     };
     return collection;
+  }
+
+  #workbenchDiagnostics(entries: [string, DiagnosticDTO[]][]) {
+    const owner = "workbench";
+    const byUri = this.#diagnostics.get(owner) ?? new Map<string, T.Diagnostic[]>();
+    const changed: Uri[] = [];
+    for (const [path, list] of entries) {
+      const uri = this.paths.toUri(path);
+      changed.push(uri);
+      if (!list.length) byUri.delete(uri.toString());
+      else
+        byUri.set(
+          uri.toString(),
+          list.map((d) => {
+            const diag = new T.Diagnostic(C.range.to(d.range), d.message, d.severity);
+            if (d.source) diag.source = d.source;
+            if (d.code !== undefined) diag.code = d.code;
+            if (d.tags?.length) diag.tags = d.tags;
+            return diag;
+          }),
+        );
+    }
+    this.#diagnostics.set(owner, byUri);
+    if (changed.length) this.onDidChangeDiagnostics.fire({ uris: changed });
   }
 
   getDiagnostics(uri?: Uri): unknown {

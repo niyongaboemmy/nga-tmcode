@@ -3841,6 +3841,7 @@ var ExtHost = class {
       this.windowFocused = !!focused;
       this.onDidChangeWindowState.fire({ focused: this.windowFocused, active: this.windowFocused });
     });
+    r.register("$workbenchDiagnostics", ([entries]) => this.#workbenchDiagnostics(entries));
     r.register("$fileEvents", ([events]) => this.#fileEvents(events));
     r.register("$provide", ([handle, method, args], cancel) => {
       const src = new CancellationTokenSource();
@@ -4359,6 +4360,29 @@ var ExtHost = class {
       }
     };
     return collection;
+  }
+  #workbenchDiagnostics(entries) {
+    const owner = "workbench";
+    const byUri = this.#diagnostics.get(owner) ?? /* @__PURE__ */ new Map();
+    const changed = [];
+    for (const [path3, list2] of entries) {
+      const uri = this.paths.toUri(path3);
+      changed.push(uri);
+      if (!list2.length) byUri.delete(uri.toString());
+      else
+        byUri.set(
+          uri.toString(),
+          list2.map((d) => {
+            const diag = new Diagnostic(range.to(d.range), d.message, d.severity);
+            if (d.source) diag.source = d.source;
+            if (d.code !== void 0) diag.code = d.code;
+            if (d.tags?.length) diag.tags = d.tags;
+            return diag;
+          })
+        );
+    }
+    this.#diagnostics.set(owner, byUri);
+    if (changed.length) this.onDidChangeDiagnostics.fire({ uris: changed });
   }
   getDiagnostics(uri) {
     if (uri) {
