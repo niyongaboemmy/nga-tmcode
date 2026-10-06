@@ -22,6 +22,11 @@ describe("activation events", () => {
   it("lists workspaceContains globs and the events TMCode never fires", () => {
     const ev = ["workspaceContains:package.json", "onView:x", "onDebug", "onUri", "*", "onCommand:y"];
     expect(workspaceContainsPatterns(ev)).toEqual(["package.json"]);
-    expect(unsupportedEvents(ev)).toEqual(["onView:x", "onDebug", "onUri"]);
+    expect(unsupportedEvents(ev)).toEqual(["onDebug", "onUri"]);
+  });
+
+  it("adds onView for every contributed view", () => {
+    const events = activationEventsOf({ contributes: { views: { explorer: [{ id: "a.tree" }], "a-container": [{ id: "a.side", type: "webview" }] } } });
+    expect(events).toEqual(["onView:a.tree", "onView:a.side"]);
   });
 });

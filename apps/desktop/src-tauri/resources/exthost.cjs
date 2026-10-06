@@ -29,6 +29,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 
 // packages/exthost/src/node/main.ts
 var path2 = __toESM(require("node:path"), 1);
+var import_node_fs2 = require("node:fs");
 var import_node_module = __toESM(require("node:module"), 1);
 var import_node_url = require("node:url");
 
@@ -1586,6 +1587,9 @@ function activationEventsOf(manifest) {
   const c = manifest.contributes ?? {};
   for (const cmd of list(c.commands)) if (typeof cmd.command === "string") out.add(`onCommand:${cmd.command}`);
   for (const lang of list(c.languages)) if (typeof lang.id === "string") out.add(`onLanguage:${lang.id}`);
+  if (c.views && typeof c.views === "object") {
+    for (const views of Object.values(c.views)) for (const v of list(views)) if (typeof v.id === "string") out.add(`onView:${v.id}`);
+  }
   return [...out];
 }
 function matchesActivationEvent(events, event) {
@@ -3062,34 +3066,10 @@ function createApi(host2, ext) {
       return ed;
     },
     showNotebookDocument: () => host2.notSupported(ext, "window.showNotebookDocument"),
-    createTreeView: (viewId) => {
-      host2.notSupported(ext, `window.createTreeView (${viewId})`, "warn");
-      return {
-        visible: false,
-        selection: [],
-        message: void 0,
-        title: void 0,
-        description: void 0,
-        badge: void 0,
-        onDidExpandElement: new EventEmitter().event,
-        onDidCollapseElement: new EventEmitter().event,
-        onDidChangeSelection: new EventEmitter().event,
-        onDidChangeVisibility: new EventEmitter().event,
-        onDidChangeCheckboxState: new EventEmitter().event,
-        reveal: async () => {
-        },
-        dispose: () => {
-        }
-      };
-    },
-    registerTreeDataProvider: (viewId) => {
-      host2.notSupported(ext, `window.registerTreeDataProvider (${viewId})`, "warn");
-      return noopDisposable();
-    },
-    registerWebviewViewProvider: (viewId) => {
-      host2.notSupported(ext, `window.registerWebviewViewProvider (${viewId})`, "warn");
-      return noopDisposable();
-    },
+    createTreeView: (viewId, options) => host2.views.createTreeView(ext, viewId, options),
+    registerTreeDataProvider: (viewId, provider) => host2.views.registerTreeDataProvider(ext, viewId, provider),
+    registerWebviewViewProvider: (viewId, provider, options) => host2.views.registerWebviewViewProvider(ext, viewId, provider, options),
+    createWebviewPanel: (viewType, title, showOptions, options) => host2.views.createWebviewPanel(ext, viewType, title, showOptions, options),
     registerUriHandler: () => noopDisposable(),
     registerFileDecorationProvider: () => noopDisposable(),
     registerTerminalLinkProvider: () => noopDisposable(),
@@ -3489,6 +3469,609 @@ function createApi(host2, ext) {
   return guard(host2, ext, "", api);
 }
 
+// packages/exthost/src/host/views.ts
+var isObj2 = (v) => !!v && typeof v === "object";
+function errorText(e) {
+  return String(e?.stack || e?.message || e);
+}
+var TreeViewImpl = class {
+  constructor(id, ext, provider, options, views) {
+    this.id = id;
+    this.ext = ext;
+    this.provider = provider;
+    this.options = options;
+    this.views = views;
+    if (typeof provider.onDidChangeTreeData === "function") {
+      this.#changeSub = provider.onDidChangeTreeData((e) => this.#onChange(e));
+    }
+    const self = this;
+    const meta = (key) => ({
+      get: () => self.#meta[key] ?? void 0,
+      set: (v) => {
+        if (key === "badge") self.#meta.badge = isObj2(v) && typeof v.value === "number" ? { value: v.value, tooltip: typeof v.tooltip === "string" ? v.tooltip : void 0 } : null;
+        else if (key === "message") self.#meta.message = MarkdownString.isMarkdownString(v) ? v.value : typeof v === "string" ? v : "";
+        else self.#meta[key] = typeof v === "string" ? v : void 0;
+        self.views.notifyTree("update", self.id, { [key]: self.#meta[key] ?? (key === "badge" ? null : "") });
+      },
+      enumerable: true
+    });
+    this.api = Object.defineProperties(
+      {
+        onDidExpandElement: this.onDidExpandElement.event,
+        onDidCollapseElement: this.onDidCollapseElement.event,
+        onDidChangeSelection: this.onDidChangeSelection.event,
+        onDidChangeVisibility: this.onDidChangeVisibility.event,
+        onDidChangeCheckboxState: this.onDidChangeCheckboxState.event,
+        reveal: (element, options2) => this.reveal(element, options2),
+        dispose: () => this.dispose()
+      },
+      {
+        visible: { get: () => this.#visible, enumerable: true },
+        selection: { get: () => [...this.#selection], enumerable: true },
+        activeItem: { get: () => this.#selection[0], enumerable: true },
+        title: meta("title"),
+        description: meta("description"),
+        message: meta("message"),
+        badge: meta("badge")
+      }
+    );
+  }
+  id;
+  ext;
+  provider;
+  options;
+  views;
+  #nodes = /* @__PURE__ */ new Map();
+  #byElement = /* @__PURE__ */ new Map();
+  #roots = null;
+  #visible = false;
+  #selection = [];
+  #meta = {};
+  #changeSub;
+  #pending = null;
+  #disposed = false;
+  onDidExpandElement = new EventEmitter();
+  onDidCollapseElement = new EventEmitter();
+  onDidChangeSelection = new EventEmitter();
+  onDidChangeVisibility = new EventEmitter();
+  onDidChangeCheckboxState = new EventEmitter();
+  api;
+  // ── changes ──
+  #onChange(e) {
+    if (this.#disposed) return;
+    if (e === void 0 || e === null) this.#pending = "all";
+    else if (this.#pending !== "all") {
+      this.#pending ??= /* @__PURE__ */ new Set();
+      for (const el of Array.isArray(e) ? e : [e]) this.#pending.add(el);
+    }
+    this.views.schedule(this);
+  }
+  /** Sends the batched onDidChangeTreeData events. */
+  async flush() {
+    const pending = this.#pending;
+    this.#pending = null;
+    if (!pending || this.#disposed) return;
+    if (pending === "all") {
+      this.views.notifyTree("refresh", this.id, null);
+      return;
+    }
+    const items = [];
+    for (const el of pending) {
+      const node = this.#byElement.get(el);
+      if (!node) continue;
+      try {
+        node.item = await this.#treeItem(el);
+        items.push(this.#dto(node));
+      } catch (err) {
+        this.views.host.log("warn", `${this.id}: getTreeItem failed: ${errorText(err)}`, this.ext.desc.id);
+      }
+    }
+    if (items.length) this.views.notifyTree("refresh", this.id, { items });
+  }
+  // ── children ──
+  async #treeItem(element) {
+    const item = await this.provider.getTreeItem(element);
+    if (!item || typeof item !== "object") throw new Error("getTreeItem returned no TreeItem");
+    return item;
+  }
+  #release(node) {
+    for (const c of node.children ?? []) this.#release(c);
+    node.children = null;
+    if (this.#nodes.get(node.handle) === node) this.#nodes.delete(node.handle);
+    if (this.#byElement.get(node.element) === node) this.#byElement.delete(node.element);
+  }
+  async children(parentHandle) {
+    const parent = parentHandle === null ? null : this.#nodes.get(parentHandle) ?? void 0;
+    if (parent === void 0) return [];
+    if (typeof this.provider.getChildren !== "function") return [];
+    const elements = await this.provider.getChildren(parent?.element) ?? [];
+    const list2 = Array.isArray(elements) ? elements : [];
+    const items = await Promise.all(list2.map((el) => this.#treeItem(el).catch((e) => (this.views.host.log("warn", `${this.id}: getTreeItem failed: ${errorText(e)}`, this.ext.desc.id), null))));
+    for (const old of (parent ? parent.children : this.#roots) ?? []) this.#release(old);
+    const nodes = [];
+    const seen = /* @__PURE__ */ new Set();
+    list2.forEach((element, i) => {
+      const item = items[i];
+      if (!item) return;
+      let handle = this.#handleFor(item, parent, i);
+      while (seen.has(handle)) handle += "'";
+      seen.add(handle);
+      const node = { handle, element, parent, item, children: null };
+      nodes.push(node);
+      this.#nodes.set(handle, node);
+      this.#byElement.set(element, node);
+    });
+    if (parent) parent.children = nodes;
+    else this.#roots = nodes;
+    return nodes.map((n) => this.#dto(n));
+  }
+  #handleFor(item, parent, index) {
+    if (typeof item.id === "string" && item.id) return `1/${item.id}`;
+    const label = labelOf(item) || item.resourceUri?.path || "";
+    return `0/${parent?.handle ?? ""}/${index}:${label}`;
+  }
+  #dto(node) {
+    const item = node.item;
+    const v = this.views;
+    const label = item.label;
+    const dto = { handle: node.handle, label: labelOf(item), collapsible: item.collapsibleState ?? 0 };
+    if (isObj2(label) && Array.isArray(label.highlights)) {
+      dto.highlights = label.highlights.filter((h) => Array.isArray(h) && h.length === 2).map(([a, b]) => [a, b]);
+    }
+    if (item.resourceUri && Uri.isUri(item.resourceUri)) {
+      const path3 = v.host.paths.toPath(item.resourceUri);
+      const name = item.resourceUri.path.split("/").filter(Boolean).pop() ?? "";
+      dto.resource = { path: path3, name, folder: item.iconPath === ThemeIcon.Folder || item.iconPath instanceof ThemeIcon && item.iconPath.id === "folder" || (item.collapsibleState ?? 0) > 0 };
+      if (!dto.label) dto.label = name;
+      if (item.description === true) dto.description = path3 !== null ? path3.split("/").slice(0, -1).join("/") : item.resourceUri.fsPath;
+    }
+    if (typeof item.description === "string") dto.description = item.description;
+    if (typeof item.tooltip === "string") dto.tooltip = item.tooltip;
+    else if (item.tooltip) dto.tooltip = markdown(item.tooltip);
+    else if (typeof this.provider.resolveTreeItem === "function") dto.resolvable = true;
+    const icon = v.icon(item.iconPath, this.ext);
+    if (icon && !(dto.resource && "codicon" in icon && (icon.codicon === "file" || icon.codicon === "folder"))) dto.icon = icon;
+    if (item.command && typeof item.command.command === "string") dto.command = { title: item.command.title ?? "", tooltip: item.command.tooltip };
+    if (typeof item.contextValue === "string") dto.contextValue = item.contextValue;
+    const cb = item.checkboxState;
+    if (cb !== void 0 && cb !== null) {
+      const state = typeof cb === "number" ? cb : isObj2(cb) ? Number(cb.state) : 0;
+      dto.checkbox = { checked: state === 1, tooltip: isObj2(cb) && typeof cb.tooltip === "string" ? cb.tooltip : void 0 };
+    }
+    return dto;
+  }
+  // ── workbench events ──
+  async resolve(handle) {
+    const node = this.#nodes.get(handle);
+    if (!node || typeof this.provider.resolveTreeItem !== "function") return null;
+    const src = new CancellationTokenSource();
+    const item = await this.provider.resolveTreeItem(node.item, node.element, src.token) ?? node.item;
+    node.item = item;
+    const tooltip = item.tooltip;
+    return { tooltip: typeof tooltip === "string" ? tooltip : tooltip ? markdown(tooltip) : void 0 };
+  }
+  setVisible(visible) {
+    if (this.#visible === visible) return;
+    this.#visible = visible;
+    this.onDidChangeVisibility.fire({ visible });
+  }
+  setSelection(handles) {
+    this.#selection = handles.map((h) => this.#nodes.get(h)?.element).filter((e) => e !== void 0);
+    this.onDidChangeSelection.fire({ selection: [...this.#selection] });
+  }
+  setExpanded(handle, expanded) {
+    const node = this.#nodes.get(handle);
+    if (!node) return;
+    node.item.collapsibleState = expanded ? 2 /* Expanded */ : 1 /* Collapsed */;
+    (expanded ? this.onDidExpandElement : this.onDidCollapseElement).fire({ element: node.element });
+  }
+  setCheckboxes(changes) {
+    const items = [];
+    for (const [h, checked] of changes) {
+      const node = this.#nodes.get(h);
+      if (!node) continue;
+      const state = checked ? 1 : 0;
+      if (!this.options.manageCheckboxStateManually) {
+        const cur = node.item.checkboxState;
+        node.item.checkboxState = isObj2(cur) ? { ...cur, state } : state;
+      }
+      items.push([node.element, state]);
+    }
+    if (items.length) this.onDidChangeCheckboxState.fire({ items });
+  }
+  /** The item's own command (clicked in the tree). */
+  command(handle) {
+    const cmd = this.#nodes.get(handle)?.item.command;
+    if (!cmd || typeof cmd.command !== "string") return;
+    return this.views.host.executeCommand(cmd.command, ...cmd.arguments ?? []);
+  }
+  /** A `view/item/context` menu command: VS Code passes the element, then the selection (multi-select). */
+  menuCommand(command2, handle, selected) {
+    const node = this.#nodes.get(handle);
+    const sel = selected.map((h) => this.#nodes.get(h)?.element).filter((e) => e !== void 0);
+    const args = node ? [node.element] : [];
+    if (node && this.options.canSelectMany && sel.length > 1) args.push(sel);
+    return this.views.host.executeCommand(command2, ...args);
+  }
+  async reveal(element, options = {}) {
+    if (typeof this.provider.getParent !== "function") throw new Error("Required registered TreeDataProvider to implement 'getParent' method to access 'reveal' method");
+    const chain = [element];
+    for (let p = await this.provider.getParent(element), depth = 0; p !== void 0 && p !== null && depth < 64; p = await this.provider.getParent(p), depth++) chain.unshift(p);
+    const items = {};
+    const path3 = [];
+    let parent = null;
+    for (const el of chain) {
+      let node = this.#byElement.get(el);
+      if (!node || (node.parent?.handle ?? null) !== parent) {
+        items[parent ?? ""] = await this.children(parent);
+        node = this.#byElement.get(el);
+        if (!node) {
+          const id = (await this.#treeItem(el)).id;
+          const siblings = parent === null ? this.#roots : this.#nodes.get(parent)?.children ?? null;
+          node = id ? siblings?.find((n) => n.item.id === id) : void 0;
+        }
+      }
+      if (!node) throw new Error(`Cannot reveal the element: it is not in the tree of '${this.id}'.`);
+      path3.push(node.handle);
+      parent = node.handle;
+    }
+    const levels = options.expand === true ? 1 : typeof options.expand === "number" ? Math.min(3, options.expand) : 0;
+    const expandLevel = async (handles, left) => {
+      if (left <= 0) return;
+      for (const h of handles) {
+        const node = this.#nodes.get(h);
+        if (!node || !node.item.collapsibleState) continue;
+        items[h] = await this.children(h);
+        await expandLevel(items[h].map((i) => i.handle), left - 1);
+      }
+    };
+    await expandLevel([path3[path3.length - 1]], levels);
+    this.views.notifyTree("reveal", this.id, { path: path3, items, select: options.select !== false, focus: !!options.focus, expand: levels });
+  }
+  dispose() {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#changeSub?.dispose();
+    this.views.removeTree(this);
+  }
+};
+function labelOf(item) {
+  const l = item.label;
+  if (typeof l === "string") return l;
+  if (isObj2(l) && typeof l.label === "string") return l.label;
+  return "";
+}
+var WebviewImpl = class {
+  constructor(handle, ext, options, views) {
+    this.handle = handle;
+    this.ext = ext;
+    this.views = views;
+    this.#options = { ...options ?? {} };
+    this.api = Object.defineProperties(
+      {
+        onDidReceiveMessage: this.onDidReceiveMessage.event,
+        postMessage: (message) => this.postMessage(message),
+        asWebviewUri: (uri) => this.views.asWebviewUri(this.handle, uri)
+      },
+      {
+        html: {
+          get: () => this.#html,
+          set: (v) => {
+            this.#html = String(v ?? "");
+            if (!this.disposed) this.views.rpc.notify("$main.webview", ["html", this.handle, this.#html]);
+          },
+          enumerable: true
+        },
+        options: {
+          get: () => ({ ...this.#options }),
+          set: (v) => {
+            this.#options = { ...isObj2(v) ? v : {} };
+            if (!this.disposed) this.views.rpc.notify("$main.webview", ["options", this.handle, this.optionsDTO()]);
+          },
+          enumerable: true
+        },
+        cspSource: { get: () => this.views.cspSource, enumerable: true }
+      }
+    );
+  }
+  handle;
+  ext;
+  views;
+  #html = "";
+  #options;
+  onDidReceiveMessage = new EventEmitter();
+  api;
+  disposed = false;
+  /** retainContextWhenHidden (panel options / webview view registration). */
+  retain = false;
+  optionsDTO() {
+    const o = this.#options;
+    const roots = Array.isArray(o.localResourceRoots) ? o.localResourceRoots.filter((u) => Uri.isUri(u)) : this.views.defaultRoots(this.ext);
+    return {
+      enableScripts: !!o.enableScripts,
+      enableForms: o.enableForms === void 0 ? !!o.enableScripts : !!o.enableForms,
+      enableCommandUris: Array.isArray(o.enableCommandUris) ? o.enableCommandUris : !!o.enableCommandUris,
+      localResourceRoots: roots.map((u) => u.scheme === "file" && this.views.host.env.kind === "node" ? u.fsPath : u.toString()),
+      retainContextWhenHidden: this.retain
+    };
+  }
+  async postMessage(message) {
+    if (this.disposed) return false;
+    return !!await this.views.rpc.request("$main.webviewPost", [this.handle, message]).catch(() => false);
+  }
+};
+var ViewsHost = class {
+  constructor(host2) {
+    this.host = host2;
+    const r = host2.rpc;
+    const tree = (id) => {
+      const t = this.#trees.get(String(id));
+      if (!t) throw new Error(`No tree view '${id}' is registered.`);
+      return t;
+    };
+    r.register("$treeChildren", ([id, handle]) => tree(id).children(handle ?? null));
+    r.register("$treeResolve", ([id, handle]) => tree(id).resolve(String(handle)));
+    r.register("$treeVisible", ([id, visible]) => this.#trees.get(String(id))?.setVisible(!!visible));
+    r.register("$treeSelection", ([id, handles]) => this.#trees.get(String(id))?.setSelection(handles ?? []));
+    r.register("$treeExpanded", ([id, handle, expanded]) => this.#trees.get(String(id))?.setExpanded(String(handle), !!expanded));
+    r.register("$treeCheckbox", ([id, changes]) => this.#trees.get(String(id))?.setCheckboxes(changes ?? []));
+    r.register("$treeCommand", ([id, handle]) => tree(id).command(String(handle)));
+    r.register("$treeMenuCommand", ([id, command2, handle, selected]) => tree(id).menuCommand(String(command2), String(handle), selected ?? []));
+    r.register("$webviewMessage", ([handle, message]) => this.#webviews.get(String(handle))?.onDidReceiveMessage.fire(message));
+    r.register("$resolveWebviewView", ([viewId]) => this.#resolveView(String(viewId)));
+    r.register("$webviewViewVisible", ([handle, visible]) => {
+      const v = this.#webviewViews.get(String(handle));
+      if (!v || v.visible === !!visible) return;
+      v.visible = !!visible;
+      v.onDidChangeVisibility.fire();
+    });
+    r.register("$webviewViewDisposed", ([handle]) => this.#disposeView(String(handle)));
+    r.register("$webviewPanelState", ([handle, state]) => {
+      const p = this.#panels.get(String(handle));
+      if (!p || p.disposed) return;
+      const s = state;
+      if (s.active === p.state.active && s.visible === p.state.visible && s.viewColumn === p.state.viewColumn) return;
+      p.state = { ...s };
+      p.onDidChangeViewState.fire({ webviewPanel: p.api });
+    });
+    r.register("$webviewPanelDisposed", ([handle]) => this.#disposePanel(String(handle), false));
+  }
+  host;
+  #trees = /* @__PURE__ */ new Map();
+  #webviews = /* @__PURE__ */ new Map();
+  #panels = /* @__PURE__ */ new Map();
+  #webviewViews = /* @__PURE__ */ new Map();
+  #viewProviders = /* @__PURE__ */ new Map();
+  #seq = 0;
+  #dirty = /* @__PURE__ */ new Set();
+  #flushTimer = null;
+  get rpc() {
+    return this.host.rpc;
+  }
+  get cspSource() {
+    const env2 = this.host.data?.env;
+    return env2?.webviewCspSource ?? env2?.webviewBase ?? "tmwebview:";
+  }
+  notifyTree(op, viewId, data) {
+    this.rpc.notify("$main.treeView", [op, viewId, data]);
+  }
+  schedule(tree) {
+    this.#dirty.add(tree);
+    this.#flushTimer ??= setTimeout(() => {
+      this.#flushTimer = null;
+      const list2 = [...this.#dirty];
+      this.#dirty.clear();
+      for (const t of list2) void t.flush();
+    }, 0);
+  }
+  // ── tree views ──
+  createTreeView(ext, viewId, options) {
+    const provider = options?.treeDataProvider;
+    if (!provider || typeof provider !== "object") throw new Error("Options with treeDataProvider is mandatory");
+    const id = String(viewId);
+    this.#trees.get(id)?.dispose();
+    const opts = { extensionId: ext.desc.id, canSelectMany: !!options.canSelectMany, showCollapseAll: !!options.showCollapseAll, manageCheckboxStateManually: !!options.manageCheckboxStateManually };
+    const t = new TreeViewImpl(id, ext, provider, opts, this);
+    this.#trees.set(id, t);
+    this.notifyTree("register", id, opts);
+    return t.api;
+  }
+  registerTreeDataProvider(ext, viewId, provider) {
+    const view = this.createTreeView(ext, viewId, { treeDataProvider: provider });
+    return new Disposable(() => view.dispose());
+  }
+  removeTree(t) {
+    if (this.#trees.get(t.id) !== t) return;
+    this.#trees.delete(t.id);
+    this.notifyTree("dispose", t.id, null);
+  }
+  // ── icons & resources ──
+  /** A resource the workbench can load: an extension's file, a workspace file, or a data:/https: URL. */
+  resourceRef(uri, ext) {
+    if (typeof uri === "string") {
+      if (/^(data|https):/.test(uri)) return { url: uri };
+      const abs = uri.startsWith("/") || /^[A-Za-z]:[\\/]/.test(uri) ? Uri.file(uri) : null;
+      return abs ? this.resourceRef(abs, ext) : { ext: ext.desc.id, path: uri.replace(/^\.\//, "") };
+    }
+    if (!Uri.isUri(uri)) return void 0;
+    if (uri.scheme === "data" || uri.scheme === "https") return { url: uri.toString(true) };
+    if (uri.scheme === "tmcode-extension") {
+      const [, id, ...rest] = uri.path.split("/");
+      return id ? { ext: id, path: rest.join("/") } : void 0;
+    }
+    if (uri.scheme !== "file") return void 0;
+    const ws = this.host.paths.toPath(uri);
+    if (ws !== null) return { ws };
+    const p = uri.fsPath;
+    for (const e of [ext, ...this.host.exts.values()]) {
+      for (const loc of /* @__PURE__ */ new Set([e.desc.location, this.host.env.realPath?.(e.desc.location) ?? e.desc.location])) {
+        const base = loc.replace(/[\\/]+$/, "");
+        if (p.startsWith(base + "/") || p.startsWith(base + "\\")) return { ext: e.desc.id, path: p.slice(base.length + 1).replace(/\\/g, "/") };
+      }
+    }
+    return void 0;
+  }
+  icon(iconPath, ext) {
+    if (!iconPath) return void 0;
+    if (iconPath instanceof ThemeIcon || isObj2(iconPath) && typeof iconPath.id === "string" && !Uri.isUri(iconPath) && !("light" in iconPath)) {
+      const ti = iconPath;
+      return { codicon: ti.id, color: ti.color && typeof ti.color.id === "string" ? ti.color.id : void 0 };
+    }
+    if (isObj2(iconPath) && "light" in iconPath && "dark" in iconPath) {
+      const light = this.resourceRef(iconPath.light, ext);
+      const dark = this.resourceRef(iconPath.dark, ext);
+      return light && dark ? { light, dark } : light ? { light, dark: light } : dark ? { light: dark, dark } : void 0;
+    }
+    const ref = this.resourceRef(iconPath, ext);
+    return ref ? { light: ref, dark: ref } : void 0;
+  }
+  // ── webviews ──
+  defaultRoots(ext) {
+    const roots = [this.host.env.kind === "node" ? Uri.file(ext.desc.location) : Uri.from({ scheme: "tmcode-extension", path: `/${ext.desc.id}` })];
+    if (this.host.folder) roots.push(this.host.folder);
+    return roots;
+  }
+  /** `webview.asWebviewUri`: `<base>/<handle>/file/<absolute path>` (served by the app from localResourceRoots). */
+  asWebviewUri(handle, uri) {
+    if (!Uri.isUri(uri)) return uri;
+    const base = Uri.parse(this.host.data?.env.webviewBase ?? "tmwebview://localhost");
+    let path3;
+    if (uri.scheme === "file") path3 = `/${handle}/file/${uri.path.replace(/^\/+/, "")}`;
+    else if (uri.scheme === "tmcode-extension") path3 = `/${handle}/ext${uri.path}`;
+    else return uri;
+    return Uri.from({ scheme: base.scheme, authority: base.authority, path: path3, query: uri.query, fragment: uri.fragment });
+  }
+  #newWebview(ext, options) {
+    const handle = `wv${++this.#seq}`;
+    const w = new WebviewImpl(handle, ext, options, this);
+    this.#webviews.set(handle, w);
+    return w;
+  }
+  createWebviewPanel(ext, viewType, title, showOptions, options) {
+    const w = this.#newWebview(ext, options);
+    w.retain = !!options?.retainContextWhenHidden;
+    const handle = w.handle;
+    const column = typeof showOptions === "number" ? showOptions : isObj2(showOptions) && typeof showOptions.viewColumn === "number" ? showOptions.viewColumn : -1 /* Active */;
+    const preserveFocus = isObj2(showOptions) ? !!showOptions.preserveFocus : false;
+    const onDidDispose = new EventEmitter();
+    const onDidChangeViewState = new EventEmitter();
+    let panelTitle = String(title ?? "");
+    let iconPath;
+    const panel = { webview: w, api: {}, onDidDispose, onDidChangeViewState, state: { active: !preserveFocus, visible: true, viewColumn: column > 0 ? column : 1 }, disposed: false };
+    panel.api = Object.defineProperties(
+      {
+        viewType: String(viewType),
+        webview: w.api,
+        options: Object.freeze({ enableFindWidget: !!options?.enableFindWidget, retainContextWhenHidden: !!options?.retainContextWhenHidden }),
+        onDidDispose: onDidDispose.event,
+        onDidChangeViewState: onDidChangeViewState.event,
+        reveal: (viewColumn, preserve) => {
+          if (panel.disposed) throw new Error("Webview is disposed");
+          this.rpc.notify("$main.webview", ["reveal", handle, { viewColumn, preserveFocus: !!preserve }]);
+        },
+        dispose: () => this.#disposePanel(handle, true)
+      },
+      {
+        title: {
+          get: () => panelTitle,
+          set: (v) => {
+            panelTitle = String(v ?? "");
+            if (!panel.disposed) this.rpc.notify("$main.webview", ["title", handle, panelTitle]);
+          },
+          enumerable: true
+        },
+        iconPath: {
+          get: () => iconPath,
+          set: (v) => {
+            iconPath = v;
+            if (!panel.disposed) this.rpc.notify("$main.webview", ["icon", handle, this.icon(v, ext) ?? null]);
+          },
+          enumerable: true
+        },
+        active: { get: () => panel.state.active, enumerable: true },
+        visible: { get: () => panel.state.visible, enumerable: true },
+        viewColumn: { get: () => panel.state.viewColumn, enumerable: true }
+      }
+    );
+    this.#panels.set(handle, panel);
+    const dto = { kind: "panel", extensionId: ext.desc.id, viewType: String(viewType), title: panelTitle, options: w.optionsDTO(), viewColumn: column, preserveFocus };
+    this.rpc.notify("$main.webview", ["create", handle, dto]);
+    return panel.api;
+  }
+  #disposePanel(handle, fromExtension) {
+    const p = this.#panels.get(handle);
+    if (!p || p.disposed) return;
+    p.disposed = true;
+    p.webview.disposed = true;
+    this.#panels.delete(handle);
+    this.#webviews.delete(handle);
+    if (fromExtension) this.rpc.notify("$main.webview", ["dispose", handle, null]);
+    p.onDidDispose.fire();
+  }
+  registerWebviewViewProvider(ext, viewId, provider, options) {
+    const id = String(viewId);
+    if (!provider || typeof provider.resolveWebviewView !== "function") throw new Error("A WebviewViewProvider must implement resolveWebviewView");
+    if (this.#viewProviders.has(id)) throw new Error(`View provider for '${id}' already registered`);
+    const retain = !!options?.webviewOptions?.retainContextWhenHidden;
+    this.#viewProviders.set(id, { ext, provider, retain });
+    this.rpc.notify("$main.webviewView", ["register", id, { extensionId: ext.desc.id, retainContextWhenHidden: retain }]);
+    return new Disposable(() => {
+      this.#viewProviders.delete(id);
+      for (const [h, v] of this.#webviewViews) if (v.viewId === id) this.#disposeView(h);
+      this.rpc.notify("$main.webviewView", ["dispose", id, null]);
+    });
+  }
+  async #resolveView(viewId) {
+    const reg = this.#viewProviders.get(viewId);
+    if (!reg) return null;
+    const w = this.#newWebview(reg.ext, {});
+    w.retain = reg.retain;
+    const handle = w.handle;
+    const onDidDispose = new EventEmitter();
+    const onDidChangeVisibility = new EventEmitter();
+    const state = { webview: w, viewId, onDidDispose, onDidChangeVisibility, visible: true };
+    this.#webviewViews.set(handle, state);
+    const meta = {};
+    const metaProp = (key) => ({
+      get: () => meta[key],
+      set: (v) => {
+        if (key === "badge") meta.badge = isObj2(v) && typeof v.value === "number" ? { value: v.value, tooltip: typeof v.tooltip === "string" ? v.tooltip : void 0 } : null;
+        else meta[key] = typeof v === "string" ? v : void 0;
+        this.rpc.notify("$main.webview", ["viewMeta", handle, { [key]: meta[key] ?? (key === "badge" ? null : "") }]);
+      },
+      enumerable: true
+    });
+    const view = Object.defineProperties(
+      {
+        viewType: viewId,
+        webview: w.api,
+        onDidDispose: onDidDispose.event,
+        onDidChangeVisibility: onDidChangeVisibility.event,
+        show: (preserveFocus) => this.rpc.notify("$main.webview", ["show", handle, { preserveFocus: !!preserveFocus }])
+      },
+      { title: metaProp("title"), description: metaProp("description"), badge: metaProp("badge"), visible: { get: () => state.visible, enumerable: true } }
+    );
+    const dto = { kind: "view", extensionId: reg.ext.desc.id, viewType: viewId, options: w.optionsDTO() };
+    this.rpc.notify("$main.webview", ["create", handle, dto]);
+    const src = new CancellationTokenSource();
+    try {
+      await reg.provider.resolveWebviewView(view, { state: void 0 }, src.token);
+    } catch (e) {
+      this.host.log("error", `Resolving the webview view '${viewId}' failed: ${errorText(e)}`, reg.ext.desc.id);
+      throw e;
+    }
+    return handle;
+  }
+  #disposeView(handle) {
+    const v = this.#webviewViews.get(handle);
+    if (!v) return;
+    this.#webviewViews.delete(handle);
+    this.#webviews.delete(handle);
+    v.webview.disposed = true;
+    v.onDidDispose.fire();
+  }
+};
+
 // packages/exthost/src/host/extHost.ts
 var API_VERSION = "1.96.0";
 var NotSupportedError = class extends Error {
@@ -3497,11 +4080,11 @@ var NotSupportedError = class extends Error {
     this.name = "NotSupportedError";
   }
 };
-function errorText(e) {
+function errorText2(e) {
   const err = e;
   return err?.stack || String(err?.message ?? e);
 }
-var isObj2 = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+var isObj3 = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 var OutputChannelImpl = class {
   constructor(name, id, rpc, log) {
     this.name = name;
@@ -3546,7 +4129,7 @@ var OutputChannelImpl = class {
   }
   // LogOutputChannel
   #line(level, message, args) {
-    const text = [message instanceof Error ? errorText(message) : String(message), ...args.map((a) => a instanceof Error ? errorText(a) : typeof a === "string" ? a : safeJson(a))].join(" ");
+    const text = [message instanceof Error ? errorText2(message) : String(message), ...args.map((a) => a instanceof Error ? errorText2(a) : typeof a === "string" ? a : safeJson(a))].join(" ");
     const ts = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
     this.appendLine(`${ts} [${level}] ${text}`);
   }
@@ -3737,13 +4320,16 @@ var ExtHost = class {
   onDidDeleteFiles = new EventEmitter();
   onDidRenameFiles = new EventEmitter();
   windowFocused = true;
+  /** Tree views and webviews (host/views.ts). */
+  views;
   constructor(send2, env2) {
     this.env = env2;
     setUriPlatform(env2.isWindows);
     this.rpc = new RpcConnection(send2);
-    EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText(e)}`);
+    EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText2(e)}`);
     env2.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();
+    this.views = new ViewsHost(this);
   }
   /** Host-level diagnostics: the "Extension Host" Output channel. */
   log(level, text, extensionId) {
@@ -3865,8 +4451,8 @@ var ExtHost = class {
   }
   #reviveArgs(args) {
     return (args ?? []).map((a) => {
-      if (isObj2(a) && typeof a.$path === "string") return this.paths.toUri(a.$path);
-      if (isObj2(a) && typeof a.$uri === "string") return Uri.parse(a.$uri);
+      if (isObj3(a) && typeof a.$path === "string") return this.paths.toUri(a.$path);
+      if (isObj3(a) && typeof a.$uri === "string") return Uri.parse(a.$uri);
       return a;
     });
   }
@@ -3880,7 +4466,7 @@ var ExtHost = class {
       if (Range.isRange(a)) return { $range: range.from(a) };
       if (Position.isPosition(a)) return { $position: position.from(a) };
       if (Array.isArray(a)) return depth > 4 ? void 0 : a.map((x) => conv(x, depth + 1));
-      if (isObj2(a)) {
+      if (isObj3(a)) {
         if (depth > 4) return void 0;
         const out = {};
         for (const [k, v] of Object.entries(a)) if (typeof v !== "function") out[k] = conv(v, depth + 1);
@@ -3915,7 +4501,7 @@ var ExtHost = class {
     for (const e of extensions) {
       for (const p of configurationProperties(e.manifest.contributes, e.displayName)) if (!(p.key in out)) out[p.key] = p.default;
       for (const [k, v] of Object.entries(configurationDefaults(e.manifest.contributes))) {
-        out[k] = k.startsWith("[") && isObj2(out[k]) && isObj2(v) ? { ...out[k], ...v } : v;
+        out[k] = k.startsWith("[") && isObj3(out[k]) && isObj3(v) ? { ...out[k], ...v } : v;
       }
     }
     return out;
@@ -3966,7 +4552,7 @@ var ExtHost = class {
         this.log("info", `Activated ${ext.desc.id} in ${time}ms (${reason})`, ext.desc.id);
         this.onDidChangeExtensions.fire();
       } catch (e) {
-        const msg = errorText(e);
+        const msg = errorText2(e);
         this.#setState(ext, { state: "failed", reason, activationTime: Date.now() - started, error: String(e?.message ?? e) });
         this.log("error", `Activating extension '${ext.desc.id}' failed: ${msg}`, ext.desc.id);
         this.#extLog(ext, "error", `Activating ${ext.desc.displayName} failed: ${msg}`);
@@ -3980,7 +4566,7 @@ var ExtHost = class {
         try {
           await Promise.race([e.module?.deactivate?.(), new Promise((r) => setTimeout(r, 3e3))]);
         } catch (err) {
-          this.log("warn", `${e.desc.id}: deactivate() threw: ${errorText(err)}`);
+          this.log("warn", `${e.desc.id}: deactivate() threw: ${errorText2(err)}`);
         }
         for (const d of e.context?.subscriptions ?? []) {
           try {
@@ -4096,7 +4682,7 @@ var ExtHost = class {
       try {
         return await local.fn.apply(local.thisArg, args);
       } catch (e) {
-        if (local.ext) this.#extLog(local.ext, "error", `Command '${id}' failed: ${errorText(e)}`);
+        if (local.ext) this.#extLog(local.ext, "error", `Command '${id}' failed: ${errorText2(e)}`);
         throw e;
       }
     }
@@ -4135,7 +4721,7 @@ var ExtHost = class {
         return await fn.apply(p.provider, [...a, token]);
       } catch (e) {
         if (e?.name === "Canceled") return void 0;
-        this.#extLog(p.ext, "error", `${name} failed: ${errorText(e)}`);
+        this.#extLog(p.ext, "error", `${name} failed: ${errorText2(e)}`);
         throw e;
       }
     };
@@ -4436,7 +5022,7 @@ var ExtHost = class {
     return out;
   }
   async openTextDocument(arg) {
-    if (arg === void 0 || isObj2(arg) && !Uri.isUri(arg)) {
+    if (arg === void 0 || isObj3(arg) && !Uri.isUri(arg)) {
       const opts = arg ?? {};
       const uri2 = Uri.from({ scheme: "untitled", path: `Untitled-${++this.#untitledSeq}` });
       const d2 = new DocumentData(uri2, opts.content ?? "", opts.language ?? "plaintext", 1, async () => false);
@@ -4568,7 +5154,7 @@ var ExtHost = class {
   async showMessage(severity, message, rest) {
     let options = {};
     let items = rest;
-    if (rest.length && isObj2(rest[0]) && !("title" in rest[0])) {
+    if (rest.length && isObj3(rest[0]) && !("title" in rest[0])) {
       options = rest[0];
       items = rest.slice(1);
     }
@@ -4614,7 +5200,7 @@ var ExtHost = class {
     }
   }
   createOutputChannel(ext, name, options) {
-    const log = isObj2(options) && !!options.log;
+    const log = isObj3(options) && !!options.log;
     const ch = new OutputChannelImpl(String(name), `${ext.desc.id}#${++this.#outputSeq}`, this.rpc, log);
     if (!ext.logChannel) ext.logChannel = ch;
     return ch;
@@ -4648,7 +5234,7 @@ var ExtHost = class {
         name: state.name ?? ext.desc.displayName,
         text: (state.busy ? "$(loading~spin) " : "") + String(state.text ?? ""),
         tooltip: typeof state.tooltip === "string" ? state.tooltip : MarkdownString.isMarkdownString(state.tooltip) ? state.tooltip.value : state.detail || void 0,
-        command: typeof cmd === "string" ? command({ command: cmd, title: "" }, cmdCache) : isObj2(cmd) ? command(cmd, cmdCache) : void 0,
+        command: typeof cmd === "string" ? command({ command: cmd, title: "" }, cmdCache) : isObj3(cmd) ? command(cmd, cmdCache) : void 0,
         color: state.color instanceof ThemeColor ? `var(--tm-theme-${state.color.id})` : state.color,
         backgroundColor: state.backgroundColor instanceof ThemeColor ? state.backgroundColor.id : void 0,
         alignment: alignment === 2 /* Right */ ? 2 : 1,
@@ -4879,6 +5465,19 @@ function ownerOf(file, locations2) {
   const sep3 = path2.sep;
   return locations2.sort((a, b) => b.location.length - a.location.length).find((l) => file === l.location || file.startsWith(l.location.endsWith(sep3) ? l.location : l.location + sep3))?.id;
 }
+var realPaths = /* @__PURE__ */ new Map();
+function realPath(p) {
+  let r = realPaths.get(p);
+  if (r === void 0) {
+    try {
+      r = (0, import_node_fs2.realpathSync)(p);
+    } catch {
+      r = path2.resolve(p);
+    }
+    realPaths.set(p, r);
+  }
+  return r;
+}
 var IDENT = /^[A-Za-z_$][\w$]*$/;
 function restoreRemovedNodeApis() {
   const buffer = require("node:buffer");
@@ -4940,7 +5539,9 @@ var env = {
   kind: "node",
   isWindows: process.platform === "win32",
   createFs: (host2) => new NodeFs(host2),
-  createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].map((e) => ({ id: e.desc.id, location: path2.resolve(e.desc.location) }))),
+  realPath,
+  // Module files have real paths: an extension folder reached through a symlink (/var → /private/var) is matched by both.
+  createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].flatMap((e) => [{ id: e.desc.id, location: path2.resolve(e.desc.location) }, { id: e.desc.id, location: realPath(e.desc.location) }])),
   onConsole(write) {
     consoleSink = write;
   }

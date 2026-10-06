@@ -267,32 +267,10 @@ export function createApi(host: ExtHost, ext: ExtState) {
       return ed;
     },
     showNotebookDocument: () => host.notSupported(ext, "window.showNotebookDocument"),
-    createTreeView: (viewId: string) => {
-      host.notSupported(ext, `window.createTreeView (${viewId})`, "warn");
-      return {
-        visible: false,
-        selection: [],
-        message: undefined,
-        title: undefined,
-        description: undefined,
-        badge: undefined,
-        onDidExpandElement: new EventEmitter<unknown>().event,
-        onDidCollapseElement: new EventEmitter<unknown>().event,
-        onDidChangeSelection: new EventEmitter<unknown>().event,
-        onDidChangeVisibility: new EventEmitter<unknown>().event,
-        onDidChangeCheckboxState: new EventEmitter<unknown>().event,
-        reveal: async () => {},
-        dispose: () => {},
-      };
-    },
-    registerTreeDataProvider: (viewId: string) => {
-      host.notSupported(ext, `window.registerTreeDataProvider (${viewId})`, "warn");
-      return noopDisposable();
-    },
-    registerWebviewViewProvider: (viewId: string) => {
-      host.notSupported(ext, `window.registerWebviewViewProvider (${viewId})`, "warn");
-      return noopDisposable();
-    },
+    createTreeView: (viewId: string, options: Record<string, unknown>) => host.views.createTreeView(ext, viewId, options),
+    registerTreeDataProvider: (viewId: string, provider: unknown) => host.views.registerTreeDataProvider(ext, viewId, provider),
+    registerWebviewViewProvider: (viewId: string, provider: unknown, options?: { webviewOptions?: { retainContextWhenHidden?: boolean } }) => host.views.registerWebviewViewProvider(ext, viewId, provider, options),
+    createWebviewPanel: (viewType: string, title: string, showOptions: unknown, options?: Record<string, unknown>) => host.views.createWebviewPanel(ext, viewType, title, showOptions, options),
     registerUriHandler: () => noopDisposable(),
     registerFileDecorationProvider: () => noopDisposable(),
     registerTerminalLinkProvider: () => noopDisposable(),

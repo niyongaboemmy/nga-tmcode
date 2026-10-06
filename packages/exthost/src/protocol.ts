@@ -79,6 +79,10 @@ export interface InitData {
     /** Workspace storage key (a hash of the folder path). */
     workspaceKey?: string;
     os: "mac" | "windows" | "linux";
+    /** Origin of webview pages and resources ("tmwebview://localhost"); `asWebviewUri` builds on it. */
+    webviewBase?: string;
+    /** `webview.cspSource`. */
+    webviewCspSource?: string;
   };
   documents: DocumentDTO[];
   editors: EditorDTO[];
@@ -321,4 +325,75 @@ export interface FileStatDTO {
   ctime: number;
   mtime: number;
   size: number;
+}
+
+// ───────────── views (contributes.views): tree views and webviews ─────────────
+
+/** An icon: a codicon (ThemeIcon), or images per theme kind (resource references, see ResourceRefDTO). */
+export type IconDTO = { codicon: string; color?: string } | { light: ResourceRefDTO; dark: ResourceRefDTO };
+
+/** An image the workbench loads: a file of an extension, a workspace file, or a data:/https: URL. */
+export type ResourceRefDTO = { ext: string; path: string } | { ws: string } | { url: string };
+
+export interface TreeItemDTO {
+  /** Stable while the element lives ("1/<id>" for items with an id, else parent/index:label). */
+  handle: string;
+  label: string;
+  /** TreeItemLabel.highlights: [start, end) offsets into `label`. */
+  highlights?: [number, number][];
+  description?: string;
+  tooltip?: string | MarkdownDTO;
+  icon?: IconDTO;
+  /** resourceUri: drives the file icon (icon theme) and the default label/description. */
+  resource?: { path: string | null; name: string; folder: boolean };
+  /** 0 none, 1 collapsed, 2 expanded. */
+  collapsible: 0 | 1 | 2;
+  /** The item has a command (run with $treeCommand). */
+  command?: { title: string; tooltip?: string };
+  contextValue?: string;
+  checkbox?: { checked: boolean; tooltip?: string };
+  /** The provider implements resolveTreeItem (tooltip on hover). */
+  resolvable?: boolean;
+}
+
+export interface TreeViewOptionsDTO {
+  extensionId: string;
+  canSelectMany: boolean;
+  showCollapseAll: boolean;
+  manageCheckboxStateManually: boolean;
+}
+
+export interface ViewBadgeDTO {
+  value: number;
+  tooltip?: string;
+}
+
+/** title / description / message / badge of a TreeView or WebviewView (undefined keeps the contributed one). */
+export interface ViewMetaDTO {
+  title?: string;
+  description?: string;
+  message?: string;
+  badge?: ViewBadgeDTO | null;
+}
+
+export interface WebviewOptionsDTO {
+  enableScripts: boolean;
+  enableForms: boolean;
+  enableCommandUris: boolean | string[];
+  /** Absolute folders (Node host) or URIs (Web Worker host) asWebviewUri may serve. */
+  localResourceRoots: string[];
+  retainContextWhenHidden: boolean;
+}
+
+export interface WebviewCreateDTO {
+  kind: "panel" | "view";
+  extensionId: string;
+  /** Panel: its viewType; view: the contributed view id. */
+  viewType: string;
+  title?: string;
+  options: WebviewOptionsDTO;
+  /** Panel: ViewColumn (-2 Beside, -1 Active, 1…). */
+  viewColumn?: number;
+  preserveFocus?: boolean;
+  iconPath?: IconDTO;
 }

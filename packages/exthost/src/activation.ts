@@ -1,9 +1,10 @@
 /**
  * Activation events (https://code.visualstudio.com/api/references/activation-events).
  * TMCode supports `*`, `onStartupFinished`, `onLanguage:<id>` (and bare
- * `onLanguage`), `onCommand:<id>` and `workspaceContains:<glob>`, plus the
- * implicit events VS Code 1.74+ derives from contributions (every contributed
- * command and language). Other events (onView, onDebug, onUri…) never fire.
+ * `onLanguage`), `onCommand:<id>`, `workspaceContains:<glob>` and
+ * `onView:<id>`, plus the implicit events VS Code 1.74+ derives from
+ * contributions (every contributed command, language and view). Other events
+ * (onDebug, onUri, onWebviewPanel…) never fire.
  */
 
 export interface ManifestLike {
@@ -13,17 +14,18 @@ export interface ManifestLike {
   browser?: unknown;
 }
 
-export const SUPPORTED_EVENTS = ["*", "onStartupFinished", "onLanguage", "onCommand", "workspaceContains"] as const;
+export const SUPPORTED_EVENTS = ["*", "onStartupFinished", "onLanguage", "onCommand", "workspaceContains", "onView"] as const;
 
 const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : []);
 
-/** Explicit events plus the implicit ones of contributed commands and languages. */
+/** Explicit events plus the implicit ones of contributed commands, languages and views. */
 export function activationEventsOf(manifest: ManifestLike): string[] {
   const out = new Set<string>();
   if (Array.isArray(manifest.activationEvents)) for (const e of manifest.activationEvents) if (typeof e === "string" && e) out.add(e);
   const c = manifest.contributes ?? {};
   for (const cmd of list(c.commands)) if (typeof cmd.command === "string") out.add(`onCommand:${cmd.command}`);
   for (const lang of list(c.languages)) if (typeof lang.id === "string") out.add(`onLanguage:${lang.id}`);
+  if (c.views && typeof c.views === "object") for (const views of Object.values(c.views)) for (const v of list(views)) if (typeof v.id === "string") out.add(`onView:${v.id}`);
   return [...out];
 }
 

@@ -44,6 +44,10 @@ export class FakeWorkbench {
     this.states = new Map();
     this.statusBar = new Map();
     this.logs = [];
+    /** $main.treeView / $main.webview / $main.webviewView notifications, in order: [method, op, id, data]. */
+    this.ui = [];
+    /** Messages extensions posted to webviews ($main.webviewPost). */
+    this.posted = [];
     this.seq = 0;
     this.pending = new Map();
     this.buf = Buffer.alloc(0);
@@ -59,7 +63,7 @@ export class FakeWorkbench {
         workspace: root ? { name: "ws", root } : null,
         configuration: { defaults: { "editor.tabSize": 4, "editor.insertSpaces": true, "files.exclude": { "**/.git": true }, "search.exclude": { "**/node_modules": true } }, user: configuration },
         state: { global: {}, workspace: {} },
-        env: { appName: "TMCode", appRoot: "", appHost: "desktop", language: "en", machineId: "m", sessionId: "s", uiKind: 1, shell: "/bin/sh", version: "0.0.0", storagePath: mkdtempSync(resolve(tmpdir(), "tmcode-exthost-storage-")), workspaceKey: "ws", os: process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux" },
+        env: { appName: "TMCode", appRoot: "", appHost: "desktop", language: "en", machineId: "m", sessionId: "s", uiKind: 1, shell: "/bin/sh", version: "0.0.0", storagePath: mkdtempSync(resolve(tmpdir(), "tmcode-exthost-storage-")), workspaceKey: "ws", webviewBase: "tmwebview://localhost", webviewCspSource: "tmwebview://localhost tmwebview:", os: process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux" },
         documents: [...this.docs].map(([path, d]) => ({ path, languageId: d.languageId, version: 1, text: d.text, eol: "\n", isDirty: false })),
         editors: [...this.docs.keys()].slice(0, 1).map((path) => ({ id: "g0", path, selections: [{ anchor: [0, 0], active: [0, 0] }], visibleRanges: [[0, 0, 10, 0]], options: { tabSize: 4, insertSpaces: true }, viewColumn: 1 })),
         activeEditor: this.docs.size ? "g0" : null,
@@ -184,6 +188,14 @@ export class FakeWorkbench {
       case "$main.log":
         this.logs.push(`[${params[0]}] ${params[2]}`);
         return;
+      case "$main.treeView":
+      case "$main.webview":
+      case "$main.webviewView":
+        this.ui.push([method, ...params]);
+        return;
+      case "$main.webviewPost":
+        this.posted.push({ handle: params[0], message: params[1] });
+        return true;
       default:
         return null;
     }

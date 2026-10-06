@@ -21,6 +21,7 @@ import { DocumentData, type ContentChange } from "./document";
 import { enabledPatterns, matchGlob } from "./glob";
 import type { ExtensionModule, HostFs, ModuleLoader } from "./fs";
 import { createApi } from "./api";
+import { ViewsHost } from "./views";
 import type {
   CompletionListDTO,
   ContentChangeDTO,
@@ -48,6 +49,8 @@ export interface HostEnvironment {
   isWindows: boolean;
   createFs(host: ExtHost): HostFs;
   createLoader(apiFor: (extensionId: string) => unknown): ModuleLoader;
+  /** Node: the real path of a folder (extension folders may be reached through symlinks). */
+  realPath?(path: string): string;
   /** Where console output of extensions goes (the "Extension Host" Output channel). */
   onConsole?(write: (level: "info" | "warn" | "error", text: string) => void): void;
 }
@@ -317,6 +320,8 @@ export class ExtHost {
   readonly onDidDeleteFiles = new EventEmitter<unknown>();
   readonly onDidRenameFiles = new EventEmitter<unknown>();
   windowFocused = true;
+  /** Tree views and webviews (host/views.ts). */
+  readonly views: ViewsHost;
 
   constructor(send: (message: unknown) => void, env: HostEnvironment) {
     this.env = env;
@@ -325,6 +330,7 @@ export class ExtHost {
     EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText(e)}`);
     env.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();
+    this.views = new ViewsHost(this);
   }
 
   /** Host-level diagnostics: the "Extension Host" Output channel. */
