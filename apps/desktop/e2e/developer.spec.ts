@@ -76,3 +76,21 @@ test("up to date: a manual check says so", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page.locator(".tm-toast")).toContainText("latest version of TMCode");
 });
+
+test("TMCode's own save reported back by the watcher is not a conflict", async ({ page }) => {
+  await fresh(page, { "tmcode:ui": JSON.stringify({ settings: { "files.autoSave": "off" } }) });
+  await externalWrite(page, "note.txt", "");
+  await page.locator('.tm-explorer [data-path="note.txt"]').dblclick();
+  const editor = page.locator(".monaco-editor .view-lines").first();
+  await editor.click();
+  await page.keyboard.type("saved text");
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect(page.locator(".tm-tab.is-active")).not.toHaveClass(/is-dirty/);
+  // Keep typing, then the watcher reports the earlier save (disk = what TMCode wrote).
+  await page.keyboard.type(" and more");
+  await expect(page.locator(".tm-tab.is-active")).toHaveClass(/is-dirty/);
+  await externalWrite(page, "note.txt", "saved text");
+  await page.waitForTimeout(500);
+  await expect(page.locator(".tm-toast", { hasText: "changed on disk" })).toHaveCount(0);
+  await expect(editor).toContainText("saved text and more");
+});

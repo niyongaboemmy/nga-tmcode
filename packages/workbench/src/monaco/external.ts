@@ -1,4 +1,4 @@
-import { getDocument } from "./documents";
+import { getDocument, lastDiskText } from "./documents";
 import { getPlatform, loadDir, notify, setDirty, useWorkbench } from "../state/store";
 import { dirname } from "../util/paths";
 import { markSaved } from "./documents";
@@ -26,6 +26,8 @@ export async function applyExternalChanges(paths: string[]) {
     if (!model) continue;
     const disk = await fs.readFile(p).catch(() => null);
     if (disk === null || disk === model.getValue()) continue;
+    // Our own save echoed back by the watcher (you kept typing after it): nothing changed outside TMCode.
+    if (disk === lastDiskText(p)) continue;
     if (useWorkbench.getState().dirty[p]) {
       notify("warning", `'${p}' was changed on disk while you have unsaved changes. Saving will overwrite the file on disk.`, [
         {
