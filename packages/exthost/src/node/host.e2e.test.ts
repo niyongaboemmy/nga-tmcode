@@ -293,6 +293,7 @@ describe("tree views and webviews", () => {
 
   it("creates a webview panel, serves asWebviewUri and relays messages both ways", async () => {
     const res = await wb.request("$executeCommand", ["views.panel", []]);
+    await wb.waitFor(() => ui().some((u) => u[1] === "html"), "the panel's html");
     expect(res.cspSource).toBe("tmwebview://localhost tmwebview:");
     expect(res.script).toBe(`tmwebview://localhost/wv1/file${viewsDir.replace(/\\/g, "/").replace(/^\/?/, "/")}/media/main.js`);
     const create = ui().find((u) => u[0] === "$main.webview" && u[1] === "create") as [string, string, string, { kind: string; options: { enableScripts: boolean; retainContextWhenHidden: boolean; localResourceRoots: string[] } }];
@@ -310,6 +311,7 @@ describe("tree views and webviews", () => {
   it("resolves a webview view when the workbench shows it", async () => {
     const handle = await wb.request("$resolveWebviewView", ["views.side"]);
     expect(handle).toBe("wv2");
+    await wb.waitFor(() => ui().some((u) => u[1] === "viewMeta"), "the view's title");
     expect(ui()).toContainEqual(["$main.webview", "create", "wv2", expect.objectContaining({ kind: "view", viewType: "views.side" })]);
     expect(ui()).toContainEqual(["$main.webview", "html", "wv2", "<p>side</p>"]);
     expect(ui()).toContainEqual(["$main.webview", "viewMeta", "wv2", { title: "Side!" }]);
