@@ -13,6 +13,8 @@ It is also a general-purpose editor you can use instead of VS Code:
 - **Previews:** live HTML/React preview, a built-in browser for your dev server (the port is detected automatically), Markdown, images and SVG.
 - **Extensions:** install VS Code themes, icon themes, grammars and snippets from Open VSX.
 - **Terminal:** clickable links and `file:line`, Find, Run Recent Command.
+- **Task Mentor projects:** sign in once with NGA (MIS + Task Mentor), save projects to Task Mentor or follow your GitHub pushes, open them from Task Mentor, link them to quizzes and assignments.
+- **Timeline and Outline:** every save is kept locally (compare and restore), plus a symbol outline of the active file.
 
 It works offline and updates itself.
 

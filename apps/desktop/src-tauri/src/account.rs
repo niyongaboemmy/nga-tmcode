@@ -290,6 +290,10 @@ async fn exchange(mis_token: &str) -> Result<(String, AccountUser), String> {
         .map_err(|e| format!("Could not reach Task Mentor: {}", e.without_url()))?;
     let status = res.status();
     let body = res.bytes().await.map_err(|e| e.to_string())?;
+    if status == reqwest::StatusCode::NOT_FOUND {
+        // Task Mentor without the projects API yet (rolled out separately).
+        return Err("Task Mentor projects are coming soon: your Task Mentor doesn't offer them yet. Everything else in TMCode works as usual.".into());
+    }
     if !status.is_success() {
         return Err(server_message(&body, "Task Mentor did not accept the sign-in."));
     }
