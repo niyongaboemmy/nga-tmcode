@@ -52,6 +52,9 @@ TMCode follows the same design, at a smaller scale.
  exthost/languageBridge.ts host providers → Monaco   Web Worker: packages/exthost/src/worker/main.ts
  exthost/contributions.ts commands/menus/keys          (browser-entry extensions; the browser build)
  exthost/ui.tsx           Extensions UI, status bar
+ exthost/views/*          view containers, tree views,  host/views.ts (tree views, webviews)
+                          webviews (sandboxed iframes)
+ src-tauri/src/webview.rs tmwebview:// pages + files
                                                      packages/exthost/src/host/extHost.ts (state,
                                                      activation), host/api.ts (the `vscode` module)
 ```
@@ -76,6 +79,7 @@ A workspace package, shared by both hosts and the workbench.
   - It holds documents (`host/document.ts`, incremental sync), editors, commands, providers, diagnostics, output channels, status bar items, configuration, mementos and file watchers.
   - It handles activation (with `extensionDependencies` first) and the `$…` handlers the workbench calls.
 - **`host/api.ts`**: builds the `vscode` module, one object per extension.
+- **`host/views.ts`**: tree views and webviews (see "Views and webviews" below).
 - **`node/main.ts`**: the Node entry point.
   - It hooks `Module._load` for `require('vscode')`.
   - It registers Node's synchronous module hooks (`module.registerHooks`), so ES-module extensions can `import … from "vscode"`. Prettier 12 is one.
@@ -100,6 +104,8 @@ A workspace package, shared by both hosts and the workbench.
 | `exthost_stop(id)` | Kills the host's process tree. |
 | `exthost_policy(allowed)` | Called during exams. While it is off nothing starts, and running hosts are killed. |
 | `exthost_secret(op, extension, key, value)` | Backs `ExtensionContext.secrets` with the OS keychain: service "TMCode Extensions", account `<ext>/<key>`, plus a per-extension key index. |
+| `webview_publish(handle, html, roots)` | (`webview.rs`) Publishes one webview's page at `tmwebview://localhost/<handle>/index.html` (`http://tmwebview.localhost/…` on Windows) and the folders its `file/` URLs may read. Refused while extensions are blocked or in an exam folder. |
+| `webview_dispose(handle)` | Forgets a webview's page. |
 
 Further behaviour:
 
@@ -141,6 +147,7 @@ Further behaviour:
   - Extension settings are stored under `extensions.settings` in the settings store.
   - The host merges these with every extension's `contributes.configuration` defaults and `configurationDefaults`.
 - **`ui.tsx`** contains the Extensions UI pieces described below.
+- **`views/*`** renders extension UI contributions: `model.ts` (contributions, menus, icon fonts), `trees.ts` + `TreeView.tsx` (tree views), `webviews.ts` + `WebviewSlot.tsx` + `prelude.ts` + `themeVars.ts` (webviews), `ViewPanes.tsx` (side bar panes) and `mainThread.ts` (the `$main.treeView` / `$main.webview*` handlers).
 
 ## The `vscode` API subset
 
@@ -173,7 +180,9 @@ Anything not in this list behaves in one of three ways.
   - `onDidChangeActiveTextEditor`, `onDidChangeVisibleTextEditors`, `onDidChangeTextEditorSelection`, `onDidChangeTextEditorVisibleRanges` and `onDidChangeWindowState`.
   - On a `TextEditor`: `document`, `selection(s)` (settable), `visibleRanges`, `options`, `edit()` (one undo step), `insertSnippet()`, `setDecorations()` and `revealRange()`.
 - **Decorations:** `createTextEditorDecorationType` supports colours, borders, font style, whole line, the overview ruler, before/after text and light/dark variants.
-- **Stubs:** `createTreeView` and `registerTreeDataProvider` (views are not shown), `registerWebviewViewProvider`, `registerUriHandler`, `registerFileDecorationProvider`, `tabGroups` (empty), `terminals` (empty) and `activeColorTheme`.
+- **Tree views:** `createTreeView` and `registerTreeDataProvider`. See "Views and webviews".
+- **Webviews:** `createWebviewPanel` and `registerWebviewViewProvider`. See "Views and webviews".
+- **Stubs:** `registerUriHandler`, `registerFileDecorationProvider`, `registerWebviewPanelSerializer`, `tabGroups` (empty), `terminals` (empty) and `activeColorTheme`.
 
 ### `workspace`
 
@@ -264,6 +273,7 @@ The enums include `StatusBarAlignment`, `ProgressLocation`, `EndOfLine`, `ViewCo
   - `editor/context` items join Monaco's context menu, shown while their `when` holds. They receive the file's Uri, as in VS Code.
   - `editor/title` `navigation` items become buttons in the editor title.
   - `commandPalette` hides commands.
+- **`contributes.viewsContainers`** (`activitybar`, `panel`), **`contributes.views`**, **`contributes.viewsWelcome`**, **`contributes.icons`** and the **`view/title`** / **`view/item/context`** menus: see "Views and webviews".
 - **`contributes.configuration`** and **`configurationDefaults`**: defaults for `getConfiguration`, plus an **Extensions › <name>** section in the Settings editor.
   - Booleans, enums, numbers and strings get controls.
   - Objects and arrays are edited as JSON.
@@ -273,14 +283,64 @@ The enums include `StatusBarAlignment`, `ProgressLocation`, `EndOfLine`, `ViewCo
 
 - the operators `!`, `&&`, `||`, parentheses, `==`/`!=` (including `===`/`!==`), `<`, `<=`, `>`, `>=`, `=~ /re/flags`, `in` and `not in`;
 - quoted strings;
-- context keys: `editorLangId`/`resourceLangId`, `resourceExtname`/`Filename`/`Path`/`Scheme`/`Dirname`, `editorTextFocus`/`editorFocus`, `editorHasSelection`, `editorReadonly`, `isMac`/`isWindows`/`isLinux`/`isWeb`, `workspaceFolderCount`, `config.*`, and the keys extensions set with `setContext`.
+- context keys: `editorLangId`/`resourceLangId`, `resourceExtname`/`Filename`/`Path`/`Scheme`/`Dirname`, `editorTextFocus`/`editorFocus`, `editorHasSelection`, `editorReadonly`, `isMac`/`isWindows`/`isLinux`/`isWeb`, `workspaceFolderCount`, `config.*`, and the keys extensions set with `setContext`;
+- in view menus, `view`, `viewItem` and `listMultiSelection`.
 
 Not applied:
 
-- views and view containers;
-- `explorer/context` and `editor/title/context` menus;
+- `explorer/context`, `editor/title/context` and `scm/*` menus;
 - submenus;
 - `walkthroughs`, `debuggers`, `taskDefinitions`, `jsonValidation`, `terminal`, `icons` and the like.
+
+## Views and webviews
+
+### View containers and views
+
+- **`contributes.viewsContainers.activitybar`** adds an activity bar icon after TMCode's own views. Its icon is a codicon (`$(name)`) or an image inside the extension, loaded through the extension file reader as a data URL and painted in the activity bar's colour (a CSS mask), as VS Code does. The icon's badge is the sum of its views' `badge`s.
+- **`contributes.viewsContainers.panel`** adds a tab to the panel.
+- **`contributes.views`** puts views into an extension container, or into TMCode's Explorer (`explorer`, below Outline and Timeline), Source Control (`scm`), Run and Debug (`debug`) or Testing (`test`). Each view is a collapsible section, as TMCode's own panes, with:
+  - its `when` clause (re-evaluated when `setContext` or settings change);
+  - `visibility: "collapsed"` starting closed, `"hidden"` not shown;
+  - its title, description, message and badge from `TreeView` / `WebviewView`;
+  - the **`view/title`** menu: `navigation` items as icon buttons, the rest under "…"; plus Collapse All for `showCollapseAll`;
+  - **`viewsWelcome`** content while the view is empty or has no provider: paragraphs, inline links and `[Label](command:…)` buttons.
+- **`onView:<id>`** fires when a view is shown, and is implicit for contributed views (VS Code 1.74+).
+- Commands: `workbench.view.extension.<container>` ("View: Show …"), `<view>.focus` and `<view>.open`.
+- **`contributes.icons`** with an icon font (`fontPath`, `fontCharacter`) makes `$(name)` work everywhere codicons do (GitLens' `$(gitlens-*)`).
+
+### Tree views
+
+`window.createTreeView` and `registerTreeDataProvider` (`host/views.ts`, workbench `views/trees.ts` and `TreeView.tsx`):
+
+- **Handles.** The host keeps the extension's elements and gives the workbench handles: `1/<id>` for items with an `id`, `0/<parent>/<index>:<label>` otherwise, as VS Code does. Fetching a parent's children again releases the handles of its previous children and their subtrees.
+- **Lazy children.** The workbench asks for children (`$treeChildren`) when the view is visible and when an item is expanded. Items that are `Expanded` load their children at once.
+- **`onDidChangeTreeData`** is batched per tick. Firing for the whole tree reloads the roots and every expanded node. Firing for elements refreshes their `TreeItem`s and reloads them if expanded.
+- **`TreeItem`:** `label` (with `highlights`), `description` (and `true` with a `resourceUri`), `tooltip` (string or MarkdownString, shown as text; `resolveTreeItem` on hover), `iconPath` (ThemeIcon with its ThemeColor, Uri, `{ light, dark }`), `resourceUri` (the file icon theme's icon when there is no icon or it is `ThemeIcon.File`/`Folder`), `collapsibleState`, `command` (run on click), `contextValue` (for `viewItem`), and `checkboxState`.
+- **Menus.** `view/item/context` items with group `inline` are buttons on the hovered or selected row; the others form the context menu. Commands receive the element, then the selection when `canSelectMany` and several are selected.
+- **`TreeView`:** `visible` / `onDidChangeVisibility`, `selection` / `onDidChangeSelection` (multi-select with ⌘/Ctrl and Shift), `onDidExpandElement` / `onDidCollapseElement`, `onDidChangeCheckboxState`, `title`, `description`, `message`, `badge`, and `reveal(element, { select, focus, expand })`, which uses `getParent` to load and expand the ancestors.
+- Keyboard: arrows move, expand and collapse; Enter runs the item.
+
+### Webviews
+
+`window.createWebviewPanel` opens an editor tab; `registerWebviewViewProvider` fills a side bar view (`type: "webview"`), resolved the first time it is shown.
+
+- **Isolation.** Each webview is an `<iframe sandbox>` without `allow-same-origin`, so its page has an opaque origin: it cannot reach the workbench's DOM (`window.parent.document` throws) or storage. `allow-scripts` and `allow-forms` follow `enableScripts` / `enableForms`. Tauri's IPC is out of reach: its initialisation scripts (with the invoke key every IPC call must carry) run in the main frame only, and the page's CSP has no `ipc:` in `connect-src`.
+- **Pages.** On the desktop the page comes from `tmwebview://localhost/<handle>/index.html` (`webview.rs`), served with its own CSP: TMCode's prelude is inline, and the extension's `<meta>` CSP (nonces included) applies to its own page on top. The browser build has no such origin, so pages go into `srcdoc` with their `asWebviewUri` resources inlined as data URLs.
+- **`asWebviewUri`** gives `tmwebview://localhost/<handle>/file/<absolute path>`; the app serves it only from that webview's `localResourceRoots` (default: the extension's folder and the workspace), after resolving symlinks and `..`. **`cspSource`** is `tmwebview://localhost tmwebview:`.
+- **The prelude** (first in `<head>`, before the extension's CSP):
+  - `acquireVsCodeApi()` with `postMessage`, `getState` and `setState` (kept across reloads);
+  - messages from the extension arrive as plain `message` events; ArrayBuffers and typed arrays survive the JSON link to the host (GitLens sends Uint8Array RPC);
+  - the theme as `--vscode-*` variables (every colour of the active theme, VS Code's registry defaults for the common keys, the font variables), `vscode-dark` / `vscode-light` / `vscode-high-contrast` on `<body>`, VS Code's default webview styles in a low-priority cascade layer; theme changes are pushed live;
+  - links: `http(s):` and `mailto:` open in the browser, `command:` runs when `enableCommandUris` allows it;
+  - ⌘/Ctrl shortcuts are forwarded to the workbench (copy, paste, cut, undo and select all stay in the page);
+  - an in-memory `localStorage`/`sessionStorage`, since an opaque origin has none.
+- **Lifecycle.** Iframes live in one layer over the workbench and follow the slot that shows them (moving an iframe would reload it). A hidden webview is destroyed and re-created from its HTML when shown again (its `setState` kept), unless `retainContextWhenHidden`. Messages posted while it loads are queued; to a hidden, not retained webview `postMessage` returns `false`. Panels report `active` / `visible` / `viewColumn` (`onDidChangeViewState`); closing the tab fires `onDidDispose`; `reveal` focuses the tab; `title` and `iconPath` update the tab.
+- **Never in exams.** Webviews come only from running extensions: when extensions are blocked the hosts stop and every view and webview goes with them, the activity bar hides extension containers, and `exthost_policy(false)` makes `webview.rs` forget every page and refuse to serve.
+
+Two scripts check real extensions without the app:
+
+- `node packages/exthost/test/views-real.mjs <extension> <folder> [command] [view ids…]` activates an extension in the Node host and prints its tree views (two levels) and webviews.
+- `node packages/exthost/test/webview-rig.mjs <extension> <folder> <command[@file] | view:<id>> <out.png> [chromium|webkit]` renders its webviews in Chromium or WebKit with TMCode's prelude, the same CSP and the same `localResourceRoots` rule, relays messages to the Node host and takes a screenshot.
 
 ## UI
 
@@ -309,6 +369,7 @@ Not applied:
   - respect read-only editors (exam time-out);
   - open only workspace paths;
   - open external URLs only for http, https and mailto.
+- **Webviews are sandboxed.** Extension pages run in `<iframe sandbox>` without `allow-same-origin` (an opaque origin), so they cannot touch the workbench's DOM or storage, and they never get Tauri's invoke key, so they cannot call app commands. They talk to their extension only through `postMessage`, which the workbench checks against the iframe's window. `webview.rs` serves files only from each webview's `localResourceRoots`, and serves nothing while extensions are blocked.
 - **Secrets** live in the OS keychain, never in the settings store.
 - **Hosts never outlive the app.** A host exits when its stdin closes, the app kills hosts on exit, and a new host replaces a reloaded window's old one.
 
@@ -322,7 +383,16 @@ Not applied:
 | **esbenp.prettier-vscode** 12.4.0 | ✅ It is an ES module and activates on `onStartupFinished`. Its formatting provider formats JavaScript with its bundled Prettier. |
 | **formulahendry.auto-rename-tag** 0.1.10 | ✅ It is a `vscode-languageclient` client with its own language server. Renaming `<span>` to `<spam>` renames `</span>` too, through `TextEditor.edit`. |
 | **christian-kohler.path-intellisense** 2.8.0 | ✅ It provides completions of `./` from the real folder (`lib`, `main.js`). |
-| **streetsidesoftware.code-spell-checker** 4.9.6 | ✅ It is a `vscode-languageclient` client with a language server over Node IPC. It reports "sentense: Misspelled word" and "mispeled: Unknown word" as diagnostics. Its views and webviews are ignored with a log line. |
+| **streetsidesoftware.code-spell-checker** 4.9.6 | ✅ It is a `vscode-languageclient` client with a language server over Node IPC. It reports "sentense: Misspelled word" and "mispeled: Unknown word" as diagnostics. |
+
+Views and webviews, checked with `views-real.mjs` and `webview-rig.mjs` against a small git repository (three commits, a branch and a tag):
+
+| Extension | Result |
+|---|---|
+| **eamodio.gitlens** | ✅ It activates (`onStartupFinished`), registers its tree views and five webview views. Its Source Control views are grouped by default: until its welcome is dismissed (the `viewsWelcome` "Continue" button) the grouped view shows that welcome, then `gitlens.views.scm.grouped` lists the real data: "COMMITS — main", "❰ v1.0 ❱➤ Second change — You, 2 minutes ago", "Initial commit", each expanding to its files. Its `$(gitlens-*)` icons come from its icon font. The Inspect (commit details) and Welcome webviews render and talk to the extension (binary RPC); the Commit Graph view shows GitLens' own "Sign In to GitLens" gate. Commit avatars (gravatar `https:` images) show an account codicon. |
+| **mhutchie.git-graph** | ✅ "View Git Graph" (`git-graph.view`) opens its webview panel, which loads its scripts and styles through `asWebviewUri` and draws the graph of the repository: `feature`, `main`, `v1.0`, the three commits with authors, dates and hashes. Chromium and WebKit. |
+| **rangav.vscode-thunder-client** | ✅ Its activity bar container (SVG icon) holds the `thunder-client-sidebar` webview view: New Request, Activity, Collections, Env, as in VS Code. It also opens its Release Notes panel on first run. |
+| **ms-vscode.live-server** (Live Preview) | ✅ "Show Preview" (`livePreview.start.preview.atFile` on `index.html`) starts its server on port 3000 and opens its preview panel, whose page frames `http://127.0.0.1:3000/index.html` (allowed by the webview CSP's `frame-src`). In the rig its live-reload WebSocket (port 3001) answered the handshake with HTTP 400, so live reload was not verified. |
 
 The native self-test runs inside the real app, against Open VSX:
 
@@ -347,7 +417,12 @@ Language-server-based extensions work when they use `vscode-languageclient` over
 
 ## Limits and what is next
 
-- **No UI contributions from extensions:** views, tree views, webviews, custom editors, walkthroughs and notebooks. Their registrations are ignored with a log line.
+- **Views and webviews** (see above) work, with these gaps:
+  - **Not supported:** custom editors (`registerCustomEditorProvider`), `WebviewPanelSerializer` (panels are not restored after a restart), walkthroughs, notebooks, the `explorer/context`, `scm/*` and `editor/title/context` menus, submenus, view drag and drop (`dragAndDropController`), moving views between containers, and `TreeView.activeItem` beyond the first selected item.
+  - **Webview pages** cannot use `localStorage` persistently (an in-memory one stands in) and do not get VS Code's find widget (`enableFindWidget`). Images from the web (`https:`) are allowed inside webviews but not in tree items, where avatars show a codicon. Port mapping (`portMapping`) and `asExternalUri` return the URI unchanged; `localhost` servers are framed directly.
+  - **The browser build** has no webview origin: pages use `srcdoc` and their `asWebviewUri` resources are inlined as data URLs (fine for the fixture and small pages; resources a page loads at run time are not served).
+  - **Live Preview's live reload** was not verified (its WebSocket handshake failed in the test rig).
+  - The native self-test does not cover views yet; they were verified with the Node harness, `webview-rig.mjs` and the Playwright fixture (`e2e/ext-views.spec.ts`).
 - **No terminals** (`window.createTerminal` throws). No tasks, no debuggers from extensions, no SCM providers, no authentication providers, no comments.
 - **Extensions with only a `browser` entry** run in a Web Worker. On the desktop that Worker evaluates code with `new Function`. If the webview's CSP refuses it, the extension shows as *Failed*.
 - **ES-module extensions** need Node.js 22.15 or 23.5 or newer, for `module.registerHooks`. On older Node they fail to activate with "Cannot find package 'vscode'".
@@ -357,7 +432,7 @@ Language-server-based extensions work when they use `vscode-languageclient` over
 - **Unopened files:** `workspace.applyEdit` saves files that no editor shows instead of keeping them dirty in the background.
 - **One workspace folder.** Multi-root workspaces are not supported.
 - **Next:**
-  - tree views in the side bar;
   - `createTerminal` over TMCode's terminal;
   - `onWillSaveTextDocument`;
+  - custom editors and webview panel serializers;
   - verified ESLint support.

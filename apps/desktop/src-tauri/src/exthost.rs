@@ -62,6 +62,11 @@ impl Default for ExtHosts {
 }
 
 impl ExtHosts {
+    /// False during exams: no host, and no extension webview is served (webview.rs).
+    pub fn is_allowed(&self) -> bool {
+        self.allowed.load(Ordering::SeqCst)
+    }
+
     pub fn kill_all(&self) {
         for (_, p) in self.procs.lock().unwrap().drain() {
             p.tree.kill();
@@ -180,7 +185,7 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Exam folders live under `<app data>/exams` (see exam.rs).
-fn in_exam_folder(app: &AppHandle, ws: &Workspace) -> bool {
+pub(crate) fn in_exam_folder(app: &AppHandle, ws: &Workspace) -> bool {
     matches!((ws.root(), app_data(app)), (Ok(root), Ok(data)) if root.starts_with(data.join("exams")))
 }
 
@@ -257,10 +262,11 @@ pub fn exthost_stop(hosts: State<'_, ExtHosts>, id: u32) -> Result<(), String> {
 
 /// The workbench's policy: false during exams (and any locked-down mode) kills every host.
 #[tauri::command]
-pub fn exthost_policy(hosts: State<'_, ExtHosts>, allowed: bool) -> Result<(), String> {
+pub fn exthost_policy(app: AppHandle, hosts: State<'_, ExtHosts>, allowed: bool) -> Result<(), String> {
     hosts.allowed.store(allowed, Ordering::SeqCst);
     if !allowed {
         hosts.kill_all();
+        app.state::<crate::webview::Webviews>().clear();
     }
     Ok(())
 }

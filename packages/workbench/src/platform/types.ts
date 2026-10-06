@@ -92,6 +92,8 @@ export interface Platform {
   exam?: ExamHost;
   /** Desktop preview origin; without it previews are composed into an iframe srcdoc. */
   preview?: PreviewHost;
+  /** Origin of extension webviews (desktop: tmwebview://, webview.rs); without it they use srcdoc with resources inlined. */
+  webviews?: WebviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
   setNativeTheme?(theme: "dark" | "light"): void;
   // ── extensions (feat/extensions) ──
@@ -277,6 +279,18 @@ export interface PreviewHost {
    * Returns the URL of `entry`.
    */
   publish(root: string, entry: string, overlay: Record<string, string>, opts: { internet: boolean }): Promise<string>;
+}
+
+// ───────────── extension webviews ─────────────
+
+export interface WebviewHost {
+  /** Origin of pages and resources ("tmwebview://localhost"); asWebviewUri builds `<base>/<handle>/file/<path>`. */
+  base: string;
+  /** `webview.cspSource`. */
+  cspSource: string;
+  /** Serves one webview's page; its `file/` resources come only from `roots` (absolute folders). Returns the page URL. */
+  publish(handle: string, html: string, roots: string[]): Promise<string>;
+  dispose(handle: string): void;
 }
 
 // ───────────── exams (plan §10, §13) ─────────────

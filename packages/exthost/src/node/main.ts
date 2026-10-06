@@ -7,6 +7,7 @@
  */
 
 import * as path from "node:path";
+import { realpathSync } from "node:fs";
 import Module from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { encodeFrame, FrameDecoder, type RpcMessage } from "../rpc";
@@ -61,6 +62,20 @@ function ownerOf(file: string, locations: { id: string; location: string }[]): s
   return locations
     .sort((a, b) => b.location.length - a.location.length)
     .find((l) => file === l.location || file.startsWith(l.location.endsWith(sep) ? l.location : l.location + sep))?.id;
+}
+
+const realPaths = new Map<string, string>();
+function realPath(p: string): string {
+  let r = realPaths.get(p);
+  if (r === undefined) {
+    try {
+      r = realpathSync(p);
+    } catch {
+      r = path.resolve(p);
+    }
+    realPaths.set(p, r);
+  }
+  return r;
 }
 
 const IDENT = /^[A-Za-z_$][\w$]*$/;
@@ -143,7 +158,9 @@ const env: HostEnvironment = {
   kind: "node",
   isWindows: process.platform === "win32",
   createFs: (host) => new NodeFs(host),
-  createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].map((e) => ({ id: e.desc.id, location: path.resolve(e.desc.location) }))),
+  realPath,
+  // Module files have real paths: an extension folder reached through a symlink (/var → /private/var) is matched by both.
+  createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].flatMap((e) => [{ id: e.desc.id, location: path.resolve(e.desc.location) }, { id: e.desc.id, location: realPath(e.desc.location) }])),
   onConsole(write) {
     consoleSink = write;
   },

@@ -4,8 +4,9 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects";
-export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole";
+/** `ext:<id>`: a view container contributed by an extension (exthost/views). */
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | `ext:${string}`;
+export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole" | `ext:${string}`;
 
 export type EditorInput =
   | { kind: "file"; id: string; path: string; preview: boolean }
@@ -27,7 +28,9 @@ export type EditorInput =
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
   | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false }
   /** Details of a VS Code extension ("extension:<publisher.name>"). */
-  | { kind: "extension"; id: string; extensionId: string; preview: false };
+  | { kind: "extension"; id: string; extensionId: string; preview: false }
+  /** An extension's webview panel ("webview:<handle>", exthost/views/webviews.ts). */
+  | { kind: "webview"; id: string; handle: string; preview: false };
 
 export type TestStatus = "idle" | "queued" | "running" | "passed" | "failed" | "error";
 
@@ -571,7 +574,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();

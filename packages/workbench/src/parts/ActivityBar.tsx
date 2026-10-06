@@ -9,6 +9,10 @@ import { changeCount } from "../scm/model";
 import { debugAllowed } from "../debug/debugService";
 import { useProjects, signIn, signOut, refreshProjects } from "../projects/service";
 import type { AccountStatus } from "../platform/types";
+// ── extension view containers (exthost/views) ──
+import { useViews, type ViewContainer } from "../exthost/views/model";
+import { useWebviews } from "../exthost/views/webviews";
+import { ExtIcon } from "../exthost/views/ExtIcon";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
@@ -44,6 +48,8 @@ export function ActivityBar() {
   const projectSync = useProjects((s) => s.sync);
   const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? [PROJECTS_VIEW] : []), EXTENSIONS_VIEW] : VIEWS;
   const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
+  // Extensions never run in exams, so their containers only exist in practice mode.
+  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
@@ -79,6 +85,9 @@ export function ActivityBar() {
             </button>
           );
         })}
+        {extContainers.map((c) => (
+          <ExtContainerButton key={c.key} container={c} active={sidebarVisible && activeView === c.key} />
+        ))}
       </div>
       <div className="tm-activitybar-bottom">
         {hasAccount && practice && !inExam && <AccountButton account={account} />}
@@ -110,6 +119,19 @@ export function ActivityBar() {
         </button>
       </div>
     </nav>
+  );
+}
+
+/** An extension's view container: its icon (monochrome, like VS Code's), with the sum of its views' badges. */
+function ExtContainerButton({ container, active }: { container: ViewContainer; active: boolean }) {
+  const badge = useViews((s) => s.views.filter((v) => v.container === container.key).reduce((n, v) => n + (s.meta[v.id]?.badge?.value ?? 0), 0));
+  const webBadge = useWebviews((s) => Object.values(s.entries).filter((e) => e.kind === "view" && useViews.getState().views.some((v) => v.id === e.viewType && v.container === container.key)).reduce((n, e) => n + (e.meta.badge?.value ?? 0), 0));
+  const total = badge + webBadge;
+  return (
+    <button type="button" role="tab" aria-selected={active} className={`tm-activity ${active ? "is-active" : ""}`} title={container.title} aria-label={container.title} data-testid={`activity-${container.key}`} onClick={() => showView(container.key)}>
+      <ExtIcon icon={container.icon} mask size={24} className="tm-activity-ext-icon" />
+      {total > 0 && <span className="tm-activity-badge">{total}</span>}
+    </button>
   );
 }
 

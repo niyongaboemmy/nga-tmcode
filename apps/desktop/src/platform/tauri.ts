@@ -198,6 +198,13 @@ export async function createTauriPlatform(): Promise<Platform> {
     preview: {
       publish: (root, entry, overlay, { internet }) => invoke<string>("preview_publish", { root, entry, overlay, internet }),
     },
+    // Extension webviews: pages and localResourceRoots files at tmwebview:// (webview.rs).
+    webviews: {
+      base: info.os === "windows" ? "http://tmwebview.localhost" : "tmwebview://localhost",
+      cspSource: info.os === "windows" ? "http://tmwebview.localhost" : "tmwebview://localhost tmwebview:",
+      publish: (handle, html, roots) => invoke<string>("webview_publish", { handle, html, roots }),
+      dispose: (handle) => void invoke("webview_dispose", { handle }).catch(() => {}),
+    },
     window:
       info.os === "mac"
         ? undefined // native traffic lights

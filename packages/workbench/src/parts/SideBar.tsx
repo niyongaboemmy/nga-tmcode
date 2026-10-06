@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { executeCommand } from "../commands/registry";
 import { openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton } from "../widgets/icons";
@@ -13,12 +14,16 @@ import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
 import { TimelinePane } from "../history/TimelinePane";
 import { OutlinePane } from "../outline/OutlinePane";
-import type { ContextMenuItem } from "../state/store";
+import type { ContextMenuItem, ViewId } from "../state/store";
+// ── extension views (exthost/views) ──
+import { ExtViewPanes } from "../exthost/views/ViewPanes";
+import { useViews } from "../exthost/views/model";
 
 const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects" } as const;
 
 /** The title bar's "…" menu, per view. */
-function moreActions(view: keyof typeof TITLES): ContextMenuItem[] {
+function moreActions(view: ViewId): ContextMenuItem[] {
+  if (view.startsWith("ext:")) return [{ kind: "item", label: "Hide Primary Side Bar", run: () => executeCommand("workbench.action.toggleSidebarVisibility") }];
   if (view === "projects") {
     return [
       { kind: "item", label: "New Project…", run: () => executeCommand("projects.new") },
@@ -50,12 +55,26 @@ function moreActions(view: keyof typeof TITLES): ContextMenuItem[] {
   ];
 }
 
+/** A built-in view with the extension views contributed to it below. */
+function WithExtViews({ container, children }: { container: string; children: ReactNode }) {
+  const has = useViews((s) => s.views.some((v) => v.container === container));
+  if (!has) return <>{children}</>;
+  return (
+    <div className="tm-explorer-stack">
+      {children}
+      <ExtViewPanes container={container} />
+    </div>
+  );
+}
+
 export function SideBar() {
   const view = useWorkbench((s) => s.activeView);
+  const extTitle = useViews((s) => s.containers.find((c) => c.key === view)?.title);
+  const title = view.startsWith("ext:") ? (extTitle ?? "") : TITLES[view as keyof typeof TITLES];
   return (
-    <aside className="tm-sidebar" aria-label={TITLES[view]}>
+    <aside className="tm-sidebar" aria-label={title}>
       <header className="tm-sidebar-title">
-        <h2>{TITLES[view]}</h2>
+        <h2>{title}</h2>
         <div className="tm-sidebar-title-actions">
           {view === "extensions" && <ExtensionsTitleActions />}
           {view === "scm" ? (
@@ -78,8 +97,31 @@ export function SideBar() {
             <ExplorerView />
             <OutlinePane />
             <TimelinePane />
+            <ExtViewPanes container="explorer" />
           </div>
-        ) : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : view === "extensions" ? <ExtensionsView /> : view === "projects" ? <ProjectsView /> : <TestingView />}
+        ) : view === "search" ? (
+          <SearchView />
+        ) : view === "task" ? (
+          <TaskView />
+        ) : view === "scm" ? (
+          <WithExtViews container="scm">
+            <ScmView />
+          </WithExtViews>
+        ) : view === "debug" ? (
+          <WithExtViews container="debug">
+            <RunDebugView />
+          </WithExtViews>
+        ) : view === "extensions" ? (
+          <ExtensionsView />
+        ) : view === "projects" ? (
+          <ProjectsView />
+        ) : view.startsWith("ext:") ? (
+          <ExtViewPanes container={view} fill />
+        ) : (
+          <WithExtViews container="testing">
+            <TestingView />
+          </WithExtViews>
+        )}
       </div>
     </aside>
   );

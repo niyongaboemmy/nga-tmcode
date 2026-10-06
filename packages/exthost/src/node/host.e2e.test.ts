@@ -75,8 +75,8 @@ exports.activate = (context) => {
   item.text = "$(check) Upper";
   item.show();
   // Unsupported APIs log and never break activation.
-  vscode.window.registerTreeDataProvider("upper.view", {});
-  try { vscode.window.createWebviewPanel("x", "x", 1, {}); } catch (e) { out.appendLine("webview: " + e.message); }
+  vscode.window.registerCustomEditorProvider("upper.editor", {});
+  try { vscode.window.showNotebookDocument({}); } catch (e) { out.appendLine("notebook: " + e.message); }
   return { api: 42 };
 };
 `;
@@ -101,8 +101,67 @@ export function activate(context) {
 }
 `;
 
+const VIEWS = `
+const vscode = require("vscode");
+class Provider {
+  constructor() { this.emitter = new vscode.EventEmitter(); this.onDidChangeTreeData = this.emitter.event; this.count = 2; this.root = { name: "root", kids: true }; this.leaves = []; }
+  getChildren(el) {
+    if (!el) return [this.root];
+    for (let i = this.leaves.length; i < this.count; i++) this.leaves.push({ name: "leaf" + i, parent: el });
+    return this.leaves.slice(0, this.count);
+  }
+  getParent(el) { return el.parent; }
+  getTreeItem(el) {
+    const item = new vscode.TreeItem(el.name, el.kids ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+    if (el.kids) item.id = "root";
+    item.contextValue = el.kids ? "folder" : "leaf";
+    item.iconPath = el.kids ? new vscode.ThemeIcon("repo", new vscode.ThemeColor("charts.blue")) : vscode.Uri.file(__dirname + "/media/leaf.svg");
+    item.tooltip = new vscode.MarkdownString("**" + el.name + "**");
+    item.description = el.kids ? "2 items" : undefined;
+    item.command = { command: "views.clicked", title: "Click", arguments: [el.name] };
+    return item;
+  }
+}
+exports.activate = (context) => {
+  const provider = new Provider();
+  const tree = vscode.window.createTreeView("views.tree", { treeDataProvider: provider, showCollapseAll: true });
+  const events = [];
+  tree.onDidChangeVisibility((e) => events.push("visible:" + e.visible));
+  tree.onDidChangeSelection((e) => events.push("selected:" + e.selection.map((x) => x.name).join(",")));
+  tree.onDidExpandElement((e) => events.push("expanded:" + e.element.name));
+  tree.message = "Hello tree";
+  tree.badge = { value: 3, tooltip: "three" };
+  let panel;
+  context.subscriptions.push(
+    tree,
+    vscode.commands.registerCommand("views.clicked", (name) => events.push("clicked:" + name)),
+    vscode.commands.registerCommand("views.menu", (el) => events.push("menu:" + el.name)),
+    vscode.commands.registerCommand("views.events", () => events.splice(0)),
+    vscode.commands.registerCommand("views.grow", () => { provider.count = 3; provider.emitter.fire(); }),
+    vscode.commands.registerCommand("views.reveal", async () => { const root = provider.getChildren()[0]; await tree.reveal(provider.getChildren(root)[1], { select: true }); }),
+    vscode.commands.registerCommand("views.panel", () => {
+      panel = vscode.window.createWebviewPanel("views.panel", "Panel", vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+      const script = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, "media", "main.js"));
+      panel.webview.html = "<html><head><meta http-equiv='Content-Security-Policy' content='script-src " + panel.webview.cspSource + "'></head><body><script src='" + script + "'></script></body></html>";
+      panel.webview.onDidReceiveMessage((m) => { events.push("webview:" + m.type); panel.webview.postMessage({ echo: m.type }); });
+      panel.onDidDispose(() => events.push("disposed"));
+      return { cspSource: panel.webview.cspSource, script: script.toString() };
+    }),
+    vscode.window.registerWebviewViewProvider("views.side", {
+      resolveWebviewView(view) {
+        view.webview.options = { enableScripts: true };
+        view.webview.html = "<p>side</p>";
+        view.title = "Side!";
+        events.push("resolved:" + view.viewType);
+      },
+    }, { webviewOptions: { retainContextWhenHidden: true } }),
+  );
+};
+`;
+
 let wb: WB;
 let root: string;
+let viewsDir: string;
 
 beforeAll(async () => {
   // Test the current sources: rebuild the bundled host (identical output when it is up to date).
@@ -112,10 +171,23 @@ beforeAll(async () => {
   writeFileSync(join(root, "data.txt"), "from disk");
   const upper = writeExtension(exts, "upper", { main: "./main.js", activationEvents: ["onLanguage:plaintext"], contributes: { commands: [{ command: "upper.run", title: "Upper" }], configuration: { properties: { "upper.suffix": { type: "string", default: "!" } } } } }, { "main.js": UPPER });
   const esm = writeExtension(exts, "esm", { main: "./main.js", type: "module", contributes: { commands: [{ command: "esm.hello", title: "Hello" }] } }, { "main.js": ESM });
+  viewsDir = writeExtension(
+    exts,
+    "views",
+    {
+      main: "./main.js",
+      contributes: {
+        viewsContainers: { activitybar: [{ id: "views-c", title: "Views", icon: "media/leaf.svg" }] },
+        views: { "views-c": [{ id: "views.tree", name: "Tree" }, { id: "views.side", name: "Side", type: "webview" }] },
+        commands: [{ command: "views.panel", title: "Open Panel" }],
+      },
+    },
+    { "main.js": VIEWS, "media/leaf.svg": "<svg xmlns='http://www.w3.org/2000/svg'/>", "media/main.js": "acquireVsCodeApi().postMessage({ type: 'ready' });" },
+  );
   const broken = writeExtension(exts, "broken", { main: "./main.js", activationEvents: ["*"] }, { "main.js": "exports.activate = () => { throw new Error('broken on purpose'); };" });
   wb = new FakeWorkbench({
     root,
-    extensions: [describeExtension(upper), describeExtension(esm), describeExtension(broken)],
+    extensions: [describeExtension(upper), describeExtension(esm), describeExtension(broken), { ...describeExtension(viewsDir), activationEvents: [] }],
     documents: { "notes.txt": { text: "  hello TODO  \n", languageId: "plaintext" } },
   }) as WB;
   await wb.init;
@@ -158,8 +230,8 @@ describe("Node extension host (stdio, fixture extensions)", () => {
 
   it("logs unsupported APIs instead of failing", () => {
     const log = wb.output.join("");
-    expect(log).toContain("'window.registerTreeDataProvider (upper.view)' is not supported in TMCode yet");
-    expect(log).toContain("webview: 'window.createWebviewPanel' is not supported in TMCode yet.");
+    expect(log).toContain("'window.registerCustomEditorProvider (upper.editor)' is not supported in TMCode yet");
+    expect(log).toContain("notebook: 'window.showNotebookDocument' is not supported in TMCode yet.");
   });
 
   it("loads ES module extensions, reads the workspace and keeps state", async () => {
@@ -248,5 +320,79 @@ exports.activate = (context) => {
     } finally {
       await wb.close();
     }
+  });
+});
+
+describe("tree views and webviews", () => {
+  const ui = () => (wb as unknown as { ui: unknown[][] }).ui;
+  const posted = () => (wb as unknown as { posted: { handle: string; message: unknown }[] }).posted;
+  const events = () => wb.request("$executeCommand", ["views.events", []]) as Promise<string[]>;
+
+  it("activates on onView and registers the tree", async () => {
+    await wb.request("$activateByEvent", ["onView:views.tree"]);
+    await wb.waitFor(() => wb.states.get("fixture.views")?.state === "activated", "views to activate", 4000);
+    expect(ui()).toContainEqual(["$main.treeView", "register", "views.tree", { extensionId: "fixture.views", canSelectMany: false, showCollapseAll: true, manageCheckboxStateManually: false }]);
+    expect(ui()).toContainEqual(["$main.treeView", "update", "views.tree", { message: "Hello tree" }]);
+    expect(ui()).toContainEqual(["$main.treeView", "update", "views.tree", { badge: { value: 3, tooltip: "three" } }]);
+    expect(ui()).toContainEqual(["$main.webviewView", "register", "views.side", { extensionId: "fixture.views", retainContextWhenHidden: true }]);
+  });
+
+  it("serves children lazily with stable handles, icons and commands", async () => {
+    const roots = await wb.request("$treeChildren", ["views.tree", null]);
+    expect(roots).toEqual([
+      expect.objectContaining({ handle: "1/root", label: "root", collapsible: 2, description: "2 items", contextValue: "folder", icon: { codicon: "repo", color: "charts.blue" }, tooltip: expect.objectContaining({ value: "**root**" }), command: { title: "Click" } }),
+    ]);
+    const kids = await wb.request("$treeChildren", ["views.tree", "1/root"]);
+    expect(kids.map((k: { handle: string }) => k.handle)).toEqual(["0/1/root/0:leaf0", "0/1/root/1:leaf1"]);
+    expect(kids[0].icon).toEqual({ light: { ext: "fixture.views", path: "media/leaf.svg" }, dark: { ext: "fixture.views", path: "media/leaf.svg" } });
+    await wb.request("$treeVisible", ["views.tree", true]);
+    await wb.request("$treeSelection", ["views.tree", ["0/1/root/1:leaf1"]]);
+    await wb.request("$treeExpanded", ["views.tree", "1/root", true]);
+    await wb.request("$treeCommand", ["views.tree", "0/1/root/0:leaf0"]);
+    await wb.request("$treeMenuCommand", ["views.tree", "views.menu", "0/1/root/1:leaf1", []]);
+    expect(await events()).toEqual(["visible:true", "selected:leaf1", "expanded:root", "clicked:leaf0", "menu:leaf1"]);
+  });
+
+  it("refreshes, releases old handles and reveals", async () => {
+    const before = ui().length;
+    await wb.request("$executeCommand", ["views.grow", []]);
+    await wb.waitFor(() => ui().slice(before).some((u) => u[1] === "refresh"), "a refresh");
+    expect(ui().slice(before)).toContainEqual(["$main.treeView", "refresh", "views.tree", null]);
+    const roots = await wb.request("$treeChildren", ["views.tree", null]);
+    // The old children of the root are gone with it.
+    expect(await wb.request("$treeChildren", ["views.tree", "0/1/root/0:leaf0"])).toEqual([]);
+    expect(roots).toHaveLength(1);
+    expect(await wb.request("$treeChildren", ["views.tree", "1/root"])).toHaveLength(3);
+    await wb.request("$executeCommand", ["views.reveal", []]);
+    await wb.waitFor(() => ui().some((u) => u[1] === "reveal"), "the reveal");
+    const reveal = ui().find((u) => u[1] === "reveal") as [string, string, string, { path: string[]; select: boolean }];
+    expect(reveal[3]).toMatchObject({ path: ["1/root", "0/1/root/1:leaf1"], select: true });
+  });
+
+  it("creates a webview panel, serves asWebviewUri and relays messages both ways", async () => {
+    const res = await wb.request("$executeCommand", ["views.panel", []]);
+    await wb.waitFor(() => ui().some((u) => u[1] === "html"), "the panel's html");
+    expect(res.cspSource).toBe("tmwebview://localhost tmwebview:");
+    expect(res.script).toBe(`tmwebview://localhost/wv1/file${viewsDir.replace(/\\/g, "/").replace(/^\/?/, "/")}/media/main.js`);
+    const create = ui().find((u) => u[0] === "$main.webview" && u[1] === "create") as [string, string, string, { kind: string; options: { enableScripts: boolean; retainContextWhenHidden: boolean; localResourceRoots: string[] } }];
+    expect(create[2]).toBe("wv1");
+    expect(create[3]).toMatchObject({ kind: "panel", viewType: "views.panel", title: "Panel", options: { enableScripts: true, retainContextWhenHidden: true } });
+    expect(create[3].options.localResourceRoots).toEqual([viewsDir, root]);
+    expect(ui().find((u) => u[1] === "html")?.[3]).toContain("script-src tmwebview://localhost tmwebview:");
+    await wb.request("$webviewMessage", ["wv1", { type: "ready" }]);
+    await wb.waitFor(() => posted().length > 0, "the echo");
+    expect(posted()[0]).toEqual({ handle: "wv1", message: { echo: "ready" } });
+    await wb.request("$webviewPanelDisposed", ["wv1"]);
+    expect(await events()).toEqual(["webview:ready", "disposed"]);
+  });
+
+  it("resolves a webview view when the workbench shows it", async () => {
+    const handle = await wb.request("$resolveWebviewView", ["views.side"]);
+    expect(handle).toBe("wv2");
+    await wb.waitFor(() => ui().some((u) => u[1] === "viewMeta"), "the view's title");
+    expect(ui()).toContainEqual(["$main.webview", "create", "wv2", expect.objectContaining({ kind: "view", viewType: "views.side" })]);
+    expect(ui()).toContainEqual(["$main.webview", "html", "wv2", "<p>side</p>"]);
+    expect(ui()).toContainEqual(["$main.webview", "viewMeta", "wv2", { title: "Side!" }]);
+    expect(await events()).toEqual(["resolved:views.side"]);
   });
 });
