@@ -63,7 +63,10 @@ for (const s of SIZES) {
 test("the quick input and dialogs fit a narrow window", async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 760 });
   await page.goto("/");
+  // Keybindings attach once the workbench has booted.
+  await expect(page.locator(".tm-statusbar")).toBeVisible();
   await page.keyboard.press("ControlOrMeta+Shift+p");
+  await expect(page.locator(".tm-quick-input")).toBeVisible();
   const box = await page.locator(".tm-quick-input").boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(600);

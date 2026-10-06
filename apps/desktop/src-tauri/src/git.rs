@@ -1419,14 +1419,15 @@ u UU N... 100644 100644 100644 100644 a b c conflict.c\0\
         assert_eq!(String::from_utf8_lossy(&head.stdout), "one\n");
         let log = parse_log(&text(&git(&["log", "-n5", &format!("--format={LOG_FORMAT}")])));
         assert_eq!(log[0].subject, "first: \"quoted\" $(not a shell)");
-        // Literal pathspecs: a file named "*" matches only itself.
-        std::fs::write(root.join("*"), "star\n").unwrap();
-        git(&["add", "-A", "--", "*"]);
+        // Literal pathspecs: "[a].txt" (a legal name on every OS) matches only itself,
+        // although as a glob it would also match "a.txt".
+        std::fs::write(root.join("[a].txt"), "glob\n").unwrap();
+        git(&["add", "-A", "--", "[a].txt"]);
         let st = parse_status(&git(&["status", "--porcelain=v2", "-z"]).stdout);
-        let star = st.entries.iter().find(|e| e.path == "*").unwrap();
-        assert_eq!(star.x, "A");
+        let glob = st.entries.iter().find(|e| e.path == "[a].txt").unwrap();
+        assert_eq!(glob.x, "A");
         let a = st.entries.iter().find(|e| e.path == "a.txt").unwrap();
-        assert_eq!(a.x, ".", "a.txt must not be staged by the '*' pathspec");
+        assert_eq!(a.x, ".", "a.txt must not be staged by the '[a].txt' pathspec");
     }
 
     #[test]
