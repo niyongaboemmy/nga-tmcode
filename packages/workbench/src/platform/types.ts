@@ -90,10 +90,38 @@ export interface Platform {
   preview?: PreviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
   setNativeTheme?(theme: "dark" | "light"): void;
+  // ── extensions (feat/extensions) ──
+  /** VS Code extensions from Open VSX (declarative contributions only). */
+  extensions?: ExtensionHost;
+  // ── end extensions ──
   /** Git & GitHub (desktop: the system git; dev browser build: a mock). Absent → no Source Control. */
   git?: GitHost;
   /** Run and Debug (Debug Adapter Protocol); absent where nothing can be debugged. */
   debug?: DebugHost;
+}
+
+// ───────────── extensions ─────────────
+
+/** An unpacked extension in the app data folder. */
+export interface StoredExtension {
+  /** "publisher.name", lower-cased. */
+  id: string;
+  version: string;
+  /** extension/package.json as text. */
+  manifest: string;
+  /** extension/package.nls.json, when present (localised labels). */
+  nls?: string;
+}
+
+export interface ExtensionHost {
+  /** GET from the Open VSX registry (https://open-vsx.org/ only): text, or base64 for images. */
+  fetch(url: string, as: "text" | "base64"): Promise<string>;
+  list(): Promise<StoredExtension[]>;
+  /** Downloads a .vsix from Open VSX, unpacks its `extension/` folder and stores it (replacing an older version). */
+  install(id: string, downloadUrl: string): Promise<StoredExtension>;
+  uninstall(id: string): Promise<void>;
+  /** A file of an installed extension (path relative to its root): text, or base64 for images and fonts. */
+  readFile(id: string, path: string, as: "text" | "base64"): Promise<string>;
 }
 
 // ───────────── running code (plan §8) ─────────────

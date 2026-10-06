@@ -3,14 +3,17 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { defaultFontFamily } from "../../state/settings";
+import { useThemes } from "../../themes/themeService";
 import { getPlatform, log, notify, useWorkbench } from "../../state/store";
 import type { TerminalSession } from "../../platform/types";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { enhanceTerminal, type EnhancedTerminal } from "../../terminal/enhance";
 import { recordCommand, CommandLineTracker } from "../../terminal/history";
 
-/** Terminal colours from VS Code's Dark Modern / Light Modern. */
+/** Terminal colours of the active colour theme (its terminal.* keys); the static palettes cover the moment before it loads. */
 export function terminalTheme(theme: string): ITheme {
+  const active = useThemes.getState().active;
+  if (active && active.id === theme) return active.terminal;
   if (theme === "light-modern") {
     return {
       background: "#f8f8f8",
@@ -85,7 +88,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [finding, setFinding] = useState(false);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
+  const theme = useThemes((s) => s.active?.id ?? "dark-modern");
   const fontSize = useWorkbench((s) => s.settings["terminal.integrated.fontSize"]);
   const workspace = useWorkbench((s) => s.workspace);
   const platform = getPlatform();
@@ -109,7 +112,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
       // Unicode 11 widths (emoji, CJK) are a "proposed" xterm API.
       allowProposedApi: true,
       scrollback: 5000,
-      theme: terminalTheme(useWorkbench.getState().settings["workbench.colorTheme"]),
+      theme: terminalTheme(useThemes.getState().active?.id ?? "dark-modern"),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

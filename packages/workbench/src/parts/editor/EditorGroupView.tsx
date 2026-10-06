@@ -29,6 +29,7 @@ import { BrowserEditor } from "./BrowserEditor";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { profileForPath } from "@tmcode/profiles";
+import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
 // ── git ──
 import { GitDiffEditor } from "../../scm/GitDiffEditor";
 import { openGitDiff } from "../../scm/gitService";
@@ -43,6 +44,7 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
+  if (e.kind === "extension") return extensionTitle(e.extensionId);
   return "Welcome";
 }
 
@@ -51,6 +53,7 @@ function iconOf(e: EditorInput) {
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "testDiff") return <Codicon name="diff" className="tm-tab-codicon" />;
+  if (e.kind === "extension") return <Codicon name="extensions" className="tm-tab-codicon" />;
   if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
   if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
@@ -328,6 +331,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
         {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
         {active?.kind === "testDiff" && <TestDiffEditor key={active.id} input={active} />}
+        {active?.kind === "extension" && <ExtensionEditor key={active.id} extensionId={active.extensionId} />}
         {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
         {!active && <Watermark />}
       </div>

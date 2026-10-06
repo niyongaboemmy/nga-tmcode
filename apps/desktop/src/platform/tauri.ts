@@ -16,6 +16,7 @@ import type {
   JournalEntry,
   Platform,
   RunEvent,
+  StoredExtension,
   TerminalSession,
   Toolchain,
   UpdateInfo,
@@ -196,6 +197,14 @@ export async function createTauriPlatform(): Promise<Platform> {
       set: (key, value) => store.set(key, value),
     },
     setNativeTheme: (theme) => void invoke("set_native_theme", { theme }).catch(() => {}),
+    // ── extensions (feat/extensions): Open VSX only, unpacked under <app data>/extensions ──
+    extensions: {
+      fetch: (url, as) => invoke<string>("ext_fetch", { url, encoding: as }),
+      list: () => invoke<StoredExtension[]>("ext_list"),
+      install: (id, downloadUrl) => invoke<StoredExtension>("ext_install", { id, url: downloadUrl }),
+      uninstall: (id) => invoke("ext_uninstall", { id }),
+      readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
+    },
     git: createTauriGit(),
   };
 }

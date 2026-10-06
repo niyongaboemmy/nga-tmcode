@@ -2,6 +2,30 @@ import { useMemo, useState } from "react";
 import { DEFAULT_SETTINGS, SETTING_SECTIONS, type SettingDef, type Settings } from "../../state/settings";
 import { updateSetting, useWorkbench } from "../../state/store";
 import { Codicon } from "../../widgets/icons";
+import { allThemes, useThemes } from "../../themes/themeService";
+import { allIconThemes, useIconTheme } from "../../themes/iconThemes";
+
+/** Enum options, including themes contributed by installed extensions. */
+function useOptions(def: Extract<SettingDef, { type: "enum" }>) {
+  useThemes((s) => s.version);
+  useIconTheme((s) => s.version);
+  if (def.dynamicOptions === "colorThemes") return allThemes().map((t) => ({ value: t.id, label: t.label }));
+  if (def.dynamicOptions === "iconThemes") return allIconThemes().map((t) => ({ value: t.id, label: t.label }));
+  return def.options;
+}
+
+function EnumControl({ def, id, value, locked, set }: { def: Extract<SettingDef, { type: "enum" }>; id: string; value: unknown; locked: boolean; set: (v: unknown) => void }) {
+  const options = useOptions(def);
+  return (
+    <select id={id} className="tm-select" value={String(value)} disabled={locked} onChange={(e) => set(e.target.value)}>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function matches(def: SettingDef, q: string) {
   if (!q) return true;
@@ -24,15 +48,7 @@ function Control({ def, value, locked }: { def: SettingDef; value: unknown; lock
         </label>
       );
     case "enum":
-      return (
-        <select id={id} className="tm-select" value={String(value)} disabled={locked} onChange={(e) => set(e.target.value)}>
-          {def.options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      );
+      return <EnumControl def={def} id={id} value={value} locked={locked} set={set} />;
     case "number":
       return (
         <input

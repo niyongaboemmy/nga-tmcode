@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { onConsole, sendRunInput, setConsoleSize, type ConsoleEvent } from "../../run/runService";
 import { defaultFontFamily } from "../../state/settings";
+import { useThemes } from "../../themes/themeService";
 import { getPlatform, useWorkbench } from "../../state/store";
 import { terminalTheme } from "./TerminalView";
 import { enhanceTerminal } from "../../terminal/enhance";
@@ -51,7 +52,7 @@ export function RunConsole({ visible }: { visible: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const theme = useWorkbench((s) => s.previewTheme ?? s.settings["workbench.colorTheme"]);
+  const theme = useThemes((s) => s.active?.id ?? "dark-modern");
   const fontSize = useWorkbench((s) => s.settings["terminal.integrated.fontSize"]);
   const platform = getPlatform();
   const interactive = !!platform.runner?.interactive;
@@ -65,7 +66,7 @@ export function RunConsole({ visible }: { visible: boolean }) {
       disableStdin: !interactive,
       scrollback: 10000,
       allowProposedApi: true,
-      theme: terminalTheme(useWorkbench.getState().settings["workbench.colorTheme"]),
+      theme: terminalTheme(useThemes.getState().active?.id ?? "dark-modern"),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

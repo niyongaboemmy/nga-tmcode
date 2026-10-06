@@ -18,6 +18,8 @@ const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   // ── end Run and Debug ──
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
+// ── extensions (feat/extensions): hidden during exams ──
+const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
 
 export function ActivityBar() {
   const activeView = useWorkbench((s) => s.activeView);
@@ -27,13 +29,14 @@ export function ActivityBar() {
   const os = getPlatform().os;
   const inExam = useExam((s) => !!s.quiz);
   const updateReady = useUpdate((s) => s.status === "available");
+  const practice = useWorkbench((s) => s.policy.mode === "practice");
   const gitAllowed = useGitAllowed();
   const scmChanges = useGit((s) => changeCount(s.status));
   // Run and Debug is hidden in exams unless the policy allows the debugger.
   useWorkbench((s) => s.policy);
   useExam((s) => s.phase);
-  const allowed = VIEWS.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
-  const views = inExam ? [TASK_VIEW, ...allowed] : allowed;
+  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, EXTENSIONS_VIEW] : VIEWS;
+  const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
@@ -79,6 +82,7 @@ export function ActivityBar() {
               { kind: "separator" },
               { kind: "item", label: "Settings", keybinding: formatKeybinding("mod+,", os), run: () => executeCommand("workbench.action.openSettings") },
               { kind: "item", label: "Keyboard Shortcuts", keybinding: formatKeybinding("mod+k mod+s", os), run: () => executeCommand("workbench.action.keybindingsReference") },
+              ...(practice && !inExam ? [{ kind: "item" as const, label: "Extensions", keybinding: formatKeybinding("mod+shift+x", os), run: () => executeCommand("workbench.view.extensions") }] : []),
               { kind: "separator" },
               { kind: "item", label: "Themes", keybinding: formatKeybinding("mod+k mod+t", os), run: () => executeCommand("workbench.action.selectTheme") },
               { kind: "separator" },

@@ -46,6 +46,11 @@ fn main() {
             "journal_mark_synced",
             "update_check",
             "update_install",
+            "ext_fetch",
+            "ext_list",
+            "ext_install",
+            "ext_uninstall",
+            "ext_read_file",
             // git & GitHub
             "git_info",
             "git_status",

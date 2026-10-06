@@ -1,4 +1,5 @@
 import { registerCommand } from "./registry";
+import { registerExtensionCommands } from "../extensions/commands";
 import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
 import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
@@ -155,6 +156,8 @@ export function registerBuiltinCommands() {
   registerCommand({ id: "workbench.action.quickOpen", title: "Go to File...", category: "Go", keybinding: "mod+p", enabled: hasWorkspace, run: () => openQuickInput("files") });
   registerCommand({ id: "workbench.action.gotoLine", title: "Go to Line/Column...", category: "Go", keybinding: "ctrl+g", enabled: hasActiveFile, run: () => openQuickInput("line") });
   registerCommand({ id: "workbench.action.selectTheme", title: "Color Theme", category: "Preferences", keybinding: "mod+k mod+t", run: () => openQuickInput("theme") });
+  registerCommand({ id: "workbench.action.selectIconTheme", title: "File Icon Theme", category: "Preferences", run: () => openQuickInput("iconTheme") });
+  registerExtensionCommands(); // feat/extensions
 
   // ── View ──
   registerCommand({ id: "workbench.action.toggleSidebarVisibility", title: "Toggle Primary Side Bar Visibility", category: "View", keybinding: "mod+b", run: () => toggleSidebar() });

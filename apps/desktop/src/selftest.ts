@@ -16,6 +16,22 @@ export async function runSelfTest(platform: Platform, log: (msg: string) => void
 
   await step("toolchains", async () => (await platform.runner!.detect(true)).map((t) => `${t.tool}=${t.version}`).join("; "));
 
+  // Extensions (Rust: Open VSX only, unpacked under app data): search, install, read, refuse escapes, uninstall.
+  await step("extensions", async () => {
+    const ext = platform.extensions!;
+    const hits = JSON.parse(await ext.fetch("https://open-vsx.org/api/-/search?query=dracula&size=3", "text")) as { totalSize: number };
+    const details = JSON.parse(await ext.fetch("https://open-vsx.org/api/dracula-theme/theme-dracula", "text")) as { files: { download: string; icon: string } };
+    const icon = await ext.fetch(details.files.icon, "base64");
+    const stored = await ext.install("dracula-theme.theme-dracula", details.files.download);
+    const theme = JSON.parse(await ext.readFile(stored.id, "theme/dracula.json", "text").catch(() => "{}")) as { colors?: object };
+    const escape = await ext.readFile(stored.id, "../../device-id", "text").then(() => "READ OUTSIDE!", () => "refused");
+    const offsite = await ext.fetch("https://example.com/", "text").then(() => "FETCHED OFFSITE!", () => "refused");
+    const listed = (await ext.list()).map((e) => `${e.id}@${e.version}`).join(",");
+    await ext.uninstall(stored.id);
+    const after = (await ext.list()).length;
+    return `search ${hits.totalSize} hits; icon ${icon.length}b64; installed ${stored.id}@${stored.version}; theme colors ${Object.keys(theme.colors ?? {}).length}; escape ${escape}; offsite ${offsite}; listed [${listed}]; after uninstall ${after}`;
+  });
+
   await step("python run", async () => {
     let out = "";
     await new Promise<void>((resolve, reject) => {

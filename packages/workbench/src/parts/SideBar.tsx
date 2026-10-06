@@ -7,10 +7,12 @@ import { TestingView } from "./testing/TestingView";
 import { TaskView } from "../exam/ExamViews";
 // ── git ──
 import { ScmTitleActions, ScmView } from "../scm/ScmView";
+// ── extensions ──
+import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsView";
 import { RunDebugView } from "../debug/RunDebugView";
 import type { ContextMenuItem } from "../state/store";
 
-const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions" } as const;
 
 /** The title bar's "…" menu, per view. */
 function moreActions(view: keyof typeof TITLES): ContextMenuItem[] {
@@ -42,6 +44,7 @@ export function SideBar() {
       <header className="tm-sidebar-title">
         <h2>{TITLES[view]}</h2>
         <div className="tm-sidebar-title-actions">
+          {view === "extensions" && <ExtensionsTitleActions />}
           {view === "scm" ? (
             <ScmTitleActions />
           ) : (
@@ -57,7 +60,7 @@ export function SideBar() {
         </div>
       </header>
       <div className="tm-sidebar-content">
-        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : <TestingView />}
+        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : view === "extensions" ? <ExtensionsView /> : <TestingView />}
       </div>
     </aside>
   );

@@ -3,6 +3,7 @@ mod menus;
 pub mod askpass;
 mod debug;
 mod exam;
+mod extensions;
 mod git;
 mod github;
 mod preview;
@@ -229,6 +230,11 @@ pub fn run() {
             exam::journal_mark_synced,
             updates::update_check,
             updates::update_install,
+            extensions::ext_fetch,
+            extensions::ext_list,
+            extensions::ext_install,
+            extensions::ext_uninstall,
+            extensions::ext_read_file,
             git::git_info,
             git::git_status,
             git::git_show,

@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes, CSSProperties } from "react";
 import { extname, basename } from "../util/paths";
+import { fontCharacter, iconFont, iconFor, iconImage, languageForIcon, useIconTheme, type ActiveIconTheme } from "../themes/iconThemes";
+import { useThemes } from "../themes/themeService";
 
 export function Codicon({ name, className = "", style, title }: { name: string; className?: string; style?: CSSProperties; title?: string }) {
   return <span className={`codicon codicon-${name} ${className}`} style={style} title={title} aria-hidden={title ? undefined : true} />;
@@ -75,7 +77,48 @@ const BY_NAME: Record<string, FileGlyph> = {
   "requirements.txt": { text: "py", color: "#3776ab" },
 };
 
+/** Light / dark / high-contrast variant of the active colour theme, for icon themes' `light` and `highContrast` sections. */
+function useIconVariant(): "dark" | "light" | "hc" {
+  const ui = useThemes((s) => s.active?.uiTheme ?? "vs-dark");
+  return ui === "vs" ? "light" : ui === "hc-black" || ui === "hc-light" ? "hc" : "dark";
+}
+
+/** One icon definition of an extension's file icon theme: an image, or a glyph from the theme's font. */
+function ThemedIcon({ active, defId, size }: { active: ActiveIconTheme; defId: string; size: number }) {
+  useIconTheme((s) => s.assets);
+  const def = active.doc?.iconDefinitions?.[defId];
+  if (!def) return <span className="tm-themed-icon" style={{ width: size, height: size }} aria-hidden />;
+  if (def.iconPath) {
+    const src = iconImage(active, defId);
+    return src ? (
+      <img className="tm-themed-icon" src={src} width={size} height={size} alt="" aria-hidden draggable={false} />
+    ) : (
+      <span className="tm-themed-icon" style={{ width: size, height: size }} aria-hidden />
+    );
+  }
+  if (def.fontCharacter) {
+    const font = iconFont(active, def);
+    return (
+      <span
+        className="tm-themed-icon tm-themed-icon--font"
+        aria-hidden
+        style={{ width: size, height: size, fontFamily: font?.family, color: def.fontColor, fontSize: font?.size ?? `${size}px`, lineHeight: `${size}px` }}
+      >
+        {fontCharacter(def.fontCharacter)}
+      </span>
+    );
+  }
+  return <span className="tm-themed-icon" style={{ width: size, height: size }} aria-hidden />;
+}
+
 export function FileIcon({ path, size = 16 }: { path: string; size?: number }) {
+  const active = useIconTheme((s) => s.active);
+  const variant = useIconVariant();
+  if (active.entry.id === "none") return null;
+  if (active.doc) {
+    const defId = iconFor(active.doc, path, "file", { variant, languageId: languageForIcon(path) });
+    if (defId) return <ThemedIcon active={active} defId={defId} size={size} />;
+  }
   const g = BY_NAME[basename(path).toLowerCase()] ?? BY_EXT[extname(path)];
   if (!g) return <Codicon name="file" className="tm-file-icon tm-file-icon--generic" />;
   const fontSize = g.text.length >= 3 ? size * 0.42 : g.text.length === 2 ? size * 0.5 : size * 0.62;
@@ -90,6 +133,14 @@ export function FileIcon({ path, size = 16 }: { path: string; size?: number }) {
   );
 }
 
-export function FolderIcon({ open }: { open: boolean }) {
+export function FolderIcon({ open, name = "" }: { open: boolean; name?: string }) {
+  const active = useIconTheme((s) => s.active);
+  const variant = useIconVariant();
+  if (active.entry.id === "none") return null;
+  if (active.doc) {
+    const defId = iconFor(active.doc, name, "folder", { expanded: open, variant });
+    // Icon themes without folder icons (Seti) show none, as in VS Code.
+    return defId ? <ThemedIcon active={active} defId={defId} size={16} /> : null;
+  }
   return <Codicon name={open ? "folder-opened" : "folder"} className="tm-folder-icon" />;
 }
