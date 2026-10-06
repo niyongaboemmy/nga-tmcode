@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.5.0 — 2026-10-06
+
+**TMCode 0.5 runs real VS Code extensions, adds a one-click Run for every kind of project, and fixes editing in the desktop app.**
+
+### VS Code extensions that actually run
+- **New extension host.** It follows VS Code's own design: a separate Node.js process with the `vscode` API, plus a Web Worker host for browser extensions. Extensions start only when they're needed. If one crashes, the host restarts on its own, and other extensions keep working.
+- **Tested with popular extensions from Open VSX:** Prettier, ESLint, Error Lens, Code Spell Checker, Path Intellisense, Auto Rename Tag, Tailwind CSS IntelliSense, ES7 React snippets, Live Server, REST Client, Code Runner, GitLens, Better Comments, TODO Highlight, indent-rainbow, Color Highlight, and Code Formatter & Minifier (use its commands from the editor's right-click menu).
+- **What extensions can add in TMCode:**
+  - commands (Command Palette, keyboard shortcuts, right-click and title-bar menus);
+  - formatters, completion, hover, go to definition, code actions and code lens;
+  - Problems diagnostics, status bar items and Output channels;
+  - settings (under Settings › Extensions).
+- **In the Extensions view:**
+  - Each extension shows its running state: Activating, Activated with its start time, or Failed with the reason.
+  - A Recommended list of extensions verified to work in TMCode.
+  - **Restart Extension Host** and **Show Running Extensions** commands.
+- **Safety:** extensions never run during exams.
+
+### One-click Run for files and projects
+- **Run controls:**
+  - **▶ Run** in the status bar, plus a split Run button on each editor. The button's menu lists every way to run the current file or the whole project.
+  - **Run Project** is Ctrl/Cmd+Shift+F10.
+  - TMCode remembers your choice for each folder; **Change Run Target…** picks another.
+- **Project detection:** websites, React/Vite/Next/Vue/Svelte/Angular, Node.js apps, Python/Flask/Django/FastAPI, Java Maven/Gradle (Spring Boot), C/C++, Go, Rust and .NET.
+- **Websites:**
+  - Live Preview beside the code. It reloads as you type or on save (your choice), and keeps your scroll position.
+  - Objects in the preview console can be expanded.
+- **JavaScript Console (new panel):**
+  - runs JS and TypeScript, including imports;
+  - shows expandable objects and clickable error lines;
+  - has a REPL that keeps your program's variables;
+  - has a Stop button that ends even endless loops.
+- **Dev servers** (Vite, React, Next, Express, Spring, Django…):
+  - start in a named terminal and open in the built-in browser beside your code;
+  - show elapsed time, with Stop and Restart.
+- **Go and Rust** compile and run like C, C++, Java and Python. Build errors go to Problems.
+- **REPLs:** Node.js and Python, each in a terminal.
+
+### Editing fixes in the desktop app
+- **Select All** (⌘A / Ctrl+A) now works in the editor, the terminal and every text field.
+- **Terminal copy and paste** work. ⌘C/⌘V on macOS. On Windows and Linux, Ctrl+C copies when text is selected and otherwise still interrupts the program; Ctrl+V pastes.
+- **Explorer clipboard:** cut, copy and paste files and folders (⌘X/⌘C/⌘V) and **Duplicate**. Copies are named like VS Code's ("main copy.py") and work for any file, including images. Plus **Copy Path** and **Copy Relative Path**.
+- **No more false "changed on disk" warnings.** TMCode no longer mistakes its own auto-save for a change made outside the editor.
+- **Sign in with NGA** completes again. The browser step worked, but TMCode didn't read Central MIS's reply correctly. After you sign in, the Projects view lists your synced projects.
+- **Save to Task Mentor** is now Ctrl/Cmd+Alt+U, because Ctrl/Cmd+Alt+S is Save All.
+
+### All changes
+
+- Docs: recommended extensions (compatibility survey), 0.5.0 release notes, plan status
+- Sign in with NGA: read MIS's { data: { token } } redeem reply; Edit › Select All selects in whatever has focus; recommended extensions
+- Extension host: Uri accepts the components object (GitLens), Node 25's removed buffer.SlowBuffer restored (REST Client); compatibility survey script
+- docs/EXTENSION_HOST.md: architecture, API subset, contribution points, security model, verified extensions, limits; typecheck covers packages/exthost
+- Extension host: one Node host per window (a reloaded webview's host is killed); the desktop build and the Node test rebuild the bundled host
+- Native self-test TMCODE_DEV_SELFTEST=exthost: installs Code Formatter & Minifier and Path Intellisense from Open VSX, runs Beautify/Minify and checks Monaco's suggestions, then removes what it added
+- UI probe: terminal ⌘C/Ctrl+C reaches the system clipboard (restores the user's clipboard)
+- Explorer: Copy/Cut/Paste (⌘C/⌘X/⌘V) and Duplicate for files and folders, Copy Path; native ws_copy
+- Terminal copy/paste on macOS WebKit through the system clipboard; UI probe measures the live editor; debug self-tests keep their window in front
+- Panel tabs stay on one line (scroll) now that there are six
+- Extension host e2e (Web Worker host, chromium + webkit): palette command, diagnostics, status bar, Output channel, formatter, completion, runtime status, settings, restart, exam lockdown; exams stop hosts that were still starting
+- e2e: the Run menu in an exam offers running code but no REPLs or tasks
+- Workbench extension host tests: when clauses, keybinding conversion, selectors, completion kinds, edits, manifest code contributions
+- Workbench extension host tests: when clauses, keybinding conversion, selectors, completion kinds, edits, manifest code contributions
+- Extension host tests: RPC framing, vscode classes (Range/Position/Uri semantics), activation events, configuration layering, documents, globs, and the Node host end to end with fixture extensions
+- Extension host UI: runtime state in the Extensions view and details (Runtime Status tab), status bar items, editor title buttons, Output channel picker, extension settings, trust notice, Restart/Show Running commands
+- Go and Rust compile and run in the Run panel, with build errors in Problems
+- Extension host: ES module extensions (Node module hooks), the rest of the vscode classes and enums
+- Live preview: reload on save (setting), keep the scroll position, structured console
+- Extension host: Node harness (fake workbench) and a real Open VSX extension check
+- Run hub: status bar ▶ target, editor-title split button, Run Project, dev servers
+- Extension host (workbench): host lifecycle, main-thread handlers, Monaco language bridge, decorations, contributed commands/menus/keybindings
+- JavaScript Console panel: structured console output and a REPL
+- Run hub: project detection (projectKind) and structured console values (jsInspect)
+- Extension host (workbench): manifest code contributions, platform API, when clauses, config, output, document sync
+- Extension host: the vscode API shim (Node + Web Worker) and the Rust stdio bridge
+- UI probe: selection highlight, copy, paste, delete and terminal selection checks (browser + native)
+- No false 'changed on disk' warning for TMCode's own saves; Save to Task Mentor moves to Ctrl/Cmd+Alt+U (clashed with Save All)
+
 ## 0.4.1 — 2026-10-06
 
 **TMCode 0.4.1 fixes how the editor and terminal look in the installed app.** In 0.3.0 and 0.4.0 the desktop app blocked the styles that the editor and terminal create while they run. As a result:
