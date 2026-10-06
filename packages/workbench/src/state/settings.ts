@@ -36,6 +36,13 @@ export interface Settings {
   "projects.autoSave": "off" | "onSave" | "interval";
   /** Share live status (open file, unsaved files, sync) with Task Mentor while a project is open. */
   "projects.presence": boolean;
+  // ── Run hub ──
+  /** Live preview refresh: while typing, or only when a file is saved. */
+  "livePreview.updateOn": "onType" | "onSave";
+  /** An open live preview switches to the HTML file being edited. */
+  "livePreview.followActiveFile": boolean;
+  /** Dev servers open in the built-in browser beside the editor once they print their address. */
+  "run.openBrowserOnStart": boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -60,6 +67,9 @@ export const DEFAULT_SETTINGS: Settings = {
   "update.mode": "default",
   "projects.autoSave": "off",
   "projects.presence": true,
+  "livePreview.updateOn": "onType",
+  "livePreview.followActiveFile": false,
+  "run.openBrowserOnStart": true,
 };
 
 export type SettingKey = keyof Settings;
@@ -224,6 +234,33 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         key: "projects.presence",
         label: "Projects: Share Live Status",
         description: "Let Task Mentor show that the project is open, which file you are editing and whether it is synced.",
+        type: "boolean",
+      },
+    ],
+  },
+  {
+    title: "Run",
+    settings: [
+      {
+        key: "livePreview.updateOn",
+        label: "Live Preview: Update On",
+        description: "Refresh the live preview as you type, or only when a file is saved. The scroll position is kept.",
+        type: "enum",
+        options: [
+          { value: "onType", label: "onType (as you type)" },
+          { value: "onSave", label: "onSave (when a file is saved)" },
+        ],
+      },
+      {
+        key: "livePreview.followActiveFile",
+        label: "Live Preview: Follow Active HTML File",
+        description: "An open live preview shows whichever HTML file you are editing.",
+        type: "boolean",
+      },
+      {
+        key: "run.openBrowserOnStart",
+        label: "Run: Open Browser When a Dev Server Starts",
+        description: "Open the built-in browser beside the editor as soon as a dev server (Vite, Next, Spring, Django…) prints its address.",
         type: "boolean",
       },
     ],

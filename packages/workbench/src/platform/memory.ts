@@ -3,6 +3,7 @@ import { createMemoryExtensionHost } from "./memoryExtensions";
 import { createMemoryGit } from "./memoryGit";
 import { createMemoryAccountHost } from "./memoryProjects";
 import { createSimulatedDebugHost } from "../debug/fakeAdapter";
+import { createSimulatedTerminal } from "./memoryTerminal";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
 /**
@@ -324,6 +325,10 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     fs,
     store: new LocalStorageStore("tmcode:"),
     runner: createJsWorkerRunner(fs),
+    // Dev server / e2e only (`?terminal=sim`): a pretend shell for the Run hub's dev-server flow.
+    ...(import.meta.env?.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).get("terminal") === "sim"
+      ? { terminal: createSimulatedTerminal(fs) }
+      : {}),
     // Dev server / e2e: a simulated Python debugger so Run and Debug can be exercised without processes.
     ...(import.meta.env?.DEV ? { debug: createSimulatedDebugHost((p) => fs.readFile(p)) } : {}),
     exam,

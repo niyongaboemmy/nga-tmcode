@@ -162,6 +162,43 @@ const raw: Profile[] = [
     test_kinds: ["io", "unit-junit"],
     limits: COMPILED,
   },
+  // ── Run hub: Go and Rust compile and run in the Run panel (desktop) ──
+  {
+    id: "go",
+    version: 1,
+    label: "Go",
+    monaco_language: "go",
+    extensions: ["go"],
+    entry_point: "main.go",
+    template: [{ path: "main.go", content: 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Hello, NGA!")\n}\n' }],
+    local: {
+      build: [{ tool: "go", args: ["build", "-o", "{out}/main", "{entry}"] }],
+      run: { tool: "exe", args: ["{out}/main"] },
+      fallback: "server",
+    },
+    judge: { engine: "piston", language: "go", version: "*" },
+    preview: null,
+    test_kinds: ["io"],
+    limits: COMPILED,
+  },
+  {
+    id: "rust",
+    version: 1,
+    label: "Rust",
+    monaco_language: "rust",
+    extensions: ["rs"],
+    entry_point: "main.rs",
+    template: [{ path: "main.rs", content: 'fn main() {\n    println!("Hello, NGA!");\n}\n' }],
+    local: {
+      build: [{ tool: "rustc", args: ["--edition", "2021", "-g", "{entry}", "-o", "{out}/main"] }],
+      run: { tool: "exe", args: ["{out}/main"] },
+      fallback: "server",
+    },
+    judge: { engine: "piston", language: "rust", version: "*" },
+    preview: null,
+    test_kinds: ["io"],
+    limits: COMPILED,
+  },
 ];
 
 export const PROFILES: Profile[] = raw.map((p) => ProfileSchema.parse(p));

@@ -19,7 +19,7 @@ export const LimitsSchema = z.object({
 });
 export type Limits = z.infer<typeof LimitsSchema>;
 
-export const ToolSchema = z.enum(["python", "node", "cc", "cxx", "javac", "java", "exe"]);
+export const ToolSchema = z.enum(["python", "node", "cc", "cxx", "javac", "java", "go", "rustc", "exe"]);
 export type Tool = z.infer<typeof ToolSchema>;
 
 export const StepSchema = z.object({ tool: ToolSchema, args: z.array(z.string()) });
@@ -38,7 +38,7 @@ export const ProfileSchema = z.object({
   template: z.array(z.object({ path: z.string(), content: z.string() })),
   /**
    * How to build and run locally. Each step names a *tool* the desktop app
-   * resolved itself ("python", "node", "cc", "cxx", "javac", "java", or "exe"
+   * resolved itself ("python", "node", "cc", "cxx", "javac", "java", "go", "rustc", or "exe"
    * for a binary the build produced), so a profile can never run an arbitrary
    * program. Argument tokens: {entry}, {entry_stem}, {out}, {sources:<ext>}.
    */

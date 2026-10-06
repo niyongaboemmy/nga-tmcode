@@ -101,6 +101,15 @@ export function onDocumentChanged(l: (path: string) => void) {
   };
 }
 
+const saveListeners = new Set<(path: string) => void>();
+/** Fires after a file is written by TMCode (live preview "on save"). */
+export function onDocumentSaved(l: (path: string) => void) {
+  saveListeners.add(l);
+  return () => {
+    saveListeners.delete(l);
+  };
+}
+
 function createTrackedModel(path: string, content: string) {
   const model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
   model.onDidChangeContent(() => {
@@ -131,6 +140,7 @@ export async function saveDocument(path: string) {
     doc.savedVersion = version;
     changeListeners.forEach((l) => l(path));
     setDirty(path, doc.model.getAlternativeVersionId() !== doc.savedVersion);
+    saveListeners.forEach((l) => l(path));
   } catch (e) {
     notify("error", `Failed to save '${path}': ${String((e as Error)?.message ?? e)}`);
     throw e;

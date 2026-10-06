@@ -28,6 +28,11 @@ async function exists(path: string) {
 /** Ports already announced in this session, so a restarting dev server is not announced twice. */
 const announced = new Set<number>();
 
+/** The Run hub opens its own dev servers' browser, so the generic "available on port" toast stays quiet for them. */
+export function claimServerPort(port: number) {
+  announced.add(port);
+}
+
 function announceServer(url: string) {
   const port = portOf(url);
   if (port == null || announced.has(port)) return;

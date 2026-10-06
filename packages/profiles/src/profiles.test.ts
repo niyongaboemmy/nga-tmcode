@@ -3,7 +3,7 @@ import { PROFILES, profileForPath } from "./index";
 
 describe("built-in profiles", () => {
   it("are valid and uniquely identified", () => {
-    expect(PROFILES.length).toBe(8);
+    expect(PROFILES.length).toBe(10);
     expect(new Set(PROFILES.map((p) => p.id)).size).toBe(PROFILES.length);
   });
 
@@ -37,5 +37,7 @@ describe("built-in profiles", () => {
     expect(profileForPath("Main.java")?.id).toBe("java-21");
     expect(profileForPath("web/index.html")?.id).toBe("web");
     expect(profileForPath("README.md")).toBeUndefined();
+    expect(profileForPath("cmd/main.go")?.id).toBe("go");
+    expect(profileForPath("src/main.rs")?.id).toBe("rust");
   });
 });

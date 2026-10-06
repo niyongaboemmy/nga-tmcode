@@ -12,6 +12,11 @@ import { DebugConsole } from "../../debug/DebugConsole";
 import { clearDebugConsole, debugAllowed } from "../../debug/debugService";
 import { useExam } from "../../exam/state";
 // ── end Run and Debug ──
+// ── Run hub: JavaScript Console, run state badges ──
+import { JsConsoleView } from "./JsConsoleView";
+import { clearJsConsole, rerunJsConsole, stopJsConsole, useJsConsole } from "../../run/jsConsole";
+import { RunStateBadge } from "./RunStateBadge";
+// ── end Run hub ──
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -101,6 +106,7 @@ export function Panel() {
   const terminalAllowed = useWorkbench((s) => s.policy.terminal !== "off");
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const run = useWorkbench((s) => s.run);
+  const js = { status: useJsConsole((s) => s.status), file: useJsConsole((s) => s.file), last: useJsConsole((s) => s.last), startedAt: useJsConsole((s) => s.startedAt) };
   const [filter, setFilter] = useState("");
   useExam((s) => s.phase);
   useWorkbench((s) => s.policy);
@@ -111,6 +117,7 @@ export function Panel() {
     { id: "output", label: "Output" },
     ...(debugTab ? [{ id: "debugConsole" as const, label: "Debug Console" }] : []),
     { id: "run", label: "Run" },
+    { id: "jsConsole", label: "JavaScript Console" },
     ...(terminalAllowed ? [{ id: "terminal" as const, label: "Terminal" }] : []),
   ];
   const current = tabs.some((t) => t.id === active) ? active : "problems";
@@ -137,12 +144,42 @@ export function Panel() {
           {current === "run" && (
             <>
               {run.label && <span className="tm-panel-run-label">{run.label}</span>}
+              <RunStateBadge
+                running={run.status !== "idle"}
+                phase={run.status === "building" ? "Building" : "Running"}
+                since={run.startedAt ?? null}
+                exit={
+                  run.lastExit
+                    ? {
+                        ok: run.lastExit.code === 0 && !run.lastExit.timed_out && !run.lastExit.killed,
+                        label: run.lastExit.killed ? "stopped" : run.lastExit.timed_out ? "timed out" : `exit ${run.lastExit.code ?? "?"}`,
+                        ms: run.lastExit.duration_ms,
+                      }
+                    : null
+                }
+              />
               {run.status !== "idle" ? (
                 <ActionButton icon="debug-stop" label="Stop (Shift+F5)" className="tm-stop" onClick={() => executeCommand("tmcode.stop")} />
               ) : (
                 run.entry && <ActionButton icon="debug-restart" label="Run Again" onClick={() => executeCommand("tmcode.rerun")} />
               )}
               <ActionButton icon="clear-all" label="Clear" onClick={clearConsole} />
+            </>
+          )}
+          {current === "jsConsole" && (
+            <>
+              {js.file && <span className="tm-panel-run-label">{js.file}</span>}
+              <RunStateBadge
+                running={js.status === "running"}
+                phase="Running"
+                since={js.startedAt}
+                exit={js.last && js.file ? { ok: js.last.ok, label: js.last.stopped ? "stopped" : js.last.ok ? "done" : "error", ms: js.last.ms } : null}
+              />
+              {js.status === "running" ? (
+                <ActionButton icon="debug-stop" label="Stop (Shift+F5)" className="tm-stop" onClick={stopJsConsole} />
+              ) : (
+                js.file && <ActionButton icon="debug-restart" label="Run Again" onClick={rerunJsConsole} />
+              )}
             </>
           )}
           {current !== "terminal" && current !== "run" && (
@@ -153,6 +190,7 @@ export function Panel() {
           )}
           {current === "output" && <ActionButton icon="clear-all" label="Clear Output" onClick={clearOutput} />}
           {current === "debugConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearDebugConsole} />}
+          {current === "jsConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearJsConsole} />}
           {current === "terminal" && (
             <ActionButton icon="add" label="New Terminal" onClick={() => window.dispatchEvent(new CustomEvent("tmcode:new-terminal"))} />
           )}
@@ -165,6 +203,7 @@ export function Panel() {
         {current === "output" && <OutputView filter={filter} />}
         {debugTab && <DebugConsole visible={panelVisible && current === "debugConsole"} filter={filter} />}
         <RunConsole visible={panelVisible && current === "run"} />
+        <JsConsoleView visible={panelVisible && current === "jsConsole"} filter={filter} />
         {terminalAllowed && <TerminalView visible={panelVisible && current === "terminal"} />}
       </div>
     </section>

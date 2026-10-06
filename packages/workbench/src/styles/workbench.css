@@ -4712,3 +4712,425 @@ kbd,
 .tm-outline-icon.is-symbol-property {
   color: #75beff;
 }
+
+/* ───────────────────────── Run hub (feat/run-experience) ───────────────────────── */
+/* panel header chip: Running 0:04 → exit 0 · 1.20 s */
+.tm-run-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  margin-right: 6px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+.tm-run-badge .codicon {
+  font-size: 12px;
+}
+.tm-run-badge.is-ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.tm-run-badge.is-fail {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+}
+.tm-run-pulse {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--success);
+  background: currentColor;
+  animation: tm-run-pulse 1.6s ease-out infinite;
+}
+@keyframes tm-run-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 50%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* JavaScript Console */
+.tm-jsc {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tm-jsc[hidden] {
+  display: none;
+}
+.tm-jsc-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 18px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-jsc-empty {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-jsc-empty > .codicon {
+  font-size: 20px;
+}
+.tm-jsc-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 1px 12px 1px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+  animation: tm-jsc-in var(--dur-fast) var(--ease-out);
+}
+@keyframes tm-jsc-in {
+  from {
+    opacity: 0;
+  }
+}
+.tm-jsc-gutter {
+  flex: none;
+  width: 16px;
+  display: inline-flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+.tm-jsc-gutter .codicon {
+  font-size: 12px;
+}
+.tm-jsc-args {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tm-jsc-entry.is-error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.tm-jsc-entry.is-warn {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.tm-jsc-entry.is-info .tm-jsc-gutter,
+.tm-jsc-entry.is-debug,
+.tm-jsc-entry.is-input .tm-jsc-gutter,
+.tm-jsc-entry.is-result .tm-jsc-gutter {
+  color: var(--description);
+}
+.tm-jsc-entry.is-group {
+  font-weight: 600;
+}
+.tm-jsc-input-echo {
+  color: var(--link);
+}
+.tm-jsc-entry.is-system {
+  gap: 6px;
+  padding-left: 10px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--description);
+  background: none;
+}
+.tm-jsc-entry.is-system .codicon {
+  font-size: 12px;
+  margin-top: 3px;
+}
+.tm-jsc-entry.is-system.is-ok .codicon {
+  color: var(--success);
+}
+.tm-jsc-entry.is-system.is-error .codicon {
+  color: var(--error);
+}
+.tm-jsc-prompt {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex: none;
+  padding: 3px 12px 3px 8px;
+  border-top: 1px solid var(--border);
+}
+.tm-jsc-prompt > .codicon {
+  width: 16px;
+  margin-top: 3px;
+  color: var(--link);
+  font-size: 12px;
+}
+.tm-jsc-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 18px;
+  background: transparent;
+  color: var(--foreground);
+}
+.tm-jsc-input::placeholder {
+  color: var(--input-placeholder);
+}
+
+/* structured values (JavaScript Console and the live preview's console) */
+.tm-jsv {
+  font-family: var(--font-mono);
+}
+.tm-jsv.is-tree {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: top;
+  max-width: 100%;
+}
+.tm-jsv-head {
+  display: inline-flex;
+  align-items: flex-start;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.tm-jsv-head:hover {
+  background: var(--list-hover-bg);
+}
+.tm-jsv-head:focus-visible {
+  outline: 1px solid var(--focus-border);
+}
+.tm-jsv-twistie {
+  flex: none;
+  font-size: 12px !important;
+  margin: 3px 1px 0 -2px;
+}
+.tm-jsv-children {
+  display: flex;
+  flex-direction: column;
+  margin-left: 4px;
+  padding-left: 14px;
+  border-left: 1px solid var(--tree-indent-guide);
+  animation: tm-jsc-in var(--dur-fast) var(--ease-out);
+}
+.tm-jsv-row {
+  display: block;
+}
+.tm-jsv-key {
+  color: var(--debug-name, #c586c0);
+}
+.tm-jsv-key.is-meta {
+  opacity: 0.7;
+}
+.tm-jsv-str {
+  color: var(--debug-value-string, #ce9178);
+}
+.tm-jsv-num {
+  color: var(--debug-value-number, #b5cea8);
+}
+.tm-jsv-bool,
+.tm-jsv-fn {
+  color: var(--debug-value-boolean, #4e94ce);
+}
+.tm-jsv-fn {
+  font-style: italic;
+}
+.tm-jsv-null {
+  color: var(--debug-value-null, #808080);
+}
+.tm-jsv-dom {
+  color: var(--debug-name, #c586c0);
+}
+.tm-jsv-preview.is-dim {
+  opacity: 0.7;
+}
+.tm-jsv-error {
+  color: var(--error);
+}
+.tm-jsv-stack {
+  display: flex;
+  flex-direction: column;
+  padding-left: 16px;
+  color: var(--error);
+}
+.tm-jsv-frame.is-external {
+  opacity: 0.6;
+}
+.tm-jsv-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tm-jsv-link:hover {
+  color: var(--accent-hover);
+}
+.tm-root[data-size="xs"] .tm-run-badge {
+  display: none;
+}
+
+/* status bar: ▶ target / ■ Stop with elapsed time */
+.tm-run-split {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.tm-run-status {
+  min-width: 0;
+  max-width: 320px;
+}
+.tm-run-status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-run-status.is-idle .tm-run-play {
+  color: var(--success);
+}
+.tm-statusbar.is-debugging .tm-run-status .codicon,
+.tm-statusbar.is-monitored .tm-run-status .codicon,
+.tm-statusbar.is-secure .tm-run-status .codicon {
+  color: inherit;
+}
+.tm-run-status-more {
+  padding: 0 3px;
+}
+.tm-run-status-more .codicon {
+  font-size: 12px !important;
+}
+.tm-run-status:not(.is-idle) {
+  background: color-mix(in srgb, var(--success) 22%, transparent);
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+.tm-run-status.is-starting,
+.tm-run-status.is-building,
+.tm-run-status.is-stopping {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.is-starting > .tm-run-pulse,
+.is-building > .tm-run-pulse,
+.is-stopping > .tm-run-pulse,
+.tm-run-badge.is-running .tm-run-pulse {
+  color: var(--warning);
+  animation-duration: 0.9s;
+}
+.tm-run-elapsed {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.tm-run-outcome {
+  font-variant-numeric: tabular-nums;
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+.tm-run-outcome.is-ok .codicon {
+  color: var(--success);
+}
+.tm-run-outcome.is-fail {
+  background: color-mix(in srgb, var(--error) 25%, transparent);
+}
+.tm-run-outcome.is-fail .codicon {
+  color: var(--error);
+}
+
+/* editor title split button */
+.tm-run-split .tm-action.tm-run.is-livePreview,
+.tm-run-split .tm-action.tm-run.is-jsConsole {
+  color: var(--link);
+}
+.tm-run-split .tm-action.tm-stop {
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+
+/* the Run menu */
+.tm-run-menu {
+  min-width: 280px;
+  max-width: min(460px, calc(100vw - 16px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+.tm-run-menu:focus {
+  outline: none;
+}
+.tm-run-menu.is-up {
+  transform-origin: bottom left;
+}
+.tm-run-menu-header {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-run-menu-item {
+  gap: 8px;
+  height: auto;
+  min-height: 24px;
+  padding: 3px 10px;
+}
+.tm-run-menu-icon {
+  flex: none;
+  width: 16px;
+}
+.tm-run-menu-item:not(.is-disabled) .tm-run-menu-icon.codicon-play,
+.tm-run-menu-item:not(.is-disabled) .tm-run-menu-icon.codicon-play-circle {
+  color: var(--success);
+}
+.tm-run-menu-item.is-focused .tm-run-menu-icon {
+  color: inherit !important;
+}
+.tm-run-menu-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.tm-run-menu-text .tm-menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-run-menu-detail {
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-run-menu-item.is-current .tm-menu-label {
+  font-weight: 600;
+}
+.tm-root[data-size="xs"] .tm-run-status {
+  max-width: 44vw;
+}
+.tm-root[data-size="xs"] .tm-run-outcome {
+  display: none;
+}
+/* six panel tabs plus the JS Console's header actions: tabs scroll instead of wrapping */
+.tm-panel-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tm-panel-tab {
+  flex: none;
+  white-space: nowrap;
+}
+.tm-panel-actions {
+  flex: none;
+}
+/* ───────────────────────── end Run hub ───────────────────────── */

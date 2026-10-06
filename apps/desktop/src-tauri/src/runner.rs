@@ -241,6 +241,8 @@ pub fn missing_tool_message(tool: &str) -> String {
         "cc" => "a C compiler (gcc or clang)",
         "cxx" => "a C++ compiler (g++ or clang++)",
         "javac" | "java" => "a Java JDK (version 17 or newer)",
+        "go" => "Go (go.dev/dl)",
+        "rustc" => "Rust (rustc, from rustup.rs)",
         other => other,
     };
     format!("TMCode could not find {what} on this computer. Install it (or ask your teacher for the TMCode toolchain pack), then choose \"Refresh Toolchains\".")

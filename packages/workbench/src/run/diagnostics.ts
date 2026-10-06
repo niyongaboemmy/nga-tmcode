@@ -16,6 +16,12 @@ export interface ParsedDiagnostic {
 const GCC = /^(.+?):(\d+):(\d+):\s+(fatal error|error|warning):\s+(.*)$/;
 // javac:        Main.java:7: error: cannot find symbol
 const JAVAC = /^(.+?\.java):(\d+):\s+(error|warning):\s+(.*)$/;
+// Go:           ./main.go:5:2: undefined: x
+const GO = /^(\S+?\.go):(\d+):(\d+):\s+(.*)$/;
+// Rust:         error[E0425]: cannot find value `x` in this scope
+//                 --> main.rs:3:5
+const RUST_HEAD = /^(error|warning)(?:\[\w+\])?:\s+(.*)$/;
+const RUST_AT = /^\s*-->\s+(.+?):(\d+):(\d+)$/;
 // Python:       File "/path/main.py", line 4, in <module>
 const PY_FRAME = /^\s*File "(.+?)", line (\d+)/;
 // Node:         /path/main.js:3
@@ -33,6 +39,29 @@ export function parseDiagnostics(output: string): ParsedDiagnostic[] {
     }
     m = JAVAC.exec(l);
     if (m) out.push({ file: m[1], line: +m[2], column: 1, severity: m[3] === "warning" ? "warning" : "error", message: m[4], source: "javac" });
+  }
+  if (out.length) return out;
+
+  // Rust: a headline, then " --> file:line:col".
+  let head: RegExpExecArray | null = null;
+  for (const l of lines) {
+    const h = RUST_HEAD.exec(l);
+    if (h) {
+      head = h;
+      continue;
+    }
+    const at = RUST_AT.exec(l);
+    if (at && head) {
+      out.push({ file: at[1], line: +at[2], column: +at[3], severity: head[1] === "warning" ? "warning" : "error", message: head[2], source: "rustc" });
+      head = null;
+    }
+  }
+  if (out.length) return out;
+
+  // Go: "file.go:line:col: message" (after a "# package" header).
+  for (const l of lines) {
+    const g = GO.exec(l);
+    if (g) out.push({ file: g[1], line: +g[2], column: +g[3], severity: "error", message: g[4], source: "go" });
   }
   if (out.length) return out;
 

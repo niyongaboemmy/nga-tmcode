@@ -1,6 +1,7 @@
 import { onDocumentChanged } from "../monaco/documents";
 import { useWorkbench } from "../state/store";
 import { TESTS_FILE, loadTests } from "./testService";
+import { wireRunHub } from "./runHub";
 
 let wired = false;
 
@@ -8,6 +9,7 @@ let wired = false;
 export function wireRunServices() {
   if (wired) return;
   wired = true;
+  wireRunHub();
   let root = useWorkbench.getState().workspace?.root ?? null;
   if (root) void loadTests();
   useWorkbench.subscribe((s) => {
