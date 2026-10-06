@@ -87,6 +87,8 @@
     "allow-exthost-stop",
     "allow-exthost-policy",
     "allow-exthost-secret",
+    "allow-webview-publish",
+    "allow-webview-dispose",
     "allow-auth-sign-in",
     "allow-auth-cancel",
     "allow-auth-status",

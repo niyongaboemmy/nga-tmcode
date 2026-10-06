@@ -16,6 +16,7 @@ mod runner;
 mod toolchains;
 mod updates;
 mod watcher;
+mod webview;
 mod workspace;
 
 use serde::Serialize;
@@ -204,7 +205,9 @@ pub fn run() {
         .manage(account::Account::default())
         .manage(github::GitHub::default())
         .manage(exthost::ExtHosts::default())
+        .manage(webview::Webviews::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
+        .register_uri_scheme_protocol(webview::SCHEME, webview::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,
@@ -261,6 +264,8 @@ pub fn run() {
             exthost::exthost_stop,
             exthost::exthost_policy,
             exthost::exthost_secret,
+            webview::webview_publish,
+            webview::webview_dispose,
             account::auth_sign_in,
             account::auth_cancel,
             account::auth_status,

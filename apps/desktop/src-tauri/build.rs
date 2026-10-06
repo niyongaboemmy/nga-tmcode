@@ -58,6 +58,8 @@ fn main() {
             "exthost_stop",
             "exthost_policy",
             "exthost_secret",
+            "webview_publish",
+            "webview_dispose",
             "auth_sign_in",
             "auth_cancel",
             "auth_status",
