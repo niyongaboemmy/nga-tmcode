@@ -50,9 +50,7 @@ function wireOnce() {
   if (wired) return;
   wired = true;
   setupMonaco();
-  monaco.editor.registerCommand(EXT_COMMAND, (_accessor, host: HostKind, ref: number) => {
-    void links.get(host)?.request("$executeCachedCommand", [ref]).catch((e) => log("Extension Host", `Command failed: ${String((e as Error)?.message ?? e)}`, "error"));
-  });
+  monaco.editor.registerCommand(EXT_COMMAND, (_accessor, host: HostKind, ref: number) => runCachedCommand(host, ref));
   monaco.editor.registerCommand(EXT_CODE_ACTION, (_accessor, host: HostKind, edit: WorkspaceEditDTO | null, ref: number | null) => {
     void (async () => {
       if (edit) await editApplier.apply(edit);
@@ -81,6 +79,11 @@ function wireOnce() {
       return false;
     },
   });
+}
+
+/** Runs a command an extension handed over (status bar item, completion…) by its cache reference. */
+export function runCachedCommand(host: HostKind, ref: number) {
+  void links.get(host)?.request("$executeCachedCommand", [ref]).catch((e) => log("Extension Host", `Command failed: ${String((e as Error)?.message ?? e)}`, "error"));
 }
 
 export function setHostLink(link: HostLink | null, kind: HostKind) {

@@ -22,6 +22,9 @@ import { applyTheme, useThemes } from "./themes/themeService";
 import { applyIconTheme, useIconTheme } from "./themes/iconThemes";
 import { startupHooks } from "./state/store";
 import { loadInstalledExtensions } from "./extensions/service";
+// ── extension host (feat/exthost) ──
+import { initExtensionHost } from "./exthost/hostService";
+import { registerExtHostCommands } from "./exthost/commands";
 import "./extensions/monacoContributions";
 import { ActivityBar } from "./parts/ActivityBar";
 import { EditorGroupView } from "./parts/editor/EditorGroupView";
@@ -104,6 +107,8 @@ export function Workbench() {
     wireRunServices();
     wireScm();
     wireDebugServices();
+    registerExtHostCommands();
+    initExtensionHost();
     startAutoUpdates();
     // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
     let projectTimer: ReturnType<typeof setTimeout> | undefined;

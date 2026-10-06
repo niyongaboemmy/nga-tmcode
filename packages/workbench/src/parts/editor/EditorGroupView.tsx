@@ -31,6 +31,7 @@ import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { profileForPath } from "@tmcode/profiles";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
+import { ExtensionTitleActions } from "../../exthost/ui";
 // ── git ──
 import { GitDiffEditor } from "../../scm/GitDiffEditor";
 import { openGitDiff } from "../../scm/gitService";
@@ -296,6 +297,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             {dragOver === group.editors.length && <div className="tm-tab-drop-end" />}
           </div>
           <div className="tm-tabs-actions">
+            {active?.kind === "file" && <ExtensionTitleActions path={active.path} />}
             {active?.kind === "file" && <SidePreviewButton path={active.path} />}
             {active?.kind === "file" && <RunButton path={active.path} />}
             <ActionButton icon="split-horizontal" label={`Split Editor Right (${formatKeybinding("mod+\\", os)})`} onClick={() => splitEditor()} />

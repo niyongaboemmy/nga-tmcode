@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getPlatform, log, notify, openQuickInput, useWorkbench } from "../state/store";
+import { getPlatform, log, notify, openQuickInput, showDialog, useWorkbench } from "../state/store";
 import { useExam } from "../exam/state";
 import type { ExtensionHost, StoredExtension } from "../platform/types";
 import { setExtensionThemes, type ThemeEntry } from "../themes/themeService";
@@ -11,11 +11,11 @@ import { contributionSummary, parseManifest, type ExtensionManifest } from "./ma
 import type { GalleryExtension } from "./gallery";
 
 /**
- * Installed extensions and what they contribute. Only declarative parts are
- * applied: colour themes, file icon themes, TextMate grammars, languages and
- * snippets. Nothing is applied during an exam (or any non-practice policy):
- * exams are locked down, so extension themes, grammars and snippets vanish
- * until the exam ends.
+ * Installed extensions and what they contribute. Declarative parts (colour
+ * themes, file icon themes, TextMate grammars, languages, snippets) are
+ * applied here; extensions with code run in the extension host (exthost/*).
+ * Nothing is applied or run during an exam (or any non-practice policy):
+ * exams are locked down, so extensions vanish until the exam ends.
  */
 
 export interface InstalledExtension {
@@ -114,10 +114,14 @@ export async function installExtension(ext: Pick<GalleryExtension, "id" | "displ
   setBusy(ext.id, "installing");
   try {
     const stored = await host.install(ext.id, ext.downloadUrl);
-    const item = toInstalled(stored, await disabledSet());
+    let item = toInstalled(stored, await disabledSet());
     if (!item) throw new Error("its package.json could not be read");
+    if (item.manifest.hasCode && !(await acceptCodeExtension(item))) {
+      await setExtensionEnabled(item.id, false, false);
+      item = { ...item, enabled: false };
+    }
     setInstalled([...useExtensions.getState().installed.filter((e) => e.id !== item.id), item]);
-    log("Extensions", `Installed ${item.id} v${item.version}${item.manifest.hasCode ? " (its code does not run in TMCode)" : ""}`);
+    log("Extensions", `Installed ${item.id} v${item.version}${item.manifest.hasCode ? (item.enabled ? " (it runs code)" : " (disabled: its code was not trusted)") : ""}`);
     announce(item);
     return true;
   } catch (e) {
@@ -135,9 +139,33 @@ function announce(item: InstalledExtension) {
     notify("info", `${m.displayName} contributes ${m.themes.length === 1 ? "a color theme" : `${m.themes.length} color themes`}.`, [{ label: "Set Color Theme", run: () => openQuickInput("theme") }]);
   } else if (m.iconThemes.length) {
     notify("info", `${m.displayName} contributes a file icon theme.`, [{ label: "Set File Icon Theme", run: () => openQuickInput("iconTheme") }]);
-  } else if (!contributionSummary(m).length) {
-    notify("warning", `${m.displayName} contains code that TMCode cannot run yet, and nothing TMCode can use.`);
+  } else if (!m.hasCode && !contributionSummary(m).length) {
+    notify("warning", `${m.displayName} contributes nothing TMCode can use.`);
   }
+}
+
+const TRUST_KEY = "extensions.codeTrustAcknowledged";
+
+/**
+ * Extension code runs as the user, as in VS Code. The first time an extension
+ * with code is installed, TMCode says so once; declining keeps it disabled.
+ */
+async function acceptCodeExtension(item: InstalledExtension): Promise<boolean> {
+  const store = getPlatform().store;
+  if (await store.get<boolean>(TRUST_KEY).catch(() => false)) return true;
+  const choice = await showDialog({
+    message: `${item.manifest.displayName} runs code on your computer.`,
+    detail: "Like in VS Code, extensions that contain code run with your permissions: they can read and change your files, use the network and start programs. Only install extensions from publishers you trust. Extensions never run during exams.",
+    severity: "warning",
+    buttons: [
+      { id: "trust", label: "Trust and Enable", primary: true },
+      { id: "disable", label: "Keep Disabled" },
+    ],
+    cancelId: "disable",
+  });
+  if (choice !== "trust") return false;
+  await store.set(TRUST_KEY, true).catch(() => {});
+  return true;
 }
 
 export async function uninstallExtension(id: string) {
@@ -155,12 +183,12 @@ export async function uninstallExtension(id: string) {
   }
 }
 
-export async function setExtensionEnabled(id: string, enabled: boolean) {
+export async function setExtensionEnabled(id: string, enabled: boolean, apply = true) {
   const disabled = await disabledSet();
   if (enabled) disabled.delete(id);
   else disabled.add(id);
   await getPlatform().store.set(DISABLED_KEY, [...disabled]);
-  setInstalled(useExtensions.getState().installed.map((e) => (e.id === id ? { ...e, enabled } : e)));
+  if (apply) setInstalled(useExtensions.getState().installed.map((e) => (e.id === id ? { ...e, enabled } : e)));
 }
 
 // ───────────── contributions ─────────────
