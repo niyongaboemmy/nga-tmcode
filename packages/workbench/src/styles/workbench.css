@@ -4630,3 +4630,76 @@ kbd,
 .tm-status-project.is-conflict {
   color: var(--warning);
 }
+
+/* ───────────────────────── explorer + timeline ───────────────────────── */
+.tm-explorer-stack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tm-explorer-stack > :first-child {
+  flex: 1;
+  min-height: 0;
+}
+.tm-timeline {
+  flex: none;
+  border-top: 1px solid var(--border);
+}
+.tm-timeline.is-open .tm-timeline-body {
+  max-height: 32vh;
+  overflow: auto;
+}
+.tm-pane-desc {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--description);
+  text-transform: none;
+}
+.tm-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px 0 20px;
+  cursor: pointer;
+}
+.tm-timeline-row .tm-action {
+  visibility: hidden;
+}
+.tm-timeline-row:hover .tm-action,
+.tm-timeline-row:focus-within .tm-action {
+  visibility: visible;
+}
+.tm-timeline-dot {
+  font-size: 10px !important;
+  color: var(--accent);
+}
+.tm-outline-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-right: 8px;
+  cursor: pointer;
+}
+.tm-outline-twistie {
+  display: inline-flex;
+  width: 16px;
+  flex: none;
+}
+.tm-outline-icon.is-symbol-class,
+.tm-outline-icon.is-symbol-interface,
+.tm-outline-icon.is-symbol-struct {
+  color: #ee9d28;
+}
+.tm-outline-icon.is-symbol-function,
+.tm-outline-icon.is-symbol-method,
+.tm-outline-icon.is-symbol-constructor {
+  color: #b180d7;
+}
+.tm-outline-icon.is-symbol-variable,
+.tm-outline-icon.is-symbol-field,
+.tm-outline-icon.is-symbol-property {
+  color: #75beff;
+}

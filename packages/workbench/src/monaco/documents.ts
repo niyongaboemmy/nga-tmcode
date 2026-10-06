@@ -14,6 +14,7 @@ import {
 } from "../state/store";
 import { basename, extname, isWithin, rebase } from "../util/paths";
 import { setIconLanguageResolver } from "../themes/iconThemes";
+import { recordSave } from "../history/localHistory";
 
 /**
  * One Monaco text model per open file. The workbench store only knows paths
@@ -113,6 +114,7 @@ export async function saveDocument(path: string) {
   const version = doc.model.getAlternativeVersionId();
   try {
     await getPlatform().fs.writeFile(path, value);
+    void recordSave(path, value);
     doc.savedVersion = version;
     changeListeners.forEach((l) => l(path));
     setDirty(path, doc.model.getAlternativeVersionId() !== doc.savedVersion);

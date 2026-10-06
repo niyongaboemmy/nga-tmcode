@@ -11,6 +11,8 @@ import { ScmTitleActions, ScmView } from "../scm/ScmView";
 import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsView";
 import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
+import { TimelinePane } from "../history/TimelinePane";
+import { OutlinePane } from "../outline/OutlinePane";
 import type { ContextMenuItem } from "../state/store";
 
 const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects" } as const;
@@ -71,7 +73,13 @@ export function SideBar() {
         </div>
       </header>
       <div className="tm-sidebar-content">
-        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : view === "extensions" ? <ExtensionsView /> : view === "projects" ? <ProjectsView /> : <TestingView />}
+        {view === "explorer" ? (
+          <div className="tm-explorer-stack">
+            <ExplorerView />
+            <OutlinePane />
+            <TimelinePane />
+          </div>
+        ) : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : view === "extensions" ? <ExtensionsView /> : view === "projects" ? <ProjectsView /> : <TestingView />}
       </div>
     </aside>
   );
