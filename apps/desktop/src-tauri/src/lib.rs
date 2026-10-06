@@ -6,6 +6,8 @@ mod account;
 mod projects;
 mod exam;
 mod extensions;
+// ── extension host (feat/exthost) ──
+mod exthost;
 mod git;
 mod github;
 mod preview;
@@ -194,6 +196,7 @@ pub fn run() {
         .manage(git::Git::default())
         .manage(account::Account::default())
         .manage(github::GitHub::default())
+        .manage(exthost::ExtHosts::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
@@ -244,6 +247,12 @@ pub fn run() {
             extensions::ext_install,
             extensions::ext_uninstall,
             extensions::ext_read_file,
+            // ── extension host (feat/exthost) ──
+            exthost::exthost_start,
+            exthost::exthost_send,
+            exthost::exthost_stop,
+            exthost::exthost_policy,
+            exthost::exthost_secret,
             account::auth_sign_in,
             account::auth_cancel,
             account::auth_status,
@@ -310,6 +319,7 @@ pub fn run() {
             handle.state::<pty::Terminals>().kill_all();
             handle.state::<runner::Runs>().kill_all();
             handle.state::<debug::Debuggers>().kill_all();
+            handle.state::<exthost::ExtHosts>().kill_all();
         }
     });
 }

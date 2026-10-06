@@ -47,6 +47,9 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": false,
+    "resources": [
+      "resources/exthost.cjs"
+    ],
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"
