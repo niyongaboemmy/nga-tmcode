@@ -54,6 +54,8 @@ struct AppInfo {
     dev_selftest: bool,
     /// Debug builds only: `TMCODE_DEV_SELFTEST=git` runs the git self-test instead.
     dev_selftest_git: bool,
+    /// Debug builds only: `TMCODE_DEV_SELFTEST=ui` measures the editor and terminal as rendered.
+    dev_selftest_ui: bool,
     /// Debug builds only: `TMCODE_DEV_SELFTEST=projects` runs the Task Mentor projects self-test.
     dev_selftest_projects: bool,
     /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
@@ -88,6 +90,7 @@ fn app_info() -> AppInfo {
         dev_workspace: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_WORKSPACE").ok() } else { None },
         dev_selftest: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("1"),
         dev_selftest_git: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("git"),
+        dev_selftest_ui: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("ui"),
         dev_selftest_projects: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("projects"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),

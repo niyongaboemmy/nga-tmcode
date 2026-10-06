@@ -71,11 +71,13 @@ export interface DevOptions {
   selftest: boolean;
   /** TMCODE_DEV_SELFTEST=git */
   selftestGit: boolean;
+  /** TMCODE_DEV_SELFTEST=ui */
+  selftestUi: boolean;
   /** TMCODE_DEV_SELFTEST=projects */
   selftestProjects: boolean;
   launch: string | null;
 }
-export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, selftestProjects: false, launch: null };
+export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, selftestUi: false, selftestProjects: false, launch: null };
 /** Folder or file passed on the command line (`tmcode ~/project`). */
 export let launchPath: string | null = null;
 
@@ -86,11 +88,12 @@ export async function createTauriPlatform(): Promise<Platform> {
     dev_workspace: string | null;
     dev_selftest: boolean;
     dev_selftest_git: boolean;
+    dev_selftest_ui: boolean;
     dev_selftest_projects: boolean;
     dev_launch: string | null;
     open_path: string | null;
   }>("app_info");
-  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestProjects: info.dev_selftest_projects, launch: info.dev_launch };
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;

@@ -4437,6 +4437,15 @@ kbd,
 }
 /* ───── end extensions ───── */
 
+/* Terminal: skeleton prompt while a slow shell starts. */
+.tm-terminal-starting {
+  position: absolute;
+  inset: 4px auto auto 20px;
+  width: min(420px, 60%);
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* ───────────────────────── Task Mentor projects ───────────────────────── */
 .tm-projects-view {
   display: flex;

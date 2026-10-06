@@ -106,7 +106,9 @@ test("TypeScript errors appear in Problems and the explorer", async ({ page }) =
   await gotoLineEnd(page, 3);
   await page.keyboard.type("\nconst n: number = 'oops';\n");
   await page.keyboard.press(`${MOD}+Shift+m`);
-  await expect(page.locator(".tm-problem")).toContainText("is not assignable to type 'number'", { timeout: 15000 });
+  // Mid-typing diagnostics ("Cannot find name 'nu'") come and go; wait for the final one.
+  await expect(page.locator(".tm-problem", { hasText: "is not assignable to type 'number'" })).toHaveCount(1, { timeout: 30000 });
+  await expect(page.locator(".tm-problem")).toHaveCount(1);
   await expect(page.locator(".tm-status-item").filter({ hasText: /^\s*1\s*0\s*$/ })).toHaveCount(1);
   await expect(row(page, "src/utils.ts")).toHaveClass(/has-error/);
 });

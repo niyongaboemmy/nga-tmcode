@@ -1,0 +1,8 @@
+/*
+ * Painted before React mounts, so launch never flashes white.
+ * Kept out of index.html on purpose: an inline <style> there makes Tauri add a
+ * nonce to style-src, which turns off 'unsafe-inline' and blocks every style
+ * Monaco and xterm create at runtime (cursor, current line, token colours).
+ */
+html, body { margin: 0; height: 100%; background: #1f1f1f; }
+@media (prefers-color-scheme: light) { html, body { background: #ffffff; } }
