@@ -43,8 +43,10 @@ function stateLabel(r: RuntimeInfo | undefined): { label: string; icon: string; 
 /** A row's runtime badge in the Extensions view (or why its code cannot run). */
 export function RuntimeBadge({ ext }: { ext: InstalledExtension }) {
   const r = useExtHost((s) => s.runtime[ext.id]);
-  const cannot = useExtHost((s) => s.cannotRun[ext.id]);
+  const failedToStart = useExtHost((s) => s.cannotRun[ext.id]);
   if (!ext.manifest.hasCode || !ext.enabled) return null;
+  const h = hostFor(ext.manifest);
+  const cannot = failedToStart ?? ("reason" in h ? h.reason : undefined);
   if (cannot) return <Codicon name="warning" className="tm-ext-code-warning" title={`This extension's code cannot run here: ${cannot}`} />;
   const st = stateLabel(r);
   if (!st) return null;
@@ -61,8 +63,8 @@ export function CodeNotice({ manifest, installed }: { manifest: ExtensionManifes
   const r = useExtHost((s) => (installed ? s.runtime[installed.id] : undefined));
   const cannot = useExtHost((s) => (installed ? s.cannotRun[installed.id] : undefined));
   if (!manifest.hasCode) return null;
-  const host = installed ? hostFor(installed) : null;
-  const reason = cannot ?? (host && "reason" in host ? host.reason : null);
+  const host = hostFor(manifest);
+  const reason = cannot ?? ("reason" in host ? host.reason : null);
   if (reason) {
     return (
       <p className="tm-ext-notice is-warning" role="note">

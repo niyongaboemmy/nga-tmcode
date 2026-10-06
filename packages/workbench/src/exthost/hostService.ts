@@ -3,6 +3,7 @@ import { monaco, setupMonaco } from "../monaco/setup";
 import { getPlatform, log, notify, useWorkbench } from "../state/store";
 import { activeExtensions, extensionsBlocked, useExtensions, type InstalledExtension } from "../extensions/service";
 import { useExam } from "../exam/state";
+import type { ExtensionManifest } from "../extensions/manifest";
 import { documentSnapshot, editorSnapshot, wireDocumentSync } from "./documentSync";
 import { disposeProviders, editApplier, setHostLink } from "./languageBridge";
 import { applyWorkspaceEdit, clearDiagnosticsOf, installMainThread, type MainContext } from "./mainThread";
@@ -49,8 +50,7 @@ function broadcast(method: string, params: unknown[]) {
 }
 
 /** Which host would run this extension here, or why none can. */
-export function hostFor(ext: InstalledExtension): { host: HostKind } | { reason: string } {
-  const m = ext.manifest;
+export function hostFor(m: ExtensionManifest): { host: HostKind } | { reason: string } {
   const nodeHost = !!getPlatform().extensions?.startNodeHost;
   if (m.main && nodeHost) return { host: "node" };
   if (m.browser) return { host: "worker" };
@@ -62,7 +62,7 @@ function codeExtensions(): { node: InstalledExtension[]; worker: InstalledExtens
   const out = { node: [] as InstalledExtension[], worker: [] as InstalledExtension[], cannotRun: {} as Record<string, string> };
   for (const e of activeExtensions()) {
     if (!e.manifest.hasCode) continue;
-    const h = hostFor(e);
+    const h = hostFor(e.manifest);
     if ("host" in h) out[h.host].push(e);
     else out.cannotRun[e.id] = h.reason;
   }
@@ -218,7 +218,7 @@ async function startNode(exts: InstalledExtension[], seq: number): Promise<void>
       for (const line of e.data.split("\n")) if (line.trim()) log(HOST_CHANNEL, line.replace(/^\[(info|warn|error)\] /, ""), line.startsWith("[error]") ? "error" : line.startsWith("[warn]") ? "warn" : "info");
     } else if (e.type === "exit") onExit("node", conn, e.code);
   });
-  if (seq !== startSeq) {
+  if (seq !== startSeq || extensionsBlocked()) {
     proc.stop();
     return;
   }
@@ -229,7 +229,7 @@ async function startNode(exts: InstalledExtension[], seq: number): Promise<void>
 
 async function startWorker(exts: InstalledExtension[], seq: number): Promise<void> {
   const { default: HostWorker } = await import("@tmcode/exthost/src/worker/main.ts?worker");
-  if (seq !== startSeq) return;
+  if (seq !== startSeq || extensionsBlocked()) return;
   const worker: Worker = new HostWorker();
   const rpc = new RpcConnection((m: RpcMessage) => worker.postMessage(m));
   const conn: Conn = { kind: "worker", rpc, extensions: exts, ctx: makeContext("worker", rpc), live: false, stopping: false, stop: () => worker.terminate() };
@@ -250,6 +250,7 @@ async function connect(conn: Conn, data: InitData, nodeInfo: string | null) {
   // Changes after this snapshot reach the host in order, after $init.
   conn.live = true;
   await init;
+  if (extensionsBlocked()) return;
   if (nodeInfo) useExtHost.setState({ nodeInfo });
   log(HOST_CHANNEL, `Started the ${conn.kind === "node" ? "Node.js" : "Web Worker"} extension host${nodeInfo ? ` (${nodeInfo})` : ""} for ${conn.extensions.map((e) => e.id).join(", ")}`);
   // Activation runs in the background; the UI follows $main.extensionState.
@@ -300,6 +301,7 @@ async function doStart() {
   const seq = startSeq;
   useExtHost.setState({ status: "starting", message: null });
   await Promise.all([loadState(), useExtConfig.getState().loaded ? null : loadExtensionSettings()]);
+  if (seq !== startSeq || extensionsBlocked()) return;
   wireOnce();
   getPlatform().extensions?.setHostPolicy?.(true);
   const jobs: Promise<void>[] = [];
@@ -307,6 +309,11 @@ async function doStart() {
   if (worker.length && !conns.has("worker")) jobs.push(startWorker(worker, seq));
   const results = await Promise.allSettled(jobs);
   if (seq !== startSeq) return;
+  if (extensionsBlocked()) {
+    // An exam began while the hosts were starting.
+    await stopExtensionHosts(false);
+    return;
+  }
   const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
   if (failed) {
     const msg = String((failed.reason as Error)?.message ?? failed.reason);
@@ -359,9 +366,8 @@ function scheduleReconcile() {
   reconcileTimer = setTimeout(() => {
     reconcileTimer = null;
     const key = codeKey();
-    if (key === lastKey) return;
-    lastKey = key;
     if (key === "blocked") {
+      lastKey = key;
       // Exams: no extension code at all, on either side.
       getPlatform().extensions?.setHostPolicy?.(false);
       void stopExtensionHosts(false).then(() => {
@@ -370,6 +376,8 @@ function scheduleReconcile() {
       });
       return;
     }
+    if (key === lastKey) return;
+    lastKey = key;
     // An extension with code was installed, enabled or removed, or another folder opened: restart, as VS Code reloads.
     void restartExtensionHosts();
   }, 300);
@@ -397,7 +405,15 @@ export function initExtensionHost() {
   useExtensions.subscribe((s, prev) => {
     if (s.version !== prev.version) scheduleReconcile();
   });
-  useExam.subscribe(() => scheduleReconcile());
+  useExam.subscribe(() => {
+    // Exams lock extensions down at once (no debounce), on both sides.
+    if (extensionsBlocked() && (conns.size || starting)) {
+      getPlatform().extensions?.setHostPolicy?.(false);
+      void stopExtensionHosts(false);
+      applyCodeContributions([], () => {});
+    }
+    scheduleReconcile();
+  });
   useWorkbench.subscribe((s, prev) => {
     if (s.policy !== prev.policy || s.workspace?.root !== prev.workspace?.root) scheduleReconcile();
   });
