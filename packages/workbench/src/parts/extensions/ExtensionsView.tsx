@@ -8,6 +8,7 @@ import { RECOMMENDED, formatCount, galleryIcon, getGalleryExtension, rememberGal
 import { extensionHost, installExtension, setExtensionEnabled, uninstallExtension, useExtensions, type InstalledExtension } from "../../extensions/service";
 import { parseJsonc } from "../../textmate/jsonc";
 import { setExtensionsQuery, useExtensionsView } from "../../extensions/viewState";
+import { RuntimeBadge } from "../../exthost/ui";
 
 /**
  * VS Code's Extensions view over Open VSX: a marketplace search box; with no
@@ -166,7 +167,7 @@ function ExtensionRow({ ext, installed }: { ext: GalleryExtension | null; instal
             {ext?.verified && <Codicon name="verified-filled" className="tm-ext-verified" title="Verified publisher" />}
             {publisher}
           </span>
-          {installed?.manifest.hasCode && <Codicon name="warning" className="tm-ext-code-warning" title="This extension contains code that TMCode cannot run yet." />}
+          {installed && <RuntimeBadge ext={installed} />}
           <span className="tm-ext-row-action">
             <RowAction ext={ext} installed={installed} />
           </span>
@@ -340,7 +341,7 @@ export function ExtensionsView() {
                 {!loaded ? (
                   <MarketplaceSkeleton count={2} />
                 ) : installed.length === 0 ? (
-                  <p className="tm-ext-message">No extensions installed. Themes, icon themes, languages and snippets from Open VSX work in TMCode.</p>
+                  <p className="tm-ext-message">No extensions installed. Themes, languages, snippets, formatters and other extensions from Open VSX work in TMCode.</p>
                 ) : (
                   filterInstalled(installed).map((e) => <InstalledRow key={e.id} ext={e} />)
                 )}

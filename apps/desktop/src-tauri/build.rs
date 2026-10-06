@@ -52,6 +52,12 @@ fn main() {
             "ext_install",
             "ext_uninstall",
             "ext_read_file",
+            // extension host
+            "exthost_start",
+            "exthost_send",
+            "exthost_stop",
+            "exthost_policy",
+            "exthost_secret",
             "auth_sign_in",
             "auth_cancel",
             "auth_status",

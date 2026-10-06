@@ -95,7 +95,8 @@ describe("extension manifest", () => {
     expect(m.grammars[1].injectTo).toEqual(["source.js", "source.python"]);
     expect(m.languages[0]).toMatchObject({ id: "owl", extensions: [".owl"], configuration: "language-configuration.json" });
     expect(m.snippets).toEqual([{ language: "owl", path: "snippets/owl.code-snippets" }]);
-    expect(m.unsupported).toEqual(["commands", "keybindings"]);
+    // It has code, so its commands and keybindings run in the extension host.
+    expect(m.unsupported).toEqual([]);
     expect(contributionSummary(m)).toEqual(["2 color themes", "1 file icon theme", "1 language", "2 grammars", "1 snippet file"]);
     expect(hasNoUsableParts(m)).toBe(false);
   });

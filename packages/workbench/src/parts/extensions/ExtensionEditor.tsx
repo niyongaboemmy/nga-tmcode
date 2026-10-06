@@ -5,10 +5,11 @@ import { executeCommand } from "../../commands/registry";
 import { Codicon } from "../../widgets/icons";
 import { SkeletonLines } from "../../widgets/Skeleton";
 import { cachedGalleryName, formatCount, getGalleryExtension, OPEN_VSX, type GalleryExtension } from "../../extensions/gallery";
-import { contributionSummary, parseManifest, type ExtensionManifest } from "../../extensions/manifest";
+import { parseManifest, type ExtensionManifest } from "../../extensions/manifest";
 import { extensionHost, installedExtension, installExtension, setExtensionEnabled, uninstallExtension, useExtensions } from "../../extensions/service";
 import { resolveRelative } from "../../textmate/themeData";
 import { ExtensionIcon, Rating, useExtensionsBlocked } from "./ExtensionsView";
+import { CodeNotice, RuntimeStatus } from "../../exthost/ui";
 
 /**
  * The extension details editor (VS Code's "Extension: <name>" tab): header
@@ -171,7 +172,7 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
   const busy = useExtensions((s) => s.busy[id]);
   const blocked = useExtensionsBlocked();
   const d = useDetails(id);
-  const [tab, setTab] = useState<"details" | "features">("details");
+  const [tab, setTab] = useState<"details" | "features" | "runtime">("details");
   const readmeRef = useRef<HTMLDivElement>(null);
   const html = useMemo(() => (d.readme ? renderReadme(d.readme) : ""), [d.readme]);
   useReadmeImages(readmeRef, id, d.readmeBase, html);
@@ -182,7 +183,6 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
   const description = installed?.manifest.description || g?.description || "";
   const publisher = g?.publisher ?? installed?.manifest.publisher ?? id.split(".")[0];
   const updateAvailable = !!(installed && g && g.version && g.version !== installed.version);
-  const summary = manifest ? contributionSummary(manifest) : [];
 
   if (!extensionHost()) return <div className="tm-ext-editor"><p className="tm-ext-message">Extensions are available in the TMCode desktop app.</p></div>;
 
@@ -251,15 +251,7 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
               <Codicon name="lock" /> Extensions are disabled during exams.
             </p>
           )}
-          {manifest?.hasCode && (
-            <p className="tm-ext-notice is-warning" role="note">
-              <Codicon name="warning" />
-              <span>
-                This extension contains code that TMCode cannot run yet.
-                {summary.length ? ` TMCode ${installed ? "applies" : "will apply"} only its declarative parts (${summary.join(", ")}); its commands, views and other features will not work.` : " None of its features will work in TMCode."}
-              </span>
-            </p>
-          )}
+          {manifest && <CodeNotice manifest={manifest} installed={installed} />}
           {installed && !installed.enabled && <p className="tm-ext-notice">This extension is disabled.</p>}
         </div>
       </header>
@@ -271,11 +263,18 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
         <button type="button" role="tab" aria-selected={tab === "features"} className={tab === "features" ? "is-active" : ""} onClick={() => setTab("features")}>
           Features
         </button>
+        {installed?.manifest.hasCode && (
+          <button type="button" role="tab" aria-selected={tab === "runtime"} className={tab === "runtime" ? "is-active" : ""} onClick={() => setTab("runtime")}>
+            Runtime Status
+          </button>
+        )}
       </div>
 
       <div className="tm-ext-content">
         <div className="tm-ext-main" role="tabpanel">
-          {tab === "details" ? (
+          {tab === "runtime" && installed ? (
+            <RuntimeStatus ext={installed} />
+          ) : tab === "details" ? (
             d.readme === null ? (
               <SkeletonLines lines={6} label="Loading README" />
             ) : html ? (

@@ -128,6 +128,28 @@ export interface ExtensionHost {
   uninstall(id: string): Promise<void>;
   /** A file of an installed extension (path relative to its root): text, or base64 for images and fonts. */
   readFile(id: string, path: string, as: "text" | "base64"): Promise<string>;
+  // ── extension host (feat/exthost) ──
+  /** Desktop: runs extensions' code in Node.js (src-tauri/src/exthost.rs). Absent in the browser build (Web Worker host only). */
+  startNodeHost?(onEvent: (e: ExtHostTransportEvent) => void): Promise<ExtHostProcess>;
+  /** Exams switch the extension host off on the native side too. */
+  setHostPolicy?(allowed: boolean): void;
+  /** `ExtensionContext.secrets` (desktop: the OS keychain). */
+  secrets?(op: "get" | "store" | "delete" | "keys", extension: string, key?: string, value?: string): Promise<unknown>;
+  // ── end extension host ──
+}
+
+/** From the Node extension host: one JSON-RPC message (text), its stderr, or its exit. */
+export type ExtHostTransportEvent = { type: "message"; message: string } | { type: "stderr"; data: string } | { type: "exit"; code: number | null };
+
+export interface ExtHostProcess {
+  /** Absolute folder holding installed extensions (`<dir>/<publisher.name>`). */
+  extensionsDir: string;
+  /** Absolute folder for extension storage. */
+  storageDir: string;
+  node: string;
+  nodeVersion: string;
+  send(message: string): void;
+  stop(): void;
 }
 
 // ───────────── running code (plan §8) ─────────────

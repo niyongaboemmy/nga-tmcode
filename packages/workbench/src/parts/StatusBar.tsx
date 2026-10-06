@@ -14,6 +14,7 @@ import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
 // ── Run hub ──
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
+import { ExtensionStatusItems } from "../exthost/ui";
 
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
 const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
@@ -173,6 +174,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
         )}
         <DebugStatus />
         <RunStatusItems />
+        <ExtensionStatusItems side="left" />
         {chord && <Item title="Waiting for second key of chord">({chord}) was pressed. Waiting for second key of chord...</Item>}
       </div>
       <div className="tm-status-right">
@@ -194,6 +196,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />
           {autoSave === "off" ? "Auto Save Off" : "Auto Save"}
         </Item>
+        <ExtensionStatusItems side="right" />
         <UpdateItem />
         <Item title={notifications ? `${notifications} notifications` : "No Notifications"}>
           <Codicon name={notifications ? "bell-dot" : "bell"} />

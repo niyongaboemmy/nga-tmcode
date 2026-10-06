@@ -5134,3 +5134,99 @@ kbd,
   flex: none;
 }
 /* ───────────────────────── end Run hub ───────────────────────── */
+
+/* ── extension host (feat/exthost) ── */
+.tm-ext-runtime {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--descriptionForeground, var(--foreground));
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.tm-ext-runtime .codicon {
+  font-size: 12px;
+}
+.tm-ext-runtime.is-activated .codicon {
+  color: var(--testing-iconPassed, #73c991);
+}
+.tm-ext-runtime.is-failed {
+  color: var(--errorForeground, #f48771);
+  opacity: 1;
+}
+.tm-ext-notice.is-error {
+  color: var(--errorForeground, #f48771);
+}
+.tm-ext-runtime-status {
+  padding: 4px 0 16px;
+  max-width: 760px;
+}
+.tm-ext-runtime-status dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 16px;
+}
+.tm-ext-runtime-status dt {
+  color: var(--descriptionForeground, var(--foreground));
+}
+.tm-ext-runtime-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tm-ext-runtime-status ul {
+  margin: 4px 0 16px;
+  padding-left: 18px;
+}
+.tm-ext-runtime-error {
+  color: var(--errorForeground, #f48771);
+  white-space: pre-wrap;
+}
+.tm-status-ext {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-status-ext .codicon {
+  margin-right: 3px;
+}
+.tm-output-channel-select {
+  height: 22px;
+  max-width: 180px;
+  font-size: 12px;
+}
+.tm-setting-json {
+  width: 100%;
+  max-width: 600px;
+  font-size: 12px;
+  resize: vertical;
+}
+.tm-setting-error {
+  color: var(--errorForeground, #f48771);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.tm-setting-key {
+  font-size: 11px;
+  margin-top: 4px;
+  font-family: var(--monaco-monospace-font, monospace);
+}
+.tm-qp-check {
+  flex: none;
+  color: var(--focusBorder, var(--foreground));
+}
+.tm-qp-many-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--widget-border, transparent);
+}
+@media (max-width: 640px) {
+  .tm-output-channel-select {
+    max-width: 110px;
+  }
+}
+/* ── end extension host ── */

@@ -17,6 +17,7 @@ import { JsConsoleView } from "./JsConsoleView";
 import { clearJsConsole, rerunJsConsole, stopJsConsole, useJsConsole } from "../../run/jsConsole";
 import { RunStateBadge } from "./RunStateBadge";
 // ── end Run hub ──
+import { OutputChannelPicker, useOutputChannelFilter } from "../../exthost/ui";
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -80,7 +81,9 @@ function ProblemsView({ filter }: { filter: string }) {
 }
 
 function OutputView({ filter }: { filter: string }) {
-  const output = useWorkbench((s) => s.output);
+  const all = useWorkbench((s) => s.output);
+  const channel = useOutputChannelFilter();
+  const output = channel ? all.filter((l) => l.channel === channel) : all;
   const ref = useRef<HTMLDivElement>(null);
   const lines = filter ? output.filter((l) => `${l.channel} ${l.text}`.toLowerCase().includes(filter.toLowerCase())) : output;
   useEffect(() => {
@@ -188,6 +191,7 @@ export function Panel() {
               <Codicon name="filter" className="tm-input-trailing" />
             </div>
           )}
+          {current === "output" && <OutputChannelPicker />}
           {current === "output" && <ActionButton icon="clear-all" label="Clear Output" onClick={clearOutput} />}
           {current === "debugConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearDebugConsole} />}
           {current === "jsConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearJsConsole} />}

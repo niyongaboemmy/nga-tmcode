@@ -30,6 +30,7 @@ import { HistoryDiffEditor } from "../../history/HistoryDiffEditor";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
+import { ExtensionTitleActions } from "../../exthost/ui";
 // ── git ──
 import { GitDiffEditor } from "../../scm/GitDiffEditor";
 // ── Run hub ──
@@ -296,6 +297,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             {dragOver === group.editors.length && <div className="tm-tab-drop-end" />}
           </div>
           <div className="tm-tabs-actions">
+            {active?.kind === "file" && <ExtensionTitleActions path={active.path} />}
             {active?.kind === "file" && <SidePreviewButton path={active.path} />}
             {active?.kind === "file" && <RunSplitButton path={active.path} />}
             <ActionButton icon="split-horizontal" label={`Split Editor Right (${formatKeybinding("mod+\\", os)})`} onClick={() => splitEditor()} />

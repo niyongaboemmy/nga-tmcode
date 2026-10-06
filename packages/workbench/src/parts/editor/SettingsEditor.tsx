@@ -4,6 +4,7 @@ import { updateSetting, useWorkbench } from "../../state/store";
 import { Codicon } from "../../widgets/icons";
 import { allThemes, useThemes } from "../../themes/themeService";
 import { allIconThemes, useIconTheme } from "../../themes/iconThemes";
+import { ExtensionSettingsSection } from "../../exthost/ui";
 
 /** Enum options, including themes contributed by installed extensions. */
 function useOptions(def: Extract<SettingDef, { type: "enum" }>) {
@@ -131,7 +132,7 @@ export function SettingsEditor() {
           ))}
         </nav>
         <div className="tm-settings-list tm-scroll">
-          {sections.length === 0 && <p className="tm-muted">No settings found.</p>}
+          {sections.length === 0 && !query && !onlyModified && <p className="tm-muted">No settings found.</p>}
           {sections.map((s) => (
             <section key={s.title} id={`settings-${s.title}`} className="tm-settings-section">
               <h3>{s.title}</h3>
@@ -165,6 +166,8 @@ export function SettingsEditor() {
               })}
             </section>
           ))}
+          {/* ── extension host (feat/exthost): settings contributed by extensions ── */}
+          <ExtensionSettingsSection query={query} onlyModified={onlyModified} />
         </div>
       </div>
     </div>

@@ -385,7 +385,7 @@ test("file icon themes from extensions", async ({ page }) => {
   await expect(page.locator('.tm-explorer [data-path="main.py"] img.tm-themed-icon')).toBeVisible();
 });
 
-test("extensions with code install for their declarative parts, with a clear notice", async ({ page }) => {
+test("a Node-only extension in the browser build: installs for its declarative parts, says why its code cannot run", async ({ page }) => {
   await mockOpenVsx(page);
   await page.goto("/");
   await openExtensions(page);
@@ -393,14 +393,15 @@ test("extensions with code install for their declarative parts, with a clear not
   await row(page, "runnerco.code-runner-lite").click();
   const editor = page.locator(".tm-ext-editor");
   // Known before installing, from the manifest on Open VSX.
-  await expect(editor.locator(".tm-ext-notice.is-warning")).toContainText("This extension contains code that TMCode cannot run yet.");
+  await expect(editor.locator(".tm-ext-notice.is-warning")).toContainText("needs Node.js, which only the TMCode desktop app provides");
   await editor.getByRole("button", { name: "Install" }).click();
+  // Extension code runs as the user: a one-time notice on the first install of an extension with code.
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("runs code on your computer");
+  await dialog.getByRole("button", { name: "Trust and Enable" }).click();
   await expect(editor.getByRole("button", { name: "Uninstall" })).toBeVisible({ timeout: 15000 });
-  await expect(editor.locator(".tm-ext-notice.is-warning")).toContainText("TMCode applies only its declarative parts (1 snippet file)");
+  await expect(editor.locator(".tm-ext-notice.is-warning")).toContainText("cannot run here");
   await expect(row(page, "runnerco.code-runner-lite").locator(".tm-ext-code-warning")).toBeVisible();
-  await editor.getByRole("tab", { name: "Features" }).click();
-  await expect(editor.locator(".tm-ext-features")).toContainText("Not supported in TMCode");
-  await expect(editor.locator(".tm-ext-features")).toContainText("commands");
 });
 
 test("extensions are disabled in exam mode", async ({ page }) => {
