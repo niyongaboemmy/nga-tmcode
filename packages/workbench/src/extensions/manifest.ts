@@ -1,10 +1,11 @@
 import { parseJsonc } from "../textmate/jsonc";
 
 /**
- * A VS Code extension's package.json, reduced to what TMCode can use. TMCode
- * applies declarative contributions only (colour and file icon themes,
- * TextMate grammars, languages, snippets); extensions with code still install
- * for those parts, and the UI says their code does not run.
+ * A VS Code extension's package.json, reduced to what TMCode can use: the
+ * declarative contributions (colour and file icon themes, TextMate grammars,
+ * languages, snippets), and for extensions with code (`main` / `browser`,
+ * run by the extension host, exthost/*) their commands, menus, keybindings
+ * and configuration.
  */
 
 export interface ThemeContribution {
@@ -45,6 +46,32 @@ export interface SnippetContribution {
   path: string;
 }
 
+export interface CommandContribution {
+  command: string;
+  title: string;
+  category?: string;
+  /** A codicon id ("$(sync)" → "sync"), or image paths inside the extension. */
+  icon?: string | { light?: string; dark?: string };
+  enablement?: string;
+}
+
+export interface MenuItemContribution {
+  command: string;
+  when?: string;
+  group?: string;
+  alt?: string;
+}
+
+export interface KeybindingContribution {
+  command: string;
+  key?: string;
+  mac?: string;
+  linux?: string;
+  win?: string;
+  when?: string;
+  args?: unknown;
+}
+
 export interface ExtensionManifest {
   /** "publisher.name", lower-cased (VS Code ids are case-insensitive). */
   id: string;
@@ -55,8 +82,18 @@ export interface ExtensionManifest {
   description: string;
   icon?: string;
   categories: string[];
-  /** The extension ships code (`main` / `browser`) that TMCode cannot run. */
+  /** The extension ships code (`main` for Node.js, `browser` for a Web Worker). */
   hasCode: boolean;
+  main?: string;
+  browser?: string;
+  /** package.json as parsed (the extension host's `packageJSON`). */
+  raw: Record<string, unknown>;
+  /** package.nls.json, for "%key%" strings in raw contributions (configuration titles…). */
+  nls?: Nls;
+  commands: CommandContribution[];
+  /** Menu id ("editor/context", "editor/title", "commandPalette"…) → items. */
+  menus: Record<string, MenuItemContribution[]>;
+  keybindings: KeybindingContribution[];
   themes: ThemeContribution[];
   iconThemes: IconThemeContribution[];
   grammars: GrammarContribution[];
@@ -67,8 +104,10 @@ export interface ExtensionManifest {
 }
 
 export const SUPPORTED_CONTRIBUTIONS = ["themes", "iconThemes", "grammars", "languages", "snippets"] as const;
+/** Applied for extensions whose code runs (exthost). */
+export const CODE_CONTRIBUTIONS = ["commands", "menus", "keybindings", "configuration", "configurationDefaults"] as const;
 
-type Nls = Record<string, string | { message?: string }>;
+export type Nls = Record<string, string | { message?: string }>;
 
 /** Replaces "%key%" placeholders with package.nls.json strings, as VS Code does. */
 export function localize(value: unknown, nls?: Nls): string {
@@ -155,6 +194,29 @@ export function parseManifest(text: string, nls?: Nls): ExtensionManifest {
     if (p && language) snippets.push({ language, path: p });
   }
 
+  const commands: CommandContribution[] = [];
+  for (const cmd of list(c.commands)) {
+    const command = str(cmd.command);
+    if (!command) continue;
+    const rawIcon = cmd.icon;
+    let icon: CommandContribution["icon"];
+    if (typeof rawIcon === "string") icon = /^\$\((.+)\)$/.exec(rawIcon)?.[1] ?? path(rawIcon);
+    else if (rawIcon && typeof rawIcon === "object") icon = { light: path((rawIcon as Record<string, unknown>).light), dark: path((rawIcon as Record<string, unknown>).dark) };
+    commands.push({ command, title: localize(cmd.title, nls) || command, category: localize(cmd.category, nls) || undefined, icon, enablement: str(cmd.enablement) });
+  }
+  const menus: Record<string, MenuItemContribution[]> = {};
+  if (c.menus && typeof c.menus === "object") {
+    for (const [menu, items] of Object.entries(c.menus as Record<string, unknown>)) {
+      const parsed = list(items).flatMap((m) => (str(m.command) ? [{ command: str(m.command)!, when: str(m.when), group: str(m.group), alt: str(m.alt) }] : []));
+      if (parsed.length) menus[menu] = parsed;
+    }
+  }
+  const keybindings: KeybindingContribution[] = [];
+  for (const k of Array.isArray(c.keybindings) ? list(c.keybindings) : c.keybindings && typeof c.keybindings === "object" ? [c.keybindings as Record<string, unknown>] : []) {
+    const command = str(k.command);
+    if (command) keybindings.push({ command, key: str(k.key), mac: str(k.mac), linux: str(k.linux), win: str(k.win), when: str(k.when), args: k.args });
+  }
+
   return {
     id: `${publisher}.${name}`.toLowerCase(),
     name,
@@ -165,12 +227,19 @@ export function parseManifest(text: string, nls?: Nls): ExtensionManifest {
     icon: path(raw.icon),
     categories: strs(raw.categories) ?? [],
     hasCode: !!(str(raw.main) || str(raw.browser)),
+    main: str(raw.main),
+    browser: str(raw.browser),
+    raw,
+    nls,
+    commands,
+    menus,
+    keybindings,
     themes,
     iconThemes,
     grammars,
     languages,
     snippets,
-    unsupported: Object.keys(c).filter((k) => !(SUPPORTED_CONTRIBUTIONS as readonly string[]).includes(k)),
+    unsupported: Object.keys(c).filter((k) => !(SUPPORTED_CONTRIBUTIONS as readonly string[]).includes(k) && !((raw.main || raw.browser) && (CODE_CONTRIBUTIONS as readonly string[]).includes(k))),
   };
 }
 

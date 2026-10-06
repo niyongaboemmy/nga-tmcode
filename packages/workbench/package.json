@@ -7,6 +7,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
+    "@tmcode/exthost": "*",
     "@tmcode/profiles": "*",
     "@tmcode/protocol": "*",
     "@vscode/codicons": "^0.0.46-24",
@@ -21,10 +22,10 @@
     "esbuild-wasm": "^0.28.2",
     "marked": "^16.4.2",
     "monaco-editor": "^0.57.0",
+    "prettier": "^3.9.9",
     "tm-grammars": "^1.32.22",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2",
-    "prettier": "^3.9.9",
     "zustand": "^5.0.15"
   },
   "peerDependencies": {

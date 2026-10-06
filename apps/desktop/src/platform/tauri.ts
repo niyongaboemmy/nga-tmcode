@@ -10,6 +10,7 @@ import type {
   DebugProbe,
   DebugTransportEvent,
   DirEntry,
+  ExtHostTransportEvent,
   AccountHost,
   AccountStatus,
   GitEvent,
@@ -212,6 +213,22 @@ export async function createTauriPlatform(): Promise<Platform> {
       install: (id, downloadUrl) => invoke<StoredExtension>("ext_install", { id, url: downloadUrl }),
       uninstall: (id) => invoke("ext_uninstall", { id }),
       readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
+      // ── extension host (feat/exthost): Node.js over stdio, src-tauri/src/exthost.rs ──
+      async startNodeHost(onEvent) {
+        const channel = new Channel<ExtHostTransportEvent>();
+        channel.onmessage = onEvent;
+        const r = await invoke<{ id: number; extensions_dir: string; storage_dir: string; node: string; node_version: string }>("exthost_start", { onEvent: channel });
+        return {
+          extensionsDir: r.extensions_dir,
+          storageDir: r.storage_dir,
+          node: r.node,
+          nodeVersion: r.node_version,
+          send: (message) => void invoke("exthost_send", { id: r.id, message }).catch(() => {}),
+          stop: () => void invoke("exthost_stop", { id: r.id }).catch(() => {}),
+        };
+      },
+      setHostPolicy: (allowed) => void invoke("exthost_policy", { allowed }).catch(() => {}),
+      secrets: (op, extension, key, value) => invoke("exthost_secret", { op, extension, key: key ?? null, value: value ?? null }),
     },
     git: createTauriGit(),
     account: createTauriAccount(),

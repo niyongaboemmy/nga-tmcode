@@ -101,6 +101,20 @@ export function onDocumentChanged(l: (path: string) => void) {
   };
 }
 
+// ── extension host (feat/exthost) ──
+const savedListeners = new Set<(path: string) => void>();
+/** Fires after a file was saved by TMCode (extensions' onDidSaveTextDocument). */
+export function onDocumentSaved(l: (path: string) => void) {
+  savedListeners.add(l);
+  return () => {
+    savedListeners.delete(l);
+  };
+}
+
+/** Problems for files that have no model (extension diagnostics of unopened files). */
+export const extraProblems: { get: () => Problem[] } = { get: () => [] };
+// ── end extension host ──
+
 function createTrackedModel(path: string, content: string) {
   const model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
   model.onDidChangeContent(() => {
@@ -130,6 +144,7 @@ export async function saveDocument(path: string) {
     void recordSave(path, value);
     doc.savedVersion = version;
     changeListeners.forEach((l) => l(path));
+    savedListeners.forEach((l) => l(path));
     setDirty(path, doc.model.getAlternativeVersionId() !== doc.savedVersion);
   } catch (e) {
     notify("error", `Failed to save '${path}': ${String((e as Error)?.message ?? e)}`);
@@ -219,22 +234,26 @@ export function wireDocuments() {
     for (const p of [...docs.keys()]) if (isWithin(p, path)) disposeDoc(p);
   });
 
-  monaco.editor.onDidChangeMarkers(() => {
-    const problems: Problem[] = monaco.editor
-      .getModelMarkers({})
-      // Hints (unused variables etc.) show in the editor but not in Problems, as in VS Code.
-      .filter((m) => m.resource.scheme === SCHEME && m.severity !== monaco.MarkerSeverity.Hint)
-      .map((m) => ({
-        path: pathOfUri(m.resource),
-        message: m.message,
-        severity: m.severity === monaco.MarkerSeverity.Error ? "error" : m.severity === monaco.MarkerSeverity.Warning ? "warning" : "info",
-        line: m.startLineNumber,
-        column: m.startColumn,
-        source: m.source,
-      }));
-    setProblems(problems);
-  });
+  monaco.editor.onDidChangeMarkers(() => recomputeProblems());
 
   window.addEventListener("blur", saveOnFocusChange);
   log("Workbench", "Editor services ready");
+}
+
+/** Problems = Monaco markers of open files (+ extension diagnostics of files that are not open). */
+export function recomputeProblems() {
+  const problems: Problem[] = monaco.editor
+    .getModelMarkers({})
+    // Hints (unused variables etc.) show in the editor but not in Problems, as in VS Code.
+    .filter((m) => m.resource.scheme === SCHEME && m.severity !== monaco.MarkerSeverity.Hint)
+    .map((m) => ({
+      path: pathOfUri(m.resource),
+      message: m.message,
+      severity: m.severity === monaco.MarkerSeverity.Error ? "error" : m.severity === monaco.MarkerSeverity.Warning ? "warning" : "info",
+      line: m.startLineNumber,
+      column: m.startColumn,
+      source: m.source,
+    }));
+  const open = new Set(problems.map((p) => p.path));
+  setProblems([...problems, ...extraProblems.get().filter((p) => !open.has(p.path) && !getDocument(p.path))]);
 }

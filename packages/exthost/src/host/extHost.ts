@@ -391,6 +391,10 @@ export class ExtHost {
       d.isDirty = false;
       this.onDidSaveTextDocument.fire(d.document);
     });
+    r.register("$documentDirty", ([path, dirty]) => {
+      const d = this.#docs.get(String(path));
+      if (d) d.isDirty = !!dirty;
+    });
     r.register("$documentClosed", ([path]) => this.#documentClosed(String(path)));
     r.register("$documentLanguageChanged", ([path, languageId]) => {
       const d = this.#docs.get(String(path));
