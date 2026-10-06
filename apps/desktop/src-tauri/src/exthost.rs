@@ -220,6 +220,8 @@ pub fn exthost_start(app: AppHandle, ws: State<'_, Workspace>, tools: State<'_, 
     let extensions = data.join("extensions");
     let _ = std::fs::create_dir_all(&storage);
     let cwd = ws.root().ok().or_else(|| app.path().home_dir().ok()).unwrap_or_else(std::env::temp_dir);
+    // One Node host per window: a host left by a reloaded webview (or a restart) goes first.
+    hosts.kill_all();
     let id = hosts.next.fetch_add(1, Ordering::Relaxed) + 1;
     let channel = on_event.clone();
     let sink: Arc<dyn Fn(ExtHostEvent) + Send + Sync> = Arc::new(move |e| {

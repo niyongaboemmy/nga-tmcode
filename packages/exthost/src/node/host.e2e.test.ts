@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 // @ts-expect-error plain ESM helper without typings
 import { FakeWorkbench, describeExtension } from "../../test/harness.mjs";
 
@@ -104,6 +105,8 @@ let wb: WB;
 let root: string;
 
 beforeAll(async () => {
+  // Test the current sources: rebuild the bundled host (identical output when it is up to date).
+  execFileSync(process.execPath, [join(__dirname, "../../build.mjs")]);
   const exts = mkdtempSync(join(tmpdir(), "tmcode-fixture-ext-"));
   root = mkdtempSync(join(tmpdir(), "tmcode-fixture-ws-"));
   writeFileSync(join(root, "data.txt"), "from disk");
