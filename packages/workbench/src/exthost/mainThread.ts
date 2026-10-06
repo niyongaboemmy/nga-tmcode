@@ -1,3 +1,4 @@
+import { terminalOp } from "./terminals";
 import type { DecorationOptionsDTO, DecorationRangeDTO, DiagnosticDTO, ExtensionStateDTO, ProviderKind, ProviderMeta, QuickPickItemDTO, RangeDTO, RpcConnection, SelectionDTO, SelectorDTO, StatusBarEntryDTO, TextEditDTO, WorkspaceEditDTO } from "@tmcode/exthost";
 import { allCommands, executeCommand, getCommand, registerCommand } from "../commands/registry";
 import { monaco } from "../monaco/setup";
@@ -334,6 +335,8 @@ export function installMainThread(ctx: MainContext) {
   const kind = ctx.kind;
   hookModels();
   r.register("$main.ready", () => null);
+  // window.createTerminal (exthost/terminals.ts)
+  r.register("$main.terminal", ([op, id, arg]) => terminalOp(kind, (m, p) => r.notify(m, p), String(op), Number(id), arg));
   r.register("$main.log", ([level, extId, text]) => log(HOST_CHANNEL, `${extId ? `[${extId}] ` : ""}${text}`, level === "error" ? "error" : level === "warn" ? "warn" : "info"));
   r.register("$main.extensionState", ([dto]) => {
     const s = dto as ExtensionStateDTO;

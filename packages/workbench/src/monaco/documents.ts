@@ -128,9 +128,19 @@ function createTrackedModel(path: string, content: string) {
   return model;
 }
 
+/** Run before a file is written (extensions' onWillSaveTextDocument edits); each may change the model. */
+export const willSaveParticipants: ((path: string, model: monaco.editor.ITextModel) => Promise<void>)[] = [];
+
 export async function saveDocument(path: string) {
   const doc = docs.get(path);
   if (!doc) return;
+  for (const participant of willSaveParticipants) {
+    try {
+      await participant(path, doc.model);
+    } catch {
+      /* a participant never blocks saving */
+    }
+  }
   const value = doc.model.getValue();
   const version = doc.model.getAlternativeVersionId();
   try {

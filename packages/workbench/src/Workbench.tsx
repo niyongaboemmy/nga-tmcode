@@ -11,6 +11,7 @@ import { wireProjects } from "./projects/service";
 import { toggleZenMode, useZen } from "./state/zen";
 import { acquireTypes, enableEmmet, enablePrettier, resetProjectConfig } from "./monaco/languageServices";
 import { setupMonaco } from "./monaco/setup";
+import { installFormatterSelection, registerFormatterActions } from "./monaco/formatters";
 import { KeybindingResolver } from "./commands/registry";
 import { wireDocuments } from "./monaco/documents";
 import { wireRunServices } from "./run/wire";
@@ -103,6 +104,8 @@ export function Workbench() {
     setupMonaco();
     enableEmmet("standard"); // TextMate tokens (textmate/monacoTm.ts), not Monarch
     enablePrettier();
+    installFormatterSelection();
+    registerFormatterActions();
     wireDocuments();
     wireRunServices();
     wireScm();

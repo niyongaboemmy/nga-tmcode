@@ -111,3 +111,22 @@ test("IntelliSense reads installed packages' types from node_modules", async ({ 
   await expect(problems).toContainText("Type 'number' is not assignable to type 'string'.");
   await expect(problems).not.toContainText("Cannot find module");
 });
+
+test("Format Document With… lists the formatters; the configured default is used", async ({ page }) => {
+  await fresh(page);
+  await externalWrite(page, "two.js", "const  a={b:1}\n");
+  await page.locator('.tm-explorer [data-path="two.js"]').dblclick();
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("const");
+  await page.locator(".monaco-editor .view-lines").click();
+  await command(page, "Format Document With");
+  const items = page.locator(".tm-quick-pick .tm-qi-item");
+  await expect(items.first()).toBeVisible();
+  await expect(page.locator(".tm-quick-pick")).toContainText("Prettier (built in)");
+  await page.keyboard.press("Escape");
+  await command(page, "Configure Default Formatter");
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Prettier (built in)" }).click();
+  await expect(page.locator(".tm-toast").last()).toContainText("Prettier (built in) now formats javascript files");
+  await page.locator(".monaco-editor .view-lines").click();
+  await command(page, "Format Document");
+  await expect(page.locator(".monaco-editor .view-lines")).toContainText("const a = { b: 1 };", { timeout: 15_000 });
+});

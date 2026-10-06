@@ -2,6 +2,7 @@ import { registerCommand } from "./registry";
 import { monaco } from "../monaco/setup";
 import { codeEditorFor } from "../monaco/editors";
 import { activeTerminal } from "../terminal/active";
+import { configureDefaultFormatter, formatDocumentWith } from "../monaco/formatters";
 import { activeFilePath, getPlatform, notify, openEditorInput, showPanel, useWorkbench, workbench } from "../state/store";
 import { toggleZenMode, useZen } from "../state/zen";
 import { pickAndRunTask } from "../tasks/service";
@@ -46,6 +47,27 @@ export function selectAllInFocus() {
 }
 
 export function registerDeveloperCommands() {
+  const activeCodeEditor = () => monaco.editor.getEditors().find((e) => e.hasTextFocus()) ?? codeEditorFor(workbench.get().activeGroup);
+  registerCommand({
+    id: "editor.action.formatDocument.multiple",
+    title: "Format Document With...",
+    category: "Editor",
+    enabled: () => !!activeFilePath(),
+    run: () => {
+      const ed = activeCodeEditor();
+      if (ed) return formatDocumentWith(ed);
+    },
+  });
+  registerCommand({
+    id: "editor.action.configureDefaultFormatter",
+    title: "Configure Default Formatter...",
+    category: "Editor",
+    enabled: () => !!activeFilePath(),
+    run: () => {
+      const m = activeCodeEditor()?.getModel();
+      if (m) return configureDefaultFormatter(m);
+    },
+  });
   registerCommand({ id: "workbench.action.selectAllInFocus", title: "Select All", category: "Edit", hidden: true, run: () => void selectAllInFocus() });
   registerCommand({
     id: "markdown.showPreviewToSide",

@@ -20,6 +20,7 @@ import { ensureDocument, pathOfUri, uriFor } from "../monaco/documents";
 import { revealInEditor } from "../monaco/reveal";
 import { getPlatform, log } from "../state/store";
 import { fromRange, toRange } from "./documentSync";
+import { withFormatterId } from "../monaco/formatters";
 import type { HostKind } from "./state";
 
 /**
@@ -258,15 +259,27 @@ function createProvider(host: HostKind, handle: number, kind: ProviderKind, sele
         { providedCodeActionKinds: meta.providedCodeActionKinds },
       );
     case "formatting":
-      return L.registerDocumentFormattingEditProvider(selector, {
-        displayName: meta.displayName,
-        provideDocumentFormattingEdits: async (m, o, t) => textEdits(await call<TextEditDTO[]>("provideDocumentFormattingEdits", [path(m), fmt(o)], t)),
-      });
+      return L.registerDocumentFormattingEditProvider(
+        selector,
+        withFormatterId(
+          {
+            displayName: meta.displayName,
+            provideDocumentFormattingEdits: async (m: monaco.editor.ITextModel, o: monaco.languages.FormattingOptions, t: monaco.CancellationToken) => textEdits(await call<TextEditDTO[]>("provideDocumentFormattingEdits", [path(m), fmt(o)], t)),
+          },
+          meta.extensionId,
+        ),
+      );
     case "rangeFormatting":
-      return L.registerDocumentRangeFormattingEditProvider(selector, {
-        displayName: meta.displayName,
-        provideDocumentRangeFormattingEdits: async (m, r, o, t) => textEdits(await call<TextEditDTO[]>("provideDocumentRangeFormattingEdits", [path(m), toRange(r), fmt(o)], t)),
-      });
+      return L.registerDocumentRangeFormattingEditProvider(
+        selector,
+        withFormatterId(
+          {
+            displayName: meta.displayName,
+            provideDocumentRangeFormattingEdits: async (m: monaco.editor.ITextModel, r: monaco.IRange, o: monaco.languages.FormattingOptions, t: monaco.CancellationToken) => textEdits(await call<TextEditDTO[]>("provideDocumentRangeFormattingEdits", [path(m), toRange(r), fmt(o)], t)),
+          },
+          meta.extensionId,
+        ),
+      );
     case "onTypeFormatting":
       if (!meta.moreTriggerCharacters?.length) return null;
       return L.registerOnTypeFormattingEditProvider(selector, {

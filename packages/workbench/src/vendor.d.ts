@@ -23,3 +23,19 @@ declare module "monaco-editor/editor/contrib/documentSymbols/browser/outlineMode
 declare module "monaco-editor/editor/standalone/browser/standaloneServices.js" {
   export const StandaloneServices: { get(id: unknown): unknown };
 }
+
+// Formatter selection (monaco/formatters.ts): VS Code's FormattingConflicts hook and extension ids.
+declare module "monaco-editor/editor/contrib/format/browser/format.js" {
+  export const FormattingConflicts: {
+    setFormatterSelector(selector: (formatters: unknown[], model: import("monaco-editor").editor.ITextModel, mode: number, kind: number) => Promise<unknown> | unknown): { dispose(): void };
+  };
+}
+declare module "monaco-editor/platform/extensions/common/extensions.js" {
+  export class ExtensionIdentifier {
+    constructor(value: string);
+    readonly value: string;
+  }
+}
+declare module "monaco-editor/editor/common/services/languageFeatures.js" {
+  export const ILanguageFeaturesService: unknown;
+}

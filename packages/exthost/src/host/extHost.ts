@@ -21,6 +21,7 @@ import { DocumentData, type ContentChange } from "./document";
 import { enabledPatterns, matchGlob } from "./glob";
 import type { ExtensionModule, HostFs, ModuleLoader } from "./fs";
 import { createApi } from "./api";
+import { TerminalService } from "./terminals";
 import type {
   CompletionListDTO,
   ContentChangeDTO,
@@ -339,6 +340,12 @@ export class ExtHost {
 
   // ───────────── path mapping ─────────────
 
+  #terminals: TerminalService | null = null;
+  /** window.createTerminal and friends (created on first use). */
+  get terminals(): TerminalService {
+    return (this.#terminals ??= new TerminalService(this.rpc, this.paths));
+  }
+
   readonly paths: C.PathMapper = {
     toPath: (uri: Uri) => {
       if (!this.folder || !uri || uri.scheme !== "file") return null;
@@ -386,6 +393,8 @@ export class ExtHost {
     });
     r.register("$documentOpened", ([dto]) => this.#documentOpened(dto as DocumentDTO));
     r.register("$documentChanged", ([path, version, changes, isDirty]) => this.#documentChanged(String(path), Number(version), changes as ContentChangeDTO[], !!isDirty));
+    // Before TMCode writes a file: extensions may add edits (organize imports, fix-all) through waitUntil.
+    r.register("$willSaveTextDocument", ([path, reason]) => this.#willSave(String(path), Number(reason ?? 1)));
     r.register("$documentSaved", ([path]) => {
       const d = this.#docs.get(String(path));
       if (!d) return;
@@ -435,6 +444,7 @@ export class ExtHost {
     // The workbench's own problems (TypeScript, CSS, JSON… from Monaco, run errors): VS Code's
     // languages.getDiagnostics() includes the built-in extensions' too (Error Lens relies on it).
     r.register("$workbenchDiagnostics", ([entries]) => this.#workbenchDiagnostics(entries as [string, DiagnosticDTO[]][]));
+    r.register("$terminalEvent", ([id, kind, value]) => this.terminals.event(Number(id), String(kind), value));
     r.register("$fileEvents", ([events]) => this.#fileEvents(events as { path: string; type: "create" | "change" | "delete" }[]));
     r.register("$provide", ([handle, method, args], cancel) => {
       const src = new CancellationTokenSource();
@@ -989,6 +999,31 @@ export class ExtHost {
       },
     };
     return collection;
+  }
+
+  /** VS Code's save participants: listeners run in turn, each may waitUntil(edits); 1.5 s budget in all. */
+  async #willSave(path: string, reason: number): Promise<TextEditDTO[]> {
+    const d = this.#docs.get(path);
+    if (!d) return [];
+    const pending: PromiseLike<unknown>[] = [];
+    let open = true;
+    const event = {
+      document: d.document,
+      reason,
+      waitUntil: (thenable: PromiseLike<unknown>) => {
+        if (!open) throw new Error("waitUntil can only be called synchronously in the event listener");
+        pending.push(thenable);
+      },
+    };
+    this.onWillSaveTextDocument.fire(event);
+    open = false;
+    if (!pending.length) return [];
+    const timeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 1500));
+    const settled = await Promise.race([Promise.allSettled(pending.map((p) => Promise.resolve(p))), timeout]);
+    if (settled === "timeout") return [];
+    const edits: TextEditDTO[] = [];
+    for (const r of settled) if (r.status === "fulfilled" && Array.isArray(r.value)) edits.push(...C.textEdits(r.value));
+    return edits;
   }
 
   #workbenchDiagnostics(entries: [string, DiagnosticDTO[]][]) {

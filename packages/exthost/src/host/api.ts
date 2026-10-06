@@ -222,12 +222,15 @@ export function createApi(host: ExtHost, ext: ExtState) {
     },
     onDidChangeActiveColorTheme: new EventEmitter<unknown>().event,
     get terminals() {
-      return [];
+      return host.terminals.terminals;
     },
-    activeTerminal: undefined,
-    onDidOpenTerminal: new EventEmitter<unknown>().event,
-    onDidCloseTerminal: new EventEmitter<unknown>().event,
-    onDidChangeActiveTerminal: new EventEmitter<unknown>().event,
+    get activeTerminal() {
+      return host.terminals.activeTerminal;
+    },
+    createTerminal: (nameOrOptions?: unknown, shellPath?: string, shellArgs?: string[] | string) => host.terminals.create(nameOrOptions as never, shellPath, shellArgs),
+    onDidOpenTerminal: host.terminals.onDidOpenTerminal.event,
+    onDidCloseTerminal: host.terminals.onDidCloseTerminal.event,
+    onDidChangeActiveTerminal: host.terminals.onDidChangeActiveTerminal.event,
     onDidChangeTerminalState: new EventEmitter<unknown>().event,
     activeNotebookEditor: undefined,
     visibleNotebookEditors: [],

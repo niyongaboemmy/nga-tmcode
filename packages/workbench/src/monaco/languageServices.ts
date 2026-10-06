@@ -1,6 +1,7 @@
 import { emmetCSS, emmetHTML, emmetJSX } from "emmet-monaco-es";
 import { getPlatform, log, useWorkbench } from "../state/store";
 import { monaco } from "./setup";
+import { withFormatterId } from "./formatters";
 
 /**
  * What VS Code users expect in a real project beyond Monaco's defaults:
@@ -106,8 +107,8 @@ export function enablePrettier() {
   if (prettierOn) return;
   prettierOn = true;
   for (const lang of Object.keys(PARSERS)) {
-    monaco.languages.registerDocumentFormattingEditProvider(lang, {
-      displayName: "Prettier",
+    monaco.languages.registerDocumentFormattingEditProvider(lang, withFormatterId({
+      displayName: "Prettier (built in)",
       async provideDocumentFormattingEdits(model, options) {
         try {
           const formatted = await formatWithPrettier(model.getValue(), lang, model.uri.path, options);
@@ -119,7 +120,7 @@ export function enablePrettier() {
           return [];
         }
       },
-    });
+    }, "tmcode.prettier"));
   }
 }
 

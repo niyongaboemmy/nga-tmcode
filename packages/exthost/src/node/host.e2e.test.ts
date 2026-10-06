@@ -172,3 +172,60 @@ describe("Node extension host (stdio, fixture extensions)", () => {
     expect(await wb.request("$executeCommand", ["esm.outside", [join(root, "missing.txt")]])).toBe("FileNotFound");
   });
 });
+
+describe("save participants and terminals", () => {
+  const SAVER = `
+const vscode = require("vscode");
+exports.activate = (context) => {
+  context.subscriptions.push(
+    vscode.workspace.onWillSaveTextDocument((e) => {
+      if (!e.document.fileName.endsWith(".txt")) return;
+      e.waitUntil(Promise.resolve([vscode.TextEdit.insert(new vscode.Position(0, 0), "// saved\\n")]));
+    }),
+    vscode.commands.registerCommand("saver.term", () => {
+      const t = vscode.window.createTerminal({ name: "Build" });
+      t.sendText("echo hi");
+      t.show();
+      return vscode.window.terminals.length;
+    }),
+  );
+};`;
+  let wb: WB & { notify(m: string, p?: unknown[]): void };
+  const terminalCalls: unknown[][] = [];
+  beforeAll(async () => {
+    const extRoot = mkdtempSync(join(tmpdir(), "tmcode-saver-"));
+    const ws = mkdtempSync(join(tmpdir(), "tmcode-saver-ws-"));
+    writeFileSync(join(ws, "a.txt"), "hello\n");
+    const dir = writeExtension(extRoot, "saver", { main: "./main.js", activationEvents: ["*"] }, { "main.js": SAVER });
+    wb = new FakeWorkbench({
+      root: ws,
+      extensions: [describeExtension(dir)],
+      documents: { "a.txt": { text: "hello\n", languageId: "plaintext" } },
+      onRequest: (m: string, p: unknown[], w: { notify(m: string, p: unknown[]): void }) => {
+        if (m !== "$main.terminal") return undefined;
+        terminalCalls.push(p);
+        if (p[0] === "create") setTimeout(() => w.notify("$terminalEvent", [p[1], "ready", 7]), 10);
+        return null;
+      },
+    });
+    await wb.init;
+    await wb.request("$startup");
+    await wb.waitFor(() => wb.states.get("fixture.saver")?.state === "activated", "activation");
+  });
+  afterAll(async () => {
+    await wb?.close();
+  });
+
+  it("onWillSaveTextDocument edits come back from $willSaveTextDocument", async () => {
+    const edits = await wb.request("$willSaveTextDocument", ["a.txt", 1]);
+    expect(edits).toEqual([expect.objectContaining({ text: "// saved\n", range: [0, 0, 0, 0] })]);
+  });
+
+  it("createTerminal creates, sends text and shows a workbench terminal", async () => {
+    const count = await wb.request("$executeCommand", ["saver.term", []]);
+    expect(count).toBe(1);
+    expect(terminalCalls.map((c) => c[0])).toEqual(["create", "send", "show"]);
+    expect(terminalCalls[0][2]).toMatchObject({ name: "Build" });
+    expect(terminalCalls[1][2]).toBe("echo hi\r");
+  });
+});

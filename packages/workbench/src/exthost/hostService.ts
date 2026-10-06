@@ -1,4 +1,4 @@
-import { RpcConnection, activationEventsOf, type ExtensionDescription, type InitData, type RpcMessage } from "@tmcode/exthost";
+import { RpcConnection, activationEventsOf, type ExtensionDescription, type InitData, type RpcMessage, type TextEditDTO } from "@tmcode/exthost";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { getPlatform, log, notify, useWorkbench } from "../state/store";
 import { activeExtensions, extensionsBlocked, useExtensions, type InstalledExtension } from "../extensions/service";
@@ -6,7 +6,8 @@ import { useExam } from "../exam/state";
 import type { ExtensionManifest } from "../extensions/manifest";
 import { documentSnapshot, editorSnapshot, wireDocumentSync } from "./documentSync";
 import { wireWorkbenchDiagnostics, workbenchDiagnosticsSnapshot } from "./workbenchDiagnostics";
-import { disposeProviders, editApplier, setHostLink } from "./languageBridge";
+import { disposeProviders, editApplier, setHostLink, textEdits } from "./languageBridge";
+import { willSaveParticipants } from "../monaco/documents";
 import { applyWorkspaceEdit, clearDiagnosticsOf, installMainThread, type MainContext } from "./mainThread";
 import { builtinDefaults, loadExtensionSettings, onConfigurationChanged, useExtConfig } from "./config";
 import { applyCodeContributions, contributedCommand } from "./contributions";
@@ -422,6 +423,15 @@ export function initExtensionHost() {
     if (s.policy !== prev.policy || s.workspace?.root !== prev.workspace?.root) scheduleReconcile();
   });
 }
+
+/** onWillSaveTextDocument: each running host may return edits before TMCode writes the file. */
+willSaveParticipants.push(async (path, model) => {
+  for (const c of conns.values()) {
+    if (!c.live) continue;
+    const edits = (await Promise.race([c.rpc.request("$willSaveTextDocument", [path, 1]).catch(() => []), new Promise((r) => setTimeout(() => r([]), 2000))])) as TextEditDTO[];
+    if (edits?.length) model.pushEditOperations([], textEdits(edits).map((e) => ({ range: e.range, text: e.text })), () => null);
+  }
+});
 
 export function runningHosts(): HostKind[] {
   return [...conns.keys()];

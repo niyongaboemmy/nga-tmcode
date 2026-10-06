@@ -3017,12 +3017,15 @@ function createApi(host2, ext) {
     },
     onDidChangeActiveColorTheme: new EventEmitter().event,
     get terminals() {
-      return [];
+      return host2.terminals.terminals;
     },
-    activeTerminal: void 0,
-    onDidOpenTerminal: new EventEmitter().event,
-    onDidCloseTerminal: new EventEmitter().event,
-    onDidChangeActiveTerminal: new EventEmitter().event,
+    get activeTerminal() {
+      return host2.terminals.activeTerminal;
+    },
+    createTerminal: (nameOrOptions, shellPath, shellArgs) => host2.terminals.create(nameOrOptions, shellPath, shellArgs),
+    onDidOpenTerminal: host2.terminals.onDidOpenTerminal.event,
+    onDidCloseTerminal: host2.terminals.onDidCloseTerminal.event,
+    onDidChangeActiveTerminal: host2.terminals.onDidChangeActiveTerminal.event,
     onDidChangeTerminalState: new EventEmitter().event,
     activeNotebookEditor: void 0,
     visibleNotebookEditors: [],
@@ -3489,6 +3492,97 @@ function createApi(host2, ext) {
   return guard(host2, ext, "", api);
 }
 
+// packages/exthost/src/host/terminals.ts
+var ExtTerminal = class {
+  constructor(id, name, creationOptions, service) {
+    this.id = id;
+    this.name = name;
+    this.creationOptions = creationOptions;
+    this.service = service;
+    this.processId = new Promise((r) => this.#resolvePid = r);
+  }
+  id;
+  name;
+  creationOptions;
+  service;
+  processId;
+  exitStatus = void 0;
+  state = { isInteractedWith: false, shell: void 0 };
+  shellIntegration = void 0;
+  #resolvePid;
+  sendText(text, shouldExecute = true) {
+    this.service.rpc.notify("$main.terminal", ["send", this.id, `${text}${shouldExecute ? "\r" : ""}`]);
+  }
+  show(_preserveFocus) {
+    this.service.rpc.notify("$main.terminal", ["show", this.id]);
+    this.service.setActive(this);
+  }
+  hide() {
+  }
+  dispose() {
+    this.service.rpc.notify("$main.terminal", ["dispose", this.id]);
+  }
+  /** @internal */
+  ready(pid) {
+    this.#resolvePid(pid);
+  }
+};
+var TerminalService = class {
+  constructor(rpc, paths) {
+    this.rpc = rpc;
+    this.paths = paths;
+  }
+  rpc;
+  paths;
+  onDidOpenTerminal = new EventEmitter();
+  onDidCloseTerminal = new EventEmitter();
+  onDidChangeActiveTerminal = new EventEmitter();
+  #all = /* @__PURE__ */ new Map();
+  #active;
+  #seq = 0;
+  get terminals() {
+    return [...this.#all.values()];
+  }
+  get activeTerminal() {
+    return this.#active;
+  }
+  setActive(t) {
+    if (this.#active === t) return;
+    this.#active = t;
+    this.onDidChangeActiveTerminal.fire(t);
+  }
+  create(nameOrOptions, shellPath, shellArgs) {
+    const opts = typeof nameOrOptions === "object" && nameOrOptions ? nameOrOptions : { name: nameOrOptions, shellPath, shellArgs };
+    if (opts.pty) throw new Error("Extension pseudoterminals (the 'pty' option) are not supported in TMCode yet.");
+    const id = ++this.#seq;
+    const name = opts.name || "Extension Terminal";
+    let cwd = null;
+    if (opts.cwd) {
+      const uri = typeof opts.cwd === "string" ? Uri.file(opts.cwd) : opts.cwd;
+      cwd = this.paths.toPath(uri);
+    }
+    const t = new ExtTerminal(id, name, opts, this);
+    this.#all.set(id, t);
+    this.rpc.notify("$main.terminal", ["create", id, { name, cwd: cwd ?? "", hidden: !!opts.hideFromUser }]);
+    this.onDidOpenTerminal.fire(t);
+    this.setActive(t);
+    return t;
+  }
+  /** From the workbench: "ready" (shell started) or "exit". */
+  event(id, kind, value) {
+    const t = this.#all.get(id);
+    if (!t) return;
+    if (kind === "ready") t.ready(typeof value === "number" ? value : void 0);
+    if (kind === "exit") {
+      t.exitStatus = { code: typeof value === "number" ? value : void 0, reason: 0 };
+      t.ready(void 0);
+      this.#all.delete(id);
+      if (this.#active === t) this.setActive(this.terminals.at(-1));
+      this.onDidCloseTerminal.fire(t);
+    }
+  }
+};
+
 // packages/exthost/src/host/extHost.ts
 var API_VERSION = "1.96.0";
 var NotSupportedError = class extends Error {
@@ -3754,6 +3848,11 @@ var ExtHost = class {
     this.#hostLog = fn;
   }
   // ───────────── path mapping ─────────────
+  #terminals = null;
+  /** window.createTerminal and friends (created on first use). */
+  get terminals() {
+    return this.#terminals ??= new TerminalService(this.rpc, this.paths);
+  }
   paths = {
     toPath: (uri) => {
       if (!this.folder || !uri || uri.scheme !== "file") return null;
@@ -3796,6 +3895,7 @@ var ExtHost = class {
     });
     r.register("$documentOpened", ([dto]) => this.#documentOpened(dto));
     r.register("$documentChanged", ([path3, version, changes, isDirty]) => this.#documentChanged(String(path3), Number(version), changes, !!isDirty));
+    r.register("$willSaveTextDocument", ([path3, reason]) => this.#willSave(String(path3), Number(reason ?? 1)));
     r.register("$documentSaved", ([path3]) => {
       const d = this.#docs.get(String(path3));
       if (!d) return;
@@ -3842,6 +3942,7 @@ var ExtHost = class {
       this.onDidChangeWindowState.fire({ focused: this.windowFocused, active: this.windowFocused });
     });
     r.register("$workbenchDiagnostics", ([entries]) => this.#workbenchDiagnostics(entries));
+    r.register("$terminalEvent", ([id, kind, value]) => this.terminals.event(Number(id), String(kind), value));
     r.register("$fileEvents", ([events]) => this.#fileEvents(events));
     r.register("$provide", ([handle, method, args], cancel) => {
       const src = new CancellationTokenSource();
@@ -4360,6 +4461,30 @@ var ExtHost = class {
       }
     };
     return collection;
+  }
+  /** VS Code's save participants: listeners run in turn, each may waitUntil(edits); 1.5 s budget in all. */
+  async #willSave(path3, reason) {
+    const d = this.#docs.get(path3);
+    if (!d) return [];
+    const pending = [];
+    let open = true;
+    const event = {
+      document: d.document,
+      reason,
+      waitUntil: (thenable) => {
+        if (!open) throw new Error("waitUntil can only be called synchronously in the event listener");
+        pending.push(thenable);
+      }
+    };
+    this.onWillSaveTextDocument.fire(event);
+    open = false;
+    if (!pending.length) return [];
+    const timeout = new Promise((r) => setTimeout(() => r("timeout"), 1500));
+    const settled = await Promise.race([Promise.allSettled(pending.map((p) => Promise.resolve(p))), timeout]);
+    if (settled === "timeout") return [];
+    const edits = [];
+    for (const r of settled) if (r.status === "fulfilled" && Array.isArray(r.value)) edits.push(...textEdits(r.value));
+    return edits;
   }
   #workbenchDiagnostics(entries) {
     const owner = "workbench";

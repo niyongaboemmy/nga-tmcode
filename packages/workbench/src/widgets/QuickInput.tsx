@@ -111,7 +111,8 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           return m ? { c, label, m } : null;
         })
         .filter((x): x is NonNullable<typeof x> => !!x);
-      if (query) scored.sort((a, b) => b.m.score - a.m.score);
+      // Equal scores: the shorter (closer) label first, as VS Code ranks "Format Document" above "Format Document With...".
+      if (query) scored.sort((a, b) => b.m.score - a.m.score || a.label.length - b.label.length);
       else scored.sort((a, b) => a.label.localeCompare(b.label));
       const recent = query ? [] : recentCommands.map((id) => scored.find((s) => s.c.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
       const rest = scored.filter((s) => !recent.includes(s));
