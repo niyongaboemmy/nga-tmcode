@@ -113,7 +113,40 @@ export async function installExtension(ext: Pick<GalleryExtension, "id" | "displ
   }
   setBusy(ext.id, "installing");
   try {
-    const stored = await host.install(ext.id, ext.downloadUrl);
+    return await finishInstall(await host.install(ext.id, ext.downloadUrl));
+  } catch (e) {
+    notify("error", `Unable to install extension '${ext.displayName}': ${String((e as Error)?.message ?? e)}`);
+    return false;
+  } finally {
+    setBusy(ext.id, null);
+  }
+}
+
+/** "Install from VSIX…" (desktop): a package from disk, e.g. one not on Open VSX or built locally. */
+export async function installFromVsix(): Promise<boolean> {
+  const host = extensionHost();
+  if (!host?.installVsix) {
+    notify("info", "Installing from a .vsix file is available in the TMCode desktop app.");
+    return false;
+  }
+  if (extensionsBlocked()) {
+    notify("warning", "Extensions are disabled during exams.");
+    return false;
+  }
+  try {
+    const stored = await host.installVsix();
+    if (!stored) return false;
+    const ok = await finishInstall(stored);
+    if (ok) notify("info", `Installed ${stored.id} v${stored.version} from the .vsix file.`);
+    return ok;
+  } catch (e) {
+    notify("error", `Unable to install the .vsix: ${String((e as Error)?.message ?? e)}`);
+    return false;
+  }
+}
+
+async function finishInstall(stored: StoredExtension): Promise<boolean> {
+  {
     let item = toInstalled(stored, await disabledSet());
     if (!item) throw new Error("its package.json could not be read");
     if (item.manifest.hasCode && !(await acceptCodeExtension(item))) {
@@ -124,11 +157,6 @@ export async function installExtension(ext: Pick<GalleryExtension, "id" | "displ
     log("Extensions", `Installed ${item.id} v${item.version}${item.manifest.hasCode ? (item.enabled ? " (it runs code)" : " (disabled: its code was not trusted)") : ""}`);
     announce(item);
     return true;
-  } catch (e) {
-    notify("error", `Unable to install extension '${ext.displayName}': ${String((e as Error)?.message ?? e)}`);
-    return false;
-  } finally {
-    setBusy(ext.id, null);
   }
 }
 

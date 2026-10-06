@@ -5015,6 +5015,7 @@ function restoreRemovedNodeApis() {
   }
 }
 restoreRemovedNodeApis();
+if (typeof globalThis.self === "undefined") globalThis.self = globalThis;
 function createNodeLoader(apiFor, locations2) {
   const M = import_node_module.default;
   const original = M._load;

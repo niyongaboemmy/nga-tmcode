@@ -141,6 +141,18 @@ pub fn list_in(root: &Path) -> Vec<StoredExtension> {
 }
 
 /// Unpacks into a temporary folder, checks the id, then swaps it in place of any older version.
+/// A local .vsix ("Install from VSIX…"): its id comes from its own package.json.
+pub fn install_vsix_bytes(root: &Path, bytes: &[u8]) -> Result<StoredExtension, String> {
+    let mut nonce = [0u8; 6];
+    getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
+    let tag: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
+    let probe = root.join(format!(".probe-{tag}"));
+    let id = unpack(bytes, &probe).and_then(|_| read_stored(&probe)).map(|s| s.id);
+    let _ = fs::remove_dir_all(&probe);
+    let id = id.map_err(|e| format!("This is not a valid VS Code extension package: {e}"))?;
+    install_into(root, &id, bytes)
+}
+
 pub fn install_into(root: &Path, id: &str, bytes: &[u8]) -> Result<StoredExtension, String> {
     if !valid_id(id) {
         return Err("Invalid extension id".into());
@@ -230,6 +242,34 @@ pub fn ext_list(app: AppHandle) -> Result<Vec<StoredExtension>, String> {
     Ok(list_in(&root(&app)?))
 }
 
+/// "Install from VSIX…": the user picks the file in a native dialog (the webview never names a path).
+#[tauri::command]
+pub async fn ext_install_vsix(app: AppHandle) -> Result<Option<StoredExtension>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let dev = if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_VSIX").ok() } else { None };
+    let picked = match dev {
+        Some(p) => Some(PathBuf::from(p)),
+        None => app
+            .dialog()
+            .file()
+            .set_title("Install from VSIX")
+            .add_filter("VS Code Extension", &["vsix"])
+            .blocking_pick_file()
+            .map(|f| f.into_path().map_err(|e| e.to_string()))
+            .transpose()?,
+    };
+    let Some(path) = picked else { return Ok(None) };
+    let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > 300 * 1024 * 1024 {
+        return Err("The extension package is larger than 300 MB.".into());
+    }
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    let root = root(&app)?;
+    let stored = tauri::async_runtime::spawn_blocking(move || install_vsix_bytes(&root, &bytes)).await.map_err(|e| e.to_string())??;
+    log::info!("installed extension {} {} from a .vsix", stored.id, stored.version);
+    Ok(Some(stored))
+}
+
 #[tauri::command]
 pub async fn ext_install(app: AppHandle, id: String, url: String) -> Result<StoredExtension, String> {
     let id = id.to_lowercase();
@@ -278,6 +318,16 @@ mod tests {
     }
 
     const PKG: &str = r#"{ "name": "Owl-Theme", "publisher": "OwlCo", "version": "1.2.0", "contributes": { "themes": [] } }"#;
+
+    #[test]
+    fn a_local_vsix_installs_under_its_own_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let stored = install_vsix_bytes(dir.path(), &vsix(&[("extension/package.json", PKG)])).unwrap();
+        assert_eq!(stored.id, "owlco.owl-theme");
+        assert!(dir.path().join("owlco.owl-theme/package.json").exists());
+        assert!(install_vsix_bytes(dir.path(), b"not a zip").is_err());
+        assert!(fs::read_dir(dir.path()).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with(".probe-")), "probe folder cleaned up");
+    }
 
     #[test]
     fn ids_and_urls_are_checked() {

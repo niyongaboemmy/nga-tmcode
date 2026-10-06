@@ -82,6 +82,7 @@
     "allow-ext-install",
     "allow-ext-uninstall",
     "allow-ext-read-file",
+    "allow-ext-install-vsix",
     "allow-exthost-start",
     "allow-exthost-send",
     "allow-exthost-stop",

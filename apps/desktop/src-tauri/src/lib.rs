@@ -255,6 +255,7 @@ pub fn run() {
             extensions::ext_install,
             extensions::ext_uninstall,
             extensions::ext_read_file,
+            extensions::ext_install_vsix,
             // ── extension host (feat/exthost) ──
             exthost::exthost_start,
             exthost::exthost_send,

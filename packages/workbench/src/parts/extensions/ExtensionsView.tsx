@@ -5,7 +5,7 @@ import { getPlatform, openContextMenu, openEditorInput, useWorkbench } from "../
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { SkeletonCard } from "../../widgets/Skeleton";
 import { RECOMMENDED, formatCount, galleryIcon, getGalleryExtension, rememberGallery, searchGallery, type GalleryExtension } from "../../extensions/gallery";
-import { extensionHost, installExtension, setExtensionEnabled, uninstallExtension, useExtensions, type InstalledExtension } from "../../extensions/service";
+import { extensionHost, installExtension, installFromVsix, setExtensionEnabled, uninstallExtension, useExtensions, type InstalledExtension } from "../../extensions/service";
 import { parseJsonc } from "../../textmate/jsonc";
 import { setExtensionsQuery, useExtensionsView } from "../../extensions/viewState";
 import { RuntimeBadge } from "../../exthost/ui";
@@ -403,6 +403,8 @@ export function ExtensionsTitleActions() {
             { kind: "item", label: "Themes", run: () => setExtensionsQuery('@category:"themes"', true) },
             { kind: "item", label: "Programming Languages", run: () => setExtensionsQuery('@category:"programming languages"', true) },
             { kind: "item", label: "Snippets", run: () => setExtensionsQuery('@category:"snippets"', true) },
+            { kind: "separator" },
+            { kind: "item", label: "Install from VSIX...", disabled: !extensionHost()?.installVsix, run: () => void installFromVsix() },
           ]);
         }}
       />

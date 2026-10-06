@@ -222,6 +222,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       fetch: (url, as) => invoke<string>("ext_fetch", { url, encoding: as }),
       list: () => invoke<StoredExtension[]>("ext_list"),
       install: (id, downloadUrl) => invoke<StoredExtension>("ext_install", { id, url: downloadUrl }),
+      installVsix: () => invoke<StoredExtension | null>("ext_install_vsix"),
       uninstall: (id) => invoke("ext_uninstall", { id }),
       readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
       // ── extension host (feat/exthost): Node.js over stdio, src-tauri/src/exthost.rs ──

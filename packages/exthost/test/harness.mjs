@@ -29,7 +29,7 @@ function positionAt(text, off) {
 export function describeExtension(dir) {
   const manifest = JSON.parse(readFileSync(resolve(dir, "package.json"), "utf8"));
   const id = `${manifest.publisher}.${manifest.name}`.toLowerCase();
-  return { id, name: manifest.name, publisher: manifest.publisher, displayName: manifest.displayName ?? manifest.name, version: manifest.version, location: dir, entry: manifest.main, activationEvents: [], manifest };
+  return { id, name: manifest.name, publisher: manifest.publisher, displayName: manifest.displayName ?? manifest.name, version: manifest.version, location: dir, entry: manifest.main ?? manifest.browser, activationEvents: [], manifest };
 }
 
 export class FakeWorkbench {

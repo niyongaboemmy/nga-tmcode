@@ -229,3 +229,24 @@ exports.activate = (context) => {
     expect(terminalCalls[1][2]).toBe("echo hi\r");
   });
 });
+
+describe("browser-only extensions on the desktop", () => {
+  it("run in the Node host (their web bundle uses `self`)", async () => {
+    const extRoot = mkdtempSync(join(tmpdir(), "tmcode-webext-"));
+    const WEB = `
+const vscode = require("vscode");
+self.webExtLoaded = true;
+exports.activate = (context) => {
+  context.subscriptions.push(vscode.commands.registerCommand("webext.hello", () => "hello from " + (typeof self === "object" ? "self" : "?")));
+};`;
+    const dir = writeExtension(extRoot, "webext", { browser: "./dist/web.js", activationEvents: ["onCommand:webext.hello"] }, { "dist/web.js": WEB });
+    const wb: WB = new FakeWorkbench({ root: mkdtempSync(join(tmpdir(), "tmcode-webext-ws-")), extensions: [describeExtension(dir)] });
+    try {
+      await wb.init;
+      await wb.request("$startup");
+      expect(await wb.request("$executeCommand", ["webext.hello", []])).toBe("hello from self");
+    } finally {
+      await wb.close();
+    }
+  });
+});

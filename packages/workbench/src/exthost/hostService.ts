@@ -55,6 +55,9 @@ function broadcast(method: string, params: unknown[]) {
 export function hostFor(m: ExtensionManifest): { host: HostKind } | { reason: string } {
   const nodeHost = !!getPlatform().extensions?.startNodeHost;
   if (m.main && nodeHost) return { host: "node" };
+  // Browser-only extensions on the desktop: the Node host loads their web bundle (the
+  // Web Worker host would need eval, which the desktop's content security policy forbids).
+  if (m.browser && nodeHost) return { host: "node" };
   if (m.browser) return { host: "worker" };
   if (m.main) return { reason: "This extension needs Node.js, which only the TMCode desktop app provides." };
   return { reason: "This extension has no code to run." };
@@ -119,7 +122,7 @@ function describe(kind: HostKind, ext: InstalledExtension, extensionsDir?: strin
     displayName: m.displayName,
     version: m.version,
     location: kind === "node" ? joinPath(extensionsDir ?? "", ext.id) : ext.id,
-    entry: (kind === "node" ? m.main : m.browser) ?? "",
+    entry: (kind === "node" ? (m.main ?? m.browser) : m.browser) ?? "",
     activationEvents: activationEventsOf(m.raw),
     manifest: m.raw,
   };

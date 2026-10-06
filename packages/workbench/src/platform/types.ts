@@ -125,6 +125,8 @@ export interface ExtensionHost {
   list(): Promise<StoredExtension[]>;
   /** Downloads a .vsix from Open VSX, unpacks its `extension/` folder and stores it (replacing an older version). */
   install(id: string, downloadUrl: string): Promise<StoredExtension>;
+  /** Desktop: "Install from VSIX…" — a native file dialog, then the package's own id (null when cancelled). */
+  installVsix?(): Promise<StoredExtension | null>;
   uninstall(id: string): Promise<void>;
   /** A file of an installed extension (path relative to its root): text, or base64 for images and fonts. */
   readFile(id: string, path: string, as: "text" | "base64"): Promise<string>;

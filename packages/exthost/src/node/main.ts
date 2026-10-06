@@ -81,6 +81,8 @@ function restoreRemovedNodeApis() {
   }
 }
 restoreRemovedNodeApis();
+// Web extension bundles (run here on the desktop) expect the worker global `self`.
+if (typeof (globalThis as { self?: unknown }).self === "undefined") (globalThis as { self?: unknown }).self = globalThis;
 
 /**
  * `require('vscode')` (CommonJS) and `import … from "vscode"` (ES modules,

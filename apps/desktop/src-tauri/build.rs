@@ -52,6 +52,7 @@ fn main() {
             "ext_install",
             "ext_uninstall",
             "ext_read_file",
+            "ext_install_vsix",
             // extension host
             "exthost_start",
             "exthost_send",

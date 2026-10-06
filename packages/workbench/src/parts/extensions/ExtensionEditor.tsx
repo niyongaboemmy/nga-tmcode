@@ -1,3 +1,4 @@
+import { openExternalUrl } from "../../terminal/browser";
 import { useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
@@ -39,12 +40,22 @@ purifier.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 
+/** GitHub-style heading anchors, so a README's "#section" links scroll. */
+const slug = (t: string) =>
+  t
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")
+    .replace(/[^\w\- ]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+
 export function renderReadme(markdown: string): string {
   const html = md.parse(markdown, { async: false }) as string;
-  return purifier.sanitize(html, {
+  const clean = purifier.sanitize(html, {
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input", "button", "link", "meta", "base"],
     FORBID_ATTR: ["style"],
   });
+  return clean.replace(/<h([1-6])>(.*?)<\/h\1>/g, (_m, n, inner) => `<h${n} id="${slug(inner)}">${inner}</h${n}>`);
 }
 
 const mimeOf = (p: string) => {
@@ -283,8 +294,15 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
                 className="tm-ext-readme tm-md"
                 dangerouslySetInnerHTML={{ __html: html }}
                 onClick={(e) => {
-                  // Links never navigate the workbench window.
-                  if ((e.target as HTMLElement).closest("a")) e.preventDefault();
+                  // Links never navigate the workbench window: web links open in the browser, #anchors scroll.
+                  const a = (e.target as HTMLElement).closest("a");
+                  if (!a) return;
+                  e.preventDefault();
+                  const href = a.getAttribute("href") ?? "";
+                  if (href.startsWith("#")) {
+                    const id = decodeURIComponent(href.slice(1));
+                    readmeRef.current?.querySelector(`[id="${CSS.escape(id)}"], [name="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  } else if (/^(https?:|mailto:)/i.test(href)) void openExternalUrl(href);
                 }}
               />
             ) : (
