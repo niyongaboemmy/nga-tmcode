@@ -311,6 +311,39 @@ pub fn ws_rename(ws: State<'_, Workspace>, from: String, to: String) -> Result<(
     fs::rename(&src, &dst).map_err(|e| e.to_string())
 }
 
+/// Copies a file or folder (recursively) inside the workspace: Explorer copy/paste and Duplicate.
+pub fn copy_entry(root: &Path, from: &str, to: &str) -> Result<(), String> {
+    let src = resolve(root, from)?;
+    let dst = resolve(root, to)?;
+    if dst.exists() {
+        return Err(format!("A file or folder '{to}' already exists."));
+    }
+    if dst.starts_with(&src) {
+        return Err(format!("Cannot copy '{from}' into itself."));
+    }
+    fn walk(src: &Path, dst: &Path) -> std::io::Result<()> {
+        let meta = fs::symlink_metadata(src)?;
+        if meta.is_dir() {
+            fs::create_dir_all(dst)?;
+            for entry in fs::read_dir(src)? {
+                let entry = entry?;
+                walk(&entry.path(), &dst.join(entry.file_name()))?;
+            }
+            Ok(())
+        } else if meta.file_type().is_symlink() {
+            Ok(()) // links are not followed out of the workspace
+        } else {
+            fs::copy(src, dst).map(|_| ())
+        }
+    }
+    walk(&src, &dst).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn ws_copy(ws: State<'_, Workspace>, from: String, to: String) -> Result<(), String> {
+    copy_entry(&ws.root()?, &from, &to)
+}
+
 #[tauri::command]
 pub fn ws_remove(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
     let root = ws.root()?;
@@ -328,6 +361,21 @@ pub fn ws_remove(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_entry_copies_files_and_folders_inside_the_workspace() {
+        let (_d, root) = root();
+        fs::create_dir_all(root.join("src/sub")).unwrap();
+        fs::write(root.join("src/a.txt"), "a").unwrap();
+        fs::write(root.join("src/sub/b.bin"), [0u8, 159, 255]).unwrap();
+        copy_entry(&root, "src", "src copy").unwrap();
+        assert_eq!(fs::read(root.join("src copy/sub/b.bin")).unwrap(), vec![0u8, 159, 255]);
+        copy_entry(&root, "src/a.txt", "a copy.txt").unwrap();
+        assert_eq!(fs::read_to_string(root.join("a copy.txt")).unwrap(), "a");
+        assert!(copy_entry(&root, "src", "src/sub/inner").is_err(), "into itself");
+        assert!(copy_entry(&root, "src/a.txt", "a copy.txt").is_err(), "exists");
+        assert!(copy_entry(&root, "src/a.txt", "../outside.txt").is_err(), "outside");
+    }
 
     #[test]
     fn external_urls_are_web_or_mail_only() {

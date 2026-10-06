@@ -144,6 +144,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       createFile: (path) => invoke("ws_create_file", { path }),
       createDir: (path) => invoke("ws_create_dir", { path }),
       rename: (from, to) => invoke("ws_rename", { from, to }),
+      copy: (from, to) => invoke("ws_copy", { from, to }),
       remove: (path) => invoke("ws_remove", { path }),
     },
     terminal: {

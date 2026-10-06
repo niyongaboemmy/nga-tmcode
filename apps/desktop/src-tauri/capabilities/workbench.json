@@ -23,6 +23,7 @@
     "allow-ws-reopen",
     "allow-ws-read-dir",
     "allow-ws-read-file",
+    "allow-ws-copy",
     "allow-ws-read-base64",
     "allow-open-external",
     "allow-ws-write-file",

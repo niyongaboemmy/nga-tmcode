@@ -20,6 +20,8 @@ export interface FileSystem {
   createFile(path: string): Promise<void>;
   createDir(path: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
+  /** Copies a file or folder (recursively, binary-safe). */
+  copy?(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;

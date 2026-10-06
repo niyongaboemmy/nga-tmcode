@@ -94,3 +94,22 @@ test("TMCode's own save reported back by the watcher is not a conflict", async (
   await expect(page.locator(".tm-toast", { hasText: "changed on disk" })).toHaveCount(0);
   await expect(editor).toContainText("saved text and more");
 });
+
+test("Explorer copy, paste, duplicate and cut like VS Code", async ({ page }) => {
+  await fresh(page);
+  const row = (p: string) => page.locator(`.tm-explorer [data-path="${p}"]`);
+  await row("main.py").click();
+  await page.keyboard.press("ControlOrMeta+c");
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(row("main copy.py")).toBeVisible();
+  await row("main.py").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(row("main copy 2.py")).toBeVisible();
+  // Cut a file into a folder.
+  await row("main copy 2.py").click();
+  await page.keyboard.press("ControlOrMeta+x");
+  await row("web").click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(row("web/main copy 2.py")).toBeVisible();
+  await expect(row("main copy 2.py")).toHaveCount(0);
+});

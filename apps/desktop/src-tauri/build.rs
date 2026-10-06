@@ -11,6 +11,7 @@ fn main() {
             "ws_open_file",
             "ws_open_path",
             "ws_reveal",
+            "ws_copy",
             "ws_read_dir",
             "ws_read_file",
             "ws_read_base64",
