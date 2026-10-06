@@ -8,6 +8,7 @@ import { getPlatform, log, notify, showPanel, useWorkbench } from "../../state/s
 import type { TerminalSession } from "../../platform/types";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { enhanceTerminal, type EnhancedTerminal } from "../../terminal/enhance";
+import { setActiveTerminal } from "../../terminal/active";
 import { recordCommand, CommandLineTracker } from "../../terminal/history";
 import { SkeletonLines } from "../../widgets/Skeleton";
 
@@ -222,6 +223,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
     if (!el) return;
     el.replaceChildren();
     if (!inst) return;
+    setActiveTerminal(inst.term);
     // Dev builds: the UI probe drives the active terminal directly (selection drawing vs mouse input).
     if (import.meta.env?.DEV) (window as unknown as { __TMCODE_TERM__?: Terminal }).__TMCODE_TERM__ = inst.term;
     if (!inst.term.element) inst.term.open(el);

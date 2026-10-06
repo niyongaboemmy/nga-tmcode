@@ -1,4 +1,5 @@
 import { codeEditorFor } from "../monaco/editors";
+import { executeCommand } from "../commands/registry";
 import { monaco } from "../monaco/setup";
 import { terminalTheme } from "../parts/panel/TerminalView";
 import { useThemes } from "../themes/themeService";
@@ -263,6 +264,14 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
     ed.trigger("ui-probe", "deleteLeft", null);
     await wait(50);
     check("delete selection", model.getLineContent(1) !== lineBefore, `line 1 ${JSON.stringify(lineBefore.slice(0, 20))} → ${JSON.stringify(model.getLineContent(1).slice(0, 20))}`);
+    // Edit › Select All (the native menu runs this command): the whole document.
+    ed.focus();
+    ed.setPosition({ lineNumber: 1, column: 1 });
+    executeCommand("workbench.action.selectAllInFocus");
+    await wait(100);
+    const all = ed.getSelection()!;
+    const full = model.getFullModelRange();
+    check("select all (editor)", all.startLineNumber === 1 && all.startColumn === 1 && all.endLineNumber === full.endLineNumber && all.endColumn === full.endColumn, `selection ${all.startLineNumber}:${all.startColumn}-${all.endLineNumber}:${all.endColumn} of ${full.endLineNumber}:${full.endColumn}`);
     // Leave the file as it was.
     for (let i = 0; i < 6 && model.getAlternativeVersionId() !== version; i++) ed.trigger("ui-probe", "undo", null);
     ed.setPosition({ lineNumber: 2, column: 1 });
@@ -329,6 +338,11 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
         await wait(200);
         const all = drawn();
         check("terminal selection", api.hasSelection() && all.n > 0 && visible(all.bg), `selectAll: hasSelection=${api.hasSelection()} (${api.getSelection().length} chars), ${all.n} boxes ${all.bg}`);
+        api.clearSelection();
+        document.querySelector<HTMLTextAreaElement>("[data-testid=integrated-terminal] .xterm-helper-textarea")?.focus();
+        executeCommand("workbench.action.selectAllInFocus");
+        await wait(150);
+        check("select all (terminal)", api.hasSelection(), `hasSelection=${api.hasSelection()} (${api.getSelection().length} chars)`);
         // ⌘C / Ctrl+C on the terminal reaches the system clipboard (WebKit copies nothing for xterm's selection).
         const clip = getPlatform().clipboard;
         if (clip) {

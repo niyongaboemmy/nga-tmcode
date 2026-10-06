@@ -107,7 +107,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&PredefinedMenuItem::cut(app, None)?)
         .item(&PredefinedMenuItem::copy(app, None)?)
         .item(&PredefinedMenuItem::paste(app, None)?)
-        .item(&PredefinedMenuItem::select_all(app, None)?)
+        // Not the predefined selectAll: (it only selects inside a plain text field): the workbench
+        // selects all in whatever has focus — editor, terminal, input or list.
+        .item(&MenuItemBuilder::with_id("cmd:workbench.action.selectAllInFocus", "Select All").accelerator("CmdOrCtrl+A").build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("cmd:actions.find", "Find").accelerator("CmdOrCtrl+F").build(app)?)
         .item(&MenuItemBuilder::with_id("cmd:editor.action.startFindReplaceAction", "Replace").accelerator("CmdOrCtrl+Alt+F").build(app)?)
