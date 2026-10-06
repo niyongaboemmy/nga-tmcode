@@ -13,7 +13,10 @@ export async function applyExternalChanges(paths: string[]) {
   const dirs = new Set<string>();
   for (const p of paths) {
     if (s.dirs[p]) dirs.add(p);
-    if (s.dirs[dirname(p)]) dirs.add(dirname(p));
+    // New folders (a pull or checkout creating notes/todo.md): reload the nearest folder already shown.
+    let d = dirname(p);
+    while (d && !s.dirs[d]) d = dirname(d);
+    if (s.dirs[d]) dirs.add(d);
   }
   await Promise.all([...dirs].map((d) => loadDir(d)));
 

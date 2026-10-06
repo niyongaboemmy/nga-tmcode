@@ -10,6 +10,8 @@ import type {
   DebugProbe,
   DebugTransportEvent,
   DirEntry,
+  AccountHost,
+  AccountStatus,
   GitEvent,
   GitHost,
   GitTask,
@@ -206,6 +208,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
     },
     git: createTauriGit(),
+    account: createTauriAccount(),
   };
 }
 
@@ -267,5 +270,30 @@ function createTauriGit(): GitHost {
       signOut: () => invoke("github_sign_out"),
       repos: () => invoke("github_repos"),
     },
+  };
+}
+
+// ───────────── NGA account + projects (account.rs, projects.rs) ─────────────
+function createTauriAccount(): AccountHost {
+  return {
+    status: (refresh = false) => invoke("auth_status", { refresh }),
+    signIn: () => invoke("auth_sign_in"),
+    cancel: () => invoke("auth_cancel"),
+    signOut: () => invoke("auth_sign_out"),
+    onChange(cb) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      void listen<AccountStatus>("account-changed", (e) => cb(e.payload)).then((u) => (stopped ? u() : (un = u)));
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
+    request: (request) => invoke("tm_api", { request }),
+    scan: (l = {}) => invoke("proj_scan", { maxFiles: l.maxFiles ?? null, maxFileMb: l.maxFileMb ?? null, maxTotalMb: l.maxTotalMb ?? null }),
+    readBlob: (path) => invoke("proj_read_blob", { path }),
+    writeBlob: (path, sha256, gzBase64) => invoke("proj_write_blob", { path, sha256, gzBase64 }),
+    newFolder: (slug, base) => invoke("proj_new_folder", { slug, base: base ?? null }),
+    useProjectsFolderForClone: () => invoke("proj_use_projects_folder"),
   };
 }

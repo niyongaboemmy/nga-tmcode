@@ -10,12 +10,23 @@ import { ScmTitleActions, ScmView } from "../scm/ScmView";
 // ── extensions ──
 import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsView";
 import { RunDebugView } from "../debug/RunDebugView";
+import { ProjectsView } from "../projects/ProjectsView";
 import type { ContextMenuItem } from "../state/store";
 
-const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects" } as const;
 
 /** The title bar's "…" menu, per view. */
 function moreActions(view: keyof typeof TITLES): ContextMenuItem[] {
+  if (view === "projects") {
+    return [
+      { kind: "item", label: "New Project…", run: () => executeCommand("projects.new") },
+      { kind: "item", label: "Connect This Folder to Task Mentor…", run: () => executeCommand("projects.connectFolder") },
+      { kind: "item", label: "Refresh", run: () => executeCommand("projects.refresh") },
+      { kind: "item", label: "Open Project in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
+      { kind: "separator" },
+      { kind: "item", label: "Sign Out of NGA", run: () => executeCommand("projects.signOut") },
+    ];
+  }
   if (view === "debug") {
     return [
       { kind: "item", label: "Add Configuration...", run: () => executeCommand("debug.addConfiguration") },
@@ -60,7 +71,7 @@ export function SideBar() {
         </div>
       </header>
       <div className="tm-sidebar-content">
-        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : view === "extensions" ? <ExtensionsView /> : <TestingView />}
+        {view === "explorer" ? <ExplorerView /> : view === "search" ? <SearchView /> : view === "task" ? <TaskView /> : view === "scm" ? <ScmView /> : view === "debug" ? <RunDebugView /> : view === "extensions" ? <ExtensionsView /> : view === "projects" ? <ProjectsView /> : <TestingView />}
       </div>
     </aside>
   );

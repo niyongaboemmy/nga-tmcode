@@ -2,6 +2,8 @@
 mod menus;
 pub mod askpass;
 mod debug;
+mod account;
+mod projects;
 mod exam;
 mod extensions;
 mod git;
@@ -184,6 +186,7 @@ pub fn run() {
         .manage(updates::Pending::default())
         .manage(PendingOpen::default())
         .manage(git::Git::default())
+        .manage(account::Account::default())
         .manage(github::GitHub::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
@@ -235,6 +238,16 @@ pub fn run() {
             extensions::ext_install,
             extensions::ext_uninstall,
             extensions::ext_read_file,
+            account::auth_sign_in,
+            account::auth_cancel,
+            account::auth_status,
+            account::auth_sign_out,
+            account::tm_api,
+            projects::proj_scan,
+            projects::proj_read_blob,
+            projects::proj_write_blob,
+            projects::proj_new_folder,
+            projects::proj_use_projects_folder,
             git::git_info,
             git::git_status,
             git::git_show,

@@ -4,7 +4,7 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions";
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects";
 export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole";
 
 export type EditorInput =

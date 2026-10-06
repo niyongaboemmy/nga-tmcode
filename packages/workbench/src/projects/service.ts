@@ -1,0 +1,622 @@
+import { create } from "zustand";
+import { inExam } from "../exam/state";
+import type { AccountStatus, TmRequest } from "../platform/types";
+import { useGit } from "../scm/gitService";
+import { activeFilePath, getPlatform, log, notify, notifyProgress, openPathFromOs, showDialog, useWorkbench } from "../state/store";
+import { applyExternalChanges } from "../monaco/external";
+import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
+import type { Binding, Link, LinkableActivity, Project, ProjectKind, Revision, SyncState } from "./types";
+
+/**
+ * Task Mentor projects in TMCode (docs/PROJECTS_PLAN.md §4): the NGA account,
+ * the project lists, and the open folder's binding + sync with Task Mentor.
+ */
+
+const BINDING = ".tmcode/project.json";
+const FOLDERS_KEY = "projects.folders";
+const DEVICE_KEY = "projects.deviceId";
+
+export interface ProjectsState {
+  account: AccountStatus | null;
+  mine: Project[] | null;
+  shared: Project[] | null;
+  loading: boolean;
+  error: string | null;
+  /** The open folder's project, if it is one. */
+  binding: Binding | null;
+  current: Project | null;
+  plan: SyncPlan | null;
+  sync: SyncState;
+  syncMessage: string | null;
+  lastSyncAt: number | null;
+}
+
+export const useProjects = create<ProjectsState>(() => ({
+  account: null,
+  mine: null,
+  shared: null,
+  loading: false,
+  error: null,
+  binding: null,
+  current: null,
+  plan: null,
+  sync: "unbound",
+  syncMessage: null,
+  lastSyncAt: null,
+}));
+
+const set = useProjects.setState;
+const get = useProjects.getState;
+
+export function projectsSupported() {
+  try {
+    return !!getPlatform().account && !inExam();
+  } catch {
+    return false;
+  }
+}
+
+export const signedIn = () => !!get().account?.signed_in;
+
+// ── API ──────────────────────────────────────────────────────────────────
+
+export class TmError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+    public body: Record<string, unknown> = {},
+  ) {
+    super(message);
+  }
+}
+
+export async function api<T>(method: TmRequest["method"], path: string, json?: unknown, extra: Partial<TmRequest> = {}): Promise<T> {
+  const host = getPlatform().account;
+  if (!host) throw new TmError(0, "UNSUPPORTED", "Task Mentor projects are available in the TMCode desktop app.");
+  const res = await host.request<Record<string, unknown>>({ method, path: `/api/tmcode${path}`, json, ...extra });
+  if (res.status >= 200 && res.status < 300) return res.body as T;
+  const body = (res.body ?? {}) as Record<string, unknown>;
+  throw new TmError(res.status, String(body.error_code ?? `HTTP_${res.status}`), String(body.message ?? `Task Mentor answered ${res.status}.`), body);
+}
+
+// ── Account ──────────────────────────────────────────────────────────────
+
+let wired = false;
+export function wireProjects() {
+  const host = (() => {
+    try {
+      return getPlatform().account;
+    } catch {
+      return undefined;
+    }
+  })();
+  if (!host || wired) return;
+  wired = true;
+  host.onChange((account) => {
+    const was = signedIn();
+    set({ account });
+    if (account.signed_in && !was) {
+      notify("info", `Signed in to NGA as ${account.user?.name ?? account.user?.email ?? "you"}.`);
+      void refreshProjects();
+      void bindWorkspace();
+    }
+    if (!account.signed_in && was) set({ mine: null, shared: null });
+  });
+  void host.status(true).then((account) => {
+    set({ account });
+    if (account.signed_in) void refreshProjects();
+  });
+  // Re-check the session every 10 minutes: an MIS sign-out elsewhere ends it here too.
+  setInterval(() => void host.status(true).then((account) => set({ account })), 10 * 60_000);
+  // Follow the open folder.
+  let root = useWorkbench.getState().workspace?.root;
+  useWorkbench.subscribe((s) => {
+    if (s.workspace?.root === root) return;
+    void sendPresence(false);
+    root = s.workspace?.root;
+    void bindWorkspace();
+  });
+  startHeartbeats();
+  void bindWorkspace();
+}
+
+export async function signIn() {
+  const host = getPlatform().account;
+  if (!host) return;
+  if (inExam()) return notify("info", "Signing in is not available during an exam.");
+  try {
+    await host.signIn();
+    notify("info", "Continue in your browser to sign in with your NGA account.");
+  } catch (e) {
+    notify("error", String((e as Error)?.message ?? e));
+  }
+}
+
+export async function signOut() {
+  const host = getPlatform().account;
+  if (!host) return;
+  const choice = await showDialog({
+    severity: "info",
+    message: "Sign out of NGA?",
+    detail: "This signs you out of Central MIS and Task Mentor everywhere. Your files stay on this computer.",
+    buttons: [
+      { id: "out", label: "Sign Out", primary: true },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice !== "out") return;
+  await host.signOut();
+  set({ account: await host.status(false), mine: null, shared: null });
+}
+
+/** Projects need both sessions: asks to sign in otherwise. */
+async function requireSignIn(): Promise<boolean> {
+  if (signedIn()) return true;
+  const choice = await showDialog({
+    severity: "info",
+    message: "Sign in with your NGA account",
+    detail: "Task Mentor projects need you to be signed in to Central MIS and Task Mentor. One sign-in does both.",
+    buttons: [
+      { id: "in", label: "Sign In", primary: true },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice === "in") await signIn();
+  return false;
+}
+
+// ── Lists ────────────────────────────────────────────────────────────────
+
+export async function refreshProjects() {
+  if (!signedIn()) return;
+  set({ loading: true, error: null });
+  try {
+    const [mine, shared] = await Promise.all([
+      api<{ projects: Project[] }>("GET", "/projects?scope=mine"),
+      api<{ projects: Project[] }>("GET", "/projects?scope=shared"),
+    ]);
+    set({ mine: mine.projects, shared: shared.projects, loading: false });
+  } catch (e) {
+    set({ loading: false, error: (e as Error).message });
+  }
+}
+
+export async function createProject(input: { name: string; description?: string; language?: string; kind: ProjectKind; repo_url?: string }): Promise<Project | null> {
+  if (!(await requireSignIn())) return null;
+  const res = await api<{ project: Project }>("POST", "/projects", input);
+  void refreshProjects();
+  return res.project;
+}
+
+// ── Binding (.tmcode/project.json) ────────────────────────────────────────
+
+async function readBinding(): Promise<Binding | null> {
+  if (!useWorkbench.getState().workspace) return null;
+  try {
+    const b = JSON.parse(await getPlatform().fs.readFile(BINDING)) as Binding;
+    return typeof b.project_id === "number" ? b : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeBinding(b: Binding) {
+  const fs = getPlatform().fs;
+  await fs.createDir(".tmcode").catch(() => {});
+  await fs.writeFile(BINDING, `${JSON.stringify(b, null, 2)}\n`);
+  set({ binding: b });
+}
+
+async function rememberFolder(projectId: number) {
+  const root = useWorkbench.getState().workspace?.root;
+  if (!root) return;
+  const store = getPlatform().store;
+  const map = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
+  map[String(projectId)] = root;
+  await store.set(FOLDERS_KEY, map);
+}
+
+/** The open folder changed: is it a Task Mentor project? */
+export async function bindWorkspace() {
+  const binding = await readBinding();
+  set({ binding, current: null, plan: null, sync: binding ? "checking" : "unbound", syncMessage: null });
+  if (!binding || !signedIn()) {
+    if (binding) set({ sync: "offline", syncMessage: "Sign in to sync this project." });
+    return;
+  }
+  await rememberFolder(binding.project_id);
+  await checkSync();
+}
+
+/** Makes the open folder a new project's working copy (first save uploads it). */
+export async function connectFolder(project: Project) {
+  await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: project.kind, name: project.name, base_revision_id: null, base: null });
+  await rememberFolder(project.id);
+  await checkSync();
+}
+
+// ── Sync ─────────────────────────────────────────────────────────────────
+
+async function headManifest(projectId: number): Promise<{ head: Revision | null; files: Manifest | null }> {
+  try {
+    const res = await api<{ revision: Revision; files: Manifest }>("GET", `/projects/${projectId}/revisions/head/manifest`);
+    return { head: res.revision, files: res.files };
+  } catch (e) {
+    if (e instanceof TmError && (e.code === "NO_REVISIONS" || e.status === 404)) return { head: null, files: null };
+    throw e;
+  }
+}
+
+function stateOf(plan: SyncPlan): SyncState {
+  if (plan.conflicts.length) return "conflict";
+  const l = changeCount(plan.localChanges);
+  const r = changeCount(plan.remoteChanges);
+  return l && r ? "both" : l ? "local-changes" : r ? "remote-changes" : "synced";
+}
+
+let checking: Promise<void> | null = null;
+/** Compares the folder, its last sync and Task Mentor's head. */
+export function checkSync(): Promise<void> {
+  checking ??= (async () => {
+    const binding = get().binding;
+    const host = getPlatform().account;
+    if (!binding || !host || !signedIn()) return;
+    try {
+      const { project } = await api<{ project: Project }>("GET", `/projects/${binding.project_id}`);
+      set({ current: project });
+      if (project.kind === "github") {
+        set({ sync: "synced", plan: null, syncMessage: null });
+        void reportGit();
+        return;
+      }
+      const [scan, remote] = await Promise.all([host.scan(), headManifest(binding.project_id)]);
+      const plan = planSync(binding.base, scan.files, remote.files);
+      set({ plan, sync: stateOf(plan), syncMessage: scan.truncated });
+    } catch (e) {
+      const offline = !(e instanceof TmError) || e.status === 0;
+      set({ sync: offline ? "offline" : "error", syncMessage: (e as Error).message });
+    }
+  })().finally(() => {
+    checking = null;
+  });
+  return checking;
+}
+
+/** Save to Task Mentor: uploads only new content, then commits a revision. */
+export async function saveToTaskMentor(opts: { message?: string; source?: "save" | "auto" | "submit"; quiet?: boolean } = {}): Promise<Revision | null> {
+  const binding = get().binding;
+  const host = getPlatform().account;
+  if (!binding || !host) {
+    if (!opts.quiet) notify("info", "This folder is not a Task Mentor project. Use Projects › Connect This Folder first.");
+    return null;
+  }
+  if (!(await requireSignIn())) return null;
+  if (binding.kind === "github") {
+    if (!opts.quiet) notify("info", "This is a GitHub project: commit and push in Source Control. Task Mentor follows your pushes.");
+    return null;
+  }
+  await checkSync();
+  const plan = get().plan;
+  if (!plan) return null;
+  if (plan.conflicts.length) {
+    if (!opts.quiet) notify("warning", `${plan.conflicts.length} file(s) changed both here and in Task Mentor. Resolve them first (Projects › Resolve Conflicts).`);
+    return null;
+  }
+  if (changeCount(plan.remoteChanges)) {
+    await pullFromTaskMentor({ quiet: true });
+    if (get().sync === "conflict") return null;
+  }
+  const current = get().plan ?? plan;
+  if (!changeCount(current.localChanges) && get().binding?.base) {
+    if (!opts.quiet) notify("info", "Everything is already saved to Task Mentor.");
+    return null;
+  }
+  set({ sync: "saving" });
+  const progress = opts.quiet ? null : notifyProgress(`Saving ${binding.name} to Task Mentor…`);
+  try {
+    const files = current.next;
+    const shas = [...new Set(files.map((f) => f.sha256))];
+    const { missing } = await api<{ missing: string[] }>("POST", `/projects/${binding.project_id}/blobs/missing`, { sha256: shas });
+    let done = 0;
+    for (const sha of missing) {
+      const file = files.find((f) => f.sha256 === sha)!;
+      const [actual, gz] = await host.readBlob(file.path);
+      if (actual !== sha) throw new Error(`${file.path} changed while saving. Try again.`);
+      await api("PUT", `/projects/${binding.project_id}/blobs/${sha}`, undefined, { body_base64: gz, content_type: "application/gzip" });
+      progress?.update({ message: `Uploading ${file.path}…`, progress: Math.round((++done / missing.length) * 100) });
+    }
+    const message = opts.message ?? defaultMessage(current);
+    const body = { base_revision_id: get().binding?.base_revision_id ?? null, message, files, source: opts.source ?? "save" };
+    let res: { revision: Revision; unchanged?: boolean };
+    try {
+      res = await api("POST", `/projects/${binding.project_id}/revisions`, body);
+    } catch (e) {
+      if (e instanceof TmError && e.code === "REVISION_CONFLICT") {
+        // Someone saved in between (another computer): bring it down, then the user saves again.
+        await pullFromTaskMentor({ quiet: true });
+        throw new Error("Task Mentor had newer changes. They were brought into this folder; check them and save again.");
+      }
+      throw e;
+    }
+    await writeBinding({ ...get().binding!, base_revision_id: res.revision.id, base: files });
+    set({ lastSyncAt: Date.now() });
+    log("Projects", `Saved revision ${res.revision.number} of ${binding.name} (${missing.length} new file(s) uploaded)`);
+    if (!opts.quiet) notify("info", res.unchanged ? "Everything is already saved to Task Mentor." : `Saved to Task Mentor (revision ${res.revision.number}).`);
+    await checkSync();
+    return res.revision;
+  } catch (e) {
+    set({ sync: "error", syncMessage: (e as Error).message });
+    if (!opts.quiet) notify("error", (e as Error).message);
+    return null;
+  } finally {
+    progress?.close();
+  }
+}
+
+function defaultMessage(plan: SyncPlan) {
+  const c = plan.localChanges;
+  const parts = [c.added.length && `${c.added.length} added`, c.modified.length && `${c.modified.length} changed`, c.deleted.length && `${c.deleted.length} deleted`].filter(Boolean);
+  return parts.length ? `Saved from TMCode: ${parts.join(", ")}` : "Saved from TMCode";
+}
+
+/** Brings Task Mentor's newer files into this folder (conflicts are kept for the user). */
+export async function pullFromTaskMentor(opts: { quiet?: boolean } = {}) {
+  const binding = get().binding;
+  const host = getPlatform().account;
+  if (!binding || !host || binding.kind !== "tm") return;
+  set({ sync: "pulling" });
+  const progress = opts.quiet ? null : notifyProgress(`Getting ${binding.name} from Task Mentor…`);
+  try {
+    const remote = await headManifest(binding.project_id);
+    if (!remote.files || !remote.head) {
+      await checkSync();
+      return;
+    }
+    const scan = await host.scan();
+    const plan = planSync(binding.base, scan.files, remote.files);
+    const R = new Map(remote.files.map((f) => [f.path, f]));
+    const toWrite = [...plan.remoteChanges.added, ...plan.remoteChanges.modified];
+    let done = 0;
+    for (const path of toWrite) {
+      const f = R.get(path)!;
+      const res = await api<{ base64: string }>("GET", `/projects/${binding.project_id}/blobs/${f.sha256}`, undefined, { response: "base64" });
+      await host.writeBlob(path, f.sha256, res.base64);
+      progress?.update({ message: `Downloading ${path}…`, progress: Math.round((++done / Math.max(1, toWrite.length)) * 100) });
+    }
+    for (const path of plan.remoteChanges.deleted) await getPlatform().fs.remove(path).catch(() => {});
+    // Explorer and open editors follow at once (the file watcher would, a moment later).
+    await applyExternalChanges([...toWrite, ...plan.remoteChanges.deleted]);
+    // The new base: Task Mentor's head, except conflicting files keep their old base so they stay conflicts.
+    const oldBase = new Map((binding.base ?? []).map((f) => [f.path, f]));
+    const base = remote.files.filter((f) => !plan.conflicts.includes(f.path)).concat(plan.conflicts.flatMap((p) => (oldBase.get(p) ? [oldBase.get(p)!] : [])));
+    await writeBinding({ ...binding, base_revision_id: remote.head.id, base });
+    set({ lastSyncAt: Date.now() });
+    if (!opts.quiet) notify("info", toWrite.length + plan.remoteChanges.deleted.length ? `Updated ${toWrite.length + plan.remoteChanges.deleted.length} file(s) from Task Mentor.` : "This folder already has Task Mentor's latest files.");
+  } catch (e) {
+    if (!opts.quiet) notify("error", (e as Error).message);
+  } finally {
+    progress?.close();
+    await checkSync();
+  }
+}
+
+/** Conflict resolution per file: keep this folder's version or take Task Mentor's. */
+export async function resolveConflict(path: string, keep: "mine" | "theirs") {
+  const binding = get().binding;
+  const host = getPlatform().account;
+  if (!binding || !host) return;
+  const remote = await headManifest(binding.project_id);
+  const theirs = remote.files?.find((f) => f.path === path) ?? null;
+  if (keep === "theirs") {
+    if (theirs) {
+      const res = await api<{ base64: string }>("GET", `/projects/${binding.project_id}/blobs/${theirs.sha256}`, undefined, { response: "base64" });
+      await host.writeBlob(path, theirs.sha256, res.base64);
+    } else await getPlatform().fs.remove(path).catch(() => {});
+    await applyExternalChanges([path]);
+  }
+  // Either way the base for this file becomes Task Mentor's: "mine" then shows as a local change to save.
+  const base = (binding.base ?? []).filter((f) => f.path !== path).concat(theirs ? [theirs] : []);
+  await writeBinding({ ...binding, base });
+  await checkSync();
+}
+
+// ── Open a project (Projects view, tmcode://project deep link) ────────────
+
+export async function openProject(projectId: number) {
+  if (!projectsSupported()) return;
+  if (!(await requireSignIn())) return;
+  const store = getPlatform().store;
+  const folders = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
+  const known = folders[String(projectId)];
+  if (known) {
+    try {
+      await openPathFromOs(known);
+      if (useWorkbench.getState().workspace?.root === known) {
+        await bindWorkspace();
+        return;
+      }
+    } catch {
+      /* moved or deleted: get a fresh copy */
+    }
+  }
+  const { project } = await api<{ project: Project }>("GET", `/projects/${projectId}`);
+  const host = getPlatform().account!;
+  if (project.kind === "github") {
+    const git = getPlatform().git;
+    if (!git || !project.repo_url) return notify("error", "This GitHub project has no repository link, or git is not available.");
+    await host.useProjectsFolderForClone?.();
+    const progress = notifyProgress(`Cloning ${project.repo_full_name ?? project.name}…`);
+    try {
+      const path = await git.clone(project.repo_url, (e) => e.type === "progress" && progress.update({ message: `Cloning: ${e.line}` })).done;
+      await openPathFromOs(path);
+    } catch (e) {
+      notify("error", `Could not clone the repository: ${(e as Error).message}`);
+      return;
+    } finally {
+      progress.close();
+    }
+    await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "github", name: project.name, base_revision_id: null, base: null });
+  } else {
+    const path = await host.newFolder(project.slug);
+    await openPathFromOs(path);
+    await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "tm", name: project.name, base_revision_id: null, base: null });
+    await pullFromTaskMentor();
+  }
+  await rememberFolder(project.id);
+  await bindWorkspace();
+}
+
+/** `tmcode://project?id=12&api=https://taskmentor-api.amashuri.com` from Task Mentor's "Open in TMCode". */
+export function parseProjectLink(link: string): { id: number; api: string } | null {
+  try {
+    const u = new URL(link);
+    if (u.protocol !== "tmcode:" || (u.hostname !== "project" && u.pathname.replace(/^\/+/, "") !== "project")) return null;
+    const id = Number(u.searchParams.get("id"));
+    const apiBase = u.searchParams.get("api") ?? "";
+    if (!Number.isInteger(id) || id <= 0) return null;
+    return { id, api: apiBase.replace(/\/+$/, "") };
+  } catch {
+    return null;
+  }
+}
+
+/** Opens a project from a deep link; links for another Task Mentor than this account's are refused. */
+export async function openProjectLink(link: { id: number; api: string }) {
+  const { isAllowedApi } = await import("../exam/api");
+  if (!isAllowedApi(link.api, !!getPlatform().exam?.dev)) return notify("error", "This link points to an unknown Task Mentor server and was ignored.");
+  const account = get().account;
+  if (account?.signed_in && account.tm_api.replace(/\/+$/, "") !== link.api) {
+    return notify("error", `This project belongs to ${link.api}, but TMCode is signed in to ${account.tm_api}.`);
+  }
+  if (inExam()) return notify("info", "Finish your exam first: projects open outside exams.");
+  await openProject(link.id);
+}
+
+// ── Activities ───────────────────────────────────────────────────────────
+
+export async function linkableActivities(): Promise<LinkableActivity[]> {
+  const res = await api<{ activities: LinkableActivity[] }>("GET", "/activities/linkable");
+  return res.activities ?? [];
+}
+
+export async function linkActivity(projectId: number, a: Pick<LinkableActivity, "activity_type" | "activity_id">) {
+  const res = await api<{ link: Link }>("POST", `/projects/${projectId}/links`, a);
+  await checkSync();
+  return res.link;
+}
+
+/** Submits the project to a linked activity (saves first so the newest work is what's submitted). */
+export async function submitLink(projectId: number, linkId: number) {
+  const binding = get().binding;
+  if (binding?.project_id === projectId && binding.kind === "tm") {
+    await saveToTaskMentor({ source: "submit", quiet: true });
+    if (get().sync !== "synced") throw new Error("Save your work to Task Mentor first (there are unsaved changes or conflicts).");
+  }
+  if (binding?.project_id === projectId && binding.kind === "github") {
+    const st = useGit.getState().status;
+    if (st && (st.ahead > 0 || st.entries.length > 0)) throw new Error("Commit and push your changes first: Task Mentor records the last pushed commit.");
+    await reportGit();
+  }
+  const res = await api<{ link: Link; submission: unknown }>("POST", `/projects/${projectId}/links/${linkId}/submit`, {});
+  await checkSync();
+  return res;
+}
+
+// ── Live status: presence + git reports ───────────────────────────────────
+
+async function deviceId(): Promise<string> {
+  const store = getPlatform().store;
+  let id = await store.get<string>(DEVICE_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    await store.set(DEVICE_KEY, id);
+  }
+  return id;
+}
+
+async function sendPresence(open = true) {
+  const binding = get().binding;
+  if (!binding || !signedIn() || inExam() || !useWorkbench.getState().settings["projects.presence"]) return;
+  const git = useGit.getState().status;
+  const wb = useWorkbench.getState();
+  const state = {
+    open,
+    file: open ? activeFilePath() : null,
+    dirty: Object.keys(wb.dirty).length,
+    branch: git?.branch ?? null,
+    ahead: git?.ahead ?? null,
+    behind: git?.behind ?? null,
+    changes: git ? git.entries.length : get().plan ? changeCount(get().plan!.localChanges) : null,
+    last_commit: git?.oid ?? null,
+    last_run: wb.run.status === "idle" ? null : wb.run.label ?? null,
+    sync: get().sync,
+  };
+  try {
+    await api("PUT", `/projects/${binding.project_id}/presence`, { device_id: await deviceId(), app_version: getPlatform().version, state });
+  } catch {
+    /* offline: the next heartbeat tries again */
+  }
+}
+
+let lastGitReport = "";
+/** GitHub projects: Task Mentor shows the branch, ahead/behind and the last pushed commit. */
+export async function reportGit() {
+  const binding = get().binding;
+  if (!binding || binding.kind !== "github" || !signedIn()) return;
+  const st = useGit.getState().status;
+  if (!st) return;
+  const report = { branch: st.branch, head_commit: st.oid, ahead: st.ahead, behind: st.behind, changes: st.entries.length, remote_url: get().current?.repo_url ?? null };
+  const key = JSON.stringify(report);
+  if (key === lastGitReport) return;
+  lastGitReport = key;
+  try {
+    await api("POST", `/projects/${binding.project_id}/git`, report);
+  } catch {
+    lastGitReport = "";
+  }
+}
+
+let heartbeat: ReturnType<typeof setInterval> | null = null;
+function startHeartbeats() {
+  if (heartbeat) return;
+  heartbeat = setInterval(() => void sendPresence(true), 20_000);
+  setInterval(() => void reportGit(), 120_000);
+  // After git operations (commit, push, pull) the status changes: report soon.
+  let prev = useGit.getState().status;
+  useGit.subscribe((s) => {
+    if (s.status === prev) return;
+    prev = s.status;
+    setTimeout(() => void reportGit(), 1500);
+  });
+  // Auto save: after file saves (debounced), or on an interval.
+  let lastDirty = 0;
+  useWorkbench.subscribe((s) => {
+    const n = Object.keys(s.dirty).length;
+    if (n < lastDirty && s.settings["projects.autoSave"] === "onSave") scheduleAutoSave(4000);
+    if (n !== lastDirty) scheduleCheck();
+    lastDirty = n;
+  });
+  setInterval(() => {
+    if (useWorkbench.getState().settings["projects.autoSave"] === "interval") scheduleAutoSave(0);
+  }, 5 * 60_000);
+  window.addEventListener("beforeunload", () => void sendPresence(false));
+}
+
+let autoTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleAutoSave(delay: number) {
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    if (get().binding?.kind === "tm" && signedIn() && !inExam()) void saveToTaskMentor({ source: "auto", quiet: true });
+  }, delay);
+}
+
+let checkTimer: ReturnType<typeof setTimeout> | null = null;
+/** Edits and saves change the sync badge: re-check shortly after. */
+export function scheduleCheck(delay = 2500) {
+  if (!get().binding || get().binding?.kind !== "tm") return;
+  if (checkTimer) clearTimeout(checkTimer);
+  checkTimer = setTimeout(() => void checkSync(), delay);
+}

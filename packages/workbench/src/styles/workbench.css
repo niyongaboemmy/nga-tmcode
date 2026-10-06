@@ -4436,3 +4436,197 @@ kbd,
   font-size: 20px;
 }
 /* ───── end extensions ───── */
+
+/* ───────────────────────── Task Mentor projects ───────────────────────── */
+.tm-projects-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+.tm-projects-section .tm-projects-body {
+  padding: 4px 0 8px;
+  animation: tm-fade-in var(--dur-med, 180ms) var(--ease-out, ease-out);
+}
+.tm-projects-hint {
+  margin: 4px 20px;
+  font-size: 12px;
+}
+.tm-projects-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+}
+.tm-projects-signin h3 {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+.tm-projects-signin p {
+  margin: 0;
+  line-height: 1.5;
+}
+.tm-projects-hero {
+  font-size: 40px !important;
+  color: var(--accent);
+  margin: 8px auto 0;
+  animation: tm-rise-in var(--dur-slow, 260ms) var(--ease-out, ease-out);
+}
+.tm-error-text {
+  color: var(--error);
+  font-size: 12px;
+  margin: 4px 20px;
+}
+.tm-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  height: 16px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 16px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--description);
+  white-space: nowrap;
+}
+.tm-chip.is-success {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+.tm-button--small {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.tm-project-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 20px;
+  height: 26px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast, 120ms);
+}
+.tm-project-row.is-current .tm-project-name {
+  font-weight: 600;
+}
+.tm-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-project-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--description);
+  white-space: nowrap;
+}
+.tm-project-kind {
+  color: var(--description);
+}
+.tm-project-current {
+  color: var(--accent);
+}
+.tm-live-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 60%, transparent);
+  animation: tm-live-pulse 2s infinite;
+}
+@keyframes tm-live-pulse {
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.tm-projects-filter {
+  margin: 0 12px 6px 20px;
+}
+.tm-projects-connect,
+.tm-projects-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 4px 20px;
+}
+.tm-projects-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tm-sync-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  transition: background-color var(--dur-med, 180ms), color var(--dur-med, 180ms);
+}
+.tm-sync-line.is-synced {
+  color: var(--success);
+}
+.tm-sync-line.is-local-changes,
+.tm-sync-line.is-both,
+.tm-sync-line.is-remote-changes {
+  color: var(--info);
+}
+.tm-sync-line.is-conflict,
+.tm-sync-line.is-error {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.tm-projects-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tm-projects-actions .tm-button {
+  flex: 1 1 auto;
+}
+.tm-projects-conflicts p {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.tm-projects-links-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--description);
+}
+.tm-link-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+}
+.tm-account-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tm-status-project.is-local-changes,
+.tm-status-project.is-both {
+  font-weight: 600;
+}
+.tm-status-project.is-conflict {
+  color: var(--warning);
+}
