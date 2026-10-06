@@ -8,6 +8,7 @@
  */
 
 import * as T from "../api/types";
+import * as MT from "../api/moreTypes";
 import { Uri } from "../api/uri";
 import { CancellationTokenSource, EventEmitter, type CancellationToken } from "../api/events";
 import * as C from "./convert";
@@ -91,6 +92,9 @@ function l10nT(...args: unknown[]): string {
     return v === undefined ? m : String(v);
   });
 }
+
+const { enums: _enums, ...moreClasses } = MT;
+void _enums;
 
 export function createApi(host: ExtHost, ext: ExtState) {
   const g = <O extends object>(name: string, ns: O) => guard(host, ext, name, ns);
@@ -692,6 +696,9 @@ export function createApi(host: ExtHost, ext: ExtState) {
     RelativePattern: T.RelativePattern,
     TabInputText: T.TabInputText,
     EnvironmentVariableMutatorType: T.EnvironmentVariableMutatorType,
+    // Classes and enums libraries need to exist (vscode-languageclient subclasses several).
+    ...moreClasses,
+    ...MT.enums,
   };
   return guard(host, ext, "", api);
 }

@@ -6,6 +6,10 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -26,6 +30,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // packages/exthost/src/node/main.ts
 var path2 = __toESM(require("node:path"), 1);
 var import_node_module = __toESM(require("node:module"), 1);
+var import_node_url = require("node:url");
 
 // packages/exthost/src/rpc.ts
 var encoder = new TextEncoder();
@@ -2229,6 +2234,586 @@ function enabledPatterns(obj) {
   return Object.entries(obj).filter(([, v]) => v === true).map(([k]) => k);
 }
 
+// packages/exthost/src/api/moreTypes.ts
+var moreTypes_exports = {};
+__export(moreTypes_exports, {
+  Breakpoint: () => Breakpoint,
+  CallHierarchyIncomingCall: () => CallHierarchyIncomingCall,
+  CallHierarchyItem: () => CallHierarchyItem,
+  CallHierarchyOutgoingCall: () => CallHierarchyOutgoingCall,
+  CustomExecution: () => CustomExecution,
+  DataTransfer: () => DataTransfer,
+  DataTransferItem: () => DataTransferItem,
+  DebugAdapterExecutable: () => DebugAdapterExecutable,
+  DebugAdapterInlineImplementation: () => DebugAdapterInlineImplementation,
+  DebugAdapterNamedPipeServer: () => DebugAdapterNamedPipeServer,
+  DebugAdapterServer: () => DebugAdapterServer,
+  DocumentDropEdit: () => DocumentDropEdit,
+  DocumentDropOrPasteEditKind: () => DocumentDropOrPasteEditKind,
+  DocumentPasteEdit: () => DocumentPasteEdit,
+  EvaluatableExpression: () => EvaluatableExpression,
+  FileDecoration: () => FileDecoration,
+  FunctionBreakpoint: () => FunctionBreakpoint,
+  InlayHintLabelPart: () => InlayHintLabelPart,
+  InlineCompletionList: () => InlineCompletionList,
+  InlineValueEvaluatableExpression: () => InlineValueEvaluatableExpression,
+  InlineValueText: () => InlineValueText,
+  InlineValueVariableLookup: () => InlineValueVariableLookup,
+  LanguageModelError: () => LanguageModelError,
+  NotebookCellData: () => NotebookCellData,
+  NotebookCellOutput: () => NotebookCellOutput,
+  NotebookCellOutputItem: () => NotebookCellOutputItem,
+  NotebookCellStatusBarItem: () => NotebookCellStatusBarItem,
+  NotebookData: () => NotebookData,
+  NotebookEdit: () => NotebookEdit,
+  NotebookRange: () => NotebookRange,
+  ProcessExecution: () => ProcessExecution,
+  QuickInputButtons: () => QuickInputButtons,
+  SemanticTokensEdit: () => SemanticTokensEdit,
+  SemanticTokensEdits: () => SemanticTokensEdits,
+  ShellExecution: () => ShellExecution,
+  SourceBreakpoint: () => SourceBreakpoint,
+  TabInputCustom: () => TabInputCustom,
+  TabInputNotebook: () => TabInputNotebook,
+  TabInputTerminal: () => TabInputTerminal,
+  TabInputTextDiff: () => TabInputTextDiff,
+  TabInputWebview: () => TabInputWebview,
+  Task: () => Task,
+  TaskGroup: () => TaskGroup,
+  TelemetryTrustedValue: () => TelemetryTrustedValue,
+  TerminalLink: () => TerminalLink,
+  TerminalProfile: () => TerminalProfile,
+  TestMessage: () => TestMessage,
+  TestRunRequest: () => TestRunRequest,
+  TestTag: () => TestTag,
+  TextMerge: () => TextMerge,
+  TypeHierarchyItem: () => TypeHierarchyItem,
+  enums: () => enums
+});
+var CallHierarchyItem = class {
+  constructor(kind, name, detail, uri, range2, selectionRange) {
+    this.kind = kind;
+    this.name = name;
+    this.uri = uri;
+    this.range = range2;
+    this.selectionRange = selectionRange;
+    this.detail = detail;
+  }
+  kind;
+  name;
+  uri;
+  range;
+  selectionRange;
+  detail;
+  tags;
+};
+var CallHierarchyIncomingCall = class {
+  constructor(from, fromRanges) {
+    this.from = from;
+    this.fromRanges = fromRanges;
+  }
+  from;
+  fromRanges;
+};
+var CallHierarchyOutgoingCall = class {
+  constructor(to, fromRanges) {
+    this.to = to;
+    this.fromRanges = fromRanges;
+  }
+  to;
+  fromRanges;
+};
+var TypeHierarchyItem = class {
+  constructor(kind, name, detail, uri, range2, selectionRange) {
+    this.kind = kind;
+    this.name = name;
+    this.uri = uri;
+    this.range = range2;
+    this.selectionRange = selectionRange;
+    this.detail = detail;
+  }
+  kind;
+  name;
+  uri;
+  range;
+  selectionRange;
+  detail;
+  tags;
+};
+var InlayHintLabelPart = class {
+  constructor(value) {
+    this.value = value;
+  }
+  value;
+  tooltip;
+  location;
+  command;
+};
+var EvaluatableExpression = class {
+  constructor(range2, expression) {
+    this.range = range2;
+    this.expression = expression;
+  }
+  range;
+  expression;
+};
+var InlineValueText = class {
+  constructor(range2, text) {
+    this.range = range2;
+    this.text = text;
+  }
+  range;
+  text;
+};
+var InlineValueVariableLookup = class {
+  constructor(range2, variableName, caseSensitiveLookup = true) {
+    this.range = range2;
+    this.variableName = variableName;
+    this.caseSensitiveLookup = caseSensitiveLookup;
+  }
+  range;
+  variableName;
+  caseSensitiveLookup;
+};
+var InlineValueEvaluatableExpression = class {
+  constructor(range2, expression) {
+    this.range = range2;
+    this.expression = expression;
+  }
+  range;
+  expression;
+};
+var InlineCompletionList = class {
+  constructor(items) {
+    this.items = items;
+  }
+  items;
+};
+var SemanticTokensEdit = class {
+  constructor(start, deleteCount, data) {
+    this.start = start;
+    this.deleteCount = deleteCount;
+    this.data = data;
+  }
+  start;
+  deleteCount;
+  data;
+};
+var SemanticTokensEdits = class {
+  constructor(edits, resultId) {
+    this.edits = edits;
+    this.resultId = resultId;
+  }
+  edits;
+  resultId;
+};
+var DocumentDropOrPasteEditKind = class _DocumentDropOrPasteEditKind {
+  constructor(value) {
+    this.value = value;
+  }
+  value;
+  static Empty = new _DocumentDropOrPasteEditKind("");
+  static Text = new _DocumentDropOrPasteEditKind("text");
+  static TextUpdateImports = new _DocumentDropOrPasteEditKind("text.updateImports");
+  append(...parts) {
+    return new _DocumentDropOrPasteEditKind([this.value, ...parts].filter(Boolean).join("."));
+  }
+  intersects(other) {
+    return this.contains(other) || other.contains(this);
+  }
+  contains(other) {
+    return this.value === other.value || other.value.startsWith(this.value + ".");
+  }
+};
+var DocumentDropEdit = class {
+  constructor(insertText, title, kind) {
+    this.insertText = insertText;
+    this.title = title;
+    this.kind = kind;
+  }
+  insertText;
+  title;
+  kind;
+  additionalEdit;
+};
+var DocumentPasteEdit = class {
+  constructor(insertText, title, kind) {
+    this.insertText = insertText;
+    this.title = title;
+    this.kind = kind;
+  }
+  insertText;
+  title;
+  kind;
+  additionalEdit;
+};
+var DataTransferItem = class {
+  constructor(value) {
+    this.value = value;
+  }
+  value;
+  async asString() {
+    return typeof this.value === "string" ? this.value : JSON.stringify(this.value);
+  }
+  asFile() {
+    return void 0;
+  }
+};
+var DataTransfer = class {
+  #items = /* @__PURE__ */ new Map();
+  get(mimeType) {
+    return this.#items.get(mimeType.toLowerCase());
+  }
+  set(mimeType, value) {
+    this.#items.set(mimeType.toLowerCase(), value);
+  }
+  forEach(cb) {
+    for (const [m, i] of this.#items) cb(i, m, this);
+  }
+  *[Symbol.iterator]() {
+    yield* this.#items;
+  }
+};
+var FileDecoration = class {
+  constructor(badge, tooltip, color) {
+    this.badge = badge;
+    this.tooltip = tooltip;
+    this.color = color;
+  }
+  badge;
+  tooltip;
+  color;
+  propagate;
+};
+var TerminalLink = class {
+  constructor(startIndex, length, tooltip) {
+    this.startIndex = startIndex;
+    this.length = length;
+    this.tooltip = tooltip;
+  }
+  startIndex;
+  length;
+  tooltip;
+};
+var TerminalProfile = class {
+  constructor(options) {
+    this.options = options;
+  }
+  options;
+};
+var QuickInputButtons = class {
+  static Back = { iconPath: { id: "arrow-left" } };
+};
+var NotebookRange = class _NotebookRange {
+  constructor(start, end) {
+    this.start = start;
+    this.end = end;
+  }
+  start;
+  end;
+  get isEmpty() {
+    return this.start === this.end;
+  }
+  with(change) {
+    return new _NotebookRange(change.start ?? this.start, change.end ?? this.end);
+  }
+};
+var NotebookCellOutputItem = class _NotebookCellOutputItem {
+  constructor(data, mime) {
+    this.data = data;
+    this.mime = mime;
+  }
+  data;
+  mime;
+  static text(value, mime = "text/plain") {
+    return new _NotebookCellOutputItem(new TextEncoder().encode(value), mime);
+  }
+  static json(value, mime = "application/json") {
+    return _NotebookCellOutputItem.text(JSON.stringify(value), mime);
+  }
+  static stdout(value) {
+    return _NotebookCellOutputItem.text(value, "application/vnd.code.notebook.stdout");
+  }
+  static stderr(value) {
+    return _NotebookCellOutputItem.text(value, "application/vnd.code.notebook.stderr");
+  }
+  static error(value) {
+    return _NotebookCellOutputItem.json({ name: value.name, message: value.message, stack: value.stack }, "application/vnd.code.notebook.error");
+  }
+};
+var NotebookCellOutput = class {
+  constructor(items, metadata) {
+    this.items = items;
+    this.metadata = metadata;
+  }
+  items;
+  metadata;
+};
+var NotebookCellData = class {
+  constructor(kind, value, languageId) {
+    this.kind = kind;
+    this.value = value;
+    this.languageId = languageId;
+  }
+  kind;
+  value;
+  languageId;
+  outputs;
+  metadata;
+};
+var NotebookData = class {
+  constructor(cells) {
+    this.cells = cells;
+  }
+  cells;
+  metadata;
+};
+var NotebookEdit = class _NotebookEdit {
+  constructor(range2, newCells) {
+    this.range = range2;
+    this.newCells = newCells;
+  }
+  range;
+  newCells;
+  static replaceCells(range2, newCells) {
+    return new _NotebookEdit(range2, newCells);
+  }
+  static insertCells(index, newCells) {
+    return new _NotebookEdit(new NotebookRange(index, index), newCells);
+  }
+  static deleteCells(range2) {
+    return new _NotebookEdit(range2, []);
+  }
+};
+var NotebookCellStatusBarItem = class {
+  constructor(text, alignment) {
+    this.text = text;
+    this.alignment = alignment;
+  }
+  text;
+  alignment;
+};
+var TaskGroup = class _TaskGroup {
+  constructor(id, label) {
+    this.id = id;
+    this.label = label;
+  }
+  id;
+  label;
+  static Clean = new _TaskGroup("clean", "Clean");
+  static Build = new _TaskGroup("build", "Build");
+  static Rebuild = new _TaskGroup("rebuild", "Rebuild");
+  static Test = new _TaskGroup("test", "Test");
+  isDefault;
+};
+var ProcessExecution = class {
+  constructor(process2, args, options) {
+    this.process = process2;
+    this.args = args;
+    this.options = options;
+  }
+  process;
+  args;
+  options;
+};
+var ShellExecution = class {
+  constructor(commandLine, args, options) {
+    this.commandLine = commandLine;
+    this.args = args;
+    this.options = options;
+  }
+  commandLine;
+  args;
+  options;
+};
+var CustomExecution = class {
+  constructor(callback) {
+    this.callback = callback;
+  }
+  callback;
+};
+var Task = class {
+  constructor(definition, scope, name, source, execution, problemMatchers) {
+    this.definition = definition;
+    this.scope = scope;
+    this.name = name;
+    this.source = source;
+    this.execution = execution;
+    if (problemMatchers) this.problemMatchers = Array.isArray(problemMatchers) ? problemMatchers : [problemMatchers];
+  }
+  definition;
+  scope;
+  name;
+  source;
+  execution;
+  group;
+  presentationOptions = {};
+  problemMatchers = [];
+  isBackground = false;
+  runOptions = {};
+};
+var Breakpoint = class {
+  constructor(enabled = true, condition, hitCondition, logMessage) {
+    this.enabled = enabled;
+    this.condition = condition;
+    this.hitCondition = hitCondition;
+    this.logMessage = logMessage;
+  }
+  enabled;
+  condition;
+  hitCondition;
+  logMessage;
+  id = Math.random().toString(36).slice(2);
+};
+var SourceBreakpoint = class extends Breakpoint {
+  constructor(location2, enabled, condition, hitCondition, logMessage) {
+    super(enabled, condition, hitCondition, logMessage);
+    this.location = location2;
+  }
+  location;
+};
+var FunctionBreakpoint = class extends Breakpoint {
+  constructor(functionName, enabled, condition, hitCondition, logMessage) {
+    super(enabled, condition, hitCondition, logMessage);
+    this.functionName = functionName;
+  }
+  functionName;
+};
+var DebugAdapterExecutable = class {
+  constructor(command2, args = [], options) {
+    this.command = command2;
+    this.args = args;
+    this.options = options;
+  }
+  command;
+  args;
+  options;
+};
+var DebugAdapterServer = class {
+  constructor(port, host2) {
+    this.port = port;
+    this.host = host2;
+  }
+  port;
+  host;
+};
+var DebugAdapterNamedPipeServer = class {
+  constructor(path3) {
+    this.path = path3;
+  }
+  path;
+};
+var DebugAdapterInlineImplementation = class {
+  constructor(implementation) {
+    this.implementation = implementation;
+  }
+  implementation;
+};
+var TestTag = class {
+  constructor(id) {
+    this.id = id;
+  }
+  id;
+};
+var TestMessage = class _TestMessage {
+  constructor(message) {
+    this.message = message;
+  }
+  message;
+  static diff(message, expected, actual) {
+    const m = new _TestMessage(message);
+    m.expectedOutput = expected;
+    m.actualOutput = actual;
+    return m;
+  }
+  expectedOutput;
+  actualOutput;
+  location;
+};
+var TestRunRequest = class {
+  constructor(include, exclude, profile, continuous) {
+    this.include = include;
+    this.exclude = exclude;
+    this.profile = profile;
+    this.continuous = continuous;
+  }
+  include;
+  exclude;
+  profile;
+  continuous;
+};
+var TabInputTextDiff = class {
+  constructor(original, modified) {
+    this.original = original;
+    this.modified = modified;
+  }
+  original;
+  modified;
+};
+var TabInputCustom = class {
+  constructor(uri, viewType) {
+    this.uri = uri;
+    this.viewType = viewType;
+  }
+  uri;
+  viewType;
+};
+var TabInputWebview = class {
+  constructor(viewType) {
+    this.viewType = viewType;
+  }
+  viewType;
+};
+var TabInputNotebook = class {
+  constructor(uri, notebookType) {
+    this.uri = uri;
+    this.notebookType = notebookType;
+  }
+  uri;
+  notebookType;
+};
+var TabInputTerminal = class {
+};
+var TelemetryTrustedValue = class {
+  constructor(value) {
+    this.value = value;
+  }
+  value;
+};
+var TextMerge = class {
+};
+var LanguageModelError = class extends Error {
+};
+var enums = {
+  ColorThemeKind: { Light: 1, Dark: 2, HighContrast: 3, HighContrastLight: 4 },
+  TaskScope: { Global: 1, Workspace: 2 },
+  TaskRevealKind: { Always: 1, Silent: 2, Never: 3 },
+  TaskPanelKind: { Shared: 1, Dedicated: 2, New: 3 },
+  ShellQuoting: { Escape: 1, Strong: 2, Weak: 3 },
+  CommentMode: { Editing: 0, Preview: 1 },
+  CommentThreadCollapsibleState: { Collapsed: 0, Expanded: 1 },
+  CommentThreadState: { Unresolved: 0, Resolved: 1 },
+  NotebookCellKind: { Markup: 1, Code: 2 },
+  NotebookEditorRevealType: { Default: 0, InCenter: 1, InCenterIfOutsideViewport: 2, AtTop: 3 },
+  NotebookCellStatusBarAlignment: { Left: 1, Right: 2 },
+  NotebookControllerAffinity: { Default: 1, Preferred: 2 },
+  DebugConsoleMode: { Separate: 0, MergeWithParent: 1 },
+  DebugConfigurationProviderTriggerKind: { Initial: 1, Dynamic: 2 },
+  TestRunProfileKind: { Run: 1, Debug: 2, Coverage: 3 },
+  InlineCompletionTriggerKind: { Invoke: 0, Automatic: 1 },
+  TerminalExitReason: { Unknown: 0, Shutdown: 1, Process: 2, User: 3, Extension: 4 },
+  TerminalLocation: { Panel: 1, Editor: 2 },
+  TerminalShellExecutionCommandLineConfidence: { Low: 0, Medium: 1, High: 2 },
+  DocumentPasteTriggerKind: { Automatic: 0, PasteAs: 1 },
+  SyntaxTokenType: { Other: 0, Comment: 1, String: 2, RegEx: 3 },
+  TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
+  LanguageModelChatMessageRole: { User: 1, Assistant: 2 },
+  ChatResultFeedbackKind: { Unhelpful: 0, Helpful: 1 },
+  PortAutoForwardAction: { Notify: 1, OpenBrowser: 2, OpenPreview: 3, Silent: 4, Ignore: 5 },
+  NotebookCellExecutionState: { Idle: 1, Pending: 2, Executing: 3 },
+  ExtensionRuntime: { Node: 1, Webworker: 2 }
+};
+
 // packages/exthost/src/host/api.ts
 var noopDisposable = () => new Disposable(() => {
 });
@@ -2298,6 +2883,7 @@ function l10nT(...args) {
     return v === void 0 ? m : String(v);
   });
 }
+var { enums: _enums, ...moreClasses } = moreTypes_exports;
 function createApi(host2, ext) {
   const g = (name, ns) => guard(host2, ext, name, ns);
   const rpc = host2.rpc;
@@ -2885,7 +3471,10 @@ function createApi(host2, ext) {
     TreeItemCollapsibleState,
     RelativePattern,
     TabInputText,
-    EnvironmentVariableMutatorType
+    EnvironmentVariableMutatorType,
+    // Classes and enums libraries need to exist (vscode-languageclient subclasses several).
+    ...moreClasses,
+    ...enums
   };
   return guard(host2, ext, "", api);
 }
@@ -4252,25 +4841,54 @@ process.exit = ((code) => {
 });
 process.on("uncaughtException", (e) => consoleSink("error", `Uncaught exception in an extension: ${e?.stack ?? e}`));
 process.on("unhandledRejection", (e) => consoleSink("error", `Unhandled promise rejection in an extension: ${e?.stack ?? e}`));
+function ownerOf(file, locations2) {
+  const sep3 = path2.sep;
+  return locations2.sort((a, b) => b.location.length - a.location.length).find((l) => file === l.location || file.startsWith(l.location.endsWith(sep3) ? l.location : l.location + sep3))?.id;
+}
+var IDENT = /^[A-Za-z_$][\w$]*$/;
 function createNodeLoader(apiFor, locations2) {
   const M = import_node_module.default;
   const original = M._load;
-  const sep3 = path2.sep;
+  const resolveId = (file) => ownerOf(file, locations2()) ?? locations2()[0]?.id;
   M._load = function(request, parent, isMain) {
     if (request === "vscode") {
-      const file = parent?.filename ?? "";
-      const owner = locations2().sort((a, b) => b.location.length - a.location.length).find((l) => file === l.location || file.startsWith(l.location.endsWith(sep3) ? l.location : l.location + sep3));
-      const first = locations2()[0];
-      if (!owner && !first) throw new Error("Cannot find module 'vscode'");
-      return apiFor((owner ?? first).id);
+      const id = resolveId(parent?.filename ?? "");
+      if (!id) throw new Error("Cannot find module 'vscode'");
+      return apiFor(id);
     }
     return original.call(this, request, parent, isMain);
   };
+  globalThis.__tmcodeVscodeApi = apiFor;
+  M.registerHooks?.({
+    resolve(specifier, context, next) {
+      if (specifier !== "vscode") return next(specifier, context);
+      let parent = "";
+      try {
+        parent = context.parentURL ? (0, import_node_url.fileURLToPath)(context.parentURL) : "";
+      } catch {
+      }
+      return { url: `tmcode-vscode:${resolveId(parent) ?? ""}`, format: "module", shortCircuit: true };
+    },
+    load(url, context, next) {
+      if (!url.startsWith("tmcode-vscode:")) return next(url, context);
+      const id = url.slice("tmcode-vscode:".length);
+      const names = Object.keys(apiFor(id)).filter((k) => IDENT.test(k) && k !== "default");
+      const source = [`const api = globalThis.__tmcodeVscodeApi(${JSON.stringify(id)});`, "export default api;", ...names.map((n) => `export const ${n} = api.${n};`)].join("\n");
+      return { format: "module", source, shortCircuit: true };
+    }
+  });
   return {
     async load(location2, entry) {
       const file = path2.resolve(location2, entry);
       const require2 = import_node_module.default.createRequire(path2.resolve(location2, "package.json"));
-      return require2(file);
+      try {
+        return require2(require2.resolve(file));
+      } catch (e) {
+        const code = e?.code;
+        if (code !== "ERR_REQUIRE_ASYNC_MODULE" && code !== "ERR_REQUIRE_ESM") throw e;
+        const mod = await import((0, import_node_url.pathToFileURL)(require2.resolve(file)).href);
+        return typeof mod.activate === "function" ? mod : mod.default ?? mod;
+      }
     }
   };
 }
