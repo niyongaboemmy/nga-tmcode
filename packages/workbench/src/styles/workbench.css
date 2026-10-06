@@ -4982,3 +4982,142 @@ kbd,
 .tm-root[data-size="xs"] .tm-run-badge {
   display: none;
 }
+
+/* status bar: ▶ target / ■ Stop with elapsed time */
+.tm-run-split {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.tm-run-status {
+  min-width: 0;
+  max-width: 320px;
+}
+.tm-run-status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-run-status.is-idle .tm-run-play {
+  color: var(--success);
+}
+.tm-statusbar.is-debugging .tm-run-status .codicon,
+.tm-statusbar.is-monitored .tm-run-status .codicon,
+.tm-statusbar.is-secure .tm-run-status .codicon {
+  color: inherit;
+}
+.tm-run-status-more {
+  padding: 0 3px;
+}
+.tm-run-status-more .codicon {
+  font-size: 12px !important;
+}
+.tm-run-status:not(.is-idle) {
+  background: color-mix(in srgb, var(--success) 22%, transparent);
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+.tm-run-status.is-starting,
+.tm-run-status.is-building,
+.tm-run-status.is-stopping {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.is-starting > .tm-run-pulse,
+.is-building > .tm-run-pulse,
+.is-stopping > .tm-run-pulse,
+.tm-run-badge.is-running .tm-run-pulse {
+  color: var(--warning);
+  animation-duration: 0.9s;
+}
+.tm-run-elapsed {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.tm-run-outcome {
+  font-variant-numeric: tabular-nums;
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+.tm-run-outcome.is-ok .codicon {
+  color: var(--success);
+}
+.tm-run-outcome.is-fail {
+  background: color-mix(in srgb, var(--error) 25%, transparent);
+}
+.tm-run-outcome.is-fail .codicon {
+  color: var(--error);
+}
+
+/* editor title split button */
+.tm-run-split .tm-action.tm-run.is-livePreview,
+.tm-run-split .tm-action.tm-run.is-jsConsole {
+  color: var(--link);
+}
+.tm-run-split .tm-action.tm-stop {
+  animation: tm-pop-in var(--dur-fast) var(--ease-out);
+}
+
+/* the Run menu */
+.tm-run-menu {
+  min-width: 280px;
+  max-width: min(460px, calc(100vw - 16px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+.tm-run-menu:focus {
+  outline: none;
+}
+.tm-run-menu.is-up {
+  transform-origin: bottom left;
+}
+.tm-run-menu-header {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--description);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-run-menu-item {
+  gap: 8px;
+  height: auto;
+  min-height: 24px;
+  padding: 3px 10px;
+}
+.tm-run-menu-icon {
+  flex: none;
+  width: 16px;
+}
+.tm-run-menu-item:not(.is-disabled) .tm-run-menu-icon.codicon-play,
+.tm-run-menu-item:not(.is-disabled) .tm-run-menu-icon.codicon-play-circle {
+  color: var(--success);
+}
+.tm-run-menu-item.is-focused .tm-run-menu-icon {
+  color: inherit !important;
+}
+.tm-run-menu-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.tm-run-menu-text .tm-menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-run-menu-detail {
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-run-menu-item.is-current .tm-menu-label {
+  font-weight: 600;
+}
+.tm-root[data-size="xs"] .tm-run-status {
+  max-width: 44vw;
+}
+.tm-root[data-size="xs"] .tm-run-outcome {
+  display: none;
+}
+/* ───────────────────────── end Run hub ───────────────────────── */

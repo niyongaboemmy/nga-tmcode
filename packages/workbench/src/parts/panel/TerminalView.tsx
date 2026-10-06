@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { defaultFontFamily } from "../../state/settings";
 import { useThemes } from "../../themes/themeService";
-import { getPlatform, log, notify, useWorkbench } from "../../state/store";
+import { getPlatform, log, notify, showPanel, useWorkbench } from "../../state/store";
 import type { TerminalSession } from "../../platform/types";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { enhanceTerminal, type EnhancedTerminal } from "../../terminal/enhance";
@@ -80,6 +80,25 @@ export interface NewTerminalRequest {
   command?: string;
   cwd?: string;
   name?: string;
+  // ── Run hub: a terminal the Run hub owns (dev servers), so it can follow, reveal and stop it ──
+  owner?: TerminalOwner;
+}
+
+/** A terminal started for someone (the Run hub): its output, its end, and a handle to drive it. */
+export interface TerminalOwner {
+  onData?(data: string): void;
+  onExit?(code: number | null): void;
+  onReady?(handle: OwnedTerminal): void;
+  /** The shell could not start. */
+  onError?(message: string): void;
+}
+
+export interface OwnedTerminal {
+  id: number;
+  write(data: string): void;
+  kill(): void;
+  /** Shows this terminal in the Panel. */
+  reveal(): void;
 }
 
 let seq = 0;
@@ -106,8 +125,14 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const epoch = useRef(0);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  // Requests that arrive while a shell is starting wait their turn (a task must never be dropped).
+  const queued = useRef<NewTerminalRequest[]>([]);
   const create = async (req: NewTerminalRequest = {}) => {
-    if (!platform.terminal || spawning.current) return;
+    if (!platform.terminal) return;
+    if (spawning.current) {
+      if (req.command || req.owner) queued.current.push(req);
+      return;
+    }
     spawning.current = true;
     const myEpoch = epoch.current;
     const term = new Terminal({
@@ -137,12 +162,14 @@ export function TerminalView({ visible }: { visible: boolean }) {
         onData: (d) => {
           markStarted(inst.id);
           term.write(d);
+          req.owner?.onData?.(d);
           extras.observe(d);
         },
         onExit: (code) => {
           markStarted(inst.id);
           inst.exited = true;
           term.write(`\r\n\x1b[90m[process exited with code ${code ?? "?"}]\x1b[0m\r\n`);
+          req.owner?.onExit?.(code);
         },
       });
       if (epoch.current !== myEpoch) {
@@ -160,6 +187,15 @@ export function TerminalView({ visible }: { visible: boolean }) {
         tracker.feed(d);
         inst.session?.write(d);
       });
+      req.owner?.onReady?.({
+        id: inst.id,
+        write: (d) => inst.session?.write(d),
+        kill: () => inst.session?.kill(),
+        reveal: () => {
+          showPanel("terminal");
+          setActiveId(inst.id);
+        },
+      });
       if (req.command) {
         recordCommand(req.command);
         // Give the shell a moment to print its prompt, as VS Code's task terminals do.
@@ -171,9 +207,12 @@ export function TerminalView({ visible }: { visible: boolean }) {
       markStarted(inst.id);
       term.write(`\x1b[31mCould not start a shell: ${String((e as Error)?.message ?? e)}\x1b[0m\r\n`);
       notify("error", "The terminal could not be started.");
+      req.owner?.onError?.(String((e as Error)?.message ?? e));
     } finally {
       if (epoch.current === myEpoch) spawning.current = false;
     }
+    const next = queued.current.shift();
+    if (next) void create(next);
   };
 
   // Mount the active instance into the host element.

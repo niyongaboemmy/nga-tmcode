@@ -12,6 +12,8 @@ import { SYNC_ICON } from "../projects/ProjectsView";
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
+// ── Run hub ──
+import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
 const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
@@ -147,7 +149,6 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
-  const run = useWorkbench((s) => s.run);
   const debugging = useDebug((s) => s.phase !== "inactive");
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
@@ -171,12 +172,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           </Item>
         )}
         <DebugStatus />
-        {run.status !== "idle" && (
-          <Item title="Show the Run panel" onClick={() => showPanel("run")} className="tm-status-running">
-            <Codicon name="loading" className="codicon-modifier-spin" />
-            {run.status === "building" ? "Building" : "Running"} {run.entry?.split("/").pop()}
-          </Item>
-        )}
+        <RunStatusItems />
         {chord && <Item title="Waiting for second key of chord">({chord}) was pressed. Waiting for second key of chord...</Item>}
       </div>
       <div className="tm-status-right">
@@ -203,6 +199,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <Codicon name={notifications ? "bell-dot" : "bell"} />
         </Item>
       </div>
+      <RunMenuHost />
     </footer>
   );
 }
