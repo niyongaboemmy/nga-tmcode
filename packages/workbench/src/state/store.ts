@@ -4,7 +4,7 @@ import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
-export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions";
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects";
 export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole";
 
 export type EditorInput =
@@ -24,6 +24,8 @@ export type EditorInput =
   | { kind: "image"; id: string; path: string; preview: false }
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
+  /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
+  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false }
   /** Details of a VS Code extension ("extension:<publisher.name>"). */
   | { kind: "extension"; id: string; extensionId: string; preview: false };
 
@@ -354,7 +356,8 @@ function sortEntries(entries: DirEntry[]) {
 
 export async function loadDir(path: string) {
   try {
-    const entries = await getPlatform().fs.readDir(path);
+    // TMCode's own state (.tmcode: project binding, local history) stays out of sight, like VS Code's.
+    const entries = (await getPlatform().fs.readDir(path)).filter((e) => !(path === "" && e.name === ".tmcode"));
     set({ dirs: { ...get().dirs, [path]: sortEntries(entries) } });
   } catch (e) {
     notify("error", `Unable to read folder '${path || "/"}': ${String((e as Error)?.message ?? e)}`);
@@ -568,7 +571,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();

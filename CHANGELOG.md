@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.4.0 — 2026-10-06
+
+**TMCode 0.4 brings Task Mentor projects, Local History and the Outline view.**
+
+### Task Mentor projects
+- **Sign in with NGA:** one sign-in for Central MIS and Task Mentor, in your browser (Google works). The tokens are kept in your system keychain. Use the account button at the bottom of the activity bar.
+- **Projects view** (Ctrl/Cmd+Shift+J): your projects and the ones shared with you, synced as soon as you sign in.
+- **Task Mentor projects** (C++, Python, anything without GitHub):
+  - **Save to Task Mentor** (Ctrl/Cmd+Alt+S) uploads only the files that changed. You can also turn on automatic saving.
+  - **Get Latest** brings in work saved on another computer.
+  - Files changed both here and in Task Mentor are listed so you can choose which version to keep.
+  - A status bar badge shows whether everything is saved.
+- **GitHub projects** use git push as usual; Task Mentor shows your branch and your pushes.
+- **Open in TMCode** from Task Mentor (`tmcode://project` links) clones or downloads the project the first time, then opens it.
+- **Activities:** link a project to a quiz, an assignment or a recorded assessment. Submitting sends your teacher that exact version.
+- **Live status:** Task Mentor can show that the project is open and which file you're editing. Turn this off in Settings › Projects.
+- **New Project templates:** React (Vite), Node.js/Express, Python, C++ (CMake), Java (Maven) and a website. Each is ready to run, debug and save.
+
+> Projects become available once your Task Mentor is updated to support them; until then TMCode tells you they are coming soon.
+
+### Editor
+- **Timeline / Local History** (under the Explorer):
+  - Every save keeps a copy.
+  - Compare any copy with the current file, or restore it; Undo works.
+  - The copies stay on your computer.
+- **Outline** (under the Explorer): the active file's classes, functions and variables. Filter them, and click one to jump to it.
+- TMCode's own `.tmcode` folder is hidden from the Explorer and kept out of git.
+- New folders created outside TMCode (a pull or checkout, for example) appear in the Explorer straight away.
+
+### All changes
+
+- e2e: exam time-up test gets a 15 s deadline (slow CI WebKit booted past 6 s)
+- e2e: Timeline test edits with select-all (Linux WebKit Home key)
+- 0.4.0 notes; friendly message while Task Mentor lacks the projects API; plan + README
+- Projects: native self-test (TMCODE_DEV_SELFTEST=projects, debug-only TMCODE_DEV_MIS_TOKEN), device name in presence, Task Mentor contract script
+- Local History (Timeline) with compare/restore, Outline view, .tmcode hidden from the explorer
+- Projects (TMCode side): NGA sign-in (MIS + Task Mentor), Projects view, sync with Task Mentor, templates, deep links
+
 ## 0.3.0 — 2026-10-06
 
 **TMCode 0.3 makes it a full developer editor.** You can clone a real project, run and debug it, preview it, and theme it like VS Code. Exam mode is as locked down as before.

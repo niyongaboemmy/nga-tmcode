@@ -7,6 +7,8 @@ import { useUpdate } from "../update/updateService";
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { changeCount } from "../scm/model";
 import { debugAllowed } from "../debug/debugService";
+import { useProjects, signIn, signOut, refreshProjects } from "../projects/service";
+import type { AccountStatus } from "../platform/types";
 
 const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
@@ -19,6 +21,8 @@ const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "testing", icon: "beaker", label: "Testing", command: "workbench.view.testing" },
 ];
 // ── extensions (feat/extensions): hidden during exams ──
+// ── Task Mentor projects: practice mode with an NGA account host ──
+const PROJECTS_VIEW = { id: "projects" as ViewId, icon: "folder-library", label: "Task Mentor Projects", command: "workbench.view.projects" };
 const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
 
 export function ActivityBar() {
@@ -35,7 +39,10 @@ export function ActivityBar() {
   // Run and Debug is hidden in exams unless the policy allows the debugger.
   useWorkbench((s) => s.policy);
   useExam((s) => s.phase);
-  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, EXTENSIONS_VIEW] : VIEWS;
+  const hasAccount = !!getPlatform().account;
+  const account = useProjects((s) => s.account);
+  const projectSync = useProjects((s) => s.sync);
+  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? [PROJECTS_VIEW] : []), EXTENSIONS_VIEW] : VIEWS;
   const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
 
   const label = (v: (typeof VIEWS)[number]) => {
@@ -64,11 +71,17 @@ export function ActivityBar() {
               {v.id === "explorer" && dirtyCount > 0 && <span className="tm-activity-badge">{dirtyCount}</span>}
               {v.id === "scm" && scmChanges > 0 && <span className="tm-activity-badge">{scmChanges > 9999 ? "10k+" : scmChanges}</span>}
               {v.id === "testing" && failing > 0 && <span className="tm-activity-badge is-error">{failing}</span>}
+              {v.id === "projects" && (projectSync === "conflict" || projectSync === "local-changes" || projectSync === "both") && (
+                <span className={`tm-activity-badge ${projectSync === "conflict" ? "is-error" : ""}`} aria-label="Unsaved project changes">
+                  {projectSync === "conflict" ? "!" : "↑"}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
       <div className="tm-activitybar-bottom">
+        {hasAccount && practice && !inExam && <AccountButton account={account} />}
         <button
           type="button"
           className="tm-activity"
@@ -97,5 +110,52 @@ export function ActivityBar() {
         </button>
       </div>
     </nav>
+  );
+}
+
+/** VS Code's Accounts menu: the NGA account (Central MIS + Task Mentor). */
+function AccountButton({ account }: { account: AccountStatus | null }) {
+  const user = account?.signed_in ? account.user : null;
+  const busy = account?.phase === "waiting" || account?.phase === "completing";
+  const initials = (user?.name ?? user?.email ?? "")
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  const title = user ? `${user.name ?? user.email} (NGA)` : busy ? "Signing in… (continue in your browser)" : "Accounts: Sign in with NGA";
+  return (
+    <button
+      type="button"
+      className="tm-activity tm-account-button"
+      title={title}
+      aria-label={title}
+      aria-haspopup="menu"
+      data-testid="account-button"
+      onClick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openContextMenu(
+          r.right + 4,
+          r.bottom - 8,
+          user
+            ? [
+                { kind: "item", label: `${user.name ?? user.email}${user.role ? ` · ${user.role}` : ""}`, disabled: true, run: () => {} },
+                { kind: "separator" },
+                { kind: "item", label: "Task Mentor Projects", run: () => executeCommand("workbench.view.projects") },
+                { kind: "item", label: "Refresh Projects", run: () => void refreshProjects() },
+                { kind: "separator" },
+                { kind: "item", label: "Sign Out", run: () => void signOut() },
+              ]
+            : [
+                busy
+                  ? { kind: "item", label: "Cancel Sign In", run: () => void getPlatform().account?.cancel() }
+                  : { kind: "item", label: "Sign in with NGA (Central MIS + Task Mentor)", run: () => void signIn() },
+              ],
+        );
+      }}
+    >
+      {user ? <span className="tm-account-avatar">{initials || <Codicon name="account" />}</span> : <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} />}
+      {!user && account?.error && <span className="tm-activity-badge is-error" aria-label="Signed out">!</span>}
+    </button>
   );
 }

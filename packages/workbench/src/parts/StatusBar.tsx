@@ -4,6 +4,10 @@ import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
 import { showReleaseNotes, useUpdate } from "../update/updateService";
+// ── Task Mentor projects ──
+import { useProjects } from "../projects/service";
+import { changeCount as planChanges } from "../projects/plan";
+import { SYNC_ICON } from "../projects/ProjectsView";
 // ── git ──
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { branchLabel } from "../scm/model";
@@ -90,6 +94,35 @@ function GitItems() {
   );
 }
 
+// ── Task Mentor project: sync state of the open folder ──
+function ProjectStatus() {
+  const binding = useProjects((s) => s.binding);
+  const sync = useProjects((s) => s.sync);
+  const plan = useProjects((s) => s.plan);
+  if (!binding || binding.kind !== "tm") return null;
+  const n = plan ? planChanges(plan.localChanges) : 0;
+  const busy = sync === "saving" || sync === "pulling" || sync === "checking";
+  const label = sync === "synced" ? "Task Mentor" : sync === "local-changes" || sync === "both" ? `${n} to save` : sync === "remote-changes" ? "Updates" : sync === "conflict" ? "Conflicts" : sync === "offline" ? "Offline" : busy ? (sync === "saving" ? "Saving…" : sync === "pulling" ? "Updating…" : "Task Mentor") : "Task Mentor";
+  const title =
+    sync === "synced"
+      ? `${binding.name}: everything is saved to Task Mentor`
+      : sync === "local-changes" || sync === "both"
+        ? `${binding.name}: ${n} change(s) not saved to Task Mentor — click to save`
+        : sync === "remote-changes"
+          ? `${binding.name}: newer changes in Task Mentor — click to get them`
+          : `${binding.name}: ${sync}`;
+  return (
+    <Item
+      className={`tm-status-project is-${sync}`}
+      title={title}
+      onClick={() => executeCommand(sync === "remote-changes" ? "projects.pull" : sync === "conflict" || sync === "offline" || sync === "error" ? "workbench.view.projects" : "projects.save")}
+    >
+      <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
+      <span data-testid="project-status">{label}</span>
+    </Item>
+  );
+}
+
 // ── Run and Debug: the orange bar and the session name, as in VS Code ──
 function DebugStatus() {
   const name = useDebug((s) => (s.phase === "inactive" ? null : s.sessionName));
@@ -127,6 +160,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <span>{MODE_LABEL[mode]}</span>
         </Item>
         <GitItems />
+        <ProjectStatus />
         <SyncStatus />
         <Item title={`Errors: ${errors}, Warnings: ${warnings}`} onClick={() => showPanel("problems")}>
           <Codicon name="error" /> {errors} <Codicon name="warning" /> {warnings}

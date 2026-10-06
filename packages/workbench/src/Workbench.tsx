@@ -6,6 +6,8 @@ import "./styles/theme.css";
 import "./styles/workbench.css";
 import { registerBuiltinCommands } from "./commands/builtin";
 import { registerDeveloperCommands } from "./commands/developer";
+import { registerProjectCommands } from "./projects/commands";
+import { wireProjects } from "./projects/service";
 import { toggleZenMode, useZen } from "./state/zen";
 import { acquireTypes, enableEmmet, enablePrettier, resetProjectConfig } from "./monaco/languageServices";
 import { setupMonaco } from "./monaco/setup";
@@ -93,6 +95,8 @@ export function Workbench() {
   useEffect(() => {
     registerBuiltinCommands();
     registerDeveloperCommands();
+    registerProjectCommands();
+    wireProjects();
     setupMonaco();
     enableEmmet("standard"); // TextMate tokens (textmate/monacoTm.ts), not Monarch
     enablePrettier();

@@ -1,6 +1,6 @@
 [package]
 name = "tmcode"
-version = "0.3.0"
+version = "0.4.0"
 description = "TMCode: the VS Code-style exam code editor controlled and graded by Task Mentor"
 authors = ["New Generation Academy"]
 edition = "2021"
@@ -43,6 +43,8 @@ zip = { version = "4.6", default-features = false, features = ["deflate-flate2"]
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 # Debugging: js-debug is downloaded once, checked against a pinned SHA-256 and unpacked.
 sha2 = "0.10"
+# Projects: walk a folder the way git does (.gitignore, .tmignore).
+ignore = "0.4"
 hex = "0.4"
 flate2 = "1"
 tar = "0.4"

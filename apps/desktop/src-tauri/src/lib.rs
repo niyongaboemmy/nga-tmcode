@@ -2,6 +2,8 @@
 mod menus;
 pub mod askpass;
 mod debug;
+mod account;
+mod projects;
 mod exam;
 mod extensions;
 mod git;
@@ -54,6 +56,8 @@ struct AppInfo {
     dev_selftest_git: bool,
     /// Debug builds only: `TMCODE_DEV_SELFTEST=ui` measures the editor and terminal as rendered.
     dev_selftest_ui: bool,
+    /// Debug builds only: `TMCODE_DEV_SELFTEST=projects` runs the Task Mentor projects self-test.
+    dev_selftest_projects: bool,
     /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
     dev_launch: Option<String>,
     /// A folder or file given on the command line (`tmcode ~/project`).
@@ -87,6 +91,7 @@ fn app_info() -> AppInfo {
         dev_selftest: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("1"),
         dev_selftest_git: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("git"),
         dev_selftest_ui: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("ui"),
+        dev_selftest_projects: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("projects"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
     }
@@ -187,6 +192,7 @@ pub fn run() {
         .manage(updates::Pending::default())
         .manage(PendingOpen::default())
         .manage(git::Git::default())
+        .manage(account::Account::default())
         .manage(github::GitHub::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .invoke_handler(tauri::generate_handler![
@@ -238,6 +244,16 @@ pub fn run() {
             extensions::ext_install,
             extensions::ext_uninstall,
             extensions::ext_read_file,
+            account::auth_sign_in,
+            account::auth_cancel,
+            account::auth_status,
+            account::auth_sign_out,
+            account::tm_api,
+            projects::proj_scan,
+            projects::proj_read_blob,
+            projects::proj_write_blob,
+            projects::proj_new_folder,
+            projects::proj_use_projects_folder,
             git::git_info,
             git::git_status,
             git::git_show,
