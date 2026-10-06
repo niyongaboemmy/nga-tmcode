@@ -1,6 +1,6 @@
 import type { RpcConnection, TreeItemDTO, TreeViewOptionsDTO, ViewMetaDTO, WebviewCreateDTO } from "@tmcode/exthost";
 import type { HostKind } from "../state";
-import { setViewMeta, useViews } from "./model";
+import { focusView, setViewMeta, useViews } from "./model";
 import { disposeTree, disposeTreesOf, refreshTree, registerTree, revealInTree, getTree } from "./trees";
 import { createWebview, disposeWebviewsOf, postToWebview, registerWebviewViewProvider, unregisterWebviewViewProvider, webviewOp } from "./webviews";
 
@@ -26,10 +26,13 @@ export function installViewsMainThread(kind: HostKind, rpc: RpcConnection) {
       case "update":
         setViewMeta(viewId, data as ViewMetaDTO);
         return;
-      case "reveal":
-        revealInTree(viewId, data as Parameters<typeof revealInTree>[1]);
-        window.dispatchEvent(new CustomEvent("tmcode:show-view", { detail: viewId }));
+      case "reveal": {
+        const d = data as Parameters<typeof revealInTree>[1];
+        revealInTree(viewId, d);
+        // As VS Code: the view is shown (its container too), and focused with { focus: true }.
+        focusView(viewId, d.focus);
         return;
+      }
     }
   });
   rpc.register("$main.webview", ([op, handle, data]) => {

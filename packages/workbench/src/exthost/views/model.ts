@@ -232,14 +232,18 @@ export function showContainer(key: `ext:${string}`) {
   else revealView(key as ViewId);
 }
 
-/** Shows a view (its container, open). */
-export function focusView(id: string) {
+/** Shows a view (its container, open), and focuses it unless `focus` is false. */
+export function focusView(id: string, focus = true) {
   const v = useViews.getState().views.find((x) => x.id === id);
   if (!v) return;
   setViewOpen(id, true);
   if (v.container.startsWith("ext:")) showContainer(v.container as `ext:${string}`);
   else revealView(v.container as ViewId);
-  requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-view-id="${CSS.escape(id)}"] .tm-pane-header`)?.focus());
+  requestAnimationFrame(() => {
+    // The pane scrolls into view (ViewPanes listens), and takes the focus.
+    window.dispatchEvent(new CustomEvent("tmcode:show-view", { detail: id }));
+    if (focus) document.querySelector<HTMLElement>(`[data-view-id="${CSS.escape(id)}"] .tm-pane-header`)?.focus();
+  });
 }
 
 export function setViewOpen(id: string, open: boolean) {

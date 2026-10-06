@@ -6,7 +6,7 @@ import { useThemes } from "../../themes/themeService";
 import { HOST_CHANNEL } from "../output";
 import type { HostKind } from "../state";
 import type { HostLink } from "./trees";
-import { mimeOf } from "./model";
+import { focusView, mimeOf } from "./model";
 import { webviewDocument } from "./prelude";
 import { webviewTheme } from "./themeVars";
 
@@ -129,7 +129,8 @@ export function webviewOp(handle: string, op: string, data: unknown) {
       return;
     }
     case "show":
-      window.dispatchEvent(new CustomEvent("tmcode:show-view", { detail: e.viewType }));
+      // WebviewView.show(preserveFocus): its container comes to the front, the view opens.
+      focusView(e.viewType, !(data as { preserveFocus?: boolean } | null)?.preserveFocus);
       return;
     case "dispose":
       disposeWebview(handle, false);
