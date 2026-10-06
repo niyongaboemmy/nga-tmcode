@@ -92,9 +92,10 @@ test("relaunching resumes the latest synced code", async ({ page }) => {
 });
 
 test("time up locks the editor and submits automatically", async ({ page }) => {
-  await launch(page, { deadlineInMs: 6000 });
+  // Long enough for a slow CI WebKit to boot and type before time is up.
+  await launch(page, { deadlineInMs: 15000 });
   await typeCode(page, "console.log('Hello, NGA!');\n");
-  await expect(page.locator(".tm-exam-results h2")).toHaveText("Submitted", { timeout: 20000 });
+  await expect(page.locator(".tm-exam-results h2")).toHaveText("Submitted", { timeout: 40000 });
   const st = await mockState(page);
   expect(st.submitted.final).toHaveLength(2);
 });
