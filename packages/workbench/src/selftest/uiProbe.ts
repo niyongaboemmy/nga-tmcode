@@ -229,6 +229,38 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
     check("scrolling", scroll.worst < 120, `longest frame gap ${scroll.worst}ms over 60 scroll steps${scroll.stalls.length ? ` (${scroll.stalls.slice(0, 4).join(", ")})` : ""}`);
   }
 
+  // Selection and clipboard: what ⌘C / ⌘X / ⌘V (the native Edit menu) and Delete reach inside the editor.
+  {
+    const model = ed.getModel()!;
+    ed.focus();
+    ed.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 3, endColumn: 1 });
+    await wait(250);
+    const selEls = [...root.querySelectorAll<HTMLElement>(".selected-text")];
+    const selBg = selEls[0] ? getComputedStyle(selEls[0]).backgroundColor : "";
+    check("selection highlight", selEls.length > 0 && visible(selBg) && selBg !== bg, selEls.length ? `${selEls.length} boxes, ${selBg} on ${bg}` : "no .selected-text drawn");
+    const input = root.querySelector<HTMLElement>("textarea.inputarea, textarea, .native-edit-context");
+    const focused = document.activeElement === input || !!input?.contains(document.activeElement);
+    const selected = model.getValueInRange(ed.getSelection()!);
+    const dt = new DataTransfer();
+    input?.dispatchEvent(new ClipboardEvent("copy", { clipboardData: dt, bubbles: true, cancelable: true }));
+    const copied = dt.getData("text/plain");
+    check("copy", !!copied && copied.replace(/\r/g, "") === selected.replace(/\r/g, ""), `input ${input?.tagName.toLowerCase()}${input?.className ? "." + String(input.className).split(" ")[0] : ""} focused=${focused}; copied ${copied.length} of ${selected.length} chars; execCommand(copy) supported=${document.queryCommandSupported?.("copy")}`);
+    const version = model.getAlternativeVersionId();
+    const pdt = new DataTransfer();
+    pdt.setData("text/plain", "/*tmcode-paste*/");
+    input?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: pdt, bubbles: true, cancelable: true }));
+    await wait(150);
+    check("paste", model.getValue().includes("/*tmcode-paste*/"), model.getValue().includes("/*tmcode-paste*/") ? "pasted text replaced the selection" : "paste event did not insert text");
+    ed.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 4 });
+    const lineBefore = model.getLineContent(1);
+    ed.trigger("ui-probe", "deleteLeft", null);
+    await wait(50);
+    check("delete selection", model.getLineContent(1) !== lineBefore, `line 1 ${JSON.stringify(lineBefore.slice(0, 20))} → ${JSON.stringify(model.getLineContent(1).slice(0, 20))}`);
+    // Leave the file as it was.
+    for (let i = 0; i < 6 && model.getAlternativeVersionId() !== version; i++) ed.trigger("ui-probe", "undo", null);
+    ed.setPosition({ lineNumber: 2, column: 1 });
+  }
+
   if (opts.terminal) {
     showPanel("terminal");
     let term: HTMLElement | null = null;
@@ -264,6 +296,22 @@ export async function runUiProbe(opts: { file: string; bigFile?: string; termina
       const cs = tCursor ? getComputedStyle(tCursor) : null;
       cursorColor = !cs ? "" : cs.boxShadow !== "none" ? cs.boxShadow.match(/rgba?\([^)]*\)/)?.[0] ?? "" : cs.outlineStyle !== "none" ? cs.outlineColor : cs.backgroundColor;
       if (!visible(cursorColor)) await wait(50);
+    }
+    // Terminal selection: drag across the first prompt row; xterm draws its own selection layer.
+    {
+      const screen = document.querySelector<HTMLElement>("[data-testid=integrated-terminal] .xterm-screen");
+      const firstRow = rowEls[0]?.getBoundingClientRect();
+      if (screen && firstRow) {
+        const y = firstRow.top + firstRow.height / 2;
+        const opts = (x: number) => ({ clientX: x, clientY: y, bubbles: true, button: 0, buttons: 1 });
+        screen.dispatchEvent(new MouseEvent("mousedown", opts(firstRow.left + 2)));
+        document.dispatchEvent(new MouseEvent("mousemove", opts(firstRow.left + Math.min(200, firstRow.width - 4))));
+        document.dispatchEvent(new MouseEvent("mouseup", opts(firstRow.left + Math.min(200, firstRow.width - 4))));
+        await wait(200);
+      }
+      const selDivs = [...document.querySelectorAll<HTMLElement>("[data-testid=integrated-terminal] .xterm-selection div")];
+      const tSel = selDivs[0] ? getComputedStyle(selDivs[0]).backgroundColor : "";
+      check("terminal selection", selDivs.length > 0 && visible(tSel), selDivs.length ? `${selDivs.length} boxes, ${tSel}` : "no selection drawn after a drag");
     }
     check("terminal cursor", !!tCursor && visible(cursorColor), tCursor ? `${tCursor.className.trim()} (${cursorColor})` : `no cursor: focus on ${document.activeElement?.className}; hidden by ${helper?.closest("[hidden]")?.className ?? "nothing"}`);
   }
