@@ -542,8 +542,10 @@ async function sendPresence(open = true) {
   if (!binding || !signedIn() || inExam() || !useWorkbench.getState().settings["projects.presence"]) return;
   const git = useGit.getState().status;
   const wb = useWorkbench.getState();
+  const os = getPlatform().os;
   const state = {
     open,
+    device_name: os === "mac" ? "Mac" : os === "windows" ? "Windows PC" : "Linux PC",
     file: open ? activeFilePath() : null,
     dirty: Object.keys(wb.dirty).length,
     branch: git?.branch ?? null,

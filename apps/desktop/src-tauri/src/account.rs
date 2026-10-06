@@ -398,9 +398,28 @@ pub fn auth_cancel(app: AppHandle, account: State<'_, Account>) {
 #[tauri::command]
 pub async fn auth_status(app: AppHandle, refresh: bool) -> Result<AccountStatus, String> {
     let account = app.state::<Account>();
+    // Debug builds only: TMCODE_DEV_MIS_TOKEN signs in without the browser (native self-tests).
+    if cfg!(debug_assertions) {
+        let seed = std::env::var("TMCODE_DEV_MIS_TOKEN").ok().filter(|t| !t.is_empty());
+        let needs = account.inner.lock().unwrap().tm.is_none();
+        if let (Some(mis), true) = (seed, needs) {
+            match exchange(&mis).await {
+                Ok((tm, user)) => {
+                    let mut inner = account.inner.lock().unwrap();
+                    inner.loaded = true;
+                    inner.mis = Some(mis);
+                    inner.tm = Some(tm);
+                    inner.user = Some(user);
+                }
+                Err(e) => log::warn!("account: dev sign-in failed: {e}"),
+            }
+        }
+    }
     let token = {
         let mut inner = account.inner.lock().unwrap();
-        load(&mut inner);
+        if inner.tm.is_none() {
+            load(&mut inner);
+        }
         if !refresh && inner.user.is_some() {
             return Ok(status_of(&inner));
         }

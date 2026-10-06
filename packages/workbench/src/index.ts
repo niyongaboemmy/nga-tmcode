@@ -16,3 +16,5 @@ export { useExam } from "./exam/state";
 export { isAllowedApi } from "./exam/api";
 export { DapSession } from "./debug/dapSession";
 export { parseProjectLink, openProjectLink } from "./projects/service";
+// Native self-test (apps/desktop/src/selftest.ts, TMCODE_DEV_SELFTEST=projects).
+export * as projectsForSelfTest from "./projects/service";
