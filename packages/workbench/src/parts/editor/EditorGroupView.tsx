@@ -36,6 +36,10 @@ import { GitDiffEditor } from "../../scm/GitDiffEditor";
 // ── Run hub ──
 import { RunSplitButton } from "../../run/RunHubViews";
 import { openGitDiff } from "../../scm/gitService";
+// ── extension webview panels ──
+import { WebviewEditor, webviewTitle } from "../../exthost/views/WebviewSlot";
+import { useWebviews } from "../../exthost/views/webviews";
+import { ExtIcon } from "../../exthost/views/ExtIcon";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
@@ -48,6 +52,7 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "settings") return "Settings";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   if (e.kind === "extension") return extensionTitle(e.extensionId);
+  if (e.kind === "webview") return webviewTitle(e.handle);
   return "Welcome";
 }
 
@@ -60,7 +65,13 @@ function iconOf(e: EditorInput) {
   if (e.kind === "extension") return <Codicon name="extensions" className="tm-tab-codicon" />;
   if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
   if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
+  if (e.kind === "webview") return <WebviewTabIcon handle={e.handle} />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
+}
+
+function WebviewTabIcon({ handle }: { handle: string }) {
+  const icon = useWebviews((s) => s.entries[handle]?.icon);
+  return icon ? <ExtIcon icon={icon} className="tm-tab-codicon" /> : <Codicon name="preview" className="tm-tab-codicon" />;
 }
 
 /** Disambiguates same-named tabs with their folder, as VS Code does. */
@@ -139,6 +150,8 @@ function Watermark() {
 export function EditorGroupView({ group, single }: { group: EditorGroup; single: boolean }) {
   const activeGroup = useWorkbench((s) => s.activeGroup);
   const dirty = useWorkbench((s) => s.dirty);
+  // Webview panel titles change from the extension.
+  useWebviews((s) => s.entries);
   const os = getPlatform().os;
   const [dragOver, setDragOver] = useState<number | null>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -337,6 +350,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
         {active?.kind === "testDiff" && <TestDiffEditor key={active.id} input={active} />}
         {active?.kind === "extension" && <ExtensionEditor key={active.id} extensionId={active.extensionId} />}
+        {active?.kind === "webview" && <WebviewEditor key={active.id} handle={active.handle} />}
         {active?.kind === "historyDiff" && <HistoryDiffEditor key={active.id} input={active} />}
         {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
         {!active && <Watermark />}

@@ -13,6 +13,8 @@ import { applyCodeContributions, contributedCommand } from "./contributions";
 import { clearAllDecorations } from "./decorations";
 import { HOST_CHANNEL } from "./output";
 import { useExtHost, useExtStatusBar, type HostKind, type RuntimeInfo } from "./state";
+import { disposeViewsOf, installViewsMainThread } from "./views/mainThread";
+import { webviewEnv } from "./views/webviews";
 
 /**
  * Starts, stops and restarts the extension hosts:
@@ -148,6 +150,7 @@ function initData(kind: HostKind, exts: InstalledExtension[], dirs?: { extension
       storagePath: dirs?.storageDir,
       workspaceKey: s.workspace ? hashString(s.workspace.root) : undefined,
       os: p.os,
+      ...webviewEnv(),
     },
     documents: documentSnapshot(),
     editors: snap.editors,
@@ -167,6 +170,7 @@ function setRuntime(kind: HostKind, exts: InstalledExtension[]) {
 
 function cleanup(kind: HostKind) {
   disposeProviders(kind);
+  disposeViewsOf(kind);
   clearDiagnosticsOf(kind);
   setHostLink(null, kind);
   useExtStatusBar.setState((s) => ({ items: Object.fromEntries(Object.entries(s.items).filter(([, v]) => v.host !== kind)) }));
@@ -245,6 +249,7 @@ async function startWorker(exts: InstalledExtension[], seq: number): Promise<voi
 async function connect(conn: Conn, data: InitData, nodeInfo: string | null) {
   conns.set(conn.kind, conn);
   installMainThread(conn.ctx);
+  installViewsMainThread(conn.kind, conn.rpc);
   setHostLink({ kind: conn.kind, request: (m, p, t) => conn.rpc.request(m, p, t), notify: (m, p) => conn.rpc.notify(m, p) }, conn.kind);
   setRuntime(conn.kind, conn.extensions);
   const init = conn.rpc.request("$init", [data]);
@@ -421,6 +426,12 @@ export function initExtensionHost() {
   useWorkbench.subscribe((s, prev) => {
     if (s.policy !== prev.policy || s.workspace?.root !== prev.workspace?.root) scheduleReconcile();
   });
+}
+
+/** Fires an activation event (`onView:<id>`) in every running host. */
+export async function activateByEvent(event: string): Promise<void> {
+  if (starting) await starting;
+  await Promise.all([...conns.values()].filter((c) => c.live).map((c) => c.rpc.request("$activateByEvent", [event]).catch(() => {})));
 }
 
 export function runningHosts(): HostKind[] {

@@ -194,7 +194,7 @@ export function evaluateWhen(when: string | undefined | null, ctx: Context): boo
     } catch {
       node = { k: "lit", v: false };
     }
-    if (cache.size > 1000) cache.clear();
+    if (cache.size > 5000) cache.clear();
     cache.set(when, node);
   }
   return evaluate(node, ctx);

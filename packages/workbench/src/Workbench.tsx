@@ -30,6 +30,7 @@ import { ActivityBar } from "./parts/ActivityBar";
 import { EditorGroupView } from "./parts/editor/EditorGroupView";
 import { Panel } from "./parts/panel/Panel";
 import { SideBar } from "./parts/SideBar";
+import { WebviewLayer } from "./exthost/views/WebviewSlot";
 import { StatusBar } from "./parts/StatusBar";
 import { TitleBar } from "./parts/TitleBar";
 import { getPlatform, useWorkbench } from "./state/store";
@@ -263,6 +264,8 @@ export function Workbench() {
           </Allotment.Pane>
         </Allotment>
       </div>
+      {/* Extension webview iframes, over their slots (exthost/views/webviews.ts). */}
+      <WebviewLayer />
       <StatusBar chord={chord} />
       <QuickInput />
       <QuickPickHost />

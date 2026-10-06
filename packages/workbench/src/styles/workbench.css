@@ -5230,3 +5230,209 @@ kbd,
   }
 }
 /* ── end extension host ── */
+
+/* ───────────────────────── extension views and webviews (exthost/views) ───────────────────────── */
+.tm-ext-panes {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 0;
+}
+.tm-ext-panes.is-fill {
+  flex: 1;
+  height: 100%;
+}
+.tm-ext-pane {
+  flex: none;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+.tm-ext-panes.is-fill > .tm-ext-pane:first-child {
+  border-top: 0;
+}
+.tm-ext-panes.is-fill > .tm-ext-pane.is-open {
+  flex: 1 1 0;
+}
+.tm-ext-pane-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 0;
+}
+.tm-ext-panes:not(.is-fill) .tm-ext-pane-body {
+  max-height: 40vh;
+}
+.tm-ext-panes:not(.is-fill) .tm-ext-webview-view {
+  height: 40vh;
+}
+.tm-ext-pane .tm-pane-header .tm-badge {
+  margin-left: 4px;
+  font-weight: 400;
+}
+.tm-ext-pane .tm-pane-header .tm-pane-actions {
+  margin-left: auto;
+}
+.tm-ext-single-actions .tm-pane-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 8px;
+}
+.tm-ext-single-actions:has(.tm-pane-actions:empty) {
+  display: none;
+}
+.tm-ext-action-text {
+  font-size: 11px;
+  text-transform: none;
+  padding: 0 2px;
+}
+.tm-ext-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  position: relative;
+}
+.tm-ext-tree-row {
+  gap: 4px;
+}
+.tm-ext-tree-row .tm-tree-label {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.tm-ext-tree-desc {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: 2px;
+  font-size: 0.92em;
+  color: var(--description);
+}
+.tm-ext-tree-highlights mark {
+  background: none;
+  color: var(--list-highlight);
+  font-weight: 600;
+}
+.tm-ext-tree:focus .tm-list-row.is-selected,
+.tm-ext-tree:focus-within .tm-list-row.is-selected {
+  background: var(--list-active-bg);
+  color: var(--list-active-fg);
+}
+.tm-ext-tree:focus .tm-list-row.is-focused {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-ext-tree:focus .tm-list-row.is-selected .tm-ext-tree-desc {
+  color: inherit;
+  opacity: 0.8;
+}
+.tm-ext-tree-icon,
+.tm-ext-tree-row > .codicon {
+  flex: none;
+}
+.tm-ext-tree-checkbox {
+  margin: 0 2px 0 0;
+  flex: none;
+}
+.tm-ext-inline-actions {
+  display: none;
+  gap: 2px;
+  margin-left: auto;
+  flex: none;
+}
+.tm-ext-tree-row:hover .tm-ext-inline-actions,
+.tm-ext-tree-row.is-selected .tm-ext-inline-actions {
+  display: flex;
+}
+.tm-ext-inline-action {
+  width: 20px;
+  height: 20px;
+}
+.tm-ext-icon {
+  display: inline-block;
+  flex: none;
+  object-fit: contain;
+}
+.tm-ext-icon.is-mask {
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+.tm-activity .tm-activity-ext-icon {
+  width: 24px;
+  height: 24px;
+}
+.tm-ext-progress {
+  position: relative;
+  height: 2px;
+  flex: none;
+  overflow: hidden;
+}
+.tm-ext-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: var(--focus-border);
+  animation: tm-ext-progress 1.4s var(--ease-out) infinite;
+}
+@keyframes tm-ext-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.tm-ext-tree > .tm-ext-progress {
+  position: sticky;
+  top: 0;
+}
+.tm-ext-view-message {
+  padding: 4px 20px 6px;
+}
+.tm-ext-welcome {
+  padding: 8px 20px 12px;
+  overflow: auto;
+}
+.tm-ext-welcome p {
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+.tm-ext-welcome-button {
+  margin: 0 0 10px;
+}
+.tm-webview-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.tm-webview-frame {
+  position: absolute;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  color-scheme: normal;
+}
+.tm-webview-layer.is-dragging .tm-webview-frame {
+  pointer-events: none;
+}
+.tm-webview-slot {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+.tm-webview-editor {
+  position: absolute;
+  inset: 0;
+  background: var(--editor-bg);
+}
+.tm-ext-webview-view {
+  background: var(--sidebar-bg);
+}

@@ -18,6 +18,9 @@ import { clearJsConsole, rerunJsConsole, stopJsConsole, useJsConsole } from "../
 import { RunStateBadge } from "./RunStateBadge";
 // ── end Run hub ──
 import { OutputChannelPicker, useOutputChannelFilter } from "../../exthost/ui";
+// ── extension view containers in the panel (exthost/views) ──
+import { ExtViewPanes } from "../../exthost/views/ViewPanes";
+import { useViews } from "../../exthost/views/model";
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -114,6 +117,9 @@ export function Panel() {
   useExam((s) => s.phase);
   useWorkbench((s) => s.policy);
   const debugTab = debugAllowed();
+  const practice = useWorkbench((s) => s.policy.mode === "practice");
+  const inExam = useExam((s) => !!s.quiz);
+  const extPanels = useViews((s) => s.containers).filter((c) => c.location === "panel" && practice && !inExam);
 
   const tabs: { id: PanelId; label: string; badge?: number }[] = [
     { id: "problems", label: "Problems", badge: problemCount || undefined },
@@ -122,6 +128,7 @@ export function Panel() {
     { id: "run", label: "Run" },
     { id: "jsConsole", label: "JavaScript Console" },
     ...(terminalAllowed ? [{ id: "terminal" as const, label: "Terminal" }] : []),
+    ...extPanels.map((c) => ({ id: c.key as PanelId, label: c.title })),
   ];
   const current = tabs.some((t) => t.id === active) ? active : "problems";
 
@@ -185,7 +192,7 @@ export function Panel() {
               )}
             </>
           )}
-          {current !== "terminal" && current !== "run" && (
+          {current !== "terminal" && current !== "run" && !current.startsWith("ext:") && (
             <div className="tm-input-box tm-panel-filter">
               <input className="tm-input" placeholder={current === "problems" ? "Filter (e.g. text, **/*.py)" : "Filter"} aria-label="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
               <Codicon name="filter" className="tm-input-trailing" />
@@ -209,6 +216,7 @@ export function Panel() {
         <RunConsole visible={panelVisible && current === "run"} />
         <JsConsoleView visible={panelVisible && current === "jsConsole"} filter={filter} />
         {terminalAllowed && <TerminalView visible={panelVisible && current === "terminal"} />}
+        {current.startsWith("ext:") && <ExtViewPanes key={current} container={current} fill />}
       </div>
     </section>
   );

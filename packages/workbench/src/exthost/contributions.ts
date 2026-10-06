@@ -7,6 +7,7 @@ import { getPlatform } from "../state/store";
 import type { InstalledExtension } from "../extensions/service";
 import type { CommandContribution, KeybindingContribution, MenuItemContribution } from "../extensions/manifest";
 import { when } from "./context";
+import { applyViewContributions } from "./views/model";
 
 /**
  * The code-related contribution points of running extensions:
@@ -152,6 +153,8 @@ export function applyCodeContributions(exts: InstalledExtension[], run: CommandR
       }),
     );
   }
+  // Views, view containers, view menus and icon fonts (exthost/views).
+  applyViewContributions(exts);
   if (!editorHook) {
     editorHook = true;
     onCodeEditor((ed) => attachEditor(ed));
