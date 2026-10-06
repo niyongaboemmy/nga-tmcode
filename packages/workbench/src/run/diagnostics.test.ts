@@ -42,4 +42,15 @@ describe("toWorkspacePath", () => {
     expect(toWorkspacePath("/usr/include/stdio.h", "/Users/s/exam", "")).toBeNull();
     expect(toWorkspacePath("C:\\exam\\t\\m.c", "C:\\exam", "t")).toBe("t/m.c");
   });
+
+  it("parses Go and Rust build errors", () => {
+    expect(parseDiagnostics("# command-line-arguments\n./main.go:6:2: undefined: x\n")).toEqual([
+      { file: "./main.go", line: 6, column: 2, severity: "error", message: "undefined: x", source: "go" },
+    ]);
+    const rust = "error[E0425]: cannot find value `y` in this scope\n --> main.rs:3:20\n  |\nwarning: unused variable: `z`\n --> main.rs:2:9\nerror: aborting due to 1 previous error\n";
+    expect(parseDiagnostics(rust)).toEqual([
+      { file: "main.rs", line: 3, column: 20, severity: "error", message: "cannot find value `y` in this scope", source: "rustc" },
+      { file: "main.rs", line: 2, column: 9, severity: "warning", message: "unused variable: `z`", source: "rustc" },
+    ]);
+  });
 });
