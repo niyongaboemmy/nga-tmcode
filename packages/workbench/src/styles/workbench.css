@@ -5120,4 +5120,17 @@ kbd,
 .tm-root[data-size="xs"] .tm-run-outcome {
   display: none;
 }
+/* six panel tabs plus the JS Console's header actions: tabs scroll instead of wrapping */
+.tm-panel-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tm-panel-tab {
+  flex: none;
+  white-space: nowrap;
+}
+.tm-panel-actions {
+  flex: none;
+}
 /* ───────────────────────── end Run hub ───────────────────────── */
