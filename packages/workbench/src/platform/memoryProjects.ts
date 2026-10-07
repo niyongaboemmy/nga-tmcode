@@ -47,14 +47,17 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   const revisions: Rev[] = [];
   const blobs = new Map<string, string>(); // sha → text
   const links: Record<string, unknown>[] = [];
+  // GET /activities/linkable answers {type, id, …} (server projects.controller linkableActivities).
   const activities = [
-    { activity_type: "assignment", activity_id: 31, title: "Build a calculator", course_name: "Programming 101", due_date: new Date(Date.now() + 86400000).toISOString(), open: true },
-    { activity_type: "quiz", activity_id: 77, title: "Python Practical 2", course_name: "Programming 101", due_date: null, open: true },
+    { type: "assignment", id: 31, title: "Build a calculator", course_id: 1, course_name: "Programming 101", due_date: new Date(Date.now() + 86400000).toISOString(), submission_type: "project" },
+    { type: "quiz", id: 77, title: "Python Practical 2", course_id: 1, course_name: "Programming 101", due_date: null },
+    { type: "manual_assessment", id: 90, title: "Lab presentation", course_id: 1, course_name: "Programming 101", due_date: null },
+    { type: "assignment", id: 32, title: "Portfolio website", course_id: 3, course_name: "Web Development", due_date: new Date(Date.now() + 3 * 86400000).toISOString(), submission_type: "project" },
   ];
   let seq = 100;
   let teacher = false;
-  // Task Mentor's project lifecycle (feat/project-status-lifecycle): off unless a test turns it on.
-  let lifecycle = false;
+  // Task Mentor's project lifecycle (live since 2026-10-07); setLifecycle(false) mimics an older server.
+  let lifecycle = true;
   const day = 86_400_000;
   const assignments: Record<string, unknown>[] = [
     { id: 51, title: "Build a to-do list", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 2 * day).toISOString(), points: 20, language: "javascript", description_html: '<p>Build a <b>to-do list</b> page. <a href="https://developer.mozilla.org/">MDN</a> helps.</p><script>alert(1)</script>', instructions: "1. Open `index.html`\n2. Make **Add** work\n3. Submit", attachments: [], rubric: null, starter_project_id: 0 },
@@ -75,7 +78,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     read_only: assignments.find((x) => x.id === p.assignment_id)?.status === "completed",
     head: revOut(head(p.id as number)),
     head_revision_id: head(p.id as number)?.id ?? null,
-    links: links.filter((l) => l.project_id === p.id).map((l) => ({ ...l, activity: { title: activities.find((a) => a.activity_id === l.activity_id)?.title ?? assignments.find((a) => a.id === l.activity_id)?.title, course_id: 1, open: true, due_date: null } })),
+    links: links.filter((l) => l.project_id === p.id).map((l) => ({ ...l, activity: { title: activities.find((a) => a.type === l.activity_type && a.id === l.activity_id)?.title ?? assignments.find((a) => a.id === l.activity_id)?.title, course_id: 1, open: true, due_date: null } })),
     presence: { online: false, devices_online: 0, last_seen_at: null, file: null, dirty: null },
   });
   const err = (status: number, error_code: string, message: string, extra: object = {}): TmResponse => ({ status, body: { error_code, message, ...extra } });
@@ -129,7 +132,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     if (p === "/auth/me") return { status: 200, body: { user, token_kind: "tmcode-user" } };
     if (p === "/projects" && req.method === "GET") {
       const scope = url.searchParams.get("scope");
-      return { status: 200, body: { projects: scope === "shared" ? [] : projects.filter((x) => !x.hidden).map(projectOut), stats: {} } };
+      const status = url.searchParams.get("status") ?? "active";
+      const st = (x: Record<string, unknown>) => (x.status as string) ?? "draft";
+      const keep = (x: Record<string, unknown>) => (status === "active" ? st(x) !== "removed" : status === "all" ? true : st(x) === status);
+      return { status: 200, body: { projects: scope === "shared" ? [] : projects.filter((x) => !x.hidden && keep(x)).map(projectOut), stats: {} } };
     }
     if (p === "/projects" && req.method === "POST") {
       const id = ++seq;
@@ -178,7 +184,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       if (typeof body.share_presence === "boolean") proj.share_presence = body.share_presence;
       return { status: 200, body: { project: projectOut(proj) } };
     }
-    if ((m = p.match(/^\/projects\/(\d+)$/))) {
+    if ((m = p.match(/^\/projects\/(\d+)$/)) && req.method === "GET") {
       const proj = projects.find((x) => x.id === Number(m![1]));
       return proj ? { status: 200, body: { project: projectOut(proj) } } : err(404, "NOT_FOUND", "Project not found");
     }
@@ -211,8 +217,22 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       revisions.push(rev);
       return { status: 201, body: { revision: revOut(rev) } };
     }
-    if (p === "/activities/linkable") return { status: 200, body: { activities } };
+    if (p === "/activities/linkable") {
+      // Published TMCode practicals are assignments in the student's subjects too.
+      const practicals = assignments.filter((a) => a.status === "published").map((a) => ({ type: "assignment", id: a.id, title: a.title, course_id: a.course_id, course_name: a.course_name, due_date: a.due_date, submission_type: "project" }));
+      return { status: 200, body: { activities: [...activities, ...practicals] } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)\/links\/(\d+)$/)) && req.method === "DELETE") {
+      const i = links.findIndex((l) => l.id === Number(m![2]) && l.project_id === Number(m![1]));
+      if (i < 0) return err(404, "LINK_NOT_FOUND", "Link not found.");
+      if (links[i].status === "submitted") return err(409, "LINK_SUBMITTED", "A submitted link can't be removed.");
+      links.splice(i, 1);
+      return { status: 200, body: { ok: true } };
+    }
     if ((m = p.match(/^\/projects\/(\d+)\/links$/))) {
+      const mineIds = projects.filter((x) => (x.owner as { id: number }).id === user.id).map((x) => x.id);
+      const dup = links.find((l) => l.activity_type === body.activity_type && l.activity_id === body.activity_id && mineIds.includes(l.project_id as number));
+      if (dup) return err(409, "ALREADY_LINKED", dup.project_id === Number(m[1]) ? "Already linked." : "Another of your projects is linked to this activity.");
       const link = { id: ++seq, project_id: Number(m[1]), activity_type: body.activity_type, activity_id: body.activity_id, status: "linked", revision_id: null, revision_number: null, git_commit: null, submitted_at: null, linked_by: user.id, created_at: now() };
       links.push(link);
       return { status: 201, body: { link } };
@@ -226,6 +246,19 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       Object.assign(link, { status: "submitted", revision_id: h?.id ?? null, revision_number: h?.number ?? null, submitted_at: now() });
       if (lifecycle && owner) owner.status = "submitted";
       return { status: 200, body: { link, submission: { id: 1, status: "submitted", is_late: false } } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)$/)) && req.method === "DELETE") {
+      const proj = projects.find((x) => x.id === Number(m![1]));
+      if (!proj) return err(404, "NOT_FOUND", "Project not found");
+      if (["submitted", "graded"].includes((proj.status as string) ?? "draft")) return err(409, "PROJECT_SUBMITTED", "This project was submitted for an activity. Archive it instead.");
+      proj.status = "removed";
+      return { status: 200, body: { ok: true, removed: true, status: "removed" } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)\/restore$/)) && req.method === "POST") {
+      const proj = projects.find((x) => x.id === Number(m![1]));
+      if (!proj) return err(404, "NOT_FOUND", "Project not found");
+      proj.status = links.some((l) => l.project_id === proj.id && l.status === "submitted") ? "submitted" : "draft";
+      return { status: 200, body: { status: proj.status, project: projectOut(proj) } };
     }
     if ((m = p.match(/^\/projects\/(\d+)\/withdraw$/)) && req.method === "POST") {
       const proj = projects.find((x) => x.id === Number(m![1]));
@@ -268,6 +301,13 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     },
     grade(id: number, grade: number, feedback: string) {
       grades.set(id, { grade, feedback });
+      const ws = workspaceOf(id);
+      if (ws && lifecycle) ws.status = "graded";
+    },
+    /** The teacher graded a project's submission (any activity). */
+    setProjectStatus(projectId: number, status: string) {
+      const proj = projects.find((x) => x.id === projectId);
+      if (proj) proj.status = status;
     },
     setTeacher(on: boolean) {
       teacher = on;

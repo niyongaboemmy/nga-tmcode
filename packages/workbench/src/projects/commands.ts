@@ -1,6 +1,6 @@
 import { registerCommand } from "../commands/registry";
 import { inExam } from "../exam/state";
-import { getPlatform, notify, openPathFromOs, revealView, useWorkbench } from "../state/store";
+import { getPlatform, notify, openPathFromOs, revealView, showDialog, useWorkbench } from "../state/store";
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import {
   checkSync,
@@ -9,8 +9,8 @@ import {
   disconnectFolder,
   setSharePresence,
   withdrawSubmission,
-  linkableActivities,
-  linkActivity,
+  removeProject,
+  restoreProject,
   projectsSupported,
   pullFromTaskMentor,
   refreshProjects,
@@ -22,8 +22,9 @@ import {
   useProjects,
 } from "./service";
 import { TEMPLATES, templateById } from "./templates";
-import { publishAsStarter, refreshAssignments } from "./assignments";
-import type { Link, ProjectKind } from "./types";
+import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
+import { changeAssessment, linkProject, pickAssessment, submitProject, TYPE_LABEL } from "./matching";
+import type { ProjectKind } from "./types";
 
 const usable = () => projectsSupported() && useWorkbench.getState().policy.mode === "practice";
 const bound = () => usable() && !!useProjects.getState().binding;
@@ -92,10 +93,32 @@ async function newProject() {
     repo_url = await showInputBox({ title: "GitHub repository", prompt: "Repository URL", value: gitRemote ?? "https://github.com/", validate: (v) => (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(\.git)?\/?$/.test(v.trim()) ? null : "Enter a https://github.com/owner/repo URL.") });
     if (!repo_url) return;
   }
+  // Which assessment is this project for? (Optional: personal projects stay unmatched.)
+  const assessment = await pickAssessment({ title: `New Project "${name.trim()}": match with an assessment`, allowNone: true });
+  if (!assessment) return;
+  if (assessment !== "none" && assessment.activity_type === "assignment") {
+    // A TMCode practical with the teacher's starter files is started, not created from scratch.
+    const practical = useAssignments.getState().student?.find((a) => a.id === assessment.activity_id);
+    if (practical) {
+      const go = await showDialog({
+        severity: "info",
+        message: `"${practical.title}" is a TMCode practical`,
+        detail: "Start it from the Assignments view instead: you get your teacher's starter files and the brief beside your code.",
+        buttons: [
+          { id: "start", label: "Start the Practical", primary: true },
+          { id: "cancel", label: "Cancel" },
+        ],
+        cancelId: "cancel",
+      });
+      if (go === "start") await startAssignment(practical.id);
+      return;
+    }
+  }
   const tpl = choice.id.startsWith("tpl:") ? templateById(choice.id.slice(4)) : null;
   try {
     const project = await createProject({ name: name.trim(), kind, repo_url: repo_url?.trim(), language: tpl?.language });
     if (!project) return;
+    const matched = assessment !== "none" ? await linkProject(project.id, assessment).catch((e) => (notify("warning", `Created, but not matched: ${(e as Error).message}`), null)) : null;
     if (tpl) {
       const host = getPlatform().account!;
       const folder = await host.newFolder(slugify(name));
@@ -113,6 +136,10 @@ async function newProject() {
       if (useWorkbench.getState().workspace) await connectFolder(project);
       if (kind === "tm") await saveToTaskMentor({ message: "First save from TMCode" });
       else notify("info", `${project.name} is linked to ${repo_url}. Task Mentor now follows your pushes.`);
+    }
+    if (matched && assessment !== "none") {
+      notify("info", `${project.name} is matched with the ${TYPE_LABEL[assessment.activity_type].one.toLowerCase()} "${assessment.title}". When your work is ready, use Submit (status: Draft → Submitted).`);
+      await checkSync();
     }
     revealView("projects");
   } catch (e) {
@@ -147,32 +174,6 @@ async function connect() {
   }
 }
 
-async function linkToActivity() {
-  const b = useProjects.getState().binding;
-  if (!b) return notify("info", "Connect this folder to a Task Mentor project first.");
-  try {
-    const picked = await showQuickPick({
-      placeholder: "Link this project to an activity",
-      matchOnDescription: true,
-      items: linkableActivities().then((list) =>
-        list.map((a) => ({
-          id: `${a.activity_type}:${a.activity_id}`,
-          label: a.title,
-          description: [a.course_name, a.due_date ? `due ${new Date(a.due_date).toLocaleDateString()}` : null].filter(Boolean).join(" · "),
-          icon: a.activity_type === "quiz" ? "checklist" : a.activity_type === "assignment" ? "notebook" : "graph",
-          separator: { quiz: "quizzes", assignment: "assignments", manual_assessment: "recorded assessments" }[a.activity_type],
-        })),
-      ),
-    });
-    if (!picked) return;
-    const [type, id] = picked.id.split(":");
-    await linkActivity(b.project_id, { activity_type: type as Link["activity_type"], activity_id: Number(id) });
-    notify("info", `Linked to ${picked.label}. Submit when your work is ready.`);
-  } catch (e) {
-    notify("error", (e as Error).message);
-  }
-}
-
 export function registerProjectCommands() {
   registerCommand({ id: "workbench.view.projects", title: "Show Task Mentor Projects", category: "View", keybinding: "mod+shift+j", enabled: usable, run: () => revealView("projects") });
   registerCommand({ id: "projects.signIn", title: "Sign in with NGA (Central MIS + Task Mentor)", category: "Accounts", enabled: () => usable() && !signedIn(), run: signIn });
@@ -182,7 +183,28 @@ export function registerProjectCommands() {
   registerCommand({ id: "projects.save", title: "Save to Task Mentor", category: "Projects", keybinding: "mod+alt+u", enabled: bound, run: () => saveToTaskMentor() });
   registerCommand({ id: "projects.pull", title: "Get Latest from Task Mentor", category: "Projects", enabled: bound, run: () => pullFromTaskMentor() });
   registerCommand({ id: "projects.refresh", title: "Refresh Projects", category: "Projects", enabled: () => usable() && signedIn(), run: async () => (await refreshProjects(), await checkSync()) });
-  registerCommand({ id: "projects.linkActivity", title: "Link to an Activity…", category: "Projects", enabled: bound, run: linkToActivity });
+  registerCommand({ id: "projects.linkActivity", title: "Change Assessment…", category: "Projects", enabled: bound, run: changeAssessment });
+  registerCommand({
+    id: "projects.submit",
+    title: "Submit Project…",
+    category: "Projects",
+    enabled: () => bound() && !["submitted", "graded", "removed"].includes(useProjects.getState().current?.status ?? "draft"),
+    run: submitProject,
+  });
+  registerCommand({
+    id: "projects.remove",
+    title: "Remove Project…",
+    category: "Projects",
+    enabled: () => bound() && !!useProjects.getState().current && ["draft", undefined].includes(useProjects.getState().current?.status),
+    run: () => removeProject(useProjects.getState().current!).then(() => undefined),
+  });
+  registerCommand({
+    id: "projects.restore",
+    title: "Restore Project",
+    category: "Projects",
+    enabled: () => bound() && useProjects.getState().current?.status === "removed",
+    run: () => restoreProject(useProjects.getState().current!.id),
+  });
   registerCommand({
     id: "projects.openInTaskMentor",
     title: "Open Project in Task Mentor",

@@ -4,10 +4,11 @@ import { openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
-import { lockReason, openProject, projectsSupported, refreshProjects, resolveConflict, setSharePresence, signIn, useProjects } from "./service";
+import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, setSharePresence, signIn, useProjects } from "./service";
 import { showAssignment } from "./assignments";
 import type { Link, Project, SyncState } from "./types";
-import { openInTaskMentor, submitFromView } from "./commands";
+import { openInTaskMentor } from "./commands";
+import { TYPE_LABEL } from "./matching";
 
 const SYNC_LABEL: Record<SyncState, string> = {
   unbound: "Not a Task Mentor project",
@@ -37,8 +38,12 @@ export const SYNC_ICON: Record<SyncState, string> = {
   error: "error",
 };
 
-function Section({ title, actions, children, defaultOpen = true }: { title: string; actions?: ReactNode; children: ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
+function Section({ title, actions, children, defaultOpen = true, onOpen }: { title: string; actions?: ReactNode; children: ReactNode; defaultOpen?: boolean; onOpen?: () => void }) {
+  const [open, setOpenState] = useState(defaultOpen);
+  const setOpen = (v: boolean) => {
+    setOpenState(v);
+    if (v) onOpen?.();
+  };
   return (
     <section className={`tm-pane tm-projects-section ${open ? "is-open" : "is-collapsed"}`} aria-label={title}>
       <div className="tm-pane-header" role="button" tabIndex={0} aria-expanded={open} onClick={() => setOpen(!open)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setOpen(!open)}>
@@ -82,12 +87,14 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
           { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor(p.id) },
           ...(p.assignment ? [{ kind: "item" as const, label: "Show Assignment Brief", run: () => showAssignment(p.assignment!.id) }] : []),
           ...(current ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") }] : []),
+          ...(p.my_role === "owner" && (p.status ?? "draft") === "draft" ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Remove Project…", run: () => void removeProject(p) }] : []),
         ]);
       }}
     >
       <Codicon name={p.kind === "github" ? "github" : "cloud"} className="tm-project-kind" />
       <span className="tm-project-name">{p.name}</span>
       {p.assignment && <Codicon name="mortar-board" className="tm-project-kind" title={`Assignment: ${p.assignment.title}`} />}
+      {p.status && p.status !== "draft" && <StatusChip status={p.status} />}
       {online && <span className="tm-live-dot" title="Open in TMCode now" aria-label="Open now" />}
       <span className="tm-project-meta">
         {p.language && <span className="tm-chip">{p.language}</span>}
@@ -128,7 +135,7 @@ function ThisFolder() {
         <b className="tm-project-name" title={project?.name ?? binding.name}>
           {project?.name ?? binding.name}
         </b>
-        <span className="tm-chip">{binding.kind === "github" ? "GitHub" : "Task Mentor"}</span>
+        {project?.status ? <StatusChip status={project.status} /> : <span className="tm-chip">{binding.kind === "github" ? "GitHub" : "Task Mentor"}</span>}
         <ActionButton
           icon="ellipsis"
           label="More Project Actions…"
@@ -137,8 +144,10 @@ function ThisFolder() {
             openContextMenu(r.left, r.bottom + 2, [
               { kind: "item", label: "Open in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
               ...(binding.kind === "tm" ? [{ kind: "item" as const, label: "Use as Starter for an Assignment…", run: () => executeCommand("assignments.useAsStarter") }] : []),
+              { kind: "item", label: "Change Assessment…", run: () => executeCommand("projects.linkActivity") },
               { kind: "separator" },
               { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
+              ...(project && (project.status ?? "draft") === "draft" ? [{ kind: "item" as const, label: "Remove Project…", run: () => executeCommand("projects.remove") }] : []),
             ]);
           }}
         />
@@ -158,15 +167,6 @@ function ThisFolder() {
             {plan && changeCount(plan.localChanges) > 0 && sync !== "saving" && <span className="tm-badge tm-badge--accent">{changeCount(plan.localChanges)}</span>}
           </div>
           {message && <p className="tm-muted tm-projects-hint">{message}</p>}
-          {project?.status === "submitted" && (
-            <div className="tm-projects-locked" data-testid="project-submitted">
-              <Codicon name="lock" />
-              <span>Submitted: it can't change until you withdraw the submission.</span>
-              <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("projects.withdraw")}>
-                Withdraw
-              </button>
-            </div>
-          )}
           <div className="tm-projects-actions">
             <button type="button" className="tm-button" disabled={busy || !!lockReason(project)} onClick={() => executeCommand("projects.save")} data-testid="save-to-tm" title="Save to Task Mentor">
               <Codicon name="cloud-upload" />
@@ -198,28 +198,105 @@ function ThisFolder() {
         </div>
       )}
       {project && <SharePresence project={project} />}
-      <div className="tm-projects-links">
-        <div className="tm-projects-links-head">
-          <span>Activities</span>
-          <ActionButton icon="add" label="Link to an Activity…" onClick={() => executeCommand("projects.linkActivity")} />
-        </div>
-        {links.length === 0 && <p className="tm-muted tm-projects-hint">Link this project to a quiz, an assignment or a recorded assessment.</p>}
-        {links.map((l) => (
-          <div key={l.id} className="tm-list-row tm-link-row">
-            <Codicon name={l.activity_type === "quiz" ? "checklist" : l.activity_type === "assignment" ? "notebook" : "graph"} />
-            <span className="tm-project-name">{l.activity?.title ?? `${l.activity_type} ${l.activity_id}`}</span>
-            {l.status === "submitted" ? (
-              <span className="tm-chip is-success" title={l.submitted_at ?? ""}>
-                Submitted{l.revision_number ? ` r${l.revision_number}` : l.git_commit ? ` ${l.git_commit.slice(0, 7)}` : ""}
-              </span>
-            ) : (
-              <button type="button" className="tm-button tm-button--small" onClick={() => void submitFromView(l.id)} disabled={l.activity?.open === false}>
-                Submit
-              </button>
-            )}
-          </div>
-        ))}
+      {project && <StatusPanel project={project} links={links} busy={busy} />}
+    </div>
+  );
+}
+
+export const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", graded: "Graded", removed: "Removed" } as const;
+type Status = keyof typeof STATUS_LABEL;
+
+export function StatusChip({ status }: { status?: Status }) {
+  const s = status ?? "draft";
+  return (
+    <span className={`tm-chip tm-status-chip is-${s}`} data-testid="project-status-chip">
+      {STATUS_LABEL[s]}
+    </span>
+  );
+}
+
+/** The project's lifecycle (Draft → Submitted → Graded) and the assessment it is matched with. */
+function StatusPanel({ project, links, busy }: { project: Project; links: Link[]; busy: boolean }) {
+  const status: Status = project.status ?? "draft";
+  const link = links.find((l) => l.activity_type === "assignment") ?? links[0] ?? null;
+  const steps: Status[] = ["draft", "submitted", "graded"];
+  const at = steps.indexOf(status);
+  const icon = link ? TYPE_LABEL[link.activity_type].icon : "circle-slash";
+  return (
+    <div className="tm-status-panel" data-testid="project-status-panel">
+      <div className="tm-projects-links-head">
+        <span>Status</span>
       </div>
+      {status === "removed" ? (
+        <div className="tm-projects-locked">
+          <Codicon name="trash" />
+          <span>Removed.</span>
+          <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("projects.restore")}>
+            Restore
+          </button>
+        </div>
+      ) : (
+        <ol className="tm-status-steps" aria-label="Project status">
+          {steps.map((s, i) => (
+            <li key={s} className={`${i < at ? "is-done" : ""} ${i === at ? "is-current" : ""}`} aria-current={i === at ? "step" : undefined}>
+              <span className="tm-status-dot">{i < at ? <Codicon name="check" /> : null}</span>
+              <span>{STATUS_LABEL[s]}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="tm-projects-links-head">
+        <span>Assessment</span>
+        {status === "draft" && links.length > 0 && (
+          <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.linkActivity")} data-testid="change-assessment">
+            Change…
+          </button>
+        )}
+      </div>
+      {link ? (
+        <div className="tm-list-row tm-link-row" data-testid="project-assessment" title={link.activity?.title ?? ""}>
+          <Codicon name={icon} />
+          <span className="tm-project-name">{link.activity?.title ?? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}`}</span>
+          <span className="tm-chip">{TYPE_LABEL[link.activity_type].one}</span>
+          {link.status === "submitted" && (
+            <span className="tm-chip is-success" title={link.submitted_at ?? ""}>
+              {link.revision_number ? `v${link.revision_number}` : link.git_commit ? link.git_commit.slice(0, 7) : "Sent"}
+            </span>
+          )}
+        </div>
+      ) : (
+        <button type="button" className="tm-button tm-button--secondary tm-button--block" onClick={() => executeCommand("projects.linkActivity")} data-testid="match-assessment">
+          <Codicon name="link" />
+          <span className="tm-button-label">Match with an Assessment…</span>
+        </button>
+      )}
+      {status === "draft" && (
+        <button
+          type="button"
+          className="tm-button tm-button--block"
+          disabled={busy || !!project.read_only || link?.activity?.open === false}
+          onClick={() => executeCommand("projects.submit")}
+          data-testid="submit-project"
+          title={link?.activity?.open === false ? "This assessment is closed" : "Save, then hand in this exact version"}
+        >
+          <Codicon name="send" />
+          <span className="tm-button-label">Submit Project</span>
+        </button>
+      )}
+      {status === "submitted" && (
+        <div className="tm-projects-locked" data-testid="project-submitted">
+          <Codicon name="lock" />
+          <span>Locked until graded.</span>
+          <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("projects.withdraw")}>
+            Withdraw
+          </button>
+        </div>
+      )}
+      {status === "graded" && (
+        <p className="tm-muted tm-projects-hint tm-status-note">
+          <Codicon name="pass" /> Graded: see your grade and feedback in Task Mentor.
+        </p>
+      )}
     </div>
   );
 }
@@ -256,6 +333,8 @@ export function ProjectsView() {
   const error = useProjects((s) => s.error);
   const binding = useProjects((s) => s.binding);
   const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "submitted" | "graded">("all");
+  const removed = useProjects((s) => s.removed);
 
   useEffect(() => {
     if (account?.signed_in && mine === null) void refreshProjects();
@@ -279,7 +358,14 @@ export function ProjectsView() {
       </div>
     );
   }
-  const match = (p: Project) => !filter || `${p.name} ${p.language ?? ""} ${p.repo_full_name ?? ""}`.toLowerCase().includes(filter.toLowerCase());
+  const match = (p: Project) =>
+    (!filter || `${p.name} ${p.language ?? ""} ${p.repo_full_name ?? ""} ${p.assignment?.title ?? ""}`.toLowerCase().includes(filter.toLowerCase())) &&
+    (statusFilter === "all" || (p.status ?? "draft") === statusFilter);
+  const counts = { all: mine?.length ?? 0, draft: 0, submitted: 0, graded: 0 };
+  for (const p of mine ?? []) {
+    const st = (p.status ?? "draft") as keyof typeof counts;
+    if (st in counts) counts[st]++;
+  }
   const list = (items: Project[] | null, empty: string) =>
     items === null ? (
       <SkeletonRows rows={4} label="Loading projects" />
@@ -306,11 +392,38 @@ export function ProjectsView() {
         <div className="tm-input-box tm-projects-filter">
           <input className="tm-input" placeholder="Filter projects" aria-label="Filter projects" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
+        {mine?.some((p) => p.status) && (
+          <div className="tm-status-filters" role="radiogroup" aria-label="Filter by status">
+            {(["all", "draft", "submitted", "graded"] as const).map((k) => (
+              <button key={k} type="button" role="radio" aria-checked={statusFilter === k} className={`tm-filter-chip ${statusFilter === k ? "is-active" : ""}`} onClick={() => setStatusFilter(k)} data-testid={`status-filter-${k}`}>
+                {k === "all" ? "All" : STATUS_LABEL[k]}
+                {k !== "all" && <span>{counts[k]}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {error && <p className="tm-error-text">{error}</p>}
         {list(mine, "No projects yet. Create one, or connect the open folder.")}
       </Section>
       <Section title="Shared with Me" defaultOpen={!!shared?.length}>
         {list(shared, "Projects others share with you on GitHub appear here.")}
+      </Section>
+      <Section title="Removed" defaultOpen={false} onOpen={() => removed === null && void loadRemoved()}>
+        {removed === null ? (
+          <SkeletonRows rows={2} label="Loading removed projects" />
+        ) : removed.length === 0 ? (
+          <p className="tm-muted tm-projects-hint">Removed projects appear here. You can restore them.</p>
+        ) : (
+          removed.map((p) => (
+            <div key={p.id} className="tm-list-row tm-project-row is-removed" data-testid="removed-project-row">
+              <Codicon name="trash" className="tm-project-kind" />
+              <span className="tm-project-name">{p.name}</span>
+              <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void restoreProject(p.id)}>
+                Restore
+              </button>
+            </div>
+          ))
+        )}
       </Section>
     </div>
   );
