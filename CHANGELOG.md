@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.6.0 — 2026-10-07
+
+**TMCode 0.6 brings Task Mentor practicals into the editor: teachers publish coding assignments and case studies with starter files, and students start, save and submit them without leaving TMCode. Extensions also get their own views, panels and terminals.**
+
+### Assignments and case studies from Task Mentor
+- **New Assignments view** (mortar-board icon). It lists the TMCode practicals and case studies of your subjects:
+  - grouped into **To do**, **Submitted**, **Graded** and **Completed**;
+  - each shows a due countdown, red when it is late;
+  - a badge counts what is left to do.
+- **One click to Start.**
+  - TMCode copies your teacher's starter files into your own Task Mentor project and opens it in a new folder.
+  - The brief opens beside the code.
+  - **Continue** brings you back to the same workspace on any computer.
+- **The assignment page:**
+  - the brief, instructions, attachments, points and due date;
+  - **Save** and **Submit**. Submit saves first, so your teacher grades exactly what you see;
+  - your grade and feedback once marked.
+- **Completed means read-only.** When your teacher completes an assignment, its workspace can no longer be edited, saved or submitted. TMCode shows why.
+- **For teachers:**
+  - a Teaching section with submission counts;
+  - each student's state and live status;
+  - **Use as Starter for an Assignment…** publishes the open project as an assignment's starter files.
+- **Open in TMCode:** Task Mentor's button opens the assignment straight in TMCode (`tmcode://assignment`).
+
+### Projects view
+- **Disconnect This Folder:** stops syncing a folder with Task Mentor. Your files stay.
+- **Share live status with teachers:** a switch for each project. It stays on for open assignments.
+- **Submitted projects are locked:** once Task Mentor locks submitted work, TMCode shows why and offers **Withdraw Submission** so you can keep editing.
+- **Tidier layout:**
+  - the This Folder panel no longer overlaps My Projects;
+  - buttons fit narrow side bars;
+  - the folder's assignment shows as a badge.
+
+### Extensions
+- Extension **views, tree views, webview panels and webview views** appear in their own activity bar containers and in the built-in views, as in VS Code (Git Graph, GitLens panels, Todo Tree…).
+- Extensions can open **terminals**, change a document **before it is saved**, and see the editor's own **Problems** (for example, Error Lens shows TypeScript errors inline).
+- **Format Document With…** and a default formatter per language.
+- **Install from VSIX…**
+- Browser-only extensions run on the desktop too.
+- **Fixed:** extensions that follow the active editor now see you switch files. Before this, Auto Rename Tag stopped renaming closing tags and Better Comments stopped colouring after you opened a second file.
+- **Fixed:** Better Comments, Todo Tree and similar extensions now find each language's comment syntax. A built-in "Language Basics" extension provides it, as VS Code's built-in language extensions do.
+- README links open in your browser.
+
+### All changes
+
+- 0.6.0 notes: Withdraw Submission
+- Projects: Task Mentor project lifecycle support (submitted/graded/removed lock, Withdraw Submission)
+- Extension host: onDidChangeActiveTextEditor when a group switches files; built-in Language Basics (comment syntax for extensions.all)
+- Assignments: workspaces rows for students not yet in Task Mentor, PRESENCE_LOCKED in the mock; 0.6.0 notes; e2e: allow esbuild-wasm cold start in WebKit
+- TMCode practicals: assignments and case studies from Task Mentor
+- Extensions self-test: check a webview panel round-trips messages
+- TreeView.reveal and WebviewView.show bring their view forward, as in VS Code
+- Docs: views and webviews in EXTENSION_HOST.md (API, contributions, security, real extensions, limits)
+- Webview messages carry ArrayBuffers/typed arrays (GitLens RPC); real-extension rigs
+- exthost e2e test: wait for UI notifications before asserting
+- Workbench: extension view containers, tree views, webview views and webview panels
+- Extension host: tree views, webview panels and webview views (host side)
+- Extensions: browser-only extensions run in the Node host on the desktop, Install from VSIX…, README links open in the browser and #anchors scroll
+- tmwebview:// origin for extension webviews: published pages + localResourceRoots files
+- Extensions: window.createTerminal over TMCode terminals, onWillSaveTextDocument edits before save; Format Document With… and per-language default formatter
+- Extensions see the workbench's own diagnostics (Error Lens etc.); end-to-end extensions self-test
+
 ## 0.5.0 — 2026-10-06
 
 **TMCode 0.5 runs real VS Code extensions, adds a one-click Run for every kind of project, and fixes editing in the desktop app.**
