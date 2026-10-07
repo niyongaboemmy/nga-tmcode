@@ -41,6 +41,7 @@ import { ExamOverlay } from "./exam/ExamViews";
 // ── git (scm/*) ──
 import { wireScm } from "./scm/commands";
 import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
+import { TooltipHost } from "./widgets/Tooltip";
 // ── Run and Debug ──
 import { wireDebugServices } from "./debug/debugService";
 import { DebugToolbar } from "./debug/DebugToolbar";
@@ -272,6 +273,7 @@ export function Workbench() {
       <StatusBar chord={chord} />
       <QuickInput />
       <QuickPickHost />
+      <TooltipHost />
       <ContextMenu />
       <Dialog />
       <ExamOverlay />

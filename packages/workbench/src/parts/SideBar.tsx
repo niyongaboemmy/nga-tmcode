@@ -13,6 +13,7 @@ import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsV
 import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
 import { AssignmentsView } from "../projects/AssignmentsView";
+import { GradingView } from "../grading/GradingView";
 import { TimelinePane } from "../history/TimelinePane";
 import { OutlinePane } from "../outline/OutlinePane";
 import type { ContextMenuItem, ViewId } from "../state/store";
@@ -20,7 +21,7 @@ import type { ContextMenuItem, ViewId } from "../state/store";
 import { ExtViewPanes } from "../exthost/views/ViewPanes";
 import { useViews } from "../exthost/views/model";
 
-const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects", assignments: "Assignments" } as const;
+const TITLES = { explorer: "Explorer", search: "Search", testing: "Testing", task: "Task", scm: "Source Control", debug: "Run and Debug", extensions: "Extensions", projects: "Task Mentor Projects", assignments: "Assignments", grading: "Grading" } as const;
 
 /** The title bar's "…" menu, per view. */
 function moreActions(view: ViewId): ContextMenuItem[] {
@@ -34,6 +35,14 @@ function moreActions(view: ViewId): ContextMenuItem[] {
       { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
       { kind: "separator" },
       { kind: "item", label: "Sign Out of NGA", run: () => executeCommand("projects.signOut") },
+    ];
+  }
+  if (view === "grading") {
+    return [
+      { kind: "item", label: "Refresh", run: () => executeCommand("grading.refresh") },
+      { kind: "item", label: "Close Review (Back to My Folder)", run: () => executeCommand("grading.closeReview") },
+      { kind: "separator" },
+      { kind: "item", label: "Hide Primary Side Bar", run: () => executeCommand("workbench.action.toggleSidebarVisibility") },
     ];
   }
   if (view === "assignments") {
@@ -127,6 +136,8 @@ export function SideBar() {
           <ProjectsView />
         ) : view === "assignments" ? (
           <AssignmentsView />
+        ) : view === "grading" ? (
+          <GradingView />
         ) : view.startsWith("ext:") ? (
           <ExtViewPanes container={view} fill />
         ) : (

@@ -76,7 +76,7 @@ export interface Project {
   created_at: string;
   updated_at: string;
   owner: { id: number; name: string; avatar_url: string | null };
-  my_role: "owner" | "collaborator" | "viewer" | null;
+  my_role: "owner" | "collaborator" | "viewer" | "teacher" | "admin" | null;
   head?: Revision | null;
   /** The assignment this project is a student's workspace for (Task Mentor practicals). */
   assignment?: { id: number; title: string; status: string; kind?: string | null } | null;

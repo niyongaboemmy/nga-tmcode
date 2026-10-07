@@ -5989,3 +5989,536 @@ kbd,
   flex-wrap: wrap;
   overflow: visible;
 }
+
+/* Workbench tooltips (widgets/Tooltip.tsx), VS Code's custom hover style */
+.tm-tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 340px;
+  padding: 5px 8px;
+  border: 1px solid var(--widget-border, var(--border));
+  border-radius: 4px;
+  background: var(--hover-bg, var(--widget-bg, var(--sidebar-bg)));
+  color: var(--foreground);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  animation: tm-tooltip-in 120ms var(--ease-out, ease-out);
+}
+.tm-tooltip-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tm-tooltip-keys {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--description);
+  font: inherit;
+  font-size: 11px;
+}
+.tm-tooltip-desc {
+  margin-top: 3px;
+  color: var(--description);
+  white-space: pre-wrap;
+}
+@keyframes tm-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+.tm-tooltip.is-right {
+  animation-name: tm-tooltip-in-right;
+}
+@keyframes tm-tooltip-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-tooltip {
+    animation: none;
+  }
+}
+
+/* ───────────────────────── Grading (grading/*) ───────────────────────── */
+.tm-grade-progress {
+  display: flex;
+  overflow: hidden;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.tm-grade-progress.is-compact {
+  height: 3px;
+  margin-top: 4px;
+}
+.tm-grade-progress > span {
+  height: 100%;
+  transition: width var(--dur-med, 180ms) var(--ease-out, ease-out);
+}
+.tm-grade-progress .is-graded {
+  background: var(--success);
+}
+.tm-grade-progress .is-to-grade {
+  background: var(--accent);
+}
+.tm-grade-progress .is-in-progress {
+  background: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+.tm-grade-progress.is-loading {
+  display: block;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 14%, transparent), transparent);
+  background-size: 200% 100%;
+  animation: tm-skeleton-shimmer 1.4s infinite linear;
+}
+@keyframes tm-skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.tm-grade-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 12px 2px 20px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.tm-grade-summary-numbers {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-grade-summary-numbers b {
+  color: var(--foreground);
+  font-size: 13px;
+}
+.tm-grade-subject-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 12px 2px 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--description);
+}
+.tm-grade-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 4px 12px 4px 20px;
+  cursor: pointer;
+}
+.tm-grade-activity > .codicon,
+.tm-grade-activity > .tm-chip,
+.tm-grade-activity > .tm-badge {
+  flex: none;
+}
+.tm-grade-activity .tm-badge {
+  margin-left: 0;
+}
+.tm-grade-error {
+  color: var(--warning);
+}
+.tm-grade-reviewing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 12px 0 20px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 12px;
+}
+.tm-grade-reviewing > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-grade-reviewing > .tm-button {
+  flex: none;
+}
+
+/* The grading tab */
+.tm-grade-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--editor-bg);
+  color: var(--foreground);
+  font-size: 13px;
+}
+.tm-grade-head {
+  flex: none;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-grade-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.tm-grade-title-row h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-grade-title-row .tm-select {
+  max-width: 220px;
+}
+.tm-grade-progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tm-grade-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-grade-legend > span::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: 0;
+}
+.tm-grade-legend .is-graded::before {
+  background: var(--success);
+}
+.tm-grade-legend .is-to-grade::before {
+  background: var(--accent);
+}
+.tm-grade-legend .is-in-progress::before {
+  background: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
+.tm-grade-legend > span:last-child::before {
+  display: none;
+}
+.tm-grade-legend b {
+  color: var(--foreground);
+}
+.tm-grade-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  flex: 1;
+  min-height: 0;
+}
+.tm-grade-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.tm-grade-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 10px 12px 6px;
+}
+.tm-grade-search {
+  margin: 0 12px 6px;
+}
+.tm-grade-autoload {
+  margin: 0 12px 8px;
+}
+.tm-grade-rows {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+}
+.tm-grade-rows:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--focus-border);
+}
+.tm-grade-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background-color var(--dur-fast, 120ms);
+}
+.tm-grade-row:hover {
+  background: var(--list-hover-bg, color-mix(in srgb, var(--foreground) 6%, transparent));
+}
+.tm-grade-row.is-selected {
+  border-left-color: var(--accent);
+  background: var(--list-active-bg, color-mix(in srgb, var(--accent) 16%, transparent));
+}
+.tm-grade-row > .tm-chip,
+.tm-grade-row > .codicon {
+  flex: none;
+}
+.tm-grade-draft {
+  font-size: 8px !important;
+  color: var(--warning);
+}
+.tm-grade-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tm-grade-avatar.is-info {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.tm-grade-avatar.is-success {
+  background: color-mix(in srgb, var(--success) 28%, transparent);
+}
+.tm-chip.is-late {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--error);
+}
+.tm-state-chip.is-info {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--foreground);
+}
+.tm-state-chip.is-success {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+.tm-grade-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.tm-grade-empty {
+  height: 100%;
+}
+.tm-grade-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  padding: 18px 24px 24px;
+}
+.tm-grade-student {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tm-grade-student .tm-grade-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+.tm-grade-student-text {
+  min-width: 0;
+}
+.tm-grade-student h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.tm-grade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tm-grade-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  font-size: 12px;
+}
+.tm-grade-criteria,
+.tm-grade-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tm-grade-criteria h3,
+.tm-grade-feedback h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--description);
+}
+.tm-grade-criteria-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.tm-grade-total {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--success);
+  transition: color var(--dur-fast, 120ms);
+}
+.tm-grade-total small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--description);
+}
+.tm-grade-total.is-incomplete {
+  color: var(--description);
+}
+.tm-grade-criterion {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.tm-grade-criterion-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tm-grade-criterion-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-grade-criterion-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-grade-quick {
+  display: flex;
+  flex: none;
+  gap: 3px;
+}
+.tm-grade-score {
+  flex: none;
+  width: 64px;
+  text-align: right;
+}
+.tm-grade-max {
+  flex: none;
+  color: var(--description);
+}
+.tm-grade-note {
+  width: 100%;
+  margin-top: 6px;
+  resize: vertical;
+}
+.tm-grade-feedback textarea {
+  width: 100%;
+  resize: vertical;
+}
+.tm-grade-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--border);
+  background: var(--editor-bg);
+}
+.tm-grade-footer > .tm-muted {
+  margin-right: auto;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .tm-grade-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(160px, 38%) 1fr;
+  }
+  .tm-grade-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tm-grade-quick {
+    display: none;
+  }
+}
+/* Grading: criteria stack name → description → controls; the tab adapts to its own width */
+.tm-grade-criterion-name {
+  display: block;
+  margin-bottom: 2px;
+}
+.tm-grade-criterion-desc {
+  margin: 0 0 6px;
+}
+.tm-grade-criterion-row {
+  flex-wrap: wrap;
+}
+.tm-grade-criterion-row .tm-grade-quick {
+  margin-right: auto;
+}
+.tm-grade-reviewing {
+  flex-wrap: wrap;
+}
+.tm-grade-reviewing > .tm-button {
+  margin-left: auto;
+}
+.tm-grade-page {
+  container-type: inline-size;
+  container-name: grade;
+}
+@container grade (max-width: 820px) {
+  .tm-grade-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(150px, 34%) 1fr;
+  }
+  .tm-grade-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tm-grade-panel {
+    padding: 14px 16px 20px;
+  }
+}
+@container grade (max-width: 460px) {
+  .tm-grade-head {
+    padding: 12px 14px 10px;
+  }
+  .tm-grade-legend > span:last-child {
+    display: none;
+  }
+}
+.tm-grade-page {
+  width: 100%;
+}
+.tm-grade-reviewing > span {
+  flex: 1 1 110px;
+}

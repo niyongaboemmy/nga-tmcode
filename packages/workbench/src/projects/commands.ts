@@ -23,6 +23,7 @@ import {
 } from "./service";
 import { TEMPLATES, templateById } from "./templates";
 import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
+import { closeReview, refreshGrading, useGrading } from "../grading/service";
 import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject, TYPE_LABEL } from "./matching";
 import type { ProjectKind } from "./types";
 
@@ -245,6 +246,9 @@ export function registerProjectCommands() {
     enabled: () => bound() && useProjects.getState().current?.status === "submitted",
     run: () => withdrawSubmission(useProjects.getState().current!.id),
   });
+  registerCommand({ id: "workbench.view.grading", title: "Show Grading", category: "View", enabled: () => usable() && useGrading.getState().grader, run: () => revealView("grading") });
+  registerCommand({ id: "grading.refresh", title: "Refresh Grading", category: "Grading", enabled: () => usable() && signedIn(), run: () => refreshGrading() });
+  registerCommand({ id: "grading.closeReview", title: "Close Review (Back to My Folder)", category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
   registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
   registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });
   registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm", run: publishAsStarter });

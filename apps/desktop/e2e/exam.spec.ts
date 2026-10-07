@@ -47,6 +47,8 @@ test("opens an exam: task view, timer, exam policy", async ({ page }) => {
   const menu = page.getByTestId("run-menu");
   await expect(menu.getByRole("menuitem", { name: /in JavaScript Console/ })).toHaveAttribute("aria-disabled", "false");
   await expect(menu.getByRole("menuitem", { name: /Node\.js REPL/ })).toHaveAttribute("aria-disabled", "true");
+  // A hovered element lends its title to the workbench tooltip; it comes back when the pointer leaves.
+  await page.mouse.move(1, 1);
   await expect(menu.getByRole("menuitem", { name: /Node\.js REPL/ })).toHaveAttribute("title", "Not available during an exam");
   await expect(menu.getByRole("menuitem", { name: "Run Task..." })).toHaveCount(0);
   await page.keyboard.press("Escape");
