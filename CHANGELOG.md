@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.1 — 2026-10-07
+
+**TMCode 0.6.1: match each project with an assessment, and follow it from Draft to Submitted to Graded.**
+
+### Match a project with an assessment
+- **When you create a project,** TMCode asks which assessment it is for, in three short steps: choose a subject, then the kind of assessment (assignment, quiz or recorded assessment), then the assessment itself.
+  - **Back** returns to the previous step.
+  - **No assessment** keeps it as a personal project.
+  - If you pick a TMCode practical, TMCode offers to start it instead, so you get your teacher's starter files.
+- **Change Assessment…** matches the project with a different assessment, or removes the match, while the project is still a draft.
+- **Fixed:** linking a project to an activity failed against Task Mentor because the two disagreed on the activity format. Matching now works.
+
+### Project status
+- **The Projects view shows each project's status:** Draft → Submitted → Graded, or Removed.
+- **Submit Project** saves your work and hands in that exact version. If the project isn't matched yet, TMCode asks which assessment first.
+- **A submitted project is locked.** Use **Withdraw** to keep editing before it is graded.
+- **Remove Project…** moves a draft to **Removed**, from where you can **Restore** it. Your saved versions are kept.
+- **Status filters** in My Projects: All, Draft, Submitted and Graded, with counts.
+
+### All changes
+
+- 0.6.1 release notes: assessment matching and project status
+- Projects: match with an assessment (subject → kind → assessment), change it, and the project status lifecycle
+
 ## 0.6.0 — 2026-10-07
 
 **TMCode 0.6 brings Task Mentor practicals into the editor: teachers publish coding assignments and case studies with starter files, and students start, save and submit them without leaving TMCode. Extensions also get their own views, panels and terminals.**
