@@ -24,6 +24,7 @@ import { createApi } from "./api";
 import { TerminalService } from "./terminals";
 
 import { ViewsHost } from "./views";
+import { languageBasicsFiles, languageBasicsManifest } from "./languageBasics";
 import type {
   CompletionListDTO,
   ContentChangeDTO,
@@ -55,6 +56,8 @@ export interface HostEnvironment {
   realPath?(path: string): string;
   /** Where console output of extensions goes (the "Extension Host" Output channel). */
   onConsole?(write: (level: "info" | "warn" | "error", text: string) => void): void;
+  /** Node: writes a built-in extension's files under `root` and returns its folder (null when it can't). */
+  installBuiltin?(root: string, name: string, files: Record<string, string>): string | null;
 }
 
 interface ExtState {
@@ -275,6 +278,8 @@ export class ExtHost {
   #loader!: ModuleLoader;
   folder: Uri | undefined;
   readonly exts = new Map<string, ExtState>();
+  /** Built-in, code-free extensions listed in extensions.all (languageBasics.ts). */
+  builtins: { id: string; location: string; manifest: Record<string, unknown> }[] = [];
   readonly #docs = new Map<string, DocumentData>();
   /** Documents the host opened itself (outside the workspace, untitled): never synced. */
   readonly #looseDocs = new Map<string, DocumentData>();
@@ -517,6 +522,9 @@ export class ExtHost {
     for (const desc of data.extensions) {
       this.exts.set(desc.id, { desc, events: desc.activationEvents.length ? desc.activationEvents : activationEventsOf(desc.manifest), active: false, unsupported: new Set() });
     }
+    const storage = data.env.storagePath;
+    const basics = storage && this.env.installBuiltin?.(storage, "language-basics", languageBasicsFiles());
+    if (basics) this.builtins = [{ id: "tmcode.language-basics", location: basics, manifest: languageBasicsManifest() }];
     for (const d of data.documents) this.#documentOpened(d, false);
     this.#editorsChanged(data.editors, data.activeEditor, false);
     this.log("info", `Extension host (${data.hostKind}) started with ${data.extensions.length} extension(s): ${data.extensions.map((e) => e.id).join(", ") || "none"}`);
@@ -635,6 +643,7 @@ export class ExtHost {
 
   #documentOpened(dto: DocumentDTO, fire = true) {
     if (this.#docs.has(dto.path)) return;
+    const activeBefore = this.activeEditor();
     const uri = this.paths.toUri(dto.path);
     const d = new DocumentData(uri, dto.text, dto.languageId, dto.version, (doc) => this.#saveDocument(doc), dto.eol);
     d.isDirty = dto.isDirty;
@@ -643,6 +652,11 @@ export class ExtHost {
     if (fire) {
       this.onDidOpenTextDocument.fire(d.document);
       void this.activateByEvent(`onLanguage:${dto.languageId}`);
+      // The editor switch arrived before its document: the active editor only exists now.
+      const activeAfter = this.activeEditor();
+      if (activeAfter !== activeBefore) this.onDidChangeActiveTextEditor.fire(activeAfter);
+      const ed = [...this.#editors.values()].find((e) => e.path === dto.path);
+      if (ed) this.onDidChangeVisibleTextEditors.fire(this.visibleEditors());
     }
   }
 
@@ -674,7 +688,9 @@ export class ExtHost {
   }
 
   #editorsChanged(list: EditorDTO[], active: string | null, fire = true) {
-    const before = this.#activeEditor;
+    // Compare editor objects, not ids: a group ("g0") that switches files gets a new TextEditor,
+    // and extensions that follow the active editor (Better Comments, Auto Rename Tag) must hear it.
+    const before = this.activeEditor();
     const seen = new Set<string>();
     for (const dto of list) {
       seen.add(dto.id);
@@ -686,7 +702,8 @@ export class ExtHost {
     this.#activeEditor = active && this.#editors.has(active) ? active : null;
     if (!fire) return;
     this.onDidChangeVisibleTextEditors.fire(this.visibleEditors());
-    if (before !== this.#activeEditor || (active && !before)) this.onDidChangeActiveTextEditor.fire(this.activeEditor());
+    const after = this.activeEditor();
+    if (before !== after) this.onDidChangeActiveTextEditor.fire(after);
   }
 
   activeEditor(): TextEditorImpl | undefined {
@@ -1215,6 +1232,12 @@ export class ExtHost {
       extensionRuntime: this.env.kind === "node" ? 1 : 2,
       languageModelAccessInformation: { onDidChange: new EventEmitter<void>().event, canSendRequest: () => undefined },
     };
+  }
+
+  /** A built-in extension as `vscode.extensions` shows it: manifest and folder, no code. */
+  builtinObject(b: { id: string; location: string; manifest: Record<string, unknown> }) {
+    const uri = Uri.file(b.location);
+    return { id: b.id, extensionUri: uri, extensionPath: uri.fsPath, isActive: true, packageJSON: b.manifest, extensionKind: T.ExtensionKind.UI, exports: undefined, activate: async () => undefined };
   }
 
   extensionObject(ext: ExtState) {

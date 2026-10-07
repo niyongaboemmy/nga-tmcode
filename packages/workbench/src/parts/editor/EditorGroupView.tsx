@@ -40,6 +40,7 @@ import { openGitDiff } from "../../scm/gitService";
 import { WebviewEditor, webviewTitle } from "../../exthost/views/WebviewSlot";
 import { useWebviews } from "../../exthost/views/webviews";
 import { ExtIcon } from "../../exthost/views/ExtIcon";
+import { AssignmentEditor } from "../../projects/AssignmentEditor";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
@@ -53,6 +54,7 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   if (e.kind === "extension") return extensionTitle(e.extensionId);
   if (e.kind === "webview") return webviewTitle(e.handle);
+  if (e.kind === "assignment") return e.title;
   return "Welcome";
 }
 
@@ -66,6 +68,7 @@ function iconOf(e: EditorInput) {
   if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
   if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "webview") return <WebviewTabIcon handle={e.handle} />;
+  if (e.kind === "assignment") return <Codicon name="mortar-board" className="tm-tab-codicon" />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
 }
 
@@ -352,6 +355,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "extension" && <ExtensionEditor key={active.id} extensionId={active.extensionId} />}
         {active?.kind === "webview" && <WebviewEditor key={active.id} handle={active.handle} />}
         {active?.kind === "historyDiff" && <HistoryDiffEditor key={active.id} input={active} />}
+        {active?.kind === "assignment" && <AssignmentEditor key={active.id} input={active} />}
         {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
         {!active && <Watermark />}
       </div>

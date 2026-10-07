@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
 import { useGit } from "../scm/gitService";
-import { activeFilePath, getPlatform, log, notify, notifyProgress, openPathFromOs, showDialog, useWorkbench } from "../state/store";
+import { activeFilePath, getPlatform, log, notify, notifyProgress, openPathFromOs, openRecent, showDialog, useWorkbench } from "../state/store";
 import { applyExternalChanges } from "../monaco/external";
 import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
 import type { Binding, Link, LinkableActivity, Project, ProjectKind, Revision, SyncState } from "./types";
@@ -119,6 +119,7 @@ export function wireProjects() {
   });
   startHeartbeats();
   void bindWorkspace();
+  void import("./assignments").then((m) => m.wireAssignments());
 }
 
 export async function signIn() {
@@ -220,8 +221,23 @@ async function rememberFolder(projectId: number) {
 }
 
 /** The open folder changed: is it a Task Mentor project? */
+/** A completed assignment's workspace is read-only (Task Mentor refuses its saves too). */
+let readOnlyByProject = false;
+function applyReadOnly(project: Project | null) {
+  if (inExam()) return;
+  const ro = !!project?.read_only;
+  if (ro) {
+    readOnlyByProject = true;
+    useWorkbench.setState({ readOnly: true, readOnlyReason: `"${project?.assignment?.title ?? project?.name}" is completed: this workspace is read-only.` });
+  } else if (readOnlyByProject) {
+    readOnlyByProject = false;
+    useWorkbench.setState({ readOnly: false, readOnlyReason: null });
+  }
+}
+
 export async function bindWorkspace() {
   const binding = await readBinding();
+  if (!binding) applyReadOnly(null);
   set({ binding, current: null, plan: null, sync: binding ? "checking" : "unbound", syncMessage: null });
   if (!binding || !signedIn()) {
     if (binding) set({ sync: "offline", syncMessage: "Sign in to sync this project." });
@@ -267,6 +283,7 @@ export function checkSync(): Promise<void> {
     try {
       const { project } = await api<{ project: Project }>("GET", `/projects/${binding.project_id}`);
       set({ current: project });
+      applyReadOnly(project);
       if (project.kind === "github") {
         set({ sync: "synced", plan: null, syncMessage: null });
         void reportGit();
@@ -296,6 +313,10 @@ export async function saveToTaskMentor(opts: { message?: string; source?: "save"
   if (!(await requireSignIn())) return null;
   if (binding.kind === "github") {
     if (!opts.quiet) notify("info", "This is a GitHub project: commit and push in Source Control. Task Mentor follows your pushes.");
+    return null;
+  }
+  if (get().current?.read_only) {
+    if (!opts.quiet) notify("info", "This assignment is completed: its workspace is read-only.");
     return null;
   }
   await checkSync();
@@ -425,18 +446,19 @@ export async function resolveConflict(path: string, keep: "mine" | "theirs") {
 
 // ── Open a project (Projects view, tmcode://project deep link) ────────────
 
-export async function openProject(projectId: number) {
-  if (!projectsSupported()) return;
-  if (!(await requireSignIn())) return;
+export async function openProject(projectId: number, opts: { folderName?: string } = {}): Promise<boolean> {
+  if (!projectsSupported()) return false;
+  if (!(await requireSignIn())) return false;
   const store = getPlatform().store;
   const folders = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
   const known = folders[String(projectId)];
   if (known) {
     try {
-      await openPathFromOs(known);
+      await (getPlatform().openPath ? openPathFromOs(known) : openRecent(known));
       if (useWorkbench.getState().workspace?.root === known) {
         await bindWorkspace();
-        return;
+        // Still this project's folder (not emptied, not disconnected and reconnected elsewhere)?
+        if (get().binding?.project_id === projectId) return true;
       }
     } catch {
       /* moved or deleted: get a fresh copy */
@@ -446,7 +468,10 @@ export async function openProject(projectId: number) {
   const host = getPlatform().account!;
   if (project.kind === "github") {
     const git = getPlatform().git;
-    if (!git || !project.repo_url) return notify("error", "This GitHub project has no repository link, or git is not available.");
+    if (!git || !project.repo_url) {
+      notify("error", "This GitHub project has no repository link, or git is not available.");
+      return false;
+    }
     await host.useProjectsFolderForClone?.();
     const progress = notifyProgress(`Cloning ${project.repo_full_name ?? project.name}…`);
     try {
@@ -454,19 +479,58 @@ export async function openProject(projectId: number) {
       await openPathFromOs(path);
     } catch (e) {
       notify("error", `Could not clone the repository: ${(e as Error).message}`);
-      return;
+      return false;
     } finally {
       progress.close();
     }
     await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "github", name: project.name, base_revision_id: null, base: null });
   } else {
-    const path = await host.newFolder(project.slug);
-    await openPathFromOs(path);
+    const path = await host.newFolder(opts.folderName ?? project.slug);
+    // The browser build (dev server, e2e) has no OS paths: its folders reopen like recent ones.
+    await (getPlatform().openPath ? openPathFromOs(path) : openRecent(path));
     await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "tm", name: project.name, base_revision_id: null, base: null });
     await pullFromTaskMentor();
   }
   await rememberFolder(project.id);
   await bindWorkspace();
+  return true;
+}
+
+/** Stop syncing the open folder: the binding goes, the files stay. */
+export async function disconnectFolder() {
+  const binding = get().binding;
+  if (!binding) return;
+  const choice = await showDialog({
+    severity: "info",
+    message: `Disconnect this folder from "${binding.name}"?`,
+    detail: "TMCode stops syncing this folder with Task Mentor. Your files stay here, and the project stays in Task Mentor (delete it there if you no longer need it).",
+    buttons: [
+      { id: "disconnect", label: "Disconnect", primary: true },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice !== "disconnect") return;
+  void sendPresence(false);
+  await getPlatform().fs.remove(BINDING).catch(() => {});
+  const store = getPlatform().store;
+  const map = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
+  delete map[String(binding.project_id)];
+  await store.set(FOLDERS_KEY, map);
+  applyReadOnly(null);
+  set({ binding: null, current: null, plan: null, sync: "unbound", syncMessage: null });
+  notify("info", "This folder is no longer synced with Task Mentor.");
+}
+
+/** Whether teachers' monitors see this project's live status (owners always see their own). */
+export async function setSharePresence(projectId: number, share: boolean) {
+  try {
+    const { project } = await api<{ project: Project }>("PATCH", `/projects/${projectId}`, { share_presence: share });
+    if (get().current?.id === projectId) set({ current: project });
+    notify("info", share ? "Live status is shared with your teachers again." : "Live status is no longer shared with teachers.");
+  } catch (e) {
+    notify("error", (e as Error).message);
+  }
 }
 
 /** `tmcode://project?id=12&api=https://taskmentor-api.amashuri.com` from Task Mentor's "Open in TMCode". */

@@ -9,6 +9,8 @@ import {
   parseLaunchLink,
   parseProjectLink,
   openProjectLink,
+  parseAssignmentLink,
+  openAssignmentLink,
   selfCheckWorkers,
   startExam,
   setWorkspace,
@@ -79,6 +81,11 @@ async function boot() {
     const link = parseProjectLink(projectLink);
     if (link) setTimeout(() => void openProjectLink(link), 500);
   }
+  const assignmentLink = params.get("assignment");
+  if (platform.kind === "web" && assignmentLink) {
+    const link = parseAssignmentLink(assignmentLink);
+    if (link) setTimeout(() => void openAssignmentLink(link), 500);
+  }
   if (inTauri) {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");
@@ -95,6 +102,9 @@ async function boot() {
       // tmcode://project?id=…&api=… (Task Mentor "Open in TMCode") before exam launch links.
       const project = urls?.map(parseProjectLink).find(Boolean);
       if (project) return void openProjectLink(project);
+      // tmcode://assignment?id=…&api=… (a student's "Open in TMCode" on a TMCode practical).
+      const assignment = urls?.map(parseAssignmentLink).find(Boolean);
+      if (assignment) return void openAssignmentLink(assignment);
       const link = urls?.map(parseLaunchLink).find(Boolean);
       if (link) void startExam(link.api, link.ticket);
     };

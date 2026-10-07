@@ -545,13 +545,14 @@ export function createApi(host: ExtHost, ext: ExtState) {
   const extensions = g("extensions", {
     getExtension: (id: string) => {
       const x = host.exts.get(String(id).toLowerCase());
-      return x ? host.extensionObject(x) : undefined;
+      const b = host.builtins.find((e) => e.id === String(id).toLowerCase());
+      return x ? host.extensionObject(x) : b ? host.builtinObject(b) : undefined;
     },
     get all() {
-      return [...host.exts.values()].map((x) => host.extensionObject(x));
+      return [...host.builtins.map((b) => host.builtinObject(b)), ...[...host.exts.values()].map((x) => host.extensionObject(x))];
     },
     get allAcrossExtensionHosts() {
-      return [...host.exts.values()].map((x) => host.extensionObject(x));
+      return [...host.builtins.map((b) => host.builtinObject(b)), ...[...host.exts.values()].map((x) => host.extensionObject(x))];
     },
     onDidChange: host.onDidChangeExtensions.event,
   });

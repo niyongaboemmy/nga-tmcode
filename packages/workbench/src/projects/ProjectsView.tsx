@@ -4,7 +4,8 @@ import { openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
-import { openProject, projectsSupported, refreshProjects, resolveConflict, signIn, useProjects } from "./service";
+import { openProject, projectsSupported, refreshProjects, resolveConflict, setSharePresence, signIn, useProjects } from "./service";
+import { showAssignment } from "./assignments";
 import type { Link, Project, SyncState } from "./types";
 import { openInTaskMentor, submitFromView } from "./commands";
 
@@ -79,11 +80,14 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
         openContextMenu(e.clientX, e.clientY, [
           { kind: "item", label: "Open in TMCode", run: () => void openProject(p.id) },
           { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor(p.id) },
+          ...(p.assignment ? [{ kind: "item" as const, label: "Show Assignment Brief", run: () => showAssignment(p.assignment!.id) }] : []),
+          ...(current ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") }] : []),
         ]);
       }}
     >
       <Codicon name={p.kind === "github" ? "github" : "cloud"} className="tm-project-kind" />
       <span className="tm-project-name">{p.name}</span>
+      {p.assignment && <Codicon name="mortar-board" className="tm-project-kind" title={`Assignment: ${p.assignment.title}`} />}
       {online && <span className="tm-live-dot" title="Open in TMCode now" aria-label="Open now" />}
       <span className="tm-project-meta">
         {p.language && <span className="tm-chip">{p.language}</span>}
@@ -106,10 +110,11 @@ function ThisFolder() {
     return (
       <div className="tm-projects-connect">
         <p className="tm-muted">
-          <b>{workspace.name}</b> is not a Task Mentor project yet.
+          <b>{workspace.name}</b> is not a Task Mentor project yet. Connect it to save it online, continue on any computer and link it to your activities.
         </p>
-        <button type="button" className="tm-button tm-button--block" onClick={() => executeCommand("projects.connectFolder")}>
-          <Codicon name="cloud-upload" /> Connect This Folder to Task Mentor
+        <button type="button" className="tm-button tm-button--block" onClick={() => executeCommand("projects.connectFolder")} title="Connect This Folder to Task Mentor" aria-label="Connect This Folder to Task Mentor" data-testid="connect-folder">
+          <Codicon name="cloud-upload" />
+          <span className="tm-button-label">Connect to Task Mentor</span>
         </button>
       </div>
     );
@@ -120,9 +125,31 @@ function ThisFolder() {
     <div className="tm-projects-folder" data-testid="project-folder">
       <div className="tm-projects-folder-head">
         <Codicon name={binding.kind === "github" ? "github" : "cloud"} />
-        <b>{project?.name ?? binding.name}</b>
+        <b className="tm-project-name" title={project?.name ?? binding.name}>
+          {project?.name ?? binding.name}
+        </b>
         <span className="tm-chip">{binding.kind === "github" ? "GitHub" : "Task Mentor"}</span>
+        <ActionButton
+          icon="ellipsis"
+          label="More Project Actions…"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            openContextMenu(r.left, r.bottom + 2, [
+              { kind: "item", label: "Open in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
+              ...(binding.kind === "tm" ? [{ kind: "item" as const, label: "Use as Starter for an Assignment…", run: () => executeCommand("assignments.useAsStarter") }] : []),
+              { kind: "separator" },
+              { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
+            ]);
+          }}
+        />
       </div>
+      {project?.assignment && (
+        <button type="button" className="tm-project-assignment" onClick={() => showAssignment(project.assignment!.id, { toSide: true })} title="Show the assignment brief">
+          <Codicon name="mortar-board" />
+          <span className="tm-project-name">{project.assignment.title}</span>
+          {project.read_only ? <span className="tm-chip">Read-only</span> : <Codicon name="chevron-right" />}
+        </button>
+      )}
       {binding.kind === "tm" ? (
         <>
           <div className={`tm-sync-line is-${sync}`} data-testid="sync-state">
@@ -132,11 +159,13 @@ function ThisFolder() {
           </div>
           {message && <p className="tm-muted tm-projects-hint">{message}</p>}
           <div className="tm-projects-actions">
-            <button type="button" className="tm-button" disabled={busy} onClick={() => executeCommand("projects.save")} data-testid="save-to-tm">
-              <Codicon name="cloud-upload" /> Save to Task Mentor
+            <button type="button" className="tm-button" disabled={busy || !!project?.read_only} onClick={() => executeCommand("projects.save")} data-testid="save-to-tm" title="Save to Task Mentor">
+              <Codicon name="cloud-upload" />
+              <span className="tm-button-label">Save</span>
             </button>
-            <button type="button" className="tm-button tm-button--secondary" disabled={busy} onClick={() => executeCommand("projects.pull")}>
-              <Codicon name="cloud-download" /> Get Latest
+            <button type="button" className="tm-button tm-button--secondary" disabled={busy} onClick={() => executeCommand("projects.pull")} title="Get Latest from Task Mentor">
+              <Codicon name="cloud-download" />
+              <span className="tm-button-label">Get Latest</span>
             </button>
           </div>
           {plan && plan.conflicts.length > 0 && (
@@ -159,6 +188,7 @@ function ThisFolder() {
           <span>{project?.git ? `${project.git.branch ?? "detached"} · ${project.git.ahead}↑ ${project.git.behind}↓ · reported to Task Mentor` : "Task Mentor follows your pushes"}</span>
         </div>
       )}
+      {project && <SharePresence project={project} />}
       <div className="tm-projects-links">
         <div className="tm-projects-links-head">
           <span>Activities</span>
@@ -182,6 +212,29 @@ function ThisFolder() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** "Share live status": whether teachers' monitors see that this project is open (locked on for open assignments). */
+function SharePresence({ project }: { project: Project }) {
+  const shared = project.share_presence !== false;
+  const locked = !!project.assignment && !project.read_only;
+  return (
+    <label className={`tm-switch-row ${locked ? "is-locked" : ""}`} title={locked ? "Teachers follow assignment workspaces while the assignment is open." : "Teachers can see when you work on this project"}>
+      <input
+        type="checkbox"
+        role="switch"
+        className="tm-switch"
+        checked={shared || locked}
+        disabled={locked}
+        data-testid="share-presence"
+        onChange={(e) => void setSharePresence(project.id, e.target.checked)}
+      />
+      <span>
+        Share live status with teachers
+        <small className="tm-muted">{locked ? "Required while the assignment is open" : shared ? "Teachers see when this project is open" : "Only you see when this project is open"}</small>
+      </span>
+    </label>
   );
 }
 

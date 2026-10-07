@@ -3335,13 +3335,14 @@ function createApi(host2, ext) {
   const extensions = g("extensions", {
     getExtension: (id) => {
       const x = host2.exts.get(String(id).toLowerCase());
-      return x ? host2.extensionObject(x) : void 0;
+      const b = host2.builtins.find((e2) => e2.id === String(id).toLowerCase());
+      return x ? host2.extensionObject(x) : b ? host2.builtinObject(b) : void 0;
     },
     get all() {
-      return [...host2.exts.values()].map((x) => host2.extensionObject(x));
+      return [...host2.builtins.map((b) => host2.builtinObject(b)), ...[...host2.exts.values()].map((x) => host2.extensionObject(x))];
     },
     get allAcrossExtensionHosts() {
-      return [...host2.exts.values()].map((x) => host2.extensionObject(x));
+      return [...host2.builtins.map((b) => host2.builtinObject(b)), ...[...host2.exts.values()].map((x) => host2.extensionObject(x))];
     },
     onDidChange: host2.onDidChangeExtensions.event
   });
@@ -4214,6 +4215,85 @@ var ViewsHost = class {
   }
 };
 
+// packages/exthost/src/host/languageBasics.ts
+var C = { lineComment: "//", blockComment: ["/*", "*/"] };
+var HASH = { lineComment: "#" };
+var XML = { blockComment: ["<!--", "-->"] };
+var SQL = { lineComment: "--", blockComment: ["/*", "*/"] };
+var LANGUAGE_COMMENTS = {
+  javascript: C,
+  javascriptreact: C,
+  typescript: C,
+  typescriptreact: C,
+  json: C,
+  jsonc: C,
+  java: C,
+  c: C,
+  cpp: C,
+  csharp: C,
+  go: C,
+  rust: C,
+  kotlin: C,
+  swift: C,
+  dart: C,
+  scala: C,
+  groovy: C,
+  php: { lineComment: "//", blockComment: ["/*", "*/"] },
+  css: { blockComment: ["/*", "*/"] },
+  scss: C,
+  less: C,
+  python: { lineComment: "#", blockComment: ['"""', '"""'] },
+  ruby: { lineComment: "#", blockComment: ["=begin", "=end"] },
+  shellscript: HASH,
+  powershell: { lineComment: "#", blockComment: ["<#", "#>"] },
+  yaml: HASH,
+  dockerfile: HASH,
+  makefile: HASH,
+  r: HASH,
+  perl: HASH,
+  ini: { lineComment: ";" },
+  toml: HASH,
+  sql: SQL,
+  lua: { lineComment: "--", blockComment: ["--[[", "]]"] },
+  haskell: { lineComment: "--", blockComment: ["{-", "-}"] },
+  elixir: HASH,
+  clojure: { lineComment: ";;" },
+  vb: { lineComment: "'" },
+  fsharp: { lineComment: "//", blockComment: ["(*", "*)"] },
+  html: XML,
+  xml: XML,
+  markdown: XML,
+  vue: XML,
+  svelte: XML,
+  handlebars: { blockComment: ["{{!--", "--}}"] },
+  latex: { lineComment: "%" },
+  bat: { lineComment: "@REM" }
+};
+var BRACKETS = [
+  ["{", "}"],
+  ["[", "]"],
+  ["(", ")"]
+];
+function languageBasicsFiles() {
+  const files = {};
+  const languages = Object.entries(LANGUAGE_COMMENTS).map(([id, comments]) => {
+    files[`languages/${id}.language-configuration.json`] = JSON.stringify({ comments, brackets: BRACKETS }, null, 2);
+    return { id, configuration: `./languages/${id}.language-configuration.json` };
+  });
+  files["package.json"] = JSON.stringify(languageBasicsManifest(languages), null, 2);
+  return files;
+}
+function languageBasicsManifest(languages = Object.keys(LANGUAGE_COMMENTS).map((id) => ({ id, configuration: `./languages/${id}.language-configuration.json` }))) {
+  return {
+    name: "language-basics",
+    publisher: "tmcode",
+    displayName: "Language Basics (built in)",
+    version: "1.0.0",
+    engines: { vscode: "*" },
+    contributes: { languages }
+  };
+}
+
 // packages/exthost/src/host/extHost.ts
 var API_VERSION = "1.96.0";
 var NotSupportedError = class extends Error {
@@ -4416,6 +4496,8 @@ var ExtHost = class {
   #loader;
   folder;
   exts = /* @__PURE__ */ new Map();
+  /** Built-in, code-free extensions listed in extensions.all (languageBasics.ts). */
+  builtins = [];
   #docs = /* @__PURE__ */ new Map();
   /** Documents the host opened itself (outside the workspace, untitled): never synced. */
   #looseDocs = /* @__PURE__ */ new Map();
@@ -4639,6 +4721,9 @@ var ExtHost = class {
     for (const desc of data.extensions) {
       this.exts.set(desc.id, { desc, events: desc.activationEvents.length ? desc.activationEvents : activationEventsOf(desc.manifest), active: false, unsupported: /* @__PURE__ */ new Set() });
     }
+    const storage = data.env.storagePath;
+    const basics = storage && this.env.installBuiltin?.(storage, "language-basics", languageBasicsFiles());
+    if (basics) this.builtins = [{ id: "tmcode.language-basics", location: basics, manifest: languageBasicsManifest() }];
     for (const d of data.documents) this.#documentOpened(d, false);
     this.#editorsChanged(data.editors, data.activeEditor, false);
     this.log("info", `Extension host (${data.hostKind}) started with ${data.extensions.length} extension(s): ${data.extensions.map((e) => e.id).join(", ") || "none"}`);
@@ -4744,6 +4829,7 @@ var ExtHost = class {
   // ───────────── documents & editors ─────────────
   #documentOpened(dto, fire = true) {
     if (this.#docs.has(dto.path)) return;
+    const activeBefore = this.activeEditor();
     const uri = this.paths.toUri(dto.path);
     const d = new DocumentData(uri, dto.text, dto.languageId, dto.version, (doc) => this.#saveDocument(doc), dto.eol);
     d.isDirty = dto.isDirty;
@@ -4752,6 +4838,10 @@ var ExtHost = class {
     if (fire) {
       this.onDidOpenTextDocument.fire(d.document);
       void this.activateByEvent(`onLanguage:${dto.languageId}`);
+      const activeAfter = this.activeEditor();
+      if (activeAfter !== activeBefore) this.onDidChangeActiveTextEditor.fire(activeAfter);
+      const ed = [...this.#editors.values()].find((e) => e.path === dto.path);
+      if (ed) this.onDidChangeVisibleTextEditors.fire(this.visibleEditors());
     }
   }
   #documentChanged(path3, version, changes, isDirty) {
@@ -4779,7 +4869,7 @@ var ExtHost = class {
     return this.rpc.request("$main.saveDocument", [path3]);
   }
   #editorsChanged(list2, active, fire = true) {
-    const before = this.#activeEditor;
+    const before = this.activeEditor();
     const seen = /* @__PURE__ */ new Set();
     for (const dto of list2) {
       seen.add(dto.id);
@@ -4791,7 +4881,8 @@ var ExtHost = class {
     this.#activeEditor = active && this.#editors.has(active) ? active : null;
     if (!fire) return;
     this.onDidChangeVisibleTextEditors.fire(this.visibleEditors());
-    if (before !== this.#activeEditor || active && !before) this.onDidChangeActiveTextEditor.fire(this.activeEditor());
+    const after = this.activeEditor();
+    if (before !== after) this.onDidChangeActiveTextEditor.fire(after);
   }
   activeEditor() {
     const ed = this.#activeEditor ? this.#editors.get(this.#activeEditor) : void 0;
@@ -5302,6 +5393,11 @@ var ExtHost = class {
       languageModelAccessInformation: { onDidChange: new EventEmitter().event, canSendRequest: () => void 0 }
     };
   }
+  /** A built-in extension as `vscode.extensions` shows it: manifest and folder, no code. */
+  builtinObject(b) {
+    const uri = Uri.file(b.location);
+    return { id: b.id, extensionUri: uri, extensionPath: uri.fsPath, isActive: true, packageJSON: b.manifest, extensionKind: 1 /* UI */, exports: void 0, activate: async () => void 0 };
+  }
   extensionObject(ext) {
     const host2 = this;
     const uri = this.env.kind === "node" ? Uri.file(ext.desc.location) : Uri.from({ scheme: "tmcode-extension", path: `/${ext.desc.id}` });
@@ -5514,6 +5610,7 @@ var NodeFs = class {
     const storage = this.host.data?.env.storagePath;
     if (storage) out.push(storage);
     if (!write) for (const e of this.host.exts.values()) out.push(e.desc.location);
+    if (!write) for (const b of this.host.builtins) out.push(b.location);
     return out.map((r) => path.resolve(r));
   }
   #path(uri, write = false) {
@@ -5718,6 +5815,19 @@ var env = {
   createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].flatMap((e) => [{ id: e.desc.id, location: path2.resolve(e.desc.location) }, { id: e.desc.id, location: realPath(e.desc.location) }])),
   onConsole(write) {
     consoleSink = write;
+  },
+  installBuiltin(root, name, files) {
+    try {
+      const dir = path2.join(root, "builtin", name);
+      for (const [rel, text] of Object.entries(files)) {
+        const file = path2.join(dir, rel);
+        (0, import_node_fs2.mkdirSync)(path2.dirname(file), { recursive: true });
+        (0, import_node_fs2.writeFileSync)(file, text);
+      }
+      return dir;
+    } catch {
+      return null;
+    }
   }
 };
 var host = new ExtHost(send, env);

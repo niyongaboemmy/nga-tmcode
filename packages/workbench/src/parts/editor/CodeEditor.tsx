@@ -81,6 +81,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const [loading, setLoading] = useState(false);
   const settings = useWorkbench((s) => s.settings);
   const readOnly = useWorkbench((s) => s.readOnly);
+  const readOnlyReason = useWorkbench((s) => s.readOnlyReason);
   const os = getPlatform().os;
 
   // Create the editor once per group.
@@ -160,8 +161,8 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   }, [path]);
 
   useEffect(() => {
-    editorRef.current?.updateOptions({ ...editorOptions(settings, os), readOnly, readOnlyMessage: { value: "Time is up — your code can no longer be changed." } });
-  }, [settings, os, readOnly]);
+    editorRef.current?.updateOptions({ ...editorOptions(settings, os), readOnly, readOnlyMessage: { value: readOnlyReason ?? "Time is up — your code can no longer be changed." } });
+  }, [settings, os, readOnly, readOnlyReason]);
 
 
   return (

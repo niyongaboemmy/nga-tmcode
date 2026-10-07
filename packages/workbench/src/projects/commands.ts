@@ -6,6 +6,8 @@ import {
   checkSync,
   connectFolder,
   createProject,
+  disconnectFolder,
+  setSharePresence,
   linkableActivities,
   linkActivity,
   projectsSupported,
@@ -19,6 +21,7 @@ import {
   useProjects,
 } from "./service";
 import { TEMPLATES, templateById } from "./templates";
+import { publishAsStarter, refreshAssignments } from "./assignments";
 import type { Link, ProjectKind } from "./types";
 
 const usable = () => projectsSupported() && useWorkbench.getState().policy.mode === "practice";
@@ -33,6 +36,14 @@ export function taskMentorWeb(api: string) {
 export function openInTaskMentor(projectId: number) {
   const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
   const url = `${taskMentorWeb(api)}/projects/${projectId}`;
+  const p = getPlatform();
+  if (p.openExternal) void p.openExternal(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+export function openAssignmentInTaskMentor(assignmentId: number) {
+  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
+  const url = `${taskMentorWeb(api)}/assignments/${assignmentId}`;
   const p = getPlatform();
   if (p.openExternal) void p.openExternal(url);
   else window.open(url, "_blank", "noopener,noreferrer");
@@ -178,6 +189,20 @@ export function registerProjectCommands() {
     enabled: bound,
     run: () => openInTaskMentor(useProjects.getState().binding!.project_id),
   });
+  registerCommand({ id: "projects.disconnect", title: "Disconnect This Folder from Task Mentor…", category: "Projects", enabled: bound, run: disconnectFolder });
+  registerCommand({
+    id: "projects.toggleSharePresence",
+    title: "Toggle Sharing Live Status with Teachers",
+    category: "Projects",
+    enabled: () => bound() && !!useProjects.getState().current,
+    run: () => {
+      const p = useProjects.getState().current!;
+      return setSharePresence(p.id, p.share_presence === false);
+    },
+  });
+  registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
+  registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });
+  registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm", run: publishAsStarter });
   // A reminder for exam safety: nothing here runs during an exam (projectsSupported checks inExam()).
   void inExam;
 }

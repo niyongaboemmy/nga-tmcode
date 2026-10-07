@@ -306,6 +306,15 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
   const practice = new MemoryFileSystem(seed);
   const fs = new SwitchableFileSystem(practice);
   const exams = new Map<number, MemoryFileSystem>();
+  // Dev server / e2e: folders TMCode creates for projects and assignments (memory://folders/<name>).
+  const folders = new Map<string, MemoryFileSystem>();
+  const switchTo = (root: string) => {
+    if (root.startsWith("memory://folders/")) {
+      if (!folders.has(root)) folders.set(root, new MemoryFileSystem({}));
+      fs.target = folders.get(root)!;
+    } else if (root === "memory://practice-project") fs.target = practice;
+    return { name: root.split("/").pop() || root, root };
+  };
   const exam: ExamHost = {
     dev: true,
     async device() {
@@ -336,7 +345,7 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
       return { name: "practice-project", root: "memory://practice-project" };
     },
     async reopenFolder(root) {
-      return { name: root.split("/").pop() || root, root };
+      return switchTo(root);
     },
     fs,
     store: new LocalStorageStore("tmcode:"),
@@ -350,7 +359,16 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     exam,
     extensions: createMemoryExtensionHost(),
     // Dev server / e2e only: an NGA account and Task Mentor projects in memory.
-    ...(import.meta.env?.DEV ? { account: createMemoryAccountHost(fs) } : {}),
+    ...(import.meta.env?.DEV ? {
+          account: createMemoryAccountHost(fs, {
+            async newFolder(name) {
+              let root = `memory://folders/${name}`;
+              for (let i = 2; folders.has(root); i++) root = `memory://folders/${name}-${i}`;
+              folders.set(root, new MemoryFileSystem({}));
+              return root;
+            },
+          }),
+        } : {}),
     // Dev server / e2e only: a mock git over this file system (`?git=none`: no repository yet).
     ...(import.meta.env?.DEV
       ? { git: createMemoryGit(fs, seed, { repo: typeof location === "undefined" || new URLSearchParams(location.search).get("git") !== "none" }) }

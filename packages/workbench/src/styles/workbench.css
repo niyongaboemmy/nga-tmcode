@@ -5436,3 +5436,378 @@ kbd,
 .tm-ext-webview-view {
   background: var(--sidebar-bg);
 }
+
+/* ─────────────── Projects: alignment fixes + assignments (ASSIGNMENTS_PLAN) ─────────────── */
+/* Buttons in the narrow side bar shrink with an ellipsis instead of overflowing it. */
+.tm-projects-view .tm-button {
+  min-width: 0;
+  max-width: 100%;
+}
+.tm-button-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-projects-view .tm-button > .codicon {
+  flex: none;
+}
+.tm-projects-connect .tm-muted {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tm-projects-folder-head {
+  min-width: 0;
+}
+.tm-projects-folder-head .tm-action {
+  margin-left: auto;
+  flex: none;
+}
+.tm-projects-actions .tm-button {
+  flex: 1 1 auto;
+}
+/* Projects and Assignments panes size to their content and the view scrolls,
+   instead of splitting the height (which clipped "This Folder" over "My Projects"). */
+.tm-projects-view > .tm-pane {
+  flex: none;
+  min-height: auto;
+}
+.tm-projects-view > .tm-pane > .tm-pane-body {
+  overflow: visible;
+}
+.tm-projects-view > .tm-pane > .tm-pane-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--sidebar-bg, var(--background));
+}
+.tm-project-assignment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-project-assignment:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.tm-project-assignment:focus-visible {
+  outline: 1px solid var(--focus-border);
+}
+.tm-switch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tm-switch-row.is-locked {
+  cursor: default;
+}
+.tm-switch-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tm-switch-row small {
+  font-size: 11px;
+}
+.tm-switch {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 28px;
+  height: 16px;
+  margin: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 25%, transparent);
+  cursor: inherit;
+  transition: background-color var(--dur-fast, 120ms);
+}
+.tm-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+.tm-switch:checked {
+  background: var(--accent);
+}
+.tm-switch:checked::after {
+  transform: translateX(12px);
+}
+.tm-switch:disabled {
+  opacity: 0.6;
+}
+.tm-switch:focus-visible {
+  outline: 1px solid var(--focus-border);
+  outline-offset: 2px;
+}
+.tm-chip.is-info {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
+}
+
+/* Assignments view */
+.tm-assignments-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 20px;
+}
+.tm-assignments-filter {
+  flex: 1;
+  min-width: 0;
+}
+.tm-projects-section .tm-pane-header .tm-badge {
+  margin-left: 6px;
+  height: 16px;
+  min-width: 16px;
+  font-size: 10px;
+}
+.tm-assignment-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 12px 4px 20px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast, 120ms);
+}
+.tm-assignment-row.is-current .tm-project-name {
+  font-weight: 600;
+}
+.tm-assignment-row > .codicon,
+.tm-assignment-row > .tm-chip,
+.tm-assignment-row > .tm-button {
+  flex: none;
+}
+.tm-assignment-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.tm-assignment-sub {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--description);
+  white-space: nowrap;
+}
+.tm-assignment-course {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-due {
+  flex: none;
+}
+.tm-due.is-soon {
+  color: var(--warning);
+}
+.tm-due.is-late {
+  color: var(--error);
+}
+
+/* Assignment page (editor tab) */
+.tm-assignment-page {
+  height: 100%;
+  overflow: auto;
+  padding: 24px clamp(16px, 4vw, 48px) 48px;
+  background: var(--editor-bg);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.tm-assignment-page > * {
+  max-width: 820px;
+}
+.tm-assignment-head h1 {
+  margin: 4px 0 10px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.tm-assignment-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--description);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tm-assignment-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tm-fact.is-soon b {
+  color: var(--warning);
+}
+.tm-fact.is-late b {
+  color: var(--error);
+}
+.tm-state-dot {
+  font-size: 10px !important;
+}
+.tm-state-dot.is-not_started {
+  color: var(--description);
+}
+.tm-state-dot.is-in_progress {
+  color: var(--info);
+}
+.tm-state-dot.is-submitted,
+.tm-state-dot.is-graded {
+  color: var(--success);
+}
+.tm-state-dot.is-readonly {
+  color: var(--warning);
+}
+.tm-assignment-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.tm-assignment-banner .codicon {
+  color: var(--warning);
+  margin-top: 2px;
+}
+.tm-assignment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 4px;
+}
+.tm-assignment-card {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.tm-assignment-card.is-graded {
+  border-left: 3px solid var(--success);
+}
+.tm-assignment-card p {
+  margin: 4px 0 0;
+}
+.tm-assignment-grade b {
+  font-size: 24px;
+  font-weight: 600;
+}
+.tm-assignment-grade span {
+  margin-left: 4px;
+  color: var(--description);
+}
+.tm-assignment-feedback {
+  white-space: pre-wrap;
+}
+.tm-assignment-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+.tm-assignment-stat {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.tm-assignment-stat b {
+  font-size: 20px;
+  font-weight: 600;
+}
+.tm-assignment-stat span {
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-assignment-page h2 {
+  margin: 24px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 600;
+}
+.tm-assignment-starter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+.tm-assignment-section .tm-markdown-body {
+  padding: 0;
+}
+.tm-assignment-attachments {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tm-assignment-attachments a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  color: var(--link, var(--accent));
+}
+.tm-assignment-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tm-assignment-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--description);
+}
+.tm-assignment-table th,
+.tm-assignment-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.tm-assignment-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: normal;
+}
+@media (max-width: 560px) {
+  .tm-assignment-table th:nth-child(3),
+  .tm-assignment-table td:nth-child(3) {
+    display: none;
+  }
+}

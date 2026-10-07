@@ -21,6 +21,7 @@ export class NodeFs implements HostFs {
     const storage = this.host.data?.env.storagePath;
     if (storage) out.push(storage);
     if (!write) for (const e of this.host.exts.values()) out.push(e.desc.location);
+    if (!write) for (const b of this.host.builtins) out.push(b.location);
     return out.map((r) => path.resolve(r));
   }
 
