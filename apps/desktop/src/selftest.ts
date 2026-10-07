@@ -1,4 +1,4 @@
-import { exthostForSelfTest, projectsForSelfTest as P, DapSession, runUiProbe, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
+import { exthostForSelfTest, projectsForSelfTest as P, assignmentsForSelfTest as A, DapSession, runUiProbe, PREVIEW_MESSAGE_KEY, composeReactPage, getPlatformForSelfTest, injectIntoHead, loadTests, parseLaunchLink, runTests, shimTag, startExam, submitExam, useExam, useWorkbench, type Platform } from "@tmcode/workbench";
 
 /**
  * Debug-build self-test (TMCODE_DEV_SELFTEST=1): exercises the runner,
@@ -254,6 +254,35 @@ export async function runProjectsSelfTest(platform: Platform, log: (msg: string)
     const me = mine.find((p) => p.id === projectId);
     return `${mine.length} project(s); this one head r${me?.head?.number} online=${me?.presence?.online}`;
   });
+  await step("project fields (assignment, read_only, share_presence)", async () => {
+    const { project } = await P.api<{ project: { assignment: unknown; read_only: boolean; share_presence: boolean } }>("GET", `/projects/${projectId}`);
+    if (project.read_only !== false || project.share_presence !== true || project.assignment !== null) throw new Error(JSON.stringify(project));
+    return "assignment=null read_only=false share_presence=true";
+  });
+  await step("share live status off, then on", async () => {
+    await P.setSharePresence(projectId, false);
+    const off = await P.api<{ project: { share_presence: boolean } }>("GET", `/projects/${projectId}`);
+    await P.setSharePresence(projectId, true);
+    const on = await P.api<{ project: { share_presence: boolean } }>("GET", `/projects/${projectId}`);
+    if (off.project.share_presence !== false || on.project.share_presence !== true) throw new Error(`off=${off.project.share_presence} on=${on.project.share_presence}`);
+    return "off → on, as stored by Task Mentor";
+  });
+  await step("assignments (student and teaching scopes)", async () => {
+    await A.refreshAssignments();
+    const s = A.useAssignments.getState();
+    if (s.error) throw new Error(s.error);
+    if (!Array.isArray(s.student) || !Array.isArray(s.teaching)) throw new Error("lists not loaded");
+    return `student ${s.student.length}, teaching ${s.teaching.length}`;
+  });
+  await step("assignment errors map to TmError", async () => {
+    try {
+      await P.api("POST", "/assignments/999999999/start", {});
+      throw new Error("start of a missing assignment succeeded");
+    } catch (e) {
+      if (!(e instanceof P.TmError)) throw e;
+      return `${e.status} ${e.code}`;
+    }
+  });
   // The copy goes next to the test workspace, never into the user's ~/TMCode Projects.
   const root = useWorkbench.getState().workspace?.root ?? "";
   const second = root.slice(0, Math.max(root.lastIndexOf("/"), root.lastIndexOf("\\")));
@@ -418,7 +447,17 @@ export async function runExtensionsSelfTest(platform: Platform, log: (msg: strin
   const editorFor = async (path: string) => {
     X.openFile(path, { pinned: true });
     let ed: ReturnType<typeof X.codeEditorFor> = null;
-    await until(`an editor for ${path}`, () => !!(ed = X.codeEditorFor(X.workbench.get().activeGroup)) && ed.getModel()?.uri.path === `/${path}` && !!ed.getDomNode()?.querySelector(".view-line"));
+    try {
+      await until(`an editor for ${path}`, () => !!(ed = X.codeEditorFor(X.workbench.get().activeGroup)) && ed.getModel()?.uri.path === `/${path}` && !!ed.getDomNode()?.querySelector(".view-line"));
+    } catch (e) {
+      const w = X.workbench.get();
+      const g = w.groups.find((x) => x.id === w.activeGroup);
+      const cur = X.codeEditorFor(w.activeGroup);
+      const dom = cur?.getDomNode();
+      throw new Error(
+        `${(e as Error).message} [group ${w.activeGroup} of ${w.groups.length}, active ${g?.activeId}, editor ${!!cur}, model ${cur?.getModel()?.uri.toString()}, dom ${!!dom} ${dom?.clientWidth}x${dom?.clientHeight}, lines ${dom?.querySelectorAll(".view-line").length}]`,
+      );
+    }
     return ed!;
   };
 

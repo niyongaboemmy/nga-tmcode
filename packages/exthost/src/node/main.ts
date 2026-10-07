@@ -7,7 +7,7 @@
  */
 
 import * as path from "node:path";
-import { realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { encodeFrame, FrameDecoder, type RpcMessage } from "../rpc";
@@ -163,6 +163,19 @@ const env: HostEnvironment = {
   createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].flatMap((e) => [{ id: e.desc.id, location: path.resolve(e.desc.location) }, { id: e.desc.id, location: realPath(e.desc.location) }])),
   onConsole(write) {
     consoleSink = write;
+  },
+  installBuiltin(root, name, files) {
+    try {
+      const dir = path.join(root, "builtin", name);
+      for (const [rel, text] of Object.entries(files)) {
+        const file = path.join(dir, rel);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, text);
+      }
+      return dir;
+    } catch {
+      return null;
+    }
   },
 };
 

@@ -20,5 +20,6 @@ export { parseProjectLink, openProjectLink } from "./projects/service";
 export { parseAssignmentLink, openAssignmentLink } from "./projects/assignments";
 // Native self-test (apps/desktop/src/selftest.ts, TMCODE_DEV_SELFTEST=projects).
 export * as projectsForSelfTest from "./projects/service";
+export * as assignmentsForSelfTest from "./projects/assignments";
 // Native self-test (TMCODE_DEV_SELFTEST=exthost).
 export * as exthostForSelfTest from "./exthost/selftestApi";

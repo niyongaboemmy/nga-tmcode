@@ -396,3 +396,71 @@ describe("tree views and webviews", () => {
     expect(await events()).toEqual(["resolved:views.side"]);
   });
 });
+
+describe("the active editor", () => {
+  it("fires onDidChangeActiveTextEditor when a group switches files, and when the document arrives late", async () => {
+    const extRoot = mkdtempSync(join(tmpdir(), "tmcode-active-"));
+    const SRC = `
+const vscode = require("vscode");
+exports.activate = (context) => {
+  const seen = [];
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((ed) => seen.push(ed ? vscode.workspace.asRelativePath(ed.document.uri) : "none")),
+    vscode.commands.registerCommand("active.seen", () => seen.join(",")),
+    vscode.commands.registerCommand("active.now", () => (vscode.window.activeTextEditor ? vscode.workspace.asRelativePath(vscode.window.activeTextEditor.document.uri) : "none")),
+  );
+};`;
+    const dir = writeExtension(extRoot, "active", { main: "./main.js", activationEvents: ["*"] }, { "main.js": SRC });
+    const ws = mkdtempSync(join(tmpdir(), "tmcode-active-ws-"));
+    const wb = new FakeWorkbench({ root: ws, extensions: [describeExtension(dir)], documents: { "a.js": { text: "a\n", languageId: "javascript" } } }) as WB & { notify(m: string, p?: unknown[]): void };
+    const editor = (path: string) => ({ id: "g0", path, selections: [{ anchor: [0, 0], active: [0, 0] }], visibleRanges: [[0, 0, 1, 0]], options: { tabSize: 2, insertSpaces: true }, viewColumn: 1 });
+    const doc = (path: string) => ({ path, languageId: "html", version: 1, text: "<div></div>\n", eol: "\n", isDirty: false });
+    try {
+      await wb.init;
+      await wb.request("$startup");
+      await wb.waitFor(() => wb.states.get("fixture.active")?.state === "activated", "activation");
+      // The same group (g0) now shows b.html: a new TextEditor, so the event fires.
+      wb.notify("$documentOpened", [doc("b.html")]);
+      wb.notify("$editorsChanged", [[editor("b.html")], "g0"]);
+      expect(await wb.request("$executeCommand", ["active.now", []])).toBe("b.html");
+      // The switch to c.html arrives before its document.
+      wb.notify("$editorsChanged", [[editor("c.html")], "g0"]);
+      wb.notify("$documentOpened", [doc("c.html")]);
+      expect(await wb.request("$executeCommand", ["active.now", []])).toBe("c.html");
+      expect(await wb.request("$executeCommand", ["active.seen", []])).toBe("b.html,none,c.html");
+    } finally {
+      await wb.close();
+    }
+  });
+});
+
+describe("built-in language basics", () => {
+  it("lists language configurations in extensions.all, readable through workspace.fs (Better Comments)", async () => {
+    const extRoot = mkdtempSync(join(tmpdir(), "tmcode-basics-"));
+    const SRC = `
+const vscode = require("vscode");
+const path = require("path");
+exports.activate = (context) => {
+  context.subscriptions.push(vscode.commands.registerCommand("basics.comments", async (lang) => {
+    for (const ext of vscode.extensions.all) {
+      for (const l of (ext.packageJSON.contributes && ext.packageJSON.contributes.languages) || []) {
+        if (l.id !== lang || !l.configuration) continue;
+        const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(path.join(ext.extensionPath, l.configuration)));
+        return ext.id + " " + JSON.stringify(JSON.parse(new TextDecoder().decode(raw)).comments);
+      }
+    }
+    return "none";
+  }));
+};`;
+    const dir = writeExtension(extRoot, "basics", { main: "./main.js", activationEvents: ["onCommand:basics.comments"] }, { "main.js": SRC });
+    const wb: WB = new FakeWorkbench({ root: mkdtempSync(join(tmpdir(), "tmcode-basics-ws-")), extensions: [describeExtension(dir)] });
+    try {
+      await wb.init;
+      await wb.request("$startup");
+      expect(await wb.request("$executeCommand", ["basics.comments", ["javascript"]])).toBe('tmcode.language-basics {"lineComment":"//","blockComment":["/*","*/"]}');
+      expect(await wb.request("$executeCommand", ["basics.comments", ["python"]])).toContain('"lineComment":"#"');
+    } finally {
+      await wb.close();
+    }
+  });
+});
