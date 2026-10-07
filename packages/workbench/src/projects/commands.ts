@@ -23,7 +23,7 @@ import {
 } from "./service";
 import { TEMPLATES, templateById } from "./templates";
 import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
-import { changeAssessment, linkProject, pickAssessment, submitProject, TYPE_LABEL } from "./matching";
+import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject, TYPE_LABEL } from "./matching";
 import type { ProjectKind } from "./types";
 
 const usable = () => projectsSupported() && useWorkbench.getState().policy.mode === "practice";
@@ -96,6 +96,21 @@ async function newProject() {
   // Which assessment is this project for? (Optional: personal projects stay unmatched.)
   const assessment = await pickAssessment({ title: `New Project "${name.trim()}": match with an assessment`, allowNone: true });
   if (!assessment) return;
+  if (assessment !== "none" && assessment.question) {
+    // A quiz's TMCode practical: Task Mentor creates the project from the question's starter files.
+    const go = await showDialog({
+      severity: "info",
+      message: `"${assessment.question.title}" is a TMCode practical`,
+      detail: `Start it to get your teacher's starter files in a workspace linked to the quiz "${assessment.title}". The name you typed isn't needed: Task Mentor names the workspace after the question.`,
+      buttons: [
+        { id: "start", label: "Start the Practical", primary: true },
+        { id: "cancel", label: "Cancel" },
+      ],
+      cancelId: "cancel",
+    });
+    if (go === "start") await startQuizPractical(assessment, assessment.question);
+    return;
+  }
   if (assessment !== "none" && assessment.activity_type === "assignment") {
     // A TMCode practical with the teacher's starter files is started, not created from scratch.
     const practical = useAssignments.getState().student?.find((a) => a.id === assessment.activity_id);

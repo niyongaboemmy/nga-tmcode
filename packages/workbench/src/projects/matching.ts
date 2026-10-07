@@ -1,7 +1,7 @@
 import { notify, showDialog } from "../state/store";
 import { showQuickPick, type PickItem } from "../widgets/QuickPick";
-import { api, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
-import type { Link, LinkableActivity } from "./types";
+import { api, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
+import type { Link, LinkableActivity, PracticalQuestion, Project } from "./types";
 
 /**
  * Matching a project with a Task Mentor assessment (an assignment, a quiz or a
@@ -30,6 +30,11 @@ export function normalizeActivity(raw: Record<string, unknown>): LinkableActivit
     course_name: (raw.course_name as string | null | undefined) ?? null,
     due_date: (raw.due_date as string | null | undefined) ?? null,
     open: raw.open === undefined ? true : !!raw.open,
+    practical_questions: Array.isArray(raw.practical_questions)
+      ? (raw.practical_questions as Record<string, unknown>[])
+          .map((q) => ({ question_id: Number(q.question_id), title: String(q.title ?? "TMCode practical"), points: Number(q.points ?? 0) }))
+          .filter((q) => Number.isInteger(q.question_id) && q.question_id > 0)
+      : [],
   };
 }
 
@@ -44,7 +49,9 @@ const BACK = "__back";
 const NONE = "__none";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export type Pick = LinkableActivity | "none";
+/** An assessment, and for a quiz optionally one of its TMCode practical questions. */
+export type Picked = LinkableActivity & { question?: PracticalQuestion };
+export type Pick = Picked | "none";
 
 /**
  * Subject → kind of assessment → assessment. Resolves to the activity, to "none"
@@ -89,8 +96,8 @@ export async function pickAssessment(opts: { title: string; allowNone?: boolean;
             title: `${opts.title} (2/3) · ${name}`,
             placeholder: "Choose the kind of assessment",
             items: [
-              { id: BACK, label: "Back to subjects", icon: "arrow-left", alwaysShow: true },
               ...types.map((t) => ({ id: t, label: TYPE_LABEL[t].many, icon: TYPE_LABEL[t].icon, description: plural(inSubject.filter((a) => a.activity_type === t).length, "open", "open") })),
+              { id: BACK, label: "Back to subjects", icon: "arrow-left", alwaysShow: true, separator: " " },
             ],
           });
           if (!t) return undefined;
@@ -103,13 +110,13 @@ export async function pickAssessment(opts: { title: string; allowNone?: boolean;
           placeholder: `Choose the ${TYPE_LABEL[type!].one.toLowerCase()}`,
           matchOnDescription: true,
           items: [
-            { id: BACK, label: types.length > 1 ? "Back to kinds of assessment" : "Back to subjects", icon: "arrow-left", alwaysShow: true },
             ...acts.map((a) => ({
               id: `${a.activity_type}:${a.activity_id}`,
               label: a.title,
               icon: TYPE_LABEL[a.activity_type].icon,
-              description: [due(a.due_date), opts.current && opts.current.activity_type === a.activity_type && opts.current.activity_id === a.activity_id ? "current" : ""].filter(Boolean).join(" · "),
+              description: [due(a.due_date), a.practical_questions?.length ? `${a.practical_questions.length} TMCode practical${a.practical_questions.length === 1 ? "" : "s"}` : "", opts.current && opts.current.activity_type === a.activity_type && opts.current.activity_id === a.activity_id ? "current" : ""].filter(Boolean).join(" · "),
             })),
+            { id: BACK, label: types.length > 1 ? "Back to kinds of assessment" : "Back to subjects", icon: "arrow-left", alwaysShow: true, separator: " " },
           ],
         });
         if (!item) return undefined;
@@ -117,7 +124,23 @@ export async function pickAssessment(opts: { title: string; allowNone?: boolean;
           if (types.length > 1) continue;
           break;
         }
-        return acts.find((a) => `${a.activity_type}:${a.activity_id}` === item.id)!;
+        const act = acts.find((a) => `${a.activity_type}:${a.activity_id}` === item.id)!;
+        const practicals = act.practical_questions ?? [];
+        if (act.activity_type !== "quiz" || practicals.length === 0) return act;
+        // A quiz with TMCode practical questions: which one is this project for?
+        const q = await showQuickPick({
+          title: `${opts.title} (4/4) · ${act.title}`,
+          placeholder: "Choose the practical question",
+          items: [
+            ...practicals.map((p, i) => ({ id: `q:${p.question_id}`, label: p.title, icon: "beaker", description: `${p.points} point${p.points === 1 ? "" : "s"} · TMCode practical`, separator: i === 0 ? "practical questions" : undefined })),
+            { id: "q:none", label: "The whole quiz (no particular question)", icon: "checklist", separator: "other" },
+            { id: BACK, label: "Back to the quizzes", icon: "arrow-left", alwaysShow: true },
+          ],
+        });
+        if (!q) return undefined;
+        if (q.id === BACK) continue;
+        if (q.id === "q:none") return act;
+        return { ...act, question: practicals.find((p) => `q:${p.question_id}` === q.id) };
       }
     }
   } catch (e) {
@@ -133,13 +156,13 @@ export function currentLinks(): Link[] {
 }
 
 /** Links a project to an activity; ALREADY_LINKED from another project is explained. */
-export async function linkProject(projectId: number, a: Pick & object): Promise<Link | null> {
+export async function linkProject(projectId: number, a: Picked): Promise<Link | null> {
   try {
-    const { link } = await api<{ link: Link }>("POST", `/projects/${projectId}/links`, { activity_type: a.activity_type, activity_id: a.activity_id });
+    const { link } = await api<{ link: Link }>("POST", `/projects/${projectId}/links`, { activity_type: a.activity_type, activity_id: a.activity_id, ...(a.question ? { question_id: a.question.question_id } : {}) });
     return link;
   } catch (e) {
     if (e instanceof TmError && e.code === "ALREADY_LINKED") {
-      notify("warning", `"${a.title}" is already matched with another of your projects. Unmatch it there first (Projects › Change Assessment…).`);
+      notify("warning", `"${a.question?.title ?? a.title}" is already matched with another of your projects. Unmatch it there first (Projects › Change Assessment…).`);
       return null;
     }
     throw e;
@@ -167,21 +190,21 @@ export async function changeAssessment() {
     current: old,
   });
   if (!picked) return;
-  if (picked !== "none" && old && old.activity_type === picked.activity_type && old.activity_id === picked.activity_id) return notify("info", "That is already this project's assessment.");
+  if (picked !== "none" && old && old.activity_type === picked.activity_type && old.activity_id === picked.activity_id && (old.question_id ?? null) === (picked.question?.question_id ?? null)) return notify("info", "That is already this project's assessment.");
   try {
     for (const l of links) await api("DELETE", `/projects/${current.id}/links/${l.id}`);
     if (picked === "none") {
       notify("info", `${current.name} is no longer matched with an assessment.`);
     } else {
       const link = await linkProject(current.id, picked).catch(async (e) => {
-        if (old) await api("POST", `/projects/${current.id}/links`, { activity_type: old.activity_type, activity_id: old.activity_id }).catch(() => {});
+        if (old) await api("POST", `/projects/${current.id}/links`, { activity_type: old.activity_type, activity_id: old.activity_id, ...(old.question_id ? { question_id: old.question_id } : {}) }).catch(() => {});
         throw e;
       });
       if (!link) {
-        if (old) await api("POST", `/projects/${current.id}/links`, { activity_type: old.activity_type, activity_id: old.activity_id }).catch(() => {});
+        if (old) await api("POST", `/projects/${current.id}/links`, { activity_type: old.activity_type, activity_id: old.activity_id, ...(old.question_id ? { question_id: old.question_id } : {}) }).catch(() => {});
         return;
       }
-      notify("info", `${current.name} is now matched with "${picked.title}"${picked.course_name ? ` (${picked.course_name})` : ""}. Submit it when your work is ready.`);
+      notify("info", `${current.name} is now matched with "${picked.title}"${picked.question ? ` › ${picked.question.title}` : ""}${picked.course_name ? ` (${picked.course_name})` : ""}. Submit it when your work is ready.`);
     }
   } catch (e) {
     notify("error", (e as Error).message);
@@ -227,7 +250,9 @@ export async function submitProject() {
   const choice = await showDialog({
     severity: "info",
     message: `Submit "${current.name}" for "${title}"?`,
-    detail: "TMCode saves your work to Task Mentor, then submits that exact version. The project is then Submitted and locked: withdraw the submission if you need to change it before it is graded.",
+    detail:
+      "TMCode saves your work to Task Mentor, then submits that exact version. The project is then Submitted and locked: withdraw the submission if you need to change it before it is graded." +
+      (target.activity_type === "quiz" && target.question_id ? "\n\nThis is a quiz practical: keep the quiz open in Task Mentor while you submit, so your project is recorded as your answer." : ""),
     buttons: [
       { id: "submit", label: "Save and Submit", primary: true },
       { id: "cancel", label: "Cancel" },
@@ -244,5 +269,37 @@ export async function submitProject() {
   } finally {
     await checkSync();
     void refreshProjects();
+  }
+}
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50) || "practical";
+
+/**
+ * Starts a quiz's TMCode practical question: Task Mentor creates the student's
+ * project from the question's starter files and links it (idempotent: later
+ * starts open the same project).
+ */
+export async function startQuizPractical(quiz: { activity_id: number; title: string; course_name?: string | null }, q: PracticalQuestion) {
+  try {
+    const { project, created } = await api<{ project: Project; link_id: number; created: boolean }>("POST", `/quizzes/${quiz.activity_id}/questions/${q.question_id}/start`, {});
+    const opened = await openProject(project.id, { folderName: slug(`${quiz.title}-${q.title}`) });
+    if (!opened) return false;
+    notify(
+      "info",
+      created
+        ? `Your workspace for "${q.title}" is ready${project.head ? " with the starter files" : ""}. Keep the quiz "${quiz.title}" open in Task Mentor, then Submit Project when you finish.`
+        : `Opened your work for "${q.title}".`,
+    );
+    void refreshProjects();
+    return true;
+  } catch (e) {
+    if (e instanceof TmError && e.code === "ACTIVITY_CLOSED") notify("info", `"${quiz.title}" is closed: its practical can't be started.`);
+    else notify("error", (e as Error).message);
+    return false;
   }
 }

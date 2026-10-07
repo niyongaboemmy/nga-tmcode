@@ -40,6 +40,8 @@ export interface LinkItem {
   id: number;
   activity_type: "quiz" | "assignment" | "manual_assessment";
   activity_id: number;
+  /** A quiz link for one TMCode practical question (quiz_questions.id). */
+  question_id?: number | null;
   status: "linked" | "submitted";
 }
 
@@ -96,6 +98,14 @@ export interface LinkableActivity {
   course_name?: string | null;
   due_date?: string | null;
   open?: boolean;
+  /** Quizzes: their TMCode practical questions (start one to get its starter files). */
+  practical_questions?: PracticalQuestion[];
+}
+
+export interface PracticalQuestion {
+  question_id: number;
+  title: string;
+  points: number;
 }
 
 /** `.tmcode/project.json`: which Task Mentor project this folder is, and what it last synced. */

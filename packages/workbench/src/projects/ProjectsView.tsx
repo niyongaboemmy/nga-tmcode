@@ -257,7 +257,7 @@ function StatusPanel({ project, links, busy }: { project: Project; links: Link[]
         <div className="tm-list-row tm-link-row" data-testid="project-assessment" title={link.activity?.title ?? ""}>
           <Codicon name={icon} />
           <span className="tm-project-name">{link.activity?.title ?? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}`}</span>
-          <span className="tm-chip">{TYPE_LABEL[link.activity_type].one}</span>
+          <span className="tm-chip">{link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one}</span>
           {link.status === "submitted" && (
             <span className="tm-chip is-success" title={link.submitted_at ?? ""}>
               {link.revision_number ? `v${link.revision_number}` : link.git_commit ? link.git_commit.slice(0, 7) : "Sent"}
