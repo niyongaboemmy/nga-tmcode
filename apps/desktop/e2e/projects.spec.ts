@@ -142,9 +142,10 @@ test("the assessment can be changed or removed while the project is a draft", as
   await expect(page.getByTestId("sync-state")).toContainText("Saved to Task Mentor", { timeout: 15_000 });
   await expect(page.getByTestId("project-assessment")).toHaveCount(0);
 
-  // Unmatched: match it (Web Development has only assignments, so step 2 is skipped).
+  // Unmatched: match it.
   await page.getByTestId("match-assessment").click();
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Web Development" }).click();
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Assignments" }).click();
   await expect(page.locator(".tm-quick-pick")).toContainText("(3/3)");
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Portfolio website" }).click();
   await expect(page.getByTestId("project-assessment")).toContainText("Portfolio website");

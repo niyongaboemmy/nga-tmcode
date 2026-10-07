@@ -53,6 +53,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     { type: "quiz", id: 77, title: "Python Practical 2", course_id: 1, course_name: "Programming 101", due_date: null },
     { type: "manual_assessment", id: 90, title: "Lab presentation", course_id: 1, course_name: "Programming 101", due_date: null },
     { type: "assignment", id: 32, title: "Portfolio website", course_id: 3, course_name: "Web Development", due_date: new Date(Date.now() + 3 * 86400000).toISOString(), submission_type: "project" },
+    // A quiz with a TMCode practical question (quiz_questions.id 501): GET /activities/linkable lists it.
+    { type: "quiz", id: 78, title: "Web Quiz 3", course_id: 3, course_name: "Web Development", due_date: new Date(Date.now() + 86400000).toISOString(), practical_questions: [{ question_id: 501, title: "Build a navbar", points: 10 }] },
   ];
   let seq = 100;
   let teacher = false;
@@ -231,9 +233,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     }
     if ((m = p.match(/^\/projects\/(\d+)\/links$/))) {
       const mineIds = projects.filter((x) => (x.owner as { id: number }).id === user.id).map((x) => x.id);
-      const dup = links.find((l) => l.activity_type === body.activity_type && l.activity_id === body.activity_id && mineIds.includes(l.project_id as number));
+      const dup = links.find((l) => l.activity_type === body.activity_type && l.activity_id === body.activity_id && (l.question_id ?? null) === (body.question_id ?? null) && mineIds.includes(l.project_id as number));
       if (dup) return err(409, "ALREADY_LINKED", dup.project_id === Number(m[1]) ? "Already linked." : "Another of your projects is linked to this activity.");
-      const link = { id: ++seq, project_id: Number(m[1]), activity_type: body.activity_type, activity_id: body.activity_id, status: "linked", revision_id: null, revision_number: null, git_commit: null, submitted_at: null, linked_by: user.id, created_at: now() };
+      const link = { id: ++seq, project_id: Number(m[1]), activity_type: body.activity_type, activity_id: body.activity_id, question_id: body.question_id ?? null, status: "linked", revision_id: null, revision_number: null, git_commit: null, submitted_at: null, linked_by: user.id, created_at: now() };
       links.push(link);
       return { status: 201, body: { link } };
     }
@@ -246,6 +248,28 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       Object.assign(link, { status: "submitted", revision_id: h?.id ?? null, revision_number: h?.number ?? null, submitted_at: now() });
       if (lifecycle && owner) owner.status = "submitted";
       return { status: 200, body: { link, submission: { id: 1, status: "submitted", is_late: false } } };
+    }
+    if ((m = p.match(/^\/quizzes\/(\d+)\/questions\/(\d+)\/start$/)) && req.method === "POST") {
+      const quiz = activities.find((a) => a.type === "quiz" && a.id === Number(m![1]));
+      const q = (quiz as { practical_questions?: { question_id: number; title: string }[] } | undefined)?.practical_questions?.find((x) => x.question_id === Number(m![2]));
+      if (!quiz || !q) return err(404, "NOT_FOUND", "Practical question not found.");
+      const existing = links.find((l) => l.activity_type === "quiz" && l.activity_id === quiz.id && l.question_id === q.question_id);
+      const ex = existing && projects.find((x) => x.id === existing.project_id && x.status !== "removed");
+      if (ex) return { status: 200, body: { project: projectOut(ex), link_id: existing!.id, created: false } };
+      const id = ++seq;
+      const name = `${quiz.title} — ${q.title}`;
+      const proj = { id, name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), description: null, language: "html", kind: "tm", visibility: "course", repo_url: null, repo_full_name: null, default_branch: null, size_bytes: 0, file_count: 0, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: user.id, name: user.name, avatar_url: null }, my_role: "owner", assignment_id: null, share_presence: true, status: "draft" };
+      projects.push(proj);
+      const files: ScannedFile[] = [];
+      for (const [path, text] of Object.entries({ "index.html": "<nav><!-- TODO --></nav>\n" })) {
+        const sha = await sha256(text);
+        blobs.set(sha, text);
+        files.push({ path, sha256: sha, size: text.length });
+      }
+      revisions.push({ id: ++seq, project_id: id, number: 1, parent_id: null, author_id: user.id, message: "Starter files", files, source: "save", created_at: now() });
+      const link = { id: ++seq, project_id: id, activity_type: "quiz", activity_id: quiz.id, question_id: q.question_id, status: "linked", revision_id: null, revision_number: null, git_commit: null, submitted_at: null, linked_by: user.id, created_at: now() };
+      links.push(link);
+      return { status: 201, body: { project: projectOut(proj), link_id: link.id, created: true } };
     }
     if ((m = p.match(/^\/projects\/(\d+)$/)) && req.method === "DELETE") {
       const proj = projects.find((x) => x.id === Number(m![1]));

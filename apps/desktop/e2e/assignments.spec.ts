@@ -224,3 +224,49 @@ test("with Task Mentor's project lifecycle, a submitted workspace is locked unti
   await command(page, "View: Show Task Mentor Projects");
   await expect(page.getByTestId("save-to-tm")).toBeEnabled();
 });
+
+test("a quiz's TMCode practical starts from the Assignments view, then is submitted as the quiz answer", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  const row = page.getByTestId("quiz-practical-row");
+  await expect(row).toContainText("Build a navbar");
+  await expect(row).toContainText("Web Quiz 3");
+  await row.getByRole("button", { name: "Start" }).click();
+  await expect(page.locator(".tm-toast", { hasText: "Your workspace for \"Build a navbar\" is ready" })).toBeVisible({ timeout: 15_000 });
+  await page.locator('.tm-activity[aria-label^="Explorer"]').click();
+  await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
+
+  await command(page, "View: Show Task Mentor Projects");
+  await expect(page.getByTestId("project-assessment")).toContainText("Web Quiz 3");
+  await expect(page.getByTestId("project-assessment")).toContainText("Quiz practical");
+  await page.getByTestId("submit-project").click();
+  await expect(page.locator(".tm-dialog")).toContainText("keep the quiz open in Task Mentor");
+  await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
+  await expect(page.getByTestId("project-status-chip").first()).toHaveText("Submitted", { timeout: 15_000 });
+
+  // Starting again opens the same workspace.
+  await command(page, "View: Show Assignments");
+  await page.getByTestId("quiz-practical-row").getByRole("button", { name: "Start" }).click();
+  await expect(page.locator(".tm-toast", { hasText: "Opened your work" })).toBeVisible({ timeout: 15_000 });
+  const state = await mock(page, (m) => m.state() as unknown as { links: { question_id: number | null }[] });
+  expect(state.links.filter((l) => l.question_id === 501)).toHaveLength(1);
+});
+
+test("New Project offers a quiz's practical questions as a 4th step and starts the practical", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Task Mentor Projects");
+  await page.getByRole("button", { name: "Connect This Folder to Task Mentor" }).click();
+  await page.locator(".tm-quick-pick .tm-qi-item").first().click();
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "This folder" }).click();
+  await page.locator(".tm-quick-pick input").fill("Navbar");
+  await page.keyboard.press("Enter");
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Web Development" }).click();
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Quizzes" }).click();
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Web Quiz 3" }).click();
+  await expect(page.locator(".tm-quick-pick")).toContainText("(4/4)");
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Build a navbar" }).click();
+  await page.locator(".tm-dialog").getByRole("button", { name: "Start the Practical" }).click();
+  await expect(page.getByTestId("project-assessment")).toContainText("Quiz practical", { timeout: 15_000 });
+  await page.locator('.tm-activity[aria-label^="Explorer"]').click();
+  await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
+});

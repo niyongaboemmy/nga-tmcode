@@ -4,6 +4,8 @@ import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { dueLabel, groupAssignments, isOpenWorkspaceOf, refreshAssignments, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, signIn, useProjects } from "./service";
+import { startQuizPractical } from "./matching";
+import type { LinkableActivity, PracticalQuestion } from "./types";
 import { openAssignmentInTaskMentor } from "./commands";
 
 function Section({ title, count, children, defaultOpen = true, actions }: { title: string; count?: number; children: ReactNode; defaultOpen?: boolean; actions?: ReactNode }) {
@@ -96,11 +98,43 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
   );
 }
 
+/** A TMCode practical question of a quiz: Start creates (or reopens) the student's workspace from its starter files. */
+function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQuestion }) {
+  const [busy, setBusy] = useState(false);
+  const due = dueLabel(quiz.due_date ?? null);
+  const start = async () => {
+    setBusy(true);
+    try {
+      await startQuizPractical(quiz, q);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="tm-list-row tm-assignment-row" data-testid="quiz-practical-row" title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}`}>
+      <Codicon name="beaker" className="tm-project-kind" />
+      <span className="tm-assignment-text">
+        <span className="tm-project-name">{q.title}</span>
+        <span className="tm-assignment-sub">
+          <span className="tm-assignment-course">
+            {quiz.title} · {q.points} pt{q.points === 1 ? "" : "s"}
+          </span>
+          {due && <span className={`tm-due is-${due.tone}`}>{due.text}</span>}
+        </span>
+      </span>
+      <button type="button" className="tm-button tm-button--small" disabled={busy} onClick={() => void start()}>
+        {busy ? "Opening…" : "Start"}
+      </button>
+    </div>
+  );
+}
+
 /** The Assignments view: TMCode practicals and case studies from Task Mentor. */
 export function AssignmentsView() {
   const account = useProjects((s) => s.account);
   const student = useAssignments((s) => s.student);
   const teaching = useAssignments((s) => s.teaching);
+  const quizPracticals = useAssignments((s) => s.quizPracticals);
   const loading = useAssignments((s) => s.loading);
   const error = useAssignments((s) => s.error);
   const workspace = useWorkbench((s) => s.workspace);
@@ -135,7 +169,9 @@ export function AssignmentsView() {
   const rows = (list: AssignmentSummary[], empty: string, t?: boolean) =>
     list.length === 0 ? <p className="tm-muted tm-projects-hint">{empty}</p> : list.map((a) => <AssignmentRow key={a.id} a={a} teaching={t} />);
   const teach = (teaching ?? []).filter(match);
-  const nothing = student !== null && student.length === 0 && teach.length === 0;
+  const quizzes = (quizPracticals ?? []).filter((q) => !filter || `${q.title} ${q.course_name ?? ""} ${(q.practical_questions ?? []).map((p) => p.title).join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
+  const practicalCount = quizzes.reduce((n, q) => n + (q.practical_questions?.length ?? 0), 0);
+  const nothing = student !== null && student.length === 0 && teach.length === 0 && practicalCount === 0;
 
   return (
     <div className="tm-projects-view" data-testid="assignments-view">
@@ -176,6 +212,11 @@ export function AssignmentsView() {
                 </Section>
               )}
             </>
+          )}
+          {practicalCount > 0 && (
+            <Section title="Quiz Practicals" count={practicalCount}>
+              {quizzes.flatMap((quiz) => (quiz.practical_questions ?? []).map((q) => <QuizPracticalRow key={`${quiz.activity_id}:${q.question_id}`} quiz={quiz} q={q} />))}
+            </Section>
           )}
           {teach.length > 0 && (
             <Section title="Teaching" count={teach.length}>

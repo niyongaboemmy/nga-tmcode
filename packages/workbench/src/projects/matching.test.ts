@@ -11,10 +11,15 @@ describe("normalizeActivity", () => {
       course_name: "Programming",
       due_date: null,
       open: true,
+      practical_questions: [],
     });
   });
   it("still reads {activity_type, activity_id}", () => {
     expect(normalizeActivity({ activity_type: "quiz", activity_id: "7", title: "Q" })?.activity_id).toBe(7);
+  });
+  it("keeps a quiz's TMCode practical questions", () => {
+    const a = normalizeActivity({ type: "quiz", id: 78, title: "Q3", practical_questions: [{ question_id: 501, title: "Navbar", points: 10 }, { question_id: "x" }] });
+    expect(a?.practical_questions).toEqual([{ question_id: 501, title: "Navbar", points: 10 }]);
   });
   it("drops unknown kinds and bad ids", () => {
     expect(normalizeActivity({ type: "exam", id: 1 })).toBeNull();

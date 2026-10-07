@@ -3,7 +3,7 @@ import { inExam } from "../exam/state";
 import { getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { api, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
-import type { Project } from "./types";
+import type { LinkableActivity, Project } from "./types";
 
 /**
  * TMCode practicals (docs/ASSIGNMENTS_PLAN.md): Task Mentor assignments and
@@ -48,6 +48,8 @@ export interface AssignmentDetail extends AssignmentSummary {
 
 interface AssignmentsState {
   student: AssignmentSummary[] | null;
+  /** Quizzes of the student's subjects that have TMCode practical questions. */
+  quizPracticals: LinkableActivity[] | null;
   teaching: AssignmentSummary[] | null;
   loading: boolean;
   error: string | null;
@@ -55,7 +57,7 @@ interface AssignmentsState {
   busy: Record<number, "starting" | "submitting" | undefined>;
 }
 
-export const useAssignments = create<AssignmentsState>(() => ({ student: null, teaching: null, loading: false, error: null, details: {}, busy: {} }));
+export const useAssignments = create<AssignmentsState>(() => ({ student: null, quizPracticals: null, teaching: null, loading: false, error: null, details: {}, busy: {} }));
 const set = useAssignments.setState;
 const get = useAssignments.getState;
 
@@ -67,14 +69,15 @@ export async function refreshAssignments() {
   if (!assignmentsSupported()) return;
   set({ loading: true, error: null });
   try {
-    const [student, teaching] = await Promise.all([
+    const [student, teaching, quizPracticals] = await Promise.all([
       api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=student"),
       api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=teaching").catch(() => ({ assignments: [] })),
+      import("./matching").then((m) => m.linkableActivities()).then((list) => list.filter((a) => a.activity_type === "quiz" && (a.practical_questions?.length ?? 0) > 0)).catch(() => [] as LinkableActivity[]),
     ]);
     // Open assignment pages follow the list (state, grade, completed → read-only).
     const details = { ...get().details };
     for (const a of [...student.assignments, ...teaching.assignments]) if (details[a.id]) details[a.id] = { ...details[a.id], ...a };
-    set({ student: student.assignments, teaching: teaching.assignments, details, loading: false });
+    set({ student: student.assignments, teaching: teaching.assignments, quizPracticals, details, loading: false });
   } catch (e) {
     set({ loading: false, error: e instanceof TmError && e.status === 404 ? "Your Task Mentor doesn't offer TMCode assignments yet." : (e as Error).message });
   }
@@ -88,7 +91,7 @@ export function wireAssignments() {
   let was = false;
   const follow = (signed: boolean) => {
     if (signed && !was) void refreshAssignments();
-    if (!signed && was) set({ student: null, teaching: null, details: {} });
+    if (!signed && was) set({ student: null, quizPracticals: null, teaching: null, details: {} });
     was = signed;
   };
   follow(signedIn());
