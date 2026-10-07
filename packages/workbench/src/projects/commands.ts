@@ -8,6 +8,7 @@ import {
   createProject,
   disconnectFolder,
   setSharePresence,
+  withdrawSubmission,
   linkableActivities,
   linkActivity,
   projectsSupported,
@@ -199,6 +200,13 @@ export function registerProjectCommands() {
       const p = useProjects.getState().current!;
       return setSharePresence(p.id, p.share_presence === false);
     },
+  });
+  registerCommand({
+    id: "projects.withdraw",
+    title: "Withdraw Submission",
+    category: "Projects",
+    enabled: () => bound() && useProjects.getState().current?.status === "submitted",
+    run: () => withdrawSubmission(useProjects.getState().current!.id),
   });
   registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
   registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });

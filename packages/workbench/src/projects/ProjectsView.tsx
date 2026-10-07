@@ -4,7 +4,7 @@ import { openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
-import { openProject, projectsSupported, refreshProjects, resolveConflict, setSharePresence, signIn, useProjects } from "./service";
+import { lockReason, openProject, projectsSupported, refreshProjects, resolveConflict, setSharePresence, signIn, useProjects } from "./service";
 import { showAssignment } from "./assignments";
 import type { Link, Project, SyncState } from "./types";
 import { openInTaskMentor, submitFromView } from "./commands";
@@ -158,8 +158,17 @@ function ThisFolder() {
             {plan && changeCount(plan.localChanges) > 0 && sync !== "saving" && <span className="tm-badge tm-badge--accent">{changeCount(plan.localChanges)}</span>}
           </div>
           {message && <p className="tm-muted tm-projects-hint">{message}</p>}
+          {project?.status === "submitted" && (
+            <div className="tm-projects-locked" data-testid="project-submitted">
+              <Codicon name="lock" />
+              <span>Submitted: it can't change until you withdraw the submission.</span>
+              <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("projects.withdraw")}>
+                Withdraw
+              </button>
+            </div>
+          )}
           <div className="tm-projects-actions">
-            <button type="button" className="tm-button" disabled={busy || !!project?.read_only} onClick={() => executeCommand("projects.save")} data-testid="save-to-tm" title="Save to Task Mentor">
+            <button type="button" className="tm-button" disabled={busy || !!lockReason(project)} onClick={() => executeCommand("projects.save")} data-testid="save-to-tm" title="Save to Task Mentor">
               <Codicon name="cloud-upload" />
               <span className="tm-button-label">Save</span>
             </button>

@@ -223,12 +223,23 @@ async function rememberFolder(projectId: number) {
 /** The open folder changed: is it a Task Mentor project? */
 /** A completed assignment's workspace is read-only (Task Mentor refuses its saves too). */
 let readOnlyByProject = false;
+/** Why the open project can't be changed, if it can't (completed assignment, or a submitted/graded/removed project). */
+export function lockReason(project: Project | null | undefined): string | null {
+  if (!project) return null;
+  const name = `"${project.assignment?.title ?? project.name}"`;
+  if (project.read_only) return `${name} is completed: this workspace is read-only.`;
+  if (project.status === "submitted") return `${name} is submitted: withdraw the submission (Projects › Withdraw Submission) to keep editing.`;
+  if (project.status === "graded") return `${name} is graded: this workspace is read-only.`;
+  if (project.status === "removed") return `${name} was removed: restore it in Task Mentor to edit it again.`;
+  return null;
+}
+
 function applyReadOnly(project: Project | null) {
   if (inExam()) return;
-  const ro = !!project?.read_only;
-  if (ro) {
+  const reason = lockReason(project);
+  if (reason) {
     readOnlyByProject = true;
-    useWorkbench.setState({ readOnly: true, readOnlyReason: `"${project?.assignment?.title ?? project?.name}" is completed: this workspace is read-only.` });
+    useWorkbench.setState({ readOnly: true, readOnlyReason: reason });
   } else if (readOnlyByProject) {
     readOnlyByProject = false;
     useWorkbench.setState({ readOnly: false, readOnlyReason: null });
@@ -315,8 +326,9 @@ export async function saveToTaskMentor(opts: { message?: string; source?: "save"
     if (!opts.quiet) notify("info", "This is a GitHub project: commit and push in Source Control. Task Mentor follows your pushes.");
     return null;
   }
-  if (get().current?.read_only) {
-    if (!opts.quiet) notify("info", "This assignment is completed: its workspace is read-only.");
+  const locked = lockReason(get().current);
+  if (locked) {
+    if (!opts.quiet) notify("info", locked);
     return null;
   }
   await checkSync();
@@ -520,6 +532,23 @@ export async function disconnectFolder() {
   applyReadOnly(null);
   set({ binding: null, current: null, plan: null, sync: "unbound", syncMessage: null });
   notify("info", "This folder is no longer synced with Task Mentor.");
+}
+
+/** Takes back a submission (servers with the project lifecycle) so the project is a draft again. */
+export async function withdrawSubmission(projectId: number) {
+  try {
+    const { project } = await api<{ project: Project }>("POST", `/projects/${projectId}/withdraw`, {});
+    if (get().current?.id === projectId) {
+      set({ current: { ...get().current!, ...project } });
+      applyReadOnly(get().current);
+    }
+    notify("info", "Submission withdrawn: you can edit again. Submit when you are ready.");
+    await checkSync();
+    return true;
+  } catch (e) {
+    notify("error", (e as Error).message);
+    return false;
+  }
 }
 
 /** Whether teachers' monitors see this project's live status (owners always see their own). */

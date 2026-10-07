@@ -53,6 +53,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   ];
   let seq = 100;
   let teacher = false;
+  // Task Mentor's project lifecycle (feat/project-status-lifecycle): off unless a test turns it on.
+  let lifecycle = false;
   const day = 86_400_000;
   const assignments: Record<string, unknown>[] = [
     { id: 51, title: "Build a to-do list", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 2 * day).toISOString(), points: 20, language: "javascript", description_html: '<p>Build a <b>to-do list</b> page. <a href="https://developer.mozilla.org/">MDN</a> helps.</p><script>alert(1)</script>', instructions: "1. Open `index.html`\n2. Make **Add** work\n3. Submit", attachments: [], rubric: null, starter_project_id: 0 },
@@ -65,6 +67,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   const projectOut = (p: Record<string, unknown>) => ({
     ...p,
     share_presence: p.share_presence !== false,
+    ...(lifecycle ? { status: p.status ?? "draft" } : {}),
     assignment: (() => {
       const a = assignments.find((x) => x.id === p.assignment_id);
       return a ? { id: a.id, title: a.title, status: a.status, kind: a.kind } : null;
@@ -199,6 +202,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       const h = head(pid);
       const owner = projects.find((x) => x.id === pid);
       if (owner && assignmentOfProject(owner)?.status === "completed") return err(409, "ASSIGNMENT_READ_ONLY", "This assignment is completed: its workspace is read-only.");
+      if (lifecycle && owner && (owner.status ?? "draft") === "submitted") return err(409, "PROJECT_LOCKED", "This project is submitted. Withdraw the submission to change it.");
       if ((body.base_revision_id ?? null) !== (h?.id ?? null)) return err(409, "REVISION_CONFLICT", "Task Mentor has newer changes.", { head: revOut(h) });
       const files = body.files as ScannedFile[];
       const missing = files.filter((f) => !blobs.has(f.sha256)).map((f) => f.sha256);
@@ -220,7 +224,15 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       if (owner && assignmentOfProject(owner)?.status === "completed") return err(409, "ASSIGNMENT_COMPLETED", "This assignment is completed: it can no longer be submitted.");
       const h = head(Number(m[1]));
       Object.assign(link, { status: "submitted", revision_id: h?.id ?? null, revision_number: h?.number ?? null, submitted_at: now() });
+      if (lifecycle && owner) owner.status = "submitted";
       return { status: 200, body: { link, submission: { id: 1, status: "submitted", is_late: false } } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)\/withdraw$/)) && req.method === "POST") {
+      const proj = projects.find((x) => x.id === Number(m![1]));
+      if (!proj) return err(404, "NOT_FOUND", "Project not found");
+      if ((proj.status ?? "draft") !== "submitted") return err(409, "NOT_SUBMITTED", "Only a submitted project can be withdrawn.");
+      proj.status = "draft";
+      return { status: 200, body: { project: projectOut(proj) } };
     }
     if (p.match(/^\/projects\/\d+\/(presence|git)$/)) return { status: 200, body: { ok: true } };
     return err(404, "NOT_FOUND", `No mock route for ${req.method} ${p}`);
@@ -259,6 +271,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     },
     setTeacher(on: boolean) {
       teacher = on;
+    },
+    setLifecycle(on: boolean) {
+      lifecycle = on;
     },
     assignments: () => assignments,
     // The student's view of the data: the teacher's starter project is not theirs.

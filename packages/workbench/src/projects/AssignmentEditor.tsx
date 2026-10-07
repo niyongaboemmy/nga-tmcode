@@ -96,6 +96,8 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const busy = useAssignments((s) => s.busy[id]);
   const teaching = useAssignments((s) => !!s.teaching?.some((a) => a.id === id));
   const sync = useProjects((s) => s.sync);
+  // Task Mentor's project lifecycle (when the server has it): a submitted workspace is locked until withdrawn.
+  const projectStatus = useProjects((s) => s.current?.status);
   useProjects((s) => s.binding);
   const [, tick] = useState(0);
 
@@ -175,7 +177,12 @@ export function AssignmentEditor({ input }: { input: Input }) {
               <Codicon name="folder-opened" /> {detail.read_only ? "Open My Work" : "Continue"}
             </button>
           )}
-          {started && here && !detail.read_only && (
+          {started && here && !detail.read_only && projectStatus === "submitted" && (
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => executeCommand("projects.withdraw")} data-testid="assignment-withdraw">
+              <Codicon name="discard" /> Withdraw Submission to Edit
+            </button>
+          )}
+          {started && here && !detail.read_only && projectStatus !== "submitted" && projectStatus !== "graded" && (
             <>
               <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
                 <Codicon name="cloud-upload" /> Save

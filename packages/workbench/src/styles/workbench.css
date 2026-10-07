@@ -5811,3 +5811,20 @@ kbd,
     display: none;
   }
 }
+.tm-projects-locked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  font-size: 12px;
+}
+.tm-projects-locked > span {
+  flex: 1;
+  min-width: 0;
+}
+.tm-projects-locked > .tm-button,
+.tm-projects-locked > .codicon {
+  flex: none;
+}

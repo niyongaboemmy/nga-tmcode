@@ -10,6 +10,7 @@ type Mock = {
   setAssignmentStatus(id: number, status: string): void;
   grade(id: number, grade: number, feedback: string): void;
   setTeacher(on: boolean): void;
+  setLifecycle(on: boolean): void;
 };
 const mock = <T>(page: Page, fn: (m: Mock) => T | Promise<T>) => page.evaluate(`(${fn.toString()})(window.__TMCODE_PROJECTS__)`) as Promise<T>;
 
@@ -195,4 +196,27 @@ test("the side bar stays tidy at narrow widths", async ({ page }) => {
   await page.locator('.tm-activity[aria-label^="Assignments"]').click();
   const r = await row(page, 51).boundingBox();
   expect(r!.x + r!.width).toBeLessThanOrEqual(sidebar!.x + sidebar!.width + 1);
+});
+
+test("with Task Mentor's project lifecycle, a submitted workspace is locked until withdrawn", async ({ page }) => {
+  await fresh(page);
+  await mock(page, (m) => m.setLifecycle(true));
+  await startPractical(page);
+  await page.getByTestId("assignment-submit").click();
+  await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
+  await expect(page.locator(".tm-toast", { hasText: "Submitted" })).toBeVisible({ timeout: 15_000 });
+  await command(page, "Projects: Refresh Projects");
+  // Locked: no Save / Submit, a Withdraw action instead; the editor explains why.
+  await expect(page.getByTestId("assignment-withdraw")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("assignment-submit")).toHaveCount(0);
+  await command(page, "View: Show Task Mentor Projects");
+  await expect(page.getByTestId("project-submitted")).toBeVisible();
+  await expect(page.getByTestId("save-to-tm")).toBeDisabled();
+
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await page.getByTestId("assignment-withdraw").click();
+  await expect(page.locator(".tm-toast", { hasText: "Submission withdrawn" })).toBeVisible();
+  await expect(page.getByTestId("assignment-submit")).toBeVisible();
+  await command(page, "View: Show Task Mentor Projects");
+  await expect(page.getByTestId("save-to-tm")).toBeEnabled();
 });

@@ -80,6 +80,8 @@ export interface Project {
   assignment?: { id: number; title: string; status: string; kind?: string | null } | null;
   /** Its assignment is completed: Task Mentor refuses saves and submissions. */
   read_only?: boolean;
+  /** Task Mentor's project lifecycle (servers that have it): only drafts accept new revisions. */
+  status?: "draft" | "submitted" | "graded" | "removed";
   /** Live status reaches teachers' monitors (owners always see their own). */
   share_presence?: boolean;
   presence?: PresenceSummary;
