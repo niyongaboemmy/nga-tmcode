@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.2 — 2026-10-07
+
+**TMCode 0.6.2: TMCode practicals in quizzes.**
+
+- **Quiz practicals in the Assignments view.** A teacher can add a TMCode practical question to a quiz. It is listed under **Quiz Practicals**, with its quiz, points and due date. **Start** creates your workspace from the question's starter files; starting it again reopens the same workspace.
+- **Choosing an assessment** now has a 4th step for quizzes that have practical questions: pick the question, or link the whole quiz.
+- **Submitting a quiz practical:** **Submit Project** hands in that exact version as your answer to the question, and your teacher grades it with the rubric. Keep the quiz open in Task Mentor while you submit, so your project is recorded as your answer.
+- **Picker:** in each step of the assessment picker, **Back** is now at the bottom of the list, so pressing Enter picks the first choice instead of going back.
+
+### All changes
+
+- Quiz practicals: Quiz Practicals in the Assignments view, a 4th picker step, Start via /quizzes/:id/questions/:qid/start
+
 ## 0.6.1 — 2026-10-07
 
 **TMCode 0.6.1: match each project with an assessment, and follow it from Draft to Submitted to Graded.**

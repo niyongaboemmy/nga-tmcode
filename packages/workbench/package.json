@@ -1,7 +1,7 @@
 {
   "name": "@tmcode/workbench",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "The VS Code-style workbench UI shared by TMCode desktop and TMCode Web",
   "main": "src/index.ts",
