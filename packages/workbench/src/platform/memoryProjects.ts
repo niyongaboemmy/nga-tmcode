@@ -62,10 +62,69 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   let lifecycle = true;
   const day = 86_400_000;
   const assignments: Record<string, unknown>[] = [
-    { id: 51, title: "Build a to-do list", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 2 * day).toISOString(), points: 20, language: "javascript", description_html: '<p>Build a <b>to-do list</b> page. <a href="https://developer.mozilla.org/">MDN</a> helps.</p><script>alert(1)</script>', instructions: "1. Open `index.html`\n2. Make **Add** work\n3. Submit", attachments: [], rubric: null, starter_project_id: 0 },
+    { id: 51, title: "Build a to-do list", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 2 * day).toISOString(), points: 20, language: "javascript", description_html: '<p>Build a <b>to-do list</b> page. <a href="https://developer.mozilla.org/">MDN</a> helps.</p><script>alert(1)</script>', instructions: "1. Open `index.html`\n2. Make **Add** work\n3. Submit", attachments: [], rubric: [{ criteria: "Adding items works", description: "Typing a task and pressing Add shows it in the list", max_score: 12 }, { criteria: "Code quality", description: "Clear names, no repeated code", max_score: 8 }], starter_project_id: 0 },
     { id: 52, title: "Library case study", kind: "case_study", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() - day).toISOString(), points: 10, language: null, description_html: "<p>Model a small library.</p>", instructions: null, attachments: [], rubric: null, starter_project_id: null },
   ];
   const grades = new Map<number, { grade: number; feedback: string }>();
+  // Teachers' grading (GET/PUT /grading…): other students' work, seeded by setTeacher(true).
+  let gradingList = true;
+  const people = new Map<number, string>([[21, "Ben Learner"], [22, "Chloe Coder"], [23, "Dan Doer"]]);
+  const studentGrades = new Map<string, { score: number; rubric_scores: { index: number; score: number; comment?: string | null }[] | null; feedback: string; graded_at: string }>();
+  let gradingSeeded = false;
+  async function seedGrading() {
+    if (gradingSeeded) return;
+    gradingSeeded = true;
+    const work = async (sid: number, files: Record<string, string>, link: { type: string; id: number; question_id?: number }, submit: boolean) => {
+      const id = ++seq;
+      projects.push({ id, name: `${people.get(sid)}'s work`, slug: `w${id}`, description: null, language: "javascript", kind: "tm", visibility: "course", repo_url: null, repo_full_name: null, default_branch: null, size_bytes: 0, file_count: 0, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: sid, name: people.get(sid)!, avatar_url: null }, my_role: "teacher", assignment_id: link.type === "assignment" ? link.id : null, share_presence: true, status: submit ? "submitted" : "draft", hidden: true });
+      const list: ScannedFile[] = [];
+      for (const [path, text] of Object.entries(files)) {
+        const sha = await sha256(text);
+        blobs.set(sha, text);
+        list.push({ path, sha256: sha, size: text.length });
+      }
+      const rev: Rev = { id: ++seq, project_id: id, number: 2, parent_id: null, author_id: sid, message: "Work", files: list, source: "save", created_at: now() };
+      revisions.push(rev);
+      links.push({ id: ++seq, project_id: id, activity_type: link.type, activity_id: link.id, question_id: link.question_id ?? null, status: submit ? "submitted" : "linked", revision_id: submit ? rev.id : null, revision_number: submit ? rev.number : null, git_commit: null, submitted_at: submit ? new Date(Date.now() - sid * 60_000).toISOString() : null, linked_by: sid, created_at: now() });
+    };
+    await work(21, { "index.html": "<h1>Ben's list</h1>\n<script src=\"app.js\"></script>\n", "app.js": "const items = [];\n" }, { type: "assignment", id: 51 }, true);
+    await work(22, { "index.html": "<h1>Chloe's list</h1>\n", "app.js": "// todo\n", "README.md": "# Chloe\n" }, { type: "assignment", id: 51 }, true);
+    await work(23, { "index.html": "<h1>Dan</h1>\n" }, { type: "assignment", id: 51 }, false);
+    await work(21, { "index.html": "<nav>Ben's navbar</nav>\n" }, { type: "quiz", id: 78, question_id: 501 }, true);
+  }
+  function roster(type: string, id: number, qid: number | null) {
+    const a = type === "assignment" ? assignments.find((x) => x.id === id) : null;
+    const quiz = type === "quiz" ? activities.find((x) => x.type === "quiz" && x.id === id) : null;
+    const questions = ((quiz as { practical_questions?: { question_id: number; title: string; points: number }[] } | null)?.practical_questions ?? []);
+    const q = questions.find((x) => x.question_id === (qid ?? questions[0]?.question_id));
+    if (!a && !q) return null;
+    const max = a ? (a.points as number) : q!.points;
+    const rubric = a ? ((a.rubric as { criteria: string; description: string | null; max_score: number }[] | null) ?? []) : [{ criteria: "Layout", description: null, max_score: 6 }, { criteria: "Links", description: null, max_score: 4 }];
+    const ls = links.filter((l) => l.activity_type === type && l.activity_id === id && (type !== "quiz" || l.question_id === q!.question_id));
+    const rows = ls.map((l) => {
+      const proj = projects.find((x) => x.id === l.project_id)!;
+      const sid = (proj.owner as { id: number }).id;
+      const g = studentGrades.get(`${type}:${id}:${type === "quiz" ? q!.question_id : ""}:${sid}`);
+      const state = g ? "graded" : l.status === "submitted" ? "submitted" : "in_progress";
+      return {
+        student: { id: sid, name: people.get(sid) ?? user.name, avatar_url: null },
+        state,
+        project: { id: proj.id, name: proj.name, status: proj.status ?? "draft", kind: "tm", language: proj.language ?? null, repo_url: null },
+        link: { id: l.id, status: l.status, submitted_at: l.submitted_at, revision_id: l.revision_id, revision_number: l.revision_number, git_commit: null },
+        grade: g ? { score: g.score, rubric_scores: g.rubric_scores, feedback: g.feedback, graded_at: g.graded_at, ref_id: 1 } : null,
+        submitted_at: l.submitted_at,
+        late: false,
+      };
+    });
+    rows.push({ student: { id: 24, name: "Eve Absent", avatar_url: null }, state: "not_started", project: null, link: null, grade: null, submitted_at: null, late: false } as never);
+    const order: Record<string, number> = { submitted: 0, in_progress: 1, graded: 2, not_started: 3 };
+    rows.sort((x, y) => order[x.state] - order[y.state] || x.student.name.localeCompare(y.student.name));
+    return {
+      activity: { type, id, title: a ? a.title : quiz!.title, course_id: 3, due_date: a ? a.due_date : quiz!.due_date, max_points: max, rubric, question: q ? { id: q.question_id, text: `<p>${q.title}</p>`, instructions: "" } : null, questions: type === "quiz" ? questions : [], can_grade: true },
+      counts: { total: rows.length, to_grade: rows.filter((r) => r.state === "submitted").length, graded: rows.filter((r) => r.state === "graded").length },
+      rows,
+    };
+  }
   const now = () => new Date().toISOString();
   const head = (pid: number) => revisions.filter((r) => r.project_id === pid).sort((a, b) => b.number - a.number)[0] ?? null;
   const revOut = (r: Rev | null) => (r ? { id: r.id, project_id: r.project_id, number: r.number, parent_id: r.parent_id, author_id: r.author_id, author_name: user.name, message: r.message, file_count: r.files.length, size_bytes: r.files.reduce((n, f) => n + f.size, 0), source: r.source, git_commit: null, created_at: r.created_at } : null);
@@ -177,6 +236,54 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     }
     if ((m = p.match(/^\/assignments\/(\d+)\/workspaces$/))) {
       return { status: 200, body: { workspaces: [{ user: { id: 7, name: "Ada Student" }, project_id: 140, state: "submitted", last_activity_at: now(), presence: { online: true }, revision_number: 2, submitted_at: now(), grade: null }, { user: { id: 8, name: "Ben Learner" }, project_id: null, state: "not_started", last_activity_at: null, presence: null, revision_number: null, submitted_at: null, grade: null }] } };
+    }
+    if (p === "/grading" && req.method === "GET") {
+      if (!gradingList) return err(404, "NOT_FOUND", "No route");
+      if (!teacher) return err(403, "FORBIDDEN", "Teachers only.");
+      await seedGrading();
+      return {
+        status: 200,
+        body: {
+          activities: [
+            ...assignments.map((a) => ({ type: "assignment", id: a.id, title: a.title, course_id: a.course_id, course_name: a.course_name, due_date: a.due_date, status: a.status, max_points: a.points, questions: null })),
+            ...activities.filter((x) => x.type === "quiz" && (x as { practical_questions?: unknown[] }).practical_questions?.length).map((x) => ({ type: "quiz", id: x.id, title: x.title, course_id: x.course_id, course_name: x.course_name, due_date: x.due_date, status: "published", max_points: null, questions: (x as { practical_questions?: unknown[] }).practical_questions })),
+          ],
+        },
+      };
+    }
+    if ((m = p.match(/^\/grading\/(assignment|quiz)\/(\d+)$/)) && req.method === "GET") {
+      if (!teacher) return err(403, "FORBIDDEN", "Teachers only.");
+      await seedGrading();
+      const r = roster(m[1], Number(m[2]), url.searchParams.get("question_id") ? Number(url.searchParams.get("question_id")) : null);
+      return r ? { status: 200, body: r } : err(404, "NOT_FOUND", "Activity not found.");
+    }
+    if ((m = p.match(/^\/grading\/(assignment|quiz)\/(\d+)\/students\/(\d+)$/)) && req.method === "PUT") {
+      const r = roster(m[1], Number(m[2]), (body.question_id as number | null) ?? null);
+      if (!r) return err(404, "NOT_FOUND", "Activity not found.");
+      const scores = (body.rubric_scores as { index: number; score: number; comment?: string | null }[]) ?? [];
+      for (const sc of scores) {
+        const c = r.activity.rubric[sc.index];
+        if (!c) return err(422, "UNKNOWN_CRITERION", `There is no criterion #${sc.index + 1}.`);
+        if (sc.score > c.max_score) return err(422, "SCORE_TOO_HIGH", `“${c.criteria}” is out of ${c.max_score}.`);
+      }
+      const total = r.activity.rubric.length ? scores.reduce((n, x) => n + x.score, 0) : Number(body.score ?? 0);
+      const sid = Number(m[3]);
+      studentGrades.set(`${m[1]}:${m[2]}:${m[1] === "quiz" ? r.activity.question!.id : ""}:${sid}`, { score: total, rubric_scores: scores, feedback: String(body.feedback ?? ""), graded_at: now() });
+      const row = r.rows.find((x) => x.student.id === sid);
+      const proj = row?.project ? projects.find((x) => x.id === row.project!.id) : null;
+      if (proj) proj.status = "graded";
+      return { status: 200, body: { ok: true, score: total, max_points: r.activity.max_points } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)\/revisions\/(\d+)\/manifest$/))) {
+      const rev = revisions.find((r) => r.id === Number(m![2]) && r.project_id === Number(m![1]));
+      return rev ? { status: 200, body: { revision: revOut(rev), files: rev.files } } : err(404, "REVISION_NOT_FOUND", "Revision not found.");
+    }
+    if ((m = p.match(/^\/projects\/(\d+)\/preview$/)) && req.method === "POST") {
+      const rev = revisions.find((r) => r.id === Number(body.rev) && r.project_id === Number(m![1]));
+      const page = rev?.files.find((f) => /\.html?$/.test(f.path));
+      if (!rev || !page) return err(422, "NO_HTML", "There's no HTML page to preview in this revision.");
+      const url2 = URL.createObjectURL(new Blob([blobs.get(page.sha256) ?? ""], { type: "text/html" }));
+      return { status: 200, body: { url: url2, entry: page.path, expires_in: 600 } };
     }
     if ((m = p.match(/^\/projects\/(\d+)$/)) && req.method === "PATCH") {
       const proj = projects.find((x) => x.id === Number(m![1]));
@@ -335,6 +442,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     },
     setTeacher(on: boolean) {
       teacher = on;
+    },
+    /** false: Task Mentor without GET /grading (TMCode falls back to its own list). */
+    setGradingList(on: boolean) {
+      gradingList = on;
     },
     setLifecycle(on: boolean) {
       lifecycle = on;

@@ -29,6 +29,7 @@ test("signing in with NGA shows the projects", async ({ page }) => {
   await page.getByTestId("account-button").click();
   await page.getByText("Sign in with NGA (Central MIS + Task Mentor)").click();
   await expect(page.locator(".tm-toast").first()).toContainText(/browser|Signed in/);
+  await page.mouse.move(700, 400);
   await expect(page.getByTestId("account-button")).toHaveAttribute("title", /Ada Student/);
   await page.getByTestId("account-button").click();
   await page.getByText("Task Mentor Projects", { exact: true }).click();

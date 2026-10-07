@@ -9,6 +9,7 @@ import { changeCount } from "../scm/model";
 import { debugAllowed } from "../debug/debugService";
 import { useProjects, signIn, signOut, refreshProjects } from "../projects/service";
 import { useAssignments } from "../projects/assignments";
+import { useGrading, progressOf } from "../grading/service";
 import type { AccountStatus } from "../platform/types";
 // ── extension view containers (exthost/views) ──
 import { useViews, type ViewContainer } from "../exthost/views/model";
@@ -29,6 +30,7 @@ const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
 // ── Task Mentor projects: practice mode with an NGA account host ──
 const PROJECTS_VIEW = { id: "projects" as ViewId, icon: "folder-library", label: "Task Mentor Projects", command: "workbench.view.projects" };
 const ASSIGNMENTS_VIEW = { id: "assignments" as ViewId, icon: "mortar-board", label: "Assignments", command: "workbench.view.assignments" };
+const GRADING_VIEW = { id: "grading" as ViewId, icon: "tasklist", label: "Grading", command: "workbench.view.grading" };
 const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
 
 export function ActivityBar() {
@@ -48,9 +50,12 @@ export function ActivityBar() {
   const hasAccount = !!getPlatform().account;
   const account = useProjects((s) => s.account);
   const projectSync = useProjects((s) => s.sync);
+  // Teachers: the Grading view, with what waits to be graded.
+  const grader = useGrading((s) => s.grader);
+  const toGrade = useGrading((s) => Object.values(s.rosters).reduce((n, r) => n + (progressOf(r)?.toGrade ?? 0), 0));
   // Assignments to start or finish (not submitted, not completed).
   const todo = useAssignments((s) => (s.student ?? []).filter((a) => !a.read_only && (!a.my || a.my.state === "not_started" || a.my.state === "in_progress")).length);
-  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW] : []), EXTENSIONS_VIEW] : VIEWS;
+  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW, ...(grader ? [GRADING_VIEW] : [])] : []), EXTENSIONS_VIEW] : VIEWS;
   const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
   // Extensions never run in exams, so their containers only exist in practice mode.
   const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
@@ -81,6 +86,11 @@ export function ActivityBar() {
               {v.id === "explorer" && dirtyCount > 0 && <span className="tm-activity-badge">{dirtyCount}</span>}
               {v.id === "scm" && scmChanges > 0 && <span className="tm-activity-badge">{scmChanges > 9999 ? "10k+" : scmChanges}</span>}
               {v.id === "testing" && failing > 0 && <span className="tm-activity-badge is-error">{failing}</span>}
+              {v.id === "grading" && toGrade > 0 && (
+                <span className="tm-activity-badge" aria-label={`${toGrade} submissions to grade`}>
+                  {toGrade > 99 ? "99+" : toGrade}
+                </span>
+              )}
               {v.id === "assignments" && todo > 0 && (
                 <span className="tm-activity-badge" aria-label={`${todo} assignments to do`}>
                   {todo}

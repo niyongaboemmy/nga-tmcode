@@ -5,7 +5,7 @@ import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
-export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | `ext:${string}`;
+export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | "grading" | `ext:${string}`;
 export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole" | `ext:${string}`;
 
 export type EditorInput =
@@ -29,6 +29,8 @@ export type EditorInput =
   | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
   | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
+  /** Grading one assignment / quiz practical question (grading/GradingEditor). */
+  | { kind: "grading"; id: string; gradingKey: string; title: string; preview: false }
   /** Details of a VS Code extension ("extension:<publisher.name>"). */
   | { kind: "extension"; id: string; extensionId: string; preview: false }
   /** An extension's webview panel ("webview:<handle>", exthost/views/webviews.ts). */
@@ -579,7 +581,7 @@ export function pinEditor(path: string) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" | "grading" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();
