@@ -89,7 +89,10 @@ test("start copies the starter files, then save and submit reach the teacher", a
   expect(state.revisions.filter((r) => r.project_id === ws).map((r) => r.number)).toEqual([1, 2]);
   expect(state.links.find((l) => l.status === "submitted")?.revision_number).toBe(2);
   await expect(page.getByTestId("assignment-state")).toContainText("Submitted");
-  await expect(page.getByTestId("assignment-submit")).toHaveText(/Submit Again/);
+  // Task Mentor locks submitted work: Withdraw to change it, no "Submit Again".
+  await command(page, "Projects: Refresh Projects");
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await expect(page.getByTestId("assignment-withdraw")).toBeVisible();
 
   // Graded: the grade and feedback show on the page and the row.
   await mock(page, (m) => m.grade(51, 18, "Nice work"));
@@ -162,6 +165,7 @@ test("a personal project can stop sharing its live status", async ({ page }) => 
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "This folder" }).click();
   await page.locator(".tm-quick-pick input").fill("Private work");
   await page.keyboard.press("Enter");
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "No assessment" }).click();
   await expect(page.getByTestId("sync-state")).toContainText("Saved to Task Mentor", { timeout: 15_000 });
   const share = page.getByTestId("share-presence");
   await expect(share).toBeChecked();

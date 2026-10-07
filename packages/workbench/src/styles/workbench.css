@@ -5828,3 +5828,164 @@ kbd,
 .tm-projects-locked > .codicon {
   flex: none;
 }
+
+/* Project status (draft → submitted → graded, removed) and assessment matching */
+.tm-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tm-status-chip.is-draft {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--description);
+}
+.tm-status-chip.is-submitted {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
+}
+.tm-status-chip.is-graded {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+.tm-status-chip.is-removed {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--error);
+}
+.tm-status-steps {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-status-steps li {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.tm-status-steps li + li::before {
+  content: "";
+  flex: 0 1 16px;
+  height: 1px;
+  margin-right: 4px;
+  background: var(--border);
+}
+.tm-status-dot {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+.tm-status-dot .codicon {
+  font-size: 10px !important;
+}
+.tm-status-steps li.is-done {
+  color: var(--success);
+}
+.tm-status-steps li.is-done .tm-status-dot {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+}
+.tm-status-steps li.is-current {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.tm-status-steps li.is-current .tm-status-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.tm-status-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.tm-status-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 12px 6px 20px;
+}
+.tm-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--description);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.tm-filter-chip span {
+  opacity: 0.8;
+}
+.tm-filter-chip:hover {
+  color: var(--foreground);
+}
+.tm-filter-chip.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--foreground);
+}
+.tm-filter-chip:focus-visible {
+  outline: 1px solid var(--focus-border);
+}
+.tm-project-row.is-removed .tm-project-name {
+  color: var(--description);
+  text-decoration: line-through;
+}
+.tm-projects-links-head .tm-link-button {
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.tm-projects-view .tm-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+.tm-status-steps li {
+  flex: none;
+}
+.tm-status-steps li + li::before {
+  flex: none;
+  width: 14px;
+  margin: 0 4px;
+}
+.tm-status-steps {
+  gap: 0;
+  flex-wrap: wrap;
+}
+.tm-status-filters {
+  gap: 3px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tm-filter-chip {
+  flex: none;
+  padding: 0 6px;
+}
+.tm-status-steps {
+  flex-wrap: nowrap;
+}
+.tm-status-steps li + li::before {
+  width: 8px;
+  margin: 0 3px;
+}
+.tm-status-filters {
+  flex-wrap: wrap;
+  overflow: visible;
+}

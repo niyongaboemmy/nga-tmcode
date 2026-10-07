@@ -5,7 +5,7 @@ import { useGit } from "../scm/gitService";
 import { activeFilePath, getPlatform, log, notify, notifyProgress, openPathFromOs, openRecent, showDialog, useWorkbench } from "../state/store";
 import { applyExternalChanges } from "../monaco/external";
 import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
-import type { Binding, Link, LinkableActivity, Project, ProjectKind, Revision, SyncState } from "./types";
+import type { Binding, Link, Project, ProjectKind, Revision, SyncState } from "./types";
 
 /**
  * Task Mentor projects in TMCode (docs/PROJECTS_PLAN.md §4): the NGA account,
@@ -20,6 +20,8 @@ export interface ProjectsState {
   account: AccountStatus | null;
   mine: Project[] | null;
   shared: Project[] | null;
+  /** Removed projects, loaded when the Removed section opens. */
+  removed: Project[] | null;
   loading: boolean;
   error: string | null;
   /** The open folder's project, if it is one. */
@@ -35,6 +37,7 @@ export const useProjects = create<ProjectsState>(() => ({
   account: null,
   mine: null,
   shared: null,
+  removed: null,
   loading: false,
   error: null,
   binding: null,
@@ -286,6 +289,12 @@ function stateOf(plan: SyncPlan): SyncState {
 
 let checking: Promise<void> | null = null;
 /** Compares the folder, its last sync and Task Mentor's head. */
+/** A check that starts after any check in flight (one that began before a change would report the old state). */
+export async function recheck(): Promise<void> {
+  if (checking) await checking.catch(() => {});
+  await checkSync();
+}
+
 export function checkSync(): Promise<void> {
   checking ??= (async () => {
     const binding = get().binding;
@@ -543,7 +552,8 @@ export async function withdrawSubmission(projectId: number) {
       applyReadOnly(get().current);
     }
     notify("info", "Submission withdrawn: you can edit again. Submit when you are ready.");
-    await checkSync();
+    await recheck();
+    void refreshProjects();
     return true;
   } catch (e) {
     notify("error", (e as Error).message);
@@ -588,17 +598,54 @@ export async function openProjectLink(link: { id: number; api: string }) {
   await openProject(link.id);
 }
 
-// ── Activities ───────────────────────────────────────────────────────────
+// ── Activities (matching lives in matching.ts) ─────────────────────────
 
-export async function linkableActivities(): Promise<LinkableActivity[]> {
-  const res = await api<{ activities: LinkableActivity[] }>("GET", "/activities/linkable");
-  return res.activities ?? [];
+/** Soft-removes a project (status "removed"): its work stays on record and it can be restored. */
+export async function removeProject(project: Project) {
+  const choice = await showDialog({
+    severity: "warning",
+    message: `Remove "${project.name}"?`,
+    detail: "It moves to Removed in Task Mentor: your saved versions stay on record and you can restore it. Files on this computer are not deleted.",
+    buttons: [
+      { id: "remove", label: "Remove", primary: true },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice !== "remove") return false;
+  try {
+    await api("DELETE", `/projects/${project.id}`);
+    notify("info", `"${project.name}" was removed. Restore it from Projects › Removed.`);
+    if (get().binding?.project_id === project.id) await recheck();
+    await refreshProjects();
+    if (get().removed !== null) await loadRemoved();
+    return true;
+  } catch (e) {
+    notify("error", (e as Error).message);
+    return false;
+  }
 }
 
-export async function linkActivity(projectId: number, a: Pick<LinkableActivity, "activity_type" | "activity_id">) {
-  const res = await api<{ link: Link }>("POST", `/projects/${projectId}/links`, a);
-  await checkSync();
-  return res.link;
+export async function restoreProject(projectId: number) {
+  try {
+    await api("POST", `/projects/${projectId}/restore`, {});
+    notify("info", "Project restored: you can work on it again.");
+    if (get().binding?.project_id === projectId) await recheck();
+    await Promise.all([refreshProjects(), loadRemoved()]);
+  } catch (e) {
+    notify("error", (e as Error).message);
+  }
+}
+
+/** The caller's removed projects (Projects › Removed), loaded on demand. */
+export async function loadRemoved() {
+  try {
+    const res = await api<{ projects: Project[] }>("GET", "/projects?scope=mine&status=removed");
+    set({ removed: res.projects });
+  } catch (e) {
+    set({ removed: [] });
+    log("Projects", `Could not load removed projects: ${(e as Error).message}`);
+  }
 }
 
 /** Submits the project to a linked activity (saves first so the newest work is what's submitted). */
