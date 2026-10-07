@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0 — 2026-10-07
+
+**TMCode 0.7: grade TMCode practicals without leaving the editor.**
+
+### Grading for teachers
+- **Grading view** (new activity-bar icon, shown to teachers): the TMCode practicals of your subjects, grouped by subject. It lists both assignments and quiz practical questions.
+  - Each shows a progress bar (graded, to grade, still working) and a count of what waits.
+  - The icon's badge shows the total left to grade.
+  - The filter button shows only practicals with work to grade.
+- **The grading tab:**
+  - **Progress:** for the whole practical, with the share of submissions already graded.
+  - **Students:** filter them by To grade, Graded, Working, Not started or All, or find one by name.
+  - **Each student's project loads automatically when you select them.** Their submitted version opens in this window, read-only, with the grading tab beside it. **Back to my folder** returns to your own work.
+  - **Criteria:** score each one with quick buttons (not met, partly met, fully met) or an exact score, and add a note per criterion. The total adds up as you go. Overall feedback goes alongside.
+  - **Save & Next** (⌘/Ctrl+Enter) saves to Task Mentor and moves to the next student waiting.
+  - **Preview** runs a submitted website in the built-in browser.
+  - **Unsaved grades** are kept as a draft while you switch students.
+  - **Sync:** the tab refreshes from Task Mentor every 30 seconds, so other teachers' grades and new submissions appear on their own.
+- **Quiz practicals:** grade them the same way. Switch between a quiz's practical questions from the tab's header.
+
+### Tooltips
+- Icons, buttons, menus, tabs and the status bar now show styled tooltips, as in VS Code, with the keyboard shortcut as a key chip.
+
+### All changes
+
+- Grading for teachers: Grading view, grading tab with progress, auto-loaded read-only submissions, criteria grades synced to Task Mentor; workbench tooltips
+
 ## 0.6.2 — 2026-10-07
 
 **TMCode 0.6.2: TMCode practicals in quizzes.**
