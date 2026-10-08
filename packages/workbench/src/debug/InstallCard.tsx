@@ -33,7 +33,7 @@ export function InstallCard({ guide, missing, onClose }: { guide: InstallGuide; 
       ? `${guide.language} runs in the TMCode desktop app`
       : `${guide.language} is not installed`;
   const lead = guide.terminal
-    ? `Run Project and ▶ run ${guide.language} in a terminal. Install ${guide.summary} first:`
+    ? `Run Project and ▶ run ${guide.language} in a terminal. Install ${guide.summary.replace(/^The /, "the ")} first:`
     : !runs
     ? `You can still edit ${guide.language} files. To build and run them on this computer, install ${guide.summary}:`
     : web

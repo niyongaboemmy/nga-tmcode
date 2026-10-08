@@ -96,9 +96,13 @@ async function writeTemplate(tpl: Template) {
       await fs.writeFile(path, content);
     });
   }
+  // The explorer lists the new files at once (the watcher would, a moment later, on the desktop only).
+  const { applyExternalChanges } = await import("../monaco/external");
+  await applyExternalChanges(Object.keys(tpl.files));
   const readme = Object.keys(tpl.files).find((p) => /^readme\.md$/i.test(p));
   const main = Object.keys(tpl.files).find((p) => !p.startsWith(".") && !/readme\.md$/i.test(p) && !/^(package|tsconfig|angular|nest-cli)\.json$|\.(toml|xml|yaml|csproj|mod)$|^Makefile$|^Gemfile$|^Package\.swift$|^requirements\.txt$/.test(p.split("/").pop()!));
-  if (main) openFile(main, { pinned: true });
+  if (tpl.main && tpl.files[tpl.main] !== undefined) openFile(tpl.main, { pinned: true });
+  else if (main) openFile(main, { pinned: true });
   else if (readme) openFile(readme, { pinned: true });
 }
 

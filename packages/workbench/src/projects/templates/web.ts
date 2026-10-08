@@ -91,6 +91,7 @@ export const WEB: Template[] = [
 export const FRONTEND: Template[] = [
   {
     id: "react-vite",
+    main: "src/App.tsx",
     label: "React (Vite + TypeScript)",
     description: "React 19 + Vite dev server, opens in the built-in browser",
     icon: "symbol-misc",
@@ -112,6 +113,7 @@ export const FRONTEND: Template[] = [
   },
   {
     id: "react-js",
+    main: "src/App.jsx",
     label: "React (Vite + JavaScript)",
     description: "React with plain JavaScript (JSX), no TypeScript",
     icon: "symbol-misc",
@@ -131,6 +133,7 @@ export const FRONTEND: Template[] = [
   },
   {
     id: "vue",
+    main: "src/App.vue",
     label: "Vue 3 (Vite)",
     description: "Single-file components with the Composition API",
     icon: "symbol-misc",
@@ -150,6 +153,7 @@ export const FRONTEND: Template[] = [
   },
   {
     id: "svelte",
+    main: "src/App.svelte",
     label: "Svelte 5 (Vite)",
     description: "Svelte components with runes",
     icon: "symbol-misc",
@@ -169,6 +173,7 @@ export const FRONTEND: Template[] = [
   },
   {
     id: "angular",
+    main: "src/app/app.component.ts",
     label: "Angular",
     description: "A standalone Angular app with signals, served by ng serve",
     icon: "symbol-misc",
@@ -213,6 +218,7 @@ export const FRONTEND: Template[] = [
   },
   {
     id: "nextjs",
+    main: "app/page.tsx",
     label: "Next.js (App Router)",
     description: "React pages and an API route in one project",
     icon: "symbol-misc",

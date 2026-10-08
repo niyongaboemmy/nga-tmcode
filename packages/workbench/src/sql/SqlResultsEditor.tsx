@@ -63,7 +63,7 @@ function Statement({ r, path, index }: { r: StatementResult; path: string; index
           <small>{fmtMs(r.ms)}</small>
         </span>
         {isQuery && r.kind !== "error" && (
-          <button type="button" className="tm-action" title="How SQLite runs this query (EXPLAIN QUERY PLAN)" aria-label="Explain" onClick={async () => setPlan(plan ? null : await explain(r.text))}>
+          <button type="button" className="tm-action" title="How SQLite runs this query (EXPLAIN QUERY PLAN)" aria-label="Explain" onClick={async () => setPlan(plan ? null : await explain(r.text, path))}>
             <Codicon name="lightbulb" />
           </button>
         )}

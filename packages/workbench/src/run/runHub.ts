@@ -197,6 +197,12 @@ function runInNamedTerminal(command: string, cwd: string, name: string, owner?: 
   window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { command, cwd, name, owner } }));
 }
 
+/** Opens a preview-like tab beside the code, or shows it where it already is. */
+function openBeside(input: Parameters<typeof openEditorInput>[0]) {
+  const where = useWorkbench.getState().groups.find((g) => g.editors.some((e) => e.id === input.id));
+  openEditorInput(input, where ? { group: where.id } : { toSide: true });
+}
+
 /** Runs one action: the core of every ▶ in the hub. */
 export async function executeAction(a: RunAction, opts: { remember?: boolean } = {}) {
   const reason = unavailableReason(a, targetContext());
@@ -239,7 +245,7 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean } =
     }
     case "logicPreview":
       if (a.entry && activeFilePath() !== a.entry) openFile(a.entry, { pinned: true });
-      return openEditorInput({ kind: "logic", id: `logic:${a.entry}`, path: a.entry!, preview: false }, { toSide: true });
+      return openBeside({ kind: "logic", id: `logic:${a.entry}`, path: a.entry!, preview: false });
   }
 }
 
@@ -557,7 +563,16 @@ function registerRunHubCommands() {
   const terminalOk = () => targetContext().terminal && targetContext().practice;
   const activeIs = (re: RegExp) => () => re.test(activeFilePath() ?? "");
   const sqlFile = () => /\.sql$/i.test(activeFilePath() ?? "");
-  registerCommand({ id: "sql.runFile", title: "Run SQL File", category: "SQL", keybinding: "mod+shift+enter", enabled: sqlFile, run: async () => (await import("../sql/service")).runSql(activeFilePath()!) });
+  // The .sql file of the active editor, or of the active SQL results tab (re-run from the results).
+  const sqlTarget = () => {
+    const p = activeFilePath();
+    if (p && /\.sql$/i.test(p)) return p;
+    const s = useWorkbench.getState();
+    const g = s.groups.find((x) => x.id === s.activeGroup);
+    const e = g?.editors.find((x) => x.id === g.activeId);
+    return e?.kind === "sqlResults" ? e.path : null;
+  };
+  registerCommand({ id: "sql.runFile", title: "Run SQL File", category: "SQL", keybinding: "mod+shift+enter", enabled: () => !!sqlTarget(), run: async () => (await import("../sql/service")).runSql(sqlTarget()!) });
   registerCommand({ id: "sql.runStatement", title: "Run SQL Statement at Cursor (or Selection)", category: "SQL", keybinding: "mod+enter", enabled: sqlFile, run: async () => (await import("../sql/service")).runSql(activeFilePath()!, { scope: "statement" }) });
   registerCommand({ id: "api.openTester", title: "Open API Tester", category: "Run", enabled: () => !!getPlatform().http, run: async () => (await import("../api/service")).openApiTester() });
   registerCommand({ id: "sql.resetDatabase", title: "Reset SQL Database", category: "SQL", run: async () => (await import("../sql/service")).resetDatabase() });
@@ -568,7 +583,7 @@ function registerRunHubCommands() {
     enabled: () => /\.logic$/i.test(activeFilePath() ?? ""),
     run: () => {
       const p = activeFilePath()!;
-      openEditorInput({ kind: "logic", id: `logic:${p}`, path: p, preview: false }, { toSide: true });
+      openBeside({ kind: "logic", id: `logic:${p}`, path: p, preview: false });
     },
   });
   registerCommand({ id: "tmcode.runProject", title: "Run Project", category: "Run", keybinding: RUN_PROJECT_KB, enabled: hasWorkspace, run: runProject });

@@ -6,6 +6,7 @@ const TODOS_NOTE = ["", "Try it: Run › Open API Tester, pick a route on the le
 export const BACKEND: Template[] = [
   {
     id: "node-express",
+    main: "src/index.js",
     label: "Node.js API (Express)",
     description: "A REST API (to-dos) with a debug configuration",
     icon: "server",
@@ -23,6 +24,7 @@ export const BACKEND: Template[] = [
   },
   {
     id: "node-typescript",
+    main: "src/index.ts",
     label: "Node.js (TypeScript)",
     description: "TypeScript run directly with tsx, watch mode and debugging",
     icon: "symbol-namespace",
@@ -40,6 +42,7 @@ export const BACKEND: Template[] = [
   },
   {
     id: "nestjs",
+    main: "src/todos.controller.ts",
     label: "NestJS API",
     description: "Controllers, services and modules, with watch mode",
     icon: "server",
@@ -101,6 +104,7 @@ export const BACKEND: Template[] = [
   },
   {
     id: "django",
+    main: "site_app/views.py",
     label: "Python Web (Django)",
     description: "A Django site with a view, a JSON endpoint and SQLite",
     icon: "server",
@@ -122,6 +126,7 @@ export const BACKEND: Template[] = [
   },
   {
     id: "spring-boot",
+    main: "src/main/java/rw/ac/nga/demo/TodoController.java",
     label: "Java API (Spring Boot)",
     description: "Spring Boot 3 REST controller with Maven",
     icon: "coffee",
@@ -148,12 +153,13 @@ export const BACKEND: Template[] = [
     tools: ["php"],
     files: {
       "index.php": `<?php\n$name = htmlspecialchars($_GET['name'] ?? 'world');\n?>\n<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>PHP site</title>\n  <style>body { font-family: system-ui; max-width: 36rem; margin: 3rem auto; }</style>\n</head>\n<body>\n  <h1>Hello, <?= $name ?>!</h1>\n  <form>\n    <input name="name" placeholder="Your name">\n    <button>Greet</button>\n  </form>\n  <p>Today is <?= date('l, j F Y') ?>. The JSON endpoint is <a href="api.php">api.php</a>.</p>\n</body>\n</html>\n`,
-      "api.php": `<?php\nheader('Content-Type: application/json');\n$todos = [['id' => 1, 'title' => 'Learn PHP', 'done' => false]];\nif ($_SERVER['REQUEST_METHOD'] === 'POST') {\n    $body = json_decode(file_get_contents('php://input'), true) ?? [];\n    if (empty($body['title'])) {\n        http_response_code(400);\n        echo json_encode(['error' => 'title is required']);\n        exit;\n    }\n    http_response_code(201);\n    echo json_encode(['id' => 2, 'title' => $body['title'], 'done' => false]);\n    exit;\n}\necho json_encode($todos);\n`,
+      "api.php": `<?php\nheader('Content-Type: application/json');\n$todos = [['id' => 1, 'title' => 'Learn PHP', 'done' => false]];\nif (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {\n    $body = json_decode(file_get_contents('php://input'), true) ?? [];\n    if (empty($body['title'])) {\n        http_response_code(400);\n        echo json_encode(['error' => 'title is required']);\n        exit;\n    }\n    http_response_code(201);\n    echo json_encode(['id' => 2, 'title' => $body['title'], 'done' => false]);\n    exit;\n}\necho json_encode($todos);\n`,
       "README.md": readme("PHP website", ["Run Project starts `php -S localhost:8000` and opens the built-in browser.", "", "Run a single PHP file with ▶ (it runs `php file.php` in a terminal)."]),
     },
   },
   {
     id: "laravel",
+    main: "README.md",
     label: "Laravel (PHP)",
     description: "Creates a Laravel app with Composer, then artisan serve",
     icon: "server",
@@ -182,6 +188,7 @@ export const BACKEND: Template[] = [
   },
   {
     id: "rails",
+    main: "README.md",
     label: "Ruby on Rails",
     description: "Creates a Rails app (rails new), then rails server",
     icon: "ruby",

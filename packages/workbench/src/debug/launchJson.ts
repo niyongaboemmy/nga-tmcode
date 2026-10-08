@@ -195,9 +195,9 @@ export const TEMPLATES: ConfigTemplate[] = [
     config: { name: "Go: Launch Package", type: "go", request: "launch", mode: "debug", program: "${fileDirname}" },
   },
   {
-    label: "Dart: Launch Program",
-    description: "Debug a Dart program",
-    config: { name: "Dart", type: "dart", request: "launch", program: "bin/main.dart" },
+    label: "Dart: Launch Current File",
+    description: "Debug the active Dart file",
+    config: { name: "Dart: Current File", type: "dart", request: "launch", program: "${file}" },
   },
   {
     label: "Flutter: Launch",

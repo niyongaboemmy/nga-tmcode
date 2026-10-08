@@ -37,6 +37,10 @@ interface SqlState {
 export const useSql = create<SqlState>(() => ({ runs: {}, running: null, mode: "fresh" }));
 
 const MARKER_OWNER = "tmcode-sql";
+/** Each file's last run database (fresh runs keep theirs until the next run of that file). */
+const lastDb = new Map<string, import("sql.js").Database>();
+const isKept = (db: import("sql.js").Database) => db === keptRef.current;
+const keptRef: { current: import("sql.js").Database | null } = { current: null };
 const PREPARE = ["schema.sql", "seed.sql", "data.sql"];
 
 const keyOfWorkspace = () => useWorkbench.getState().workspace?.root ?? "memory";
@@ -100,6 +104,7 @@ export async function runSql(path: string, opts: { scope?: "file" | "statement" 
   useSql.setState({ running: path });
   try {
     const db = mode === "keep" || scope === "statement" ? await keptDatabase(keyOfWorkspace()) : await freshDatabase();
+    if (mode === "keep" || scope === "statement") keptRef.current = db;
     // Fresh runs of a query file first build the tables from schema.sql / seed.sql beside it.
     const prepared: string[] = [];
     let prepareError: string | null = null;
@@ -121,9 +126,15 @@ export async function runSql(path: string, opts: { scope?: "file" | "statement" 
     const results = prepareError ? [] : runScript(db, script).map((r) => ({ ...r, line: r.line + lineOffset }));
     mark(path, results);
     const run: SqlRun = { path, at: Date.now(), results, prepared, prepareError, schema: schemaOf(db), mode, scope };
-    if (mode === "fresh" && scope === "file") db.close();
+    // Explain (and later questions about this run) use the database the run left behind.
+    const prev = lastDb.get(path);
+    if (prev && prev !== db && !isKept(prev)) prev.close();
+    lastDb.set(path, db);
     useSql.setState({ runs: { ...useSql.getState().runs, [path]: run } });
-    openEditorInput({ kind: "sqlResults", id: `sqlResults:${path}`, path, preview: false }, { toSide: true });
+    // Reuse the results tab where it already is; otherwise open it beside the file.
+    const id = `sqlResults:${path}`;
+    const where = useWorkbench.getState().groups.find((g) => g.editors.some((e) => e.id === id));
+    openEditorInput({ kind: "sqlResults", id, path, preview: false }, where ? { group: where.id } : { toSide: true });
     const err = results.find((r) => r.kind === "error");
     if (err) notify("error", `SQL error on line ${err.line}: ${err.error}`);
   } catch (e) {
@@ -133,9 +144,9 @@ export async function runSql(path: string, opts: { scope?: "file" | "statement" 
   }
 }
 
-/** EXPLAIN QUERY PLAN for one statement, in the database the last run used ("keep" mode keeps it). */
-export async function explain(sql: string): Promise<string[]> {
-  const db = await keptDatabase(keyOfWorkspace());
+/** EXPLAIN QUERY PLAN for one statement, in the database that file's last run used. */
+export async function explain(sql: string, path?: string): Promise<string[]> {
+  const db = (path && lastDb.get(path)) || (await keptDatabase(keyOfWorkspace()));
   try {
     return queryPlan(db, sql);
   } catch (e) {

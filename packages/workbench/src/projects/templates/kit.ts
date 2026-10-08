@@ -12,6 +12,8 @@ export interface Template {
   category: TemplateCategory;
   /** Commands the template needs on this computer (shown, and checked before setup). */
   tools?: string[];
+  /** The file to open first (default: the first source file). */
+  main?: string;
   /** Run once in a terminal after the files are written (scaffolding, installs). */
   setup?: { command: string; note: string };
   files: Record<string, string>;

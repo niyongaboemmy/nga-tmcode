@@ -4,6 +4,7 @@ import { gitignore, ioTests, readme, type Template } from "./kit";
 export const DATA: Template[] = [
   {
     id: "sql",
+    main: "queries.sql",
     label: "SQL (SQLite)",
     description: "Tables, data and queries that run inside TMCode, results as tables",
     icon: "database",
@@ -24,6 +25,7 @@ export const DATA: Template[] = [
   },
   {
     id: "python-data",
+    main: "analysis.py",
     label: "Python Data Analysis (pandas)",
     description: "Load a CSV, summarise it and draw a chart",
     icon: "graph",
@@ -284,6 +286,7 @@ export const LEARNING: Template[] = [
   },
   {
     id: "logic",
+    main: "laws.logic",
     label: "Logic & Truth Tables",
     description: "Logical expressions with truth tables, equivalences and normal forms",
     icon: "symbol-boolean",
@@ -297,6 +300,7 @@ export const LEARNING: Template[] = [
   },
   {
     id: "problem-solving",
+    main: "PROBLEM.md",
     label: "Problem Solving (Python)",
     description: "A problem statement, a solution file and tests to pass",
     icon: "lightbulb",

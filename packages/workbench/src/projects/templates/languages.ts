@@ -4,6 +4,7 @@ import { gitignore, ioTests, launch, readme, type Template } from "./kit";
 export const MOBILE: Template[] = [
   {
     id: "flutter",
+    main: "lib/main.dart",
     label: "Flutter App",
     description: "A Flutter app for web, desktop and phones (hot reload)",
     icon: "device-mobile",
@@ -12,9 +13,9 @@ export const MOBILE: Template[] = [
     tools: ["flutter"],
     setup: { command: "flutter create . --platforms=web,android,ios,macos,windows,linux && flutter pub get", note: "Adds the platform folders and downloads packages" },
     files: {
-      "pubspec.yaml": `name: flutter_app\ndescription: A Flutter app made in TMCode.\npublish_to: none\nversion: 1.0.0+1\n\nenvironment:\n  sdk: ">=3.4.0 <4.0.0"\n\ndependencies:\n  flutter:\n    sdk: flutter\n\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\n\nflutter:\n  uses-material-design: true\n`,
+      "pubspec.yaml": `name: flutter_app\ndescription: A Flutter app made in TMCode.\npublish_to: none\nversion: 1.0.0+1\n\nenvironment:\n  sdk: ">=3.4.0 <4.0.0"\n\ndependencies:\n  flutter:\n    sdk: flutter\n\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\n  flutter_lints: ^5.0.0\n\nflutter:\n  uses-material-design: true\n`,
       "lib/main.dart": `import 'package:flutter/material.dart';\n\nvoid main() => runApp(const MyApp());\n\nclass MyApp extends StatelessWidget {\n  const MyApp({super.key});\n\n  @override\n  Widget build(BuildContext context) {\n    return MaterialApp(\n      title: 'Flutter App',\n      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),\n      home: const CounterPage(),\n    );\n  }\n}\n\nclass CounterPage extends StatefulWidget {\n  const CounterPage({super.key});\n\n  @override\n  State<CounterPage> createState() => _CounterPageState();\n}\n\nclass _CounterPageState extends State<CounterPage> {\n  int _count = 0;\n\n  @override\n  Widget build(BuildContext context) {\n    return Scaffold(\n      appBar: AppBar(title: const Text('Hello, Flutter')),\n      body: Center(\n        child: Text('Pressed $_count times', style: Theme.of(context).textTheme.headlineMedium),\n      ),\n      floatingActionButton: FloatingActionButton(\n        onPressed: () => setState(() => _count++),\n        child: const Icon(Icons.add),\n      ),\n    );\n  }\n}\n`,
-      "test/widget_test.dart": `import 'package:flutter_test/flutter_test.dart';\nimport 'package:flutter_app/main.dart';\n\nvoid main() {\n  testWidgets('the counter goes up', (tester) async {\n    await tester.pumpWidget(const MyApp());\n    expect(find.text('Pressed 0 times'), findsOneWidget);\n    await tester.tap(find.byType(FloatingActionButton));\n    await tester.pump();\n    expect(find.text('Pressed 1 times'), findsOneWidget);\n  });\n}\n`,
+      "test/widget_test.dart": `import 'package:flutter/material.dart';\nimport 'package:flutter_test/flutter_test.dart';\nimport 'package:flutter_app/main.dart';\n\nvoid main() {\n  testWidgets('the counter goes up', (tester) async {\n    await tester.pumpWidget(const MyApp());\n    expect(find.text('Pressed 0 times'), findsOneWidget);\n    await tester.tap(find.byType(FloatingActionButton));\n    await tester.pump();\n    expect(find.text('Pressed 1 times'), findsOneWidget);\n  });\n}\n`,
       ".vscode/launch.json": launch([{ type: "dart", request: "launch", name: "Flutter", program: "lib/main.dart" }]),
       ".gitignore": gitignore([".dart_tool/", ".flutter-plugins*", "build/"]),
       "README.md": readme("Flutter app", ["Run Project serves the web version in the built-in browser (press **r** in its terminal for hot reload).", "", "Run Task… › `flutter: run on this computer` opens the desktop app; `flutter: test` runs the widget test. F5 debugs with the Flutter debugger."]),
@@ -22,6 +23,7 @@ export const MOBILE: Template[] = [
   },
   {
     id: "dart",
+    main: "bin/dart_app.dart",
     label: "Dart Console App",
     description: "A Dart program with a test",
     icon: "symbol-method",
@@ -31,7 +33,7 @@ export const MOBILE: Template[] = [
     setup: { command: "dart pub get", note: "Downloads the test package" },
     files: {
       "pubspec.yaml": `name: dart_app\nenvironment:\n  sdk: ">=3.4.0 <4.0.0"\ndev_dependencies:\n  test: ^1.25.0\n`,
-      "bin/main.dart": `import 'package:dart_app/greeting.dart';\n\nvoid main(List<String> args) {\n  print(greet(args.isEmpty ? 'Dart' : args.first));\n}\n`,
+      "bin/dart_app.dart": `import 'package:dart_app/greeting.dart';\n\nvoid main(List<String> args) {\n  print(greet(args.isEmpty ? 'Dart' : args.first));\n}\n`,
       "lib/greeting.dart": `String greet(String name) => 'Hello, $name!';\n`,
       "test/greeting_test.dart": `import 'package:dart_app/greeting.dart';\nimport 'package:test/test.dart';\n\nvoid main() {\n  test('greets by name', () => expect(greet('Ada'), 'Hello, Ada!'));\n}\n`,
       ".gitignore": gitignore([".dart_tool/"]),
@@ -53,6 +55,7 @@ export const MOBILE: Template[] = [
   },
   {
     id: "swift",
+    main: "Sources/App/main.swift",
     label: "Swift Package",
     description: "A Swift command-line program with a test",
     icon: "symbol-method",
@@ -106,6 +109,7 @@ export const LANGUAGES: Template[] = [
   },
   {
     id: "c-structures",
+    main: "main.c",
     label: "C: Data Structures (multi-file)",
     description: "A linked list and a stack across .h/.c files with a Makefile",
     icon: "symbol-structure",
@@ -153,6 +157,7 @@ export const LANGUAGES: Template[] = [
   },
   {
     id: "java-maven",
+    main: "src/main/java/Main.java",
     label: "Java (Maven)",
     description: "A Maven project with a Main class and a JUnit test",
     icon: "coffee",
@@ -249,7 +254,7 @@ export const LANGUAGES: Template[] = [
     category: "Languages",
     tools: ["ruby"],
     files: {
-      "main.rb": `class Student\n  attr_reader :name, :marks\n\n  def initialize(name, marks)\n    @name = name\n    @marks = marks\n  end\n\n  def average = marks.sum.to_f / marks.size\nend\n\nstudents = [Student.new("Ada", [90, 84, 77]), Student.new("Ben", [65, 72, 80])]\nstudents.sort_by { -_1.average }.each do |s|\n  puts "#{s.name}: #{s.average.round(1)}"\nend\n`,
+      "main.rb": `class Student\n  attr_reader :name, :marks\n\n  def initialize(name, marks)\n    @name = name\n    @marks = marks\n  end\n\n  def average\n    marks.sum.to_f / marks.size\n  end\nend\n\nstudents = [Student.new("Ada", [90, 84, 77]), Student.new("Ben", [65, 72, 80])]\nstudents.sort_by { |s| -s.average }.each do |s|\n  puts "#{s.name}: #{s.average.round(1)}"\nend\n`,
       "README.md": readme("Ruby", ["▶ on `main.rb` runs it in a terminal; Run Task… has an irb REPL."]),
     },
   },
