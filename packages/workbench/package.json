@@ -23,6 +23,7 @@
     "marked": "^16.4.2",
     "monaco-editor": "^0.57.0",
     "prettier": "^3.9.9",
+    "sql.js": "^1.14.2",
     "tm-grammars": "^1.32.22",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2",
@@ -31,5 +32,8 @@
   "peerDependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/sql.js": "^1.4.11"
   }
 }

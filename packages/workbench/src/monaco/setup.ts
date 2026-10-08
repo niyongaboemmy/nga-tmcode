@@ -6,6 +6,7 @@ import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 import { currentMonacoTheme, installTextmate } from "../textmate/monacoTm";
 import { isDarkThemeId } from "../themes/themeService";
+import { registerLogicLanguage } from "../logic/language";
 
 let started = false;
 /** Labels of workers that started; the Phase 0 spike checks this on WKWebView. */
@@ -41,6 +42,7 @@ export function setupMonaco() {
     },
   };
   configureLanguages();
+  registerLogicLanguage();
   installTextmate();
   return monaco;
 }

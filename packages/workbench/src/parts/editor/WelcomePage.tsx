@@ -34,6 +34,7 @@ export function WelcomePage() {
               <h2>Start</h2>
               <StartLink icon="new-file" label="New File..." command="explorer.newFile" kb="mod+alt+n" />
               <StartLink icon="folder-opened" label="Open Folder..." command="workbench.action.files.openFolder" kb="mod+o" />
+              <StartLink icon="new-folder" label="New Project from Template..." command="workbench.action.newProjectFromTemplate" />
               <StartLink icon="symbol-color" label="Choose a Color Theme" command="workbench.action.selectTheme" kb="mod+k mod+t" />
             </section>
             <section>

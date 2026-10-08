@@ -31,7 +31,7 @@ type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | 
 /** Run and Debug over the Rust DAP bridge (src-tauri/src/debug.rs). */
 function createDebugHost(): DebugHost {
   return {
-    kinds: ["python", "node", "native"],
+    kinds: ["python", "node", "native", "go", "dart", "flutter"],
     probe: (kind) => invoke<DebugProbe>("debug_probe", { kind }),
     async install(what, onEvent) {
       const channel = new Channel<DebugInstallEvent>();
@@ -195,6 +195,9 @@ export async function createTauriPlatform(): Promise<Platform> {
       toolchains: async () => (await invoke<Toolchain[]>("toolchains_detect", { refresh: false })).map((t) => ({ tool: t.tool, version: t.version })),
     },
     debug: createDebugHost(),
+    http: {
+      request: (req) => invoke("api_request", { req: { ...req, body: req.body ?? null } }),
+    },
     preview: {
       publish: (root, entry, overlay, { internet }) => invoke<string>("preview_publish", { root, entry, overlay, internet }),
     },

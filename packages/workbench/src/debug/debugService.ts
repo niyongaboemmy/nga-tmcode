@@ -15,6 +15,8 @@ import { guideForPath, type GuideId } from "./installGuide";
 import {
   LAUNCH_FILE,
   TEMPLATES,
+  selfHostedConfig,
+  selfHostedKindForPath,
   addConfiguration as addConfigurationText,
   adapterKindFor,
   adapterKindForProfile,
@@ -167,6 +169,8 @@ function installAllowed() {
 
 export function debugKindForPath(path: string | null): DebugAdapterKind | null {
   if (!path) return null;
+  const self = selfHostedKindForPath(path);
+  if (self) return self;
   const profile = profileForPath(path);
   return profile?.local ? adapterKindForProfile(profile.id) : null;
 }
@@ -270,7 +274,7 @@ export function currentConfig(): LaunchConfig | null {
   if (chosen) return chosen;
   const file = activeFilePath();
   const profile = file ? profileForPath(file) : null;
-  return profile && file ? automaticConfig(profile, file) : null;
+  return (profile && file ? automaticConfig(profile, file) : null) ?? (file ? selfHostedConfig(file) : null);
 }
 
 export function selectConfiguration(name: string | null) {
@@ -423,6 +427,61 @@ export interface StartOptions {
   noConsent?: boolean;
 }
 
+/**
+ * Go (Delve), Dart and Flutter: their debug adapters build and run the program
+ * themselves, so TMCode skips its own build step and passes the paths.
+ */
+async function startSelfHosted(kind: "go" | "dart" | "flutter", config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  const host = getPlatform().debug!;
+  const abs = (p: string) => (/^([a-z]+:|\/|[A-Za-z]:\\)/.test(p) ? p : `${root}/${p.replace(/^\.\//, "")}`);
+  const program = typeof resolved.program === "string" && resolved.program ? abs(resolved.program) : root;
+  // A Dart program inside a Flutter project debugs with Flutter's adapter.
+  if (kind === "dart") {
+    const pub = await getPlatform().fs.readFile("pubspec.yaml").catch(() => "");
+    if (/sdk:\s*flutter/.test(pub)) kind = "flutter";
+  }
+  if (!host.kinds.includes(kind)) {
+    notify("info", `Debugging ${languageNoun(kind)} is available in the TMCode desktop app.`);
+    return false;
+  }
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: kind === "go" ? "Building with Delve…" : kind === "flutter" ? "Starting Flutter (the first build takes a while)…" : "Starting the Dart debugger…" }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  log("Debug", `Start "${config.name}" (${kind}) for ${program}`);
+  try {
+    if (!opts.noConsent) {
+      if (!(await ensureAdapter(kind))) return fail();
+    }
+    const { type: _t, request: _r, name, program: _p, ...rest } = resolved;
+    void _t;
+    void _r;
+    void _p;
+    const cwd = typeof resolved.cwd === "string" ? abs(resolved.cwd) : root;
+    const args =
+      kind === "go"
+        ? { ...rest, type: "go", request: "launch", name, mode: resolved.mode ?? "debug", program, cwd, args: resolved.args ?? [] }
+        : { ...rest, type: "dart", request: "launch", name, program, cwd, args: resolved.args ?? [], console: "debugConsole", sendLogsToClient: false };
+    const prepared: DebugPrepared = { root, entry: program, cwd, program, args: [] };
+    const session = await createSession(kind, config, prepared, null);
+    await session.dap.initialize(kind === "go" ? "go" : "dart", { runInTerminal: false });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    await configureAndLaunch(session, args, "launch");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    if (/could not find/i.test(message)) showMissing(message);
+    else notify("error", message);
+    log("Debug", `Start failed: ${message}`, "error");
+    await stopDebugging();
+    return fail();
+  }
+}
+
 /** F5: starts debugging `config` (default: the selected or automatic configuration). */
 export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptions = {}): Promise<boolean> {
   const host = getPlatform().debug;
@@ -455,7 +514,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     notify("error", `Configured debug type '${config.type}' is not supported.`);
     return false;
   }
-  if (kind === "java" || !host.kinds.includes(kind)) {
+  if (kind === "java" || !host.kinds.includes(kind === "dart" ? "dart" : kind)) {
     notify(
       "info",
       kind === "java" ? "Debugging Java is not available yet. Use Run Without Debugging (Ctrl+F5)." : `Debugging ${languageNoun(kind, extname(file ?? ""))} is available in the TMCode desktop app.`,
@@ -471,6 +530,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
   }
   const line = codeEditorFor(workbench.get().activeGroup)?.getPosition()?.lineNumber;
   const resolved = substitute(config, { root: ws.root, file, line, args: pickedArgs });
+  if (kind === "go" || kind === "dart" || kind === "flutter") return startSelfHosted(kind, config, resolved, ws.root, opts);
   const program = typeof resolved.program === "string" && resolved.program ? resolved.program : file ? `${ws.root}/${file}` : "";
   const entry = toWorkspacePath(program, ws.root, caseInsensitive()) ?? (program && !/^([a-z]+:|\/|[A-Za-z]:\\)/.test(program) ? program : null);
   const profile = entry ? profileForPath(entry) : null;

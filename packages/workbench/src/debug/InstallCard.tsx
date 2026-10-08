@@ -24,13 +24,17 @@ export function InstallCard({ guide, missing, onClose }: { guide: InstallGuide; 
   const [refreshing, setRefreshing] = useState(false);
   const message = useDebug((s) => s.missingMessage);
   const web = platform.kind === "web";
-  const runs = guide.tools.length > 0;
-  const headline = !runs
+  const runs = guide.tools.length > 0 || !!guide.terminal;
+  const headline = guide.terminal
+    ? `${guide.language} runs in TMCode's terminal`
+    : !runs
     ? `TMCode doesn't run ${guide.language} programs yet`
     : web
       ? `${guide.language} runs in the TMCode desktop app`
       : `${guide.language} is not installed`;
-  const lead = !runs
+  const lead = guide.terminal
+    ? `Run Project and ▶ run ${guide.language} in a terminal. Install ${guide.summary.replace(/^The /, "the ")} first:`
+    : !runs
     ? `You can still edit ${guide.language} files. To build and run them on this computer, install ${guide.summary}:`
     : web
       ? `The browser can't run ${guide.language}. Install ${guide.summary} and use the TMCode desktop app:`

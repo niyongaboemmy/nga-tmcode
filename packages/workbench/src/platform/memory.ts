@@ -302,6 +302,51 @@ export async function simulateExternalWrite(platform: Platform, path: string, co
   watchers.forEach((w) => w([path]));
 }
 
+/**
+ * Browser build: requests go through fetch (CORS applies). Dev server / e2e:
+ * http://localhost:4000 answers as a small to-do API, so the API Tester can be
+ * tested without a server.
+ */
+function createMemoryHttp(): import("./types").HttpHost {
+  const todos = [
+    { id: 1, title: "Learn SQL", done: true },
+    { id: 2, title: "Build an API", done: false },
+  ];
+  const json = (status: number, value: unknown, ms = 12): import("./types").ApiResponse => {
+    const body = JSON.stringify(value);
+    return { status, status_text: status === 200 ? "OK" : status === 201 ? "Created" : status === 404 ? "Not Found" : "Bad Request", headers: [["content-type", "application/json; charset=utf-8"], ["x-powered-by", "Express"]], body, binary: false, size: body.length, truncated: false, ms };
+  };
+  return {
+    async request(req) {
+      const u = new URL(req.url);
+      if (import.meta.env?.DEV && u.host === "localhost:4000") {
+        await new Promise((r) => setTimeout(r, 30));
+        const m = /^\/api\/todos(?:\/(\d+))?$/.exec(u.pathname);
+        if (u.pathname === "/") return { ...json(200, {}), headers: [["content-type", "text/html"]], body: "<h1>Todo API</h1><p>Try GET /api/todos</p>", size: 40 };
+        if (!m) return json(404, { error: "Not found" });
+        if (req.method === "GET" && !m[1]) return json(200, todos);
+        if (req.method === "GET") return todos.find((t) => t.id === Number(m[1])) ? json(200, todos.find((t) => t.id === Number(m[1]))) : json(404, { error: "No such todo" });
+        if (req.method === "POST") {
+          try {
+            const body = JSON.parse(req.body ?? "{}") as { title?: string };
+            if (!body.title) return json(400, { error: "title is required" });
+            const t = { id: todos.length + 1, title: body.title, done: false };
+            todos.push(t);
+            return json(201, t);
+          } catch {
+            return json(400, { error: "Invalid JSON" });
+          }
+        }
+        return json(404, { error: "Not found" });
+      }
+      const t0 = performance.now();
+      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: req.method === "GET" || req.method === "HEAD" ? undefined : (req.body ?? undefined) });
+      const body = await res.text();
+      return { status: res.status, status_text: res.statusText, headers: [...res.headers.entries()], body, binary: false, size: body.length, truncated: false, ms: Math.round(performance.now() - t0) };
+    },
+  };
+}
+
 export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT): Platform {
   const practice = new MemoryFileSystem(seed);
   const fs = new SwitchableFileSystem(practice);
@@ -358,6 +403,7 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     ...(import.meta.env?.DEV ? { debug: createSimulatedDebugHost((p) => fs.readFile(p)) } : {}),
     exam,
     extensions: createMemoryExtensionHost(),
+    http: createMemoryHttp(),
     // Dev server / e2e only: an NGA account and Task Mentor projects in memory.
     ...(import.meta.env?.DEV ? {
           account: createMemoryAccountHost(fs, {

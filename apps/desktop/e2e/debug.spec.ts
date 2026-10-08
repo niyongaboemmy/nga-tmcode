@@ -47,7 +47,7 @@ test("Run and Debug view: welcome, then create a launch.json from a template", a
 
   await debugView(page).getByRole("button", { name: "create a launch.json file" }).click();
   const pick = page.getByRole("dialog");
-  await expect(pick.getByRole("option")).toHaveCount(6);
+  await expect(pick.getByRole("option")).toHaveCount(9); // Python ×2, Node ×2, Go, Dart, Flutter, lldb, gdb
   await expect(pick.getByRole("option").filter({ hasText: "Node.js: Launch Program" })).toBeVisible();
   await expect(pick.getByRole("option").filter({ hasText: "C/C++: (lldb) Launch" })).toBeVisible();
   await page.keyboard.type("python file with");
@@ -190,7 +190,9 @@ test("how-to-install cards per language", async ({ page }) => {
 
   const card = page.getByTestId("install-card");
   await expect(card).toHaveAttribute("data-guide", "go");
-  await expect(card).toContainText("TMCode doesn't run Go programs yet");
+  await expect(card).toContainText("Go runs in TMCode's terminal");
+  await expect(card).toContainText("Install the Go toolchain first");
+  await expect(card).toContainText("go install github.com/go-delve/delve/cmd/dlv@latest");
   await card.getByRole("tab", { name: "Linux" }).click();
   await expect(card).toContainText("sudo apt install golang-go");
   await card.getByRole("tab", { name: "Windows" }).click();

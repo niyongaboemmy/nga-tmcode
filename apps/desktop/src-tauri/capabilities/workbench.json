@@ -50,6 +50,7 @@
     "allow-debug-run-in-terminal",
     "allow-debug-policy",
     "allow-preview-publish",
+    "allow-api-request",
     "allow-exam-device",
     "allow-exam-workspace",
     "allow-journal-load",

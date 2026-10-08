@@ -17,6 +17,7 @@ type Item = (&'static str, &'static str, Option<&'static str>);
 const FILE: &[Item] = &[
     ("New File...", "explorer.newFile", Some("CmdOrCtrl+Alt+N")),
     ("New Folder...", "explorer.newFolder", None),
+    ("New Project from Template...", "workbench.action.newProjectFromTemplate", None),
     ("-", "", None),
     ("Open Folder...", "workbench.action.files.openFolder", Some("CmdOrCtrl+O")),
     ("-", "", None),

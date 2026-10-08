@@ -100,9 +100,31 @@ export function adapterKindFor(type: string): DebugAdapterKind | null {
       return "native";
     case "java":
       return "java";
+    case "go":
+      return "go";
+    case "dart":
+      return "dart";
+    case "flutter":
+      return "flutter";
     default:
       return null;
   }
+}
+
+/** Languages whose debugger builds and runs the program itself (no TMCode profile): Go (Delve), Dart and Flutter. */
+export function selfHostedKindForPath(path: string): DebugAdapterKind | null {
+  const ext = extname(path);
+  if (ext === "go") return "go";
+  if (ext === "dart") return "dart";
+  return null;
+}
+
+/** The automatic configuration for those files (VS Code's Go and Dart extensions use the same shape). */
+export function selfHostedConfig(file: string): LaunchConfig | null {
+  const kind = selfHostedKindForPath(file);
+  if (kind === "go") return { type: "go", request: "launch", name: "Go: Launch Package", mode: "debug", program: "${fileDirname}" };
+  if (kind === "dart") return { type: "dart", request: "launch", name: `Dart: ${basename(file)}`, program: "${file}" };
+  return null;
 }
 
 /** Debug adapter for a language profile (null = this profile can't be debugged). */
@@ -118,6 +140,9 @@ export function languageNoun(kind: DebugAdapterKind, ext = ""): string {
   if (kind === "python") return "Python";
   if (kind === "node") return ext === "ts" || ext === "mts" ? "TypeScript" : "JavaScript";
   if (kind === "native") return ext === "c" || ext === "h" ? "C" : "C++";
+  if (kind === "go") return "Go";
+  if (kind === "dart") return "Dart";
+  if (kind === "flutter") return "Flutter";
   return "Java";
 }
 
@@ -163,6 +188,21 @@ export const TEMPLATES: ConfigTemplate[] = [
     label: "C/C++: (lldb) Launch",
     description: "Build and debug the active C or C++ file with lldb-dap",
     config: { name: "(lldb) Launch", type: "lldb", request: "launch", program: "${file}", args: [], cwd: "${fileDirname}", stopOnEntry: false },
+  },
+  {
+    label: "Go: Launch Package",
+    description: "Debug the Go package of the active file with Delve",
+    config: { name: "Go: Launch Package", type: "go", request: "launch", mode: "debug", program: "${fileDirname}" },
+  },
+  {
+    label: "Dart: Launch Current File",
+    description: "Debug the active Dart file",
+    config: { name: "Dart: Current File", type: "dart", request: "launch", program: "${file}" },
+  },
+  {
+    label: "Flutter: Launch",
+    description: "Debug the Flutter app (lib/main.dart) with hot reload",
+    config: { name: "Flutter", type: "dart", request: "launch", program: "lib/main.dart" },
   },
   {
     label: "C/C++: (gdb) Launch",

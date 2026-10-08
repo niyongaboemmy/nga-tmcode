@@ -120,6 +120,10 @@ pub struct AdapterEnv {
     pub lldb_dap: Option<PathBuf>,
     /// GDB and its major version (DAP needs 14+).
     pub gdb: Option<(PathBuf, u32)>,
+    /// Delve (Go), `dart` and `flutter`: each has a DAP adapter built in.
+    pub dlv: Option<PathBuf>,
+    pub dart: Option<PathBuf>,
+    pub flutter: Option<PathBuf>,
 }
 
 pub fn js_debug_server(dir: &Path) -> PathBuf {
@@ -153,6 +157,19 @@ pub fn adapter_command(kind: &str, env: &AdapterEnv, port: u16) -> Result<Adapte
                 Some((_, major)) => Err(format!("GDB {major} is too old for debugging in TMCode (GDB 14 or newer is needed), and lldb-dap was not found.")),
                 None => Err(native_missing_message()),
             }
+        }
+        // Delve's DAP server listens on a port (it builds the Go program itself).
+        "go" => {
+            let dlv = env.dlv.clone().ok_or("TMCode could not find Delve (dlv), the Go debugger. Install it with: go install github.com/go-delve/delve/cmd/dlv@latest")?;
+            Ok(AdapterCommand { program: dlv, args: vec!["dap".into(), "--listen".into(), format!("127.0.0.1:{port}")], transport: Transport::Tcp(port) })
+        }
+        "dart" => {
+            let dart = env.dart.clone().ok_or("TMCode could not find the Dart SDK (dart). Install Dart or Flutter, then try again.")?;
+            Ok(AdapterCommand { program: dart, args: vec!["debug_adapter".into()], transport: Transport::Stdio })
+        }
+        "flutter" => {
+            let flutter = env.flutter.clone().ok_or("TMCode could not find Flutter (flutter). Install the Flutter SDK, then try again.")?;
+            Ok(AdapterCommand { program: flutter, args: vec!["debug_adapter".into()], transport: Transport::Stdio })
         }
         "java" => Err("Debugging Java is not available yet. Use Run (Ctrl+F5) instead.".into()),
         other => Err(format!("TMCode can't debug '{other}' programs.")),
@@ -217,6 +234,16 @@ fn output_of(program: &Path, args: &[&str], timeout: Duration) -> Option<(bool, 
     }
     let out = child.wait_with_output().ok()?;
     Some((out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))))
+}
+
+/// Delve is usually in $GOPATH/bin (~/go/bin), which isn't always on PATH.
+fn find_dlv() -> Option<PathBuf> {
+    find_on_path(&["dlv"]).or_else(|| {
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
+        let gopath = std::env::var_os("GOPATH").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(home).join("go"));
+        let p = gopath.join("bin").join(if cfg!(windows) { "dlv.exe" } else { "dlv" });
+        p.is_file().then_some(p)
+    })
 }
 
 fn find_lldb_dap() -> Option<PathBuf> {
@@ -355,6 +382,9 @@ fn adapter_env(app: &AppHandle, tools: &Toolchains, kind: &str) -> AdapterEnv {
             env.node = tools.get("node").map(|t| PathBuf::from(t.path));
             env.js_debug = js_debug_dir(app).ok().filter(|d| js_debug_server(d).is_file());
         }
+        "go" => env.dlv = find_dlv(),
+        "dart" => env.dart = find_on_path(&["dart"]),
+        "flutter" => env.flutter = find_on_path(&["flutter"]),
         "native" => {
             env.lldb_dap = find_lldb_dap();
             if env.lldb_dap.is_none() {
@@ -889,7 +919,15 @@ mod tests {
             js_debug: Some(PathBuf::from("/data/js-debug/1.140.0")),
             lldb_dap: None,
             gdb: Some((PathBuf::from("/usr/bin/gdb"), 14)),
+            ..Default::default()
         };
+        let more = AdapterEnv { dlv: Some(PathBuf::from("/go/bin/dlv")), dart: Some(PathBuf::from("/sdk/dart")), flutter: Some(PathBuf::from("/sdk/flutter")), ..Default::default() };
+        let go = adapter_command("go", &more, 4711).unwrap();
+        assert_eq!(go.args, vec!["dap", "--listen", "127.0.0.1:4711"]);
+        assert_eq!(go.transport, Transport::Tcp(4711));
+        assert_eq!(adapter_command("dart", &more, 0).unwrap().args, vec!["debug_adapter"]);
+        assert_eq!(adapter_command("flutter", &more, 0).unwrap().program, PathBuf::from("/sdk/flutter"));
+        assert!(adapter_command("go", &AdapterEnv::default(), 0).unwrap_err().contains("go install github.com/go-delve"));
         let py = adapter_command("python", &env, 0).unwrap();
         assert_eq!(py.program, PathBuf::from("/usr/bin/python3"));
         assert_eq!(py.args, vec!["-m", "debugpy.adapter"]);

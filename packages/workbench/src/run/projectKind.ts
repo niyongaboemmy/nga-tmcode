@@ -32,6 +32,16 @@ export type ProjectKindId =
   | "go"
   | "rust"
   | "dotnet"
+  | "flutter"
+  | "dart"
+  | "php"
+  | "laravel"
+  | "ruby"
+  | "rails"
+  | "sinatra"
+  | "swift"
+  | "sql"
+  | "logic"
   | "markdown";
 
 export type RunActionKind =
@@ -54,7 +64,11 @@ export type RunActionKind =
   /** Terminal › Run Task… */
   | "pickTask"
   /** Markdown preview to the side. */
-  | "markdownPreview";
+  | "markdownPreview"
+  /** Run a .sql file in TMCode's built-in SQLite (results as tables, errors at their line). */
+  | "sqlRun"
+  /** A .logic file's truth tables (logical expressions), beside it. */
+  | "logicPreview";
 
 export interface RunAction {
   /** Stable across rescans, so a remembered choice survives: "<kind>:<dir>:<what>". */
@@ -124,6 +138,14 @@ export const PROJECT_FILES = [
   "server.py",
   "manage.py",
   "index.html",
+  "pubspec.yaml",
+  "composer.json",
+  "artisan",
+  "Gemfile",
+  "config.ru",
+  "app.rb",
+  "Package.swift",
+  "index.php",
 ];
 
 const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
@@ -191,7 +213,8 @@ function jsProject(f: FolderSnapshot): ProjectInfo | null {
   }
 
   const actions: RunAction[] = [];
-  const devScript = ["dev", "start", "serve"].find((s) => s in scripts);
+  // NestJS watches with start:dev; others use dev / start / serve.
+  const devScript = (dep("@nestjs/core") ? ["start:dev", "dev", "start"] : ["dev", "start", "serve"]).find((sc) => sc in scripts);
   if (devScript) {
     actions.push(
       action({
@@ -441,6 +464,185 @@ function nativeProject(f: FolderSnapshot): ProjectInfo | null {
   return null;
 }
 
+// ───────────── Dart & Flutter ─────────────
+
+function dartProject(f: FolderSnapshot): ProjectInfo | null {
+  if (!has(f, "pubspec.yaml")) return null;
+  const pub = f.read["pubspec.yaml"] ?? "";
+  const got = f.dirs.includes(".dart_tool");
+  const prelude = got ? undefined : pub.includes("flutter:") ? "flutter pub get" : "dart pub get";
+  if (/^\s*flutter:\s*$/m.test(pub) || /sdk:\s*flutter/.test(pub)) {
+    const webReady = f.dirs.includes("web");
+    return {
+      kind: "flutter",
+      label: "Flutter",
+      icon: "device-mobile",
+      dir: f.dir,
+      actions: [
+        ...(webReady
+          ? [action({ id: `devServer:${f.dir}:flutter-web`, kind: "devServer", label: `flutter: run (web)${where(f.dir)}`, icon: "play-circle", description: "Hot reload: press r in the terminal", command: "flutter run -d web-server --web-hostname localhost --web-port 8686", prelude, cwd: f.dir, port: 8686 })]
+          : [action({ id: `task:${f.dir}:flutter-create-web`, kind: "task", label: `flutter: add web support${where(f.dir)}`, icon: "add", description: "flutter create . --platforms=web", command: "flutter create . --platforms=web", cwd: f.dir })]),
+        action({ id: `task:${f.dir}:flutter-desktop`, kind: "task", label: `flutter: run on this computer${where(f.dir)}`, icon: "device-desktop", command: "flutter run", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:flutter-test`, kind: "task", label: `flutter: test${where(f.dir)}`, icon: "beaker", command: "flutter test", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:flutter-analyze`, kind: "task", label: `flutter: analyze${where(f.dir)}`, icon: "checklist", command: "flutter analyze", cwd: f.dir }),
+        action({ id: `task:${f.dir}:flutter-build-web`, kind: "task", label: `flutter: build web${where(f.dir)}`, icon: "package", command: "flutter build web", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:pub-get`, kind: "task", label: `flutter: pub get${where(f.dir)}`, icon: "cloud-download", command: "flutter pub get", cwd: f.dir }),
+      ],
+    };
+  }
+  const main = f.dirs.includes("bin") ? "dart run" : has(f, "main.dart") ? "dart run main.dart" : "dart run";
+  return {
+    kind: "dart",
+    label: "Dart",
+    icon: "symbol-method",
+    dir: f.dir,
+    actions: [
+      action({ id: `task:${f.dir}:dart-run`, kind: "task", label: `dart: run${where(f.dir)}`, icon: "play", command: main, prelude, cwd: f.dir }),
+      action({ id: `task:${f.dir}:dart-test`, kind: "task", label: `dart: test${where(f.dir)}`, icon: "beaker", command: "dart test", prelude, cwd: f.dir }),
+      action({ id: `task:${f.dir}:dart-analyze`, kind: "task", label: `dart: analyze${where(f.dir)}`, icon: "checklist", command: "dart analyze", cwd: f.dir }),
+      action({ id: `task:${f.dir}:pub-get`, kind: "task", label: `dart: pub get${where(f.dir)}`, icon: "cloud-download", command: "dart pub get", cwd: f.dir }),
+    ],
+  };
+}
+
+// ───────────── PHP & Laravel ─────────────
+
+function phpProject(f: FolderSnapshot): ProjectInfo | null {
+  const composer = f.read["composer.json"] ?? "";
+  const vendor = f.dirs.includes("vendor");
+  const prelude = has(f, "composer.json") && !vendor ? "composer install" : undefined;
+  if (has(f, "artisan")) {
+    return {
+      kind: "laravel",
+      label: "Laravel",
+      icon: "server",
+      dir: f.dir,
+      actions: [
+        action({ id: `devServer:${f.dir}:artisan-serve`, kind: "devServer", label: `artisan: serve${where(f.dir)}`, icon: "play-circle", command: "php artisan serve", prelude, cwd: f.dir, port: 8000 }),
+        action({ id: `task:${f.dir}:artisan-migrate`, kind: "task", label: `artisan: migrate${where(f.dir)}`, icon: "database", command: "php artisan migrate", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:artisan-test`, kind: "task", label: `artisan: test${where(f.dir)}`, icon: "beaker", command: "php artisan test", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:artisan-routes`, kind: "task", label: `artisan: route:list${where(f.dir)}`, icon: "list-tree", command: "php artisan route:list", cwd: f.dir }),
+        action({ id: `repl:${f.dir}:tinker`, kind: "repl", label: `artisan: tinker${where(f.dir)}`, icon: "terminal", command: "php artisan tinker", cwd: f.dir }),
+        ...(prelude ? [action({ id: `task:${f.dir}:composer-install`, kind: "task", label: `composer: install${where(f.dir)}`, icon: "cloud-download", command: "composer install", cwd: f.dir })] : []),
+      ],
+    };
+  }
+  const phpFiles = f.files.filter((n) => n.endsWith(".php"));
+  if (!has(f, "composer.json") && !phpFiles.length) return null;
+  const docroot = f.dirs.includes("public") && !has(f, "index.php") ? "public" : ".";
+  const actions: RunAction[] = [
+    action({ id: `devServer:${f.dir}:php-S`, kind: "devServer", label: `php: built-in server${where(f.dir)}`, icon: "play-circle", description: `php -S localhost:8000 -t ${docroot}`, command: `php -S localhost:8000 -t ${docroot}`, prelude, cwd: f.dir, port: 8000 }),
+  ];
+  if (/phpunit/.test(composer)) actions.push(action({ id: `task:${f.dir}:phpunit`, kind: "task", label: `phpunit${where(f.dir)}`, icon: "beaker", command: "vendor/bin/phpunit", prelude, cwd: f.dir }));
+  if (prelude) actions.push(action({ id: `task:${f.dir}:composer-install`, kind: "task", label: `composer: install${where(f.dir)}`, icon: "cloud-download", command: "composer install", cwd: f.dir }));
+  actions.push(action({ id: `repl:${f.dir}:php`, kind: "repl", label: "PHP interactive shell", icon: "terminal", command: "php -a", cwd: f.dir }));
+  return { kind: "php", label: has(f, "composer.json") ? "PHP (Composer)" : "PHP", icon: "server", dir: f.dir, actions };
+}
+
+// ───────────── Ruby, Rails & Sinatra ─────────────
+
+function rubyProject(f: FolderSnapshot): ProjectInfo | null {
+  const gems = f.read["Gemfile"] ?? "";
+  const bundled = has(f, "Gemfile.lock");
+  const prelude = has(f, "Gemfile") && !bundled ? "bundle install" : undefined;
+  if (/\brails\b/.test(gems) || (f.dirs.includes("config") && f.dirs.includes("app") && has(f, "Gemfile"))) {
+    return {
+      kind: "rails",
+      label: "Ruby on Rails",
+      icon: "server",
+      dir: f.dir,
+      actions: [
+        action({ id: `devServer:${f.dir}:rails-server`, kind: "devServer", label: `rails: server${where(f.dir)}`, icon: "play-circle", command: "bin/rails server", prelude, cwd: f.dir, port: 3000 }),
+        action({ id: `task:${f.dir}:rails-migrate`, kind: "task", label: `rails: db:migrate${where(f.dir)}`, icon: "database", command: "bin/rails db:migrate", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:rails-test`, kind: "task", label: `rails: test${where(f.dir)}`, icon: "beaker", command: "bin/rails test", prelude, cwd: f.dir }),
+        action({ id: `task:${f.dir}:rails-routes`, kind: "task", label: `rails: routes${where(f.dir)}`, icon: "list-tree", command: "bin/rails routes", cwd: f.dir }),
+        action({ id: `repl:${f.dir}:rails-console`, kind: "repl", label: `rails: console${where(f.dir)}`, icon: "terminal", command: "bin/rails console", cwd: f.dir }),
+      ],
+    };
+  }
+  const rbFiles = f.files.filter((n) => n.endsWith(".rb"));
+  if (!has(f, "Gemfile") && !rbFiles.length) return null;
+  const app = has(f, "app.rb") ? "app.rb" : has(f, "main.rb") ? "main.rb" : rbFiles[0];
+  const actions: RunAction[] = [];
+  if (/sinatra/.test(gems) || /require\s+["']sinatra["']/.test(f.read["app.rb"] ?? "")) {
+    actions.push(action({ id: `devServer:${f.dir}:sinatra`, kind: "devServer", label: `ruby ${app} (Sinatra)${where(f.dir)}`, icon: "play-circle", command: has(f, "Gemfile") ? `bundle exec ruby ${app}` : `ruby ${app}`, prelude, cwd: f.dir, port: 4567 }));
+  } else if (app) {
+    actions.push(action({ id: `task:${f.dir}:ruby ${app}`, kind: "task", label: `ruby ${app}${where(f.dir)}`, icon: "play", command: `ruby ${app}`, prelude, cwd: f.dir }));
+  }
+  if (/rspec/.test(gems)) actions.push(action({ id: `task:${f.dir}:rspec`, kind: "task", label: `rspec${where(f.dir)}`, icon: "beaker", command: "bundle exec rspec", prelude, cwd: f.dir }));
+  if (prelude) actions.push(action({ id: `task:${f.dir}:bundle-install`, kind: "task", label: `bundle install${where(f.dir)}`, icon: "cloud-download", command: "bundle install", cwd: f.dir }));
+  actions.push(action({ id: `repl:${f.dir}:irb`, kind: "repl", label: "Ruby REPL (irb)", icon: "terminal", command: "irb", cwd: f.dir }));
+  const sinatra = actions[0]?.id.includes("sinatra");
+  return { kind: sinatra ? "sinatra" : "ruby", label: sinatra ? "Sinatra" : "Ruby", icon: sinatra ? "server" : "ruby", dir: f.dir, actions };
+}
+
+// ───────────── Swift ─────────────
+
+function swiftProject(f: FolderSnapshot): ProjectInfo | null {
+  if (!has(f, "Package.swift")) return null;
+  return {
+    kind: "swift",
+    label: "Swift Package",
+    icon: "symbol-method",
+    dir: f.dir,
+    actions: [
+      action({ id: `task:${f.dir}:swift-run`, kind: "task", label: `swift: run${where(f.dir)}`, icon: "play", command: "swift run", cwd: f.dir }),
+      action({ id: `task:${f.dir}:swift-test`, kind: "task", label: `swift: test${where(f.dir)}`, icon: "beaker", command: "swift test", cwd: f.dir }),
+      action({ id: `task:${f.dir}:swift-build`, kind: "task", label: `swift: build${where(f.dir)}`, icon: "package", command: "swift build", cwd: f.dir }),
+    ],
+  };
+}
+
+// ───────────── SQL & logic (built into TMCode) ─────────────
+
+function sqlProject(f: FolderSnapshot): ProjectInfo | null {
+  const sql = f.files.filter((n) => /\.sql$/i.test(n));
+  if (!sql.length) return null;
+  const main = ["main.sql", "queries.sql", "query.sql", "schema.sql"].find((n) => has(f, n)) ?? sql[0];
+  return {
+    kind: "sql",
+    label: "SQL (SQLite)",
+    icon: "database",
+    dir: f.dir,
+    actions: sql
+      .sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b)))
+      .map((n) => action({ id: `sqlRun:${at(f.dir, n)}`, kind: "sqlRun", label: `Run ${n}`, icon: "database", description: "Built-in SQLite, results as tables", entry: at(f.dir, n) })),
+  };
+}
+
+function logicProject(f: FolderSnapshot): ProjectInfo | null {
+  const files = f.files.filter((n) => /\.logic$/i.test(n));
+  if (!files.length) return null;
+  return {
+    kind: "logic",
+    label: "Logic (truth tables)",
+    icon: "symbol-boolean",
+    dir: f.dir,
+    actions: files.map((n) => action({ id: `logicPreview:${at(f.dir, n)}`, kind: "logicPreview", label: `${n} (Truth Tables)`, icon: "table", description: "Every expression's truth table", entry: at(f.dir, n) })),
+  };
+}
+
+/** Single files of languages that run in a terminal (interpreters TMCode doesn't bundle). */
+const TERMINAL_RUNNERS: Record<string, { lang: string; run: (file: string) => string; repl?: { label: string; command: string } }> = {
+  php: { lang: "PHP", run: (f) => `php "${f}"`, repl: { label: "PHP interactive shell", command: "php -a" } },
+  rb: { lang: "Ruby", run: (f) => `ruby "${f}"`, repl: { label: "Ruby REPL (irb)", command: "irb" } },
+  dart: { lang: "Dart", run: (f) => `dart run "${f}"` },
+  swift: { lang: "Swift", run: (f) => `swift "${f}"`, repl: { label: "Swift REPL", command: "swift repl" } },
+  kt: { lang: "Kotlin", run: (f) => `kotlinc "${f}" -include-runtime -d tmcode-kotlin.jar && java -jar tmcode-kotlin.jar` },
+  kts: { lang: "Kotlin script", run: (f) => `kotlinc -script "${f}"` },
+  scala: { lang: "Scala", run: (f) => `scala run "${f}"` },
+  cs: { lang: "C#", run: (f) => `dotnet run "${f}"` },
+  lua: { lang: "Lua", run: (f) => `lua "${f}"`, repl: { label: "Lua REPL", command: "lua" } },
+  r: { lang: "R", run: (f) => `Rscript "${f}"`, repl: { label: "R console", command: "R" } },
+  pl: { lang: "Perl", run: (f) => `perl "${f}"` },
+  sh: { lang: "Shell", run: (f) => `bash "${f}"` },
+  ps1: { lang: "PowerShell", run: (f) => `pwsh -File "${f}"` },
+  jl: { lang: "Julia", run: (f) => `julia "${f}"`, repl: { label: "Julia REPL", command: "julia" } },
+  hs: { lang: "Haskell", run: (f) => `runghc "${f}"`, repl: { label: "GHCi", command: "ghci" } },
+  ex: { lang: "Elixir", run: (f) => `elixir "${f}"`, repl: { label: "Elixir (iex)", command: "iex" } },
+  exs: { lang: "Elixir", run: (f) => `elixir "${f}"`, repl: { label: "Elixir (iex)", command: "iex" } },
+};
+
 // ───────────── static sites & docs ─────────────
 
 function staticSite(f: FolderSnapshot): ProjectInfo | null {
@@ -487,7 +689,20 @@ function markdownDocs(f: FolderSnapshot): ProjectInfo | null {
 
 /** The project a folder holds, or null. Build manifests win over loose files. */
 export function detectProject(f: FolderSnapshot): ProjectInfo | null {
-  return jsProject(f) ?? javaProject(f) ?? pythonProject(f) ?? nativeProject(f) ?? staticSite(f) ?? markdownDocs(f);
+  return (
+    jsProject(f) ??
+    javaProject(f) ??
+    pythonProject(f) ??
+    dartProject(f) ??
+    phpProject(f) ??
+    rubyProject(f) ??
+    swiftProject(f) ??
+    nativeProject(f) ??
+    staticSite(f) ??
+    sqlProject(f) ??
+    logicProject(f) ??
+    markdownDocs(f)
+  );
 }
 
 /**
@@ -559,6 +774,14 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     );
   } else if (ext in COMPILED) {
     out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `Compile and run (${COMPILED[ext]})`, entry: path, needs: "runner" }), ...debug());
+  } else if (ext === "sql") {
+    out.push(action({ id: `sqlRun:${path}`, kind: "sqlRun", label: `Run ${name}`, icon: "database", description: "Built-in SQLite, results as tables", entry: path }));
+  } else if (ext === "logic") {
+    out.push(action({ id: `logicPreview:${path}`, kind: "logicPreview", label: `${name} (Truth Tables)`, icon: "table", description: "Every expression's truth table", entry: path }));
+  } else if (ext in TERMINAL_RUNNERS) {
+    const r = TERMINAL_RUNNERS[ext];
+    out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${r.lang} in a terminal`, command: r.run(name), cwd: dir }), ...debug());
+    if (r.repl) out.push(action({ id: `repl::${ext}`, kind: "repl", label: r.repl.label, icon: "terminal", command: r.repl.command, cwd: dir }));
   } else if (ext === "md" || ext === "markdown" || ext === "svg") {
     out.push(action({ id: `markdownPreview:${path}`, kind: "markdownPreview", label: `${name} (Preview)`, icon: "open-preview", entry: path }));
   }

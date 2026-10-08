@@ -42,6 +42,9 @@ import { useWebviews } from "../../exthost/views/webviews";
 import { ExtIcon } from "../../exthost/views/ExtIcon";
 import { AssignmentEditor } from "../../projects/AssignmentEditor";
 import { GradingEditor } from "../../grading/GradingEditor";
+import { SqlResultsEditor } from "../../sql/SqlResultsEditor";
+import { LogicEditor } from "../../logic/LogicEditor";
+import { ApiTester } from "../../api/ApiTester";
 
 function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
@@ -57,6 +60,9 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "webview") return webviewTitle(e.handle);
   if (e.kind === "assignment") return e.title;
   if (e.kind === "grading") return e.title;
+  if (e.kind === "sqlResults") return `SQL: ${basename(e.path)}`;
+  if (e.kind === "logic") return `Truth Tables: ${basename(e.path)}`;
+  if (e.kind === "api") return "API Tester";
   return "Welcome";
 }
 
@@ -72,6 +78,9 @@ function iconOf(e: EditorInput) {
   if (e.kind === "webview") return <WebviewTabIcon handle={e.handle} />;
   if (e.kind === "assignment") return <Codicon name="mortar-board" className="tm-tab-codicon" />;
   if (e.kind === "grading") return <Codicon name="tasklist" className="tm-tab-codicon" />;
+  if (e.kind === "sqlResults") return <Codicon name="database" className="tm-tab-codicon" />;
+  if (e.kind === "logic") return <Codicon name="symbol-boolean" className="tm-tab-codicon" />;
+  if (e.kind === "api") return <Codicon name="radio-tower" className="tm-tab-codicon" />;
   return <Codicon name={e.kind === "settings" ? "settings-gear" : "keyboard"} className="tm-tab-codicon" />;
 }
 
@@ -360,6 +369,9 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "historyDiff" && <HistoryDiffEditor key={active.id} input={active} />}
         {active?.kind === "assignment" && <AssignmentEditor key={active.id} input={active} />}
         {active?.kind === "grading" && <GradingEditor key={active.id} input={active} />}
+        {active?.kind === "sqlResults" && <SqlResultsEditor key={active.id} input={active} />}
+        {active?.kind === "logic" && <LogicEditor key={active.id} input={active} />}
+        {active?.kind === "api" && <ApiTester key={active.id} />}
         {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
         {!active && <Watermark />}
       </div>

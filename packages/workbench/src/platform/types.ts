@@ -92,6 +92,8 @@ export interface Platform {
   exam?: ExamHost;
   /** Desktop preview origin; without it previews are composed into an iframe srcdoc. */
   preview?: PreviewHost;
+  /** The API Tester's transport (desktop: Rust, no CORS). */
+  http?: HttpHost;
   /** Origin of extension webviews (desktop: tmwebview://, webview.rs); without it they use srcdoc with resources inlined. */
   webviews?: WebviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
@@ -220,7 +222,7 @@ export interface Runner {
 // ───────────── Run and Debug (Debug Adapter Protocol) ─────────────
 
 /** "native" = C/C++ (lldb-dap or GDB). */
-export type DebugAdapterKind = "python" | "node" | "native" | "java";
+export type DebugAdapterKind = "python" | "node" | "native" | "java" | "go" | "dart" | "flutter";
 
 export interface DebugProbe {
   available: boolean;
@@ -536,4 +538,27 @@ export interface AccountHost {
   newFolder(slug: string, base?: string): Promise<string>;
   /** The next git clone goes into ~/TMCode Projects (instead of a picked folder). */
   useProjectsFolderForClone?(): Promise<string>;
+}
+
+export interface ApiRequest {
+  method: string;
+  url: string;
+  headers: [string, string][];
+  body?: string | null;
+}
+
+export interface ApiResponse {
+  status: number;
+  status_text: string;
+  headers: [string, string][];
+  /** Text, or base64 when `binary`. */
+  body: string;
+  binary: boolean;
+  size: number;
+  truncated: boolean;
+  ms: number;
+}
+
+export interface HttpHost {
+  request(req: ApiRequest): Promise<ApiResponse>;
 }
