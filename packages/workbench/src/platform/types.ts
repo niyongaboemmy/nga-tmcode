@@ -224,12 +224,14 @@ export interface Runner {
 // ───────────── Run and Debug (Debug Adapter Protocol) ─────────────
 
 /** "native" = C/C++ (lldb-dap or GDB). */
-export type DebugAdapterKind = "python" | "node" | "native" | "java" | "go" | "dart" | "flutter";
+export type DebugAdapterKind = "python" | "node" | "native" | "java" | "go" | "dart" | "flutter" | "ruby" | "dotnet" | "php";
+/** Debugger parts TMCode installs on request: debugpy (pip), js-debug and netcoredbg (pinned downloads). */
+export type DebugComponent = "debugpy" | "js-debug" | "netcoredbg" | "php-debug";
 
 export interface DebugProbe {
   available: boolean;
   /** What would make it available: a package to install or an adapter to download. */
-  install: "debugpy" | "js-debug" | null;
+  install: DebugComponent | null;
   detail: string | null;
   message: string | null;
 }
@@ -263,11 +265,12 @@ export interface DebugHost {
   /** Languages this host can debug at all (decides whether F5 debugs or runs). */
   kinds: DebugAdapterKind[];
   probe(kind: DebugAdapterKind): Promise<DebugProbe>;
-  install?(what: "debugpy" | "js-debug", onEvent: (e: DebugInstallEvent) => void): Promise<void>;
+  install?(what: DebugComponent, onEvent: (e: DebugInstallEvent) => void): Promise<void>;
   /** Resolves the program and runs the profile's build steps (output streamed like a run). */
   prepare(request: { entry: string; build: RunStep[]; run: RunStep }, onEvent: (e: RunEvent) => void): Promise<DebugPrepared>;
   /** Starts an adapter, or with `parent` opens a child session (js-debug `startDebugging`). */
-  start(kind: DebugAdapterKind, opts: { parent?: number }, onEvent: (e: DebugTransportEvent) => void): Promise<DebugConnection>;
+  /** `target`: the program and its arguments, for adapters that run it themselves (rdbg). */
+  start(kind: DebugAdapterKind, opts: { parent?: number; target?: string[] }, onEvent: (e: DebugTransportEvent) => void): Promise<DebugConnection>;
   /** The exam policy's `debugger` flag, so the host can refuse adapters in exam folders unless it is on. */
   setExamPolicy?(allowed: boolean): void;
   /** DAP `runInTerminal`: the debuggee runs in the Run console (so it can read input). */

@@ -2,6 +2,8 @@
 mod menus;
 pub mod askpass;
 mod debug;
+mod netcoredbg;
+mod phpdebug;
 mod account;
 mod api;
 mod proc;

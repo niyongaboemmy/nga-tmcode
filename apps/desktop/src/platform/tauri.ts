@@ -32,7 +32,7 @@ type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | 
 /** Run and Debug over the Rust DAP bridge (src-tauri/src/debug.rs). */
 function createDebugHost(): DebugHost {
   return {
-    kinds: ["python", "node", "native", "java", "go", "dart", "flutter"],
+    kinds: ["python", "node", "native", "java", "go", "dart", "flutter", "ruby", "dotnet", "php"],
     probe: (kind) => invoke<DebugProbe>("debug_probe", { kind }),
     async install(what, onEvent) {
       const channel = new Channel<DebugInstallEvent>();
@@ -44,10 +44,10 @@ function createDebugHost(): DebugHost {
       channel.onmessage = onEvent;
       return invoke<DebugPrepared>("debug_prepare", { request, onEvent: channel });
     },
-    async start(kind, { parent }, onEvent) {
+    async start(kind, { parent, target }, onEvent) {
       const channel = new Channel<DebugTransportEvent>();
       channel.onmessage = onEvent;
-      const id = await invoke<number>("debug_start", { kind, parent: parent ?? null, onEvent: channel });
+      const id = await invoke<number>("debug_start", { kind, parent: parent ?? null, target: target ?? null, onEvent: channel });
       return {
         id,
         send: (message) => void invoke("debug_send", { id, message }).catch(() => {}),

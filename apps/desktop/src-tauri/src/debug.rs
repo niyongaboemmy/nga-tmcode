@@ -127,6 +127,16 @@ pub struct AdapterEnv {
     /// Java: TMCode's own adapter (`node resources/java-dap.cjs`, JDWP to the JVM) and the JDK's javac.
     pub java_dap: Option<PathBuf>,
     pub javac: Option<PathBuf>,
+    /// Ruby's debug gem (rdbg): it runs the script itself, so the target comes with the command.
+    pub rdbg: Option<PathBuf>,
+    /// The program and its arguments, for adapters that start it themselves (rdbg).
+    pub target: Vec<String>,
+    /// C#: the downloaded netcoredbg and the .NET SDK.
+    pub netcoredbg: Option<PathBuf>,
+    pub dotnet: Option<PathBuf>,
+    /// PHP: the downloaded php-debug adapter (run with node) and the php it debugs.
+    pub php_debug: Option<PathBuf>,
+    pub php: Option<PathBuf>,
 }
 
 pub fn js_debug_server(dir: &Path) -> PathBuf {
@@ -173,6 +183,24 @@ pub fn adapter_command(kind: &str, env: &AdapterEnv, port: u16) -> Result<Adapte
         "flutter" => {
             let flutter = env.flutter.clone().ok_or("TMCode could not find Flutter (flutter). Install the Flutter SDK, then try again.")?;
             Ok(AdapterCommand { program: flutter, args: vec!["debug_adapter".into()], transport: Transport::Stdio })
+        }
+        "php" => {
+            env.php.as_ref().ok_or("TMCode could not find PHP (php). Install PHP 8 with the Xdebug extension, then try again.")?;
+            let node = env.node.clone().ok_or_else(|| crate::runner::missing_tool_message("node"))?;
+            let script = env.php_debug.clone().ok_or("Debugging PHP needs the PHP Debug adapter (about 1.8 MB), downloaded once.")?;
+            Ok(AdapterCommand { program: node, args: vec![script.to_string_lossy().into_owned()], transport: Transport::Stdio })
+        }
+        "dotnet" => {
+            env.dotnet.as_ref().ok_or("TMCode could not find the .NET SDK (dotnet). Install .NET 8 or newer, then try again.")?;
+            let dbg = env.netcoredbg.clone().ok_or_else(crate::netcoredbg::missing_message)?;
+            Ok(AdapterCommand { program: dbg, args: vec!["--interpreter=vscode".into()], transport: Transport::Stdio })
+        }
+        // rdbg runs the script and serves DAP on a port; TMCode attaches to it.
+        "ruby" => {
+            let rdbg = env.rdbg.clone().ok_or("TMCode could not find rdbg, Ruby's debugger. It comes with Ruby 3.1 or newer (or: gem install debug).")?;
+            let mut args = vec!["--open".to_string(), "--host=127.0.0.1".into(), format!("--port={port}"), "--".into()];
+            args.extend(env.target.iter().cloned());
+            Ok(AdapterCommand { program: rdbg, args, transport: Transport::Tcp(port) })
         }
         "java" => {
             env.javac.as_ref().ok_or("TMCode could not find a Java JDK (javac). Install JDK 17 or newer, then try again.")?;
@@ -279,6 +307,12 @@ fn find_gdb() -> Option<(PathBuf, u32)> {
 
 // ───────────────────────── state ─────────────────────────
 
+/// A DAP `output` event for a line the program printed (adapters that don't forward it themselves).
+fn output_event(category: &str, line: &str) -> DebugEvent {
+    let message = serde_json::json!({ "seq": 0, "type": "event", "event": "output", "body": { "category": category, "output": format!("{line}\n") } }).to_string();
+    DebugEvent::Message { message }
+}
+
 #[derive(Clone, Serialize, Debug)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum DebugEvent {
@@ -349,7 +383,7 @@ impl Debuggers {
     }
 }
 
-fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
 }
 
@@ -387,6 +421,24 @@ fn js_debug_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data(app)?.join("debug-adapters").join("js-debug").join(JS_DEBUG_VERSION))
 }
 
+/// rdbg as the user's terminal finds it (rbenv, asdf, Homebrew's keg-only Ruby), then common places.
+fn find_rdbg() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        let out = crate::proc::shell_command("command -v rdbg").stdin(std::process::Stdio::null()).output().ok();
+        if let Some(p) = out.filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim())).filter(|p| p.is_file()) {
+            return Some(p);
+        }
+        for dir in ["/opt/homebrew/opt/ruby/bin", "/usr/local/opt/ruby/bin"] {
+            let p = Path::new(dir).join("rdbg");
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    find_on_path(&["rdbg", "rdbg.bat", "rdbg.cmd"])
+}
+
 pub const JAVA_DAP: &str = "resources/java-dap.cjs";
 
 /// The bundled Java adapter (next to exthost.cjs); in `tauri dev`, the source tree's copy.
@@ -406,6 +458,16 @@ fn adapter_env(app: &AppHandle, tools: &Toolchains, kind: &str) -> AdapterEnv {
         "go" => env.dlv = find_dlv(),
         "dart" => env.dart = find_on_path(&["dart"]),
         "flutter" => env.flutter = find_on_path(&["flutter"]),
+        "ruby" => env.rdbg = find_rdbg(),
+        "php" => {
+            env.node = tools.get("node").map(|t| PathBuf::from(t.path));
+            env.php = tools.get("php").map(|t| PathBuf::from(t.path)).or_else(|| find_on_path(&["php", "php.exe"]));
+            env.php_debug = crate::phpdebug::installed(app);
+        }
+        "dotnet" => {
+            env.dotnet = tools.get("dotnet").map(|t| PathBuf::from(t.path)).or_else(|| find_on_path(&["dotnet", "dotnet.exe"]));
+            env.netcoredbg = crate::netcoredbg::installed(app);
+        }
         "java" => {
             env.node = tools.get("node").map(|t| PathBuf::from(t.path));
             env.javac = tools.get("javac").map(|t| PathBuf::from(t.path)).or_else(|| find_on_path(&["javac"]));
@@ -458,6 +520,22 @@ pub async fn debug_probe(app: AppHandle, kind: String) -> Result<Probe, String> 
                 (Some(_), None) => missing(format!("Debugging JavaScript needs the js-debug adapter (v{JS_DEBUG_VERSION}, about 1.2 MB), downloaded once."), Some("js-debug")),
                 (Some(_), Some(_)) => Probe { available: true, install: None, detail: Some(format!("js-debug {JS_DEBUG_VERSION}")), message: None },
             },
+            "php" => match (&env.php, &env.node, &env.php_debug) {
+                (None, _, _) => missing("TMCode could not find PHP (php). Install PHP 8 with the Xdebug extension, then try again.".into(), None),
+                (_, None, _) => missing(crate::runner::missing_tool_message("node"), None),
+                (Some(php), Some(_), adapter) => match output_of(php, &["-m"], Duration::from_secs(10)) {
+                    Some((_, modules)) if !modules.lines().any(|l| l.trim().eq_ignore_ascii_case("xdebug")) => {
+                        missing("TMCode could not find PHP's Xdebug extension. Install it with: pecl install xdebug (then check php -m lists Xdebug).".into(), None)
+                    }
+                    _ if adapter.is_none() => missing("Debugging PHP needs the PHP Debug adapter (about 1.8 MB), downloaded once.".into(), Some("php-debug")),
+                    _ => Probe { available: true, install: None, detail: Some(format!("php-debug {} + Xdebug", crate::phpdebug::VERSION)), message: None },
+                },
+            },
+            "dotnet" => match (&env.dotnet, &env.netcoredbg) {
+                (None, _) => missing("TMCode could not find the .NET SDK (dotnet). Install .NET 8 or newer, then try again.".into(), None),
+                (Some(_), None) => missing(crate::netcoredbg::missing_message(), crate::netcoredbg::asset().map(|_| "netcoredbg")),
+                (Some(_), Some(_)) => Probe { available: true, install: None, detail: Some(format!("netcoredbg {}", crate::netcoredbg::VERSION)), message: None },
+            },
             other => match adapter_command(other, &env, 0) {
                 Ok(cmd) => Probe { available: true, install: None, detail: Some(cmd.program.to_string_lossy().into_owned()), message: None },
                 Err(message) => missing(message, None),
@@ -508,6 +586,8 @@ pub async fn debug_install(app: AppHandle, what: String, on_event: Channel<Insta
             .map_err(|e| e.to_string())?
         }
         "js-debug" => install_js_debug(&app, &on_event).await,
+        "netcoredbg" => crate::netcoredbg::install(&app, &on_event).await,
+        "php-debug" => crate::phpdebug::install(&app, &on_event).await,
         other => Err(format!("Unknown debugger component '{other}'.")),
     }
 }
@@ -711,7 +791,7 @@ fn pump(id: u32, mut stream: Box<dyn Read + Send>, on_event: Channel<DebugEvent>
 /// a TCP adapter that asked for one with `startDebugging`). Returns the
 /// connection id for `debug_send` / `debug_stop`.
 #[tauri::command]
-pub fn debug_start(app: AppHandle, ws: State<'_, Workspace>, tools: State<'_, Toolchains>, dbg: State<'_, Debuggers>, kind: String, parent: Option<u32>, on_event: Channel<DebugEvent>) -> Result<u32, String> {
+pub fn debug_start(app: AppHandle, ws: State<'_, Workspace>, tools: State<'_, Toolchains>, dbg: State<'_, Debuggers>, kind: String, parent: Option<u32>, target: Option<Vec<String>>, on_event: Channel<DebugEvent>) -> Result<u32, String> {
     refuse_in_exam(&app, &ws)?;
     let id = dbg.next.fetch_add(1, Ordering::Relaxed) + 1;
     if let Some(parent) = parent {
@@ -733,7 +813,11 @@ pub fn debug_start(app: AppHandle, ws: State<'_, Workspace>, tools: State<'_, To
 
     let cwd = ws.root().unwrap_or_else(|_| std::env::temp_dir());
     let port = free_port()?;
-    let cmd = adapter_command(&kind, &adapter_env(&app, &tools, &kind), port)?;
+    let mut env = adapter_env(&app, &tools, &kind);
+    env.target = target.unwrap_or_default();
+    let cmd = adapter_command(&kind, &env, port)?;
+    // rdbg shares its process with the program: its stdout/stderr are the program's output.
+    let program_output = kind == "ruby";
     let mut child = spawn_adapter(&cmd, &cwd).map_err(|e| format!("Could not start the debugger ({}): {e}", cmd.program.display()))?;
     let tree = Tree::of(child.id());
     let stop = Arc::new(AtomicBool::new(false));
@@ -745,7 +829,11 @@ pub fn debug_start(app: AppHandle, ws: State<'_, Workspace>, tools: State<'_, To
         std::thread::spawn(move || {
             for line in BufReader::new(err).lines().map_while(Result::ok) {
                 log::info!("debug {id} stderr: {line}");
-                let _ = ch.send(DebugEvent::Stderr { data: format!("{line}\n") });
+                if program_output && !line.starts_with("DEBUGGER:") {
+                    let _ = ch.send(output_event("stderr", &line));
+                } else {
+                    let _ = ch.send(DebugEvent::Stderr { data: format!("{line}\n") });
+                }
             }
         });
     }
@@ -758,7 +846,7 @@ pub fn debug_start(app: AppHandle, ws: State<'_, Workspace>, tools: State<'_, To
                 let ch = on_event.clone();
                 std::thread::spawn(move || {
                     for line in BufReader::new(out).lines().map_while(Result::ok) {
-                        let _ = ch.send(DebugEvent::Stderr { data: format!("{line}\n") });
+                        let _ = ch.send(if program_output { output_event("stdout", &line) } else { DebugEvent::Stderr { data: format!("{line}\n") } });
                     }
                 });
             }
@@ -983,6 +1071,18 @@ mod tests {
         let cmd = adapter_command("java", &java, 0).unwrap();
         assert_eq!((cmd.program, cmd.args, cmd.transport), (PathBuf::from("/opt/node"), vec!["/app/resources/java-dap.cjs".to_string()], Transport::Stdio));
         assert!(adapter_command("python", &AdapterEnv::default(), 0).unwrap_err().contains("Python 3"));
+        let cs = AdapterEnv { dotnet: Some(PathBuf::from("/usr/local/share/dotnet/dotnet")), netcoredbg: Some(PathBuf::from("/data/netcoredbg/netcoredbg")), ..Default::default() };
+        assert_eq!(adapter_command("dotnet", &cs, 0).unwrap().args, vec!["--interpreter=vscode"]);
+        assert!(adapter_command("dotnet", &AdapterEnv { netcoredbg: None, ..cs.clone() }, 0).is_err());
+        assert!(adapter_command("dotnet", &AdapterEnv::default(), 0).unwrap_err().contains("could not find the .NET SDK"));
+        let php = AdapterEnv { node: Some(PathBuf::from("/opt/node")), php: Some(PathBuf::from("/usr/bin/php")), php_debug: Some(PathBuf::from("/data/php-debug/extension/out/phpDebug.js")), ..Default::default() };
+        assert_eq!(adapter_command("php", &php, 0).unwrap().args, vec!["/data/php-debug/extension/out/phpDebug.js"]);
+        assert!(adapter_command("php", &AdapterEnv { php_debug: None, ..php.clone() }, 0).unwrap_err().contains("PHP Debug adapter"));
+        let rb = AdapterEnv { rdbg: Some(PathBuf::from("/rb/bin/rdbg")), target: vec!["/ws/app.rb".into(), "one".into()], ..Default::default() };
+        let cmd = adapter_command("ruby", &rb, 4712).unwrap();
+        assert_eq!(cmd.args, vec!["--open", "--host=127.0.0.1", "--port=4712", "--", "/ws/app.rb", "one"]);
+        assert_eq!(cmd.transport, Transport::Tcp(4712));
+        assert!(adapter_command("ruby", &AdapterEnv::default(), 0).unwrap_err().contains("could not find rdbg"));
     }
 
     #[test]
