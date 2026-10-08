@@ -153,7 +153,7 @@ export function automaticConfig(profile: Profile, file: string): LaunchConfig | 
   if (kind === "python") return { type: "debugpy", request: "launch", name: "Python Debugger: Current File", program: "${file}", console: "integratedTerminal" };
   if (kind === "node") return { type: "node", request: "launch", name: `Node.js: ${basename(file)}`, program: "${file}", console: "integratedTerminal" };
   if (kind === "native") return { type: "lldb", request: "launch", name: `${extname(file) === "c" ? "C" : "C++"}: Debug Active File`, program: "${file}" };
-  return { type: "java", request: "launch", name: "Java: Current File", program: "${file}" };
+  return { type: "java", request: "launch", name: "Java: Current File", program: "${file}", console: "integratedTerminal" };
 }
 
 export interface ConfigTemplate {
@@ -188,6 +188,16 @@ export const TEMPLATES: ConfigTemplate[] = [
     label: "C/C++: (lldb) Launch",
     description: "Build and debug the active C or C++ file with lldb-dap",
     config: { name: "(lldb) Launch", type: "lldb", request: "launch", program: "${file}", args: [], cwd: "${fileDirname}", stopOnEntry: false },
+  },
+  {
+    label: "Java: Current File",
+    description: "Compile the active Java file with javac -g and debug it",
+    config: { name: "Java: Current File", type: "java", request: "launch", program: "${file}", console: "integratedTerminal" },
+  },
+  {
+    label: "Java: Attach to JVM (port 5005)",
+    description: "Spring Boot / Maven: start with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005",
+    config: { name: "Java: Attach (5005)", type: "java", request: "attach", hostName: "127.0.0.1", port: 5005 },
   },
   {
     label: "Go: Launch Package",

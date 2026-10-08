@@ -87,7 +87,7 @@ const JAVA: InstallGuide = {
   },
   verify: "javac -version",
   url: "https://adoptium.net/",
-  debugger: "Java runs with Run Without Debugging (Ctrl+F5); stepping through Java is not available yet.",
+  debugger: "F5 compiles with javac -g and debugs with TMCode's own Java debugger (breakpoints, conditions, logpoints, variables, stepping). For Spring Boot or Maven apps, start the JVM with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005 and use \"Java: Attach to JVM\".",
 };
 
 const nativeSteps: Record<OsKind, InstallStep[]> = {

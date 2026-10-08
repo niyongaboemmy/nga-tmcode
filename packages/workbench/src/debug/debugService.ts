@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { profileForPath } from "@tmcode/profiles";
 import { inExam, useExam } from "../exam/state";
-import { onDocumentChanged, saveAll } from "../monaco/documents";
+import { getDocument, onDocumentChanged, saveAll } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import type { DebugAdapterKind, DebugConnection, DebugPrepared, RunEvent, Toolchain } from "../platform/types";
 import { attachDebuggeeRun, clearConsole, clearRunMarkers, refreshToolchains, runFile, showDiagnostics, writeConsole } from "../run/runService";
@@ -416,6 +416,25 @@ function launchArguments(kind: DebugAdapterKind, config: LaunchConfig, prepared:
       outputCapture: consoleMode === "internalConsole" ? "std" : undefined,
     };
   }
+  if (kind === "java") {
+    // The profile's run step is `java -cp <out> <Main>`; the adapter starts the JVM itself with JDWP.
+    const cp = prepared.args[prepared.args.indexOf("-cp") + 1];
+    const file = `${prepared.root}/${entry}`;
+    return {
+      ...rest,
+      type: "java",
+      request: "launch",
+      name,
+      mainClass: config.mainClass ?? prepared.args.at(-1),
+      classPaths: config.classPaths ?? (cp ? [cp] : []),
+      sourcePaths: config.sourcePaths ?? [prepared.root, file.slice(0, file.lastIndexOf("/"))],
+      javaExec: prepared.program,
+      args,
+      cwd,
+      console: consoleMode,
+      stopOnEntry: !!config.stopOnEntry,
+    };
+  }
   // C/C++ (lldb-dap or gdb -i dap): the program is the binary the build just wrote.
   const env = config.env ? Object.entries(config.env).map(([k, v]) => `${k}=${v}`) : undefined;
   void entry;
@@ -425,6 +444,50 @@ function launchArguments(kind: DebugAdapterKind, config: LaunchConfig, prepared:
 export interface StartOptions {
   /** Self-test: install missing adapters without asking. */
   noConsent?: boolean;
+}
+
+/** `com.example.App` for src/com/example/App.java (from its package declaration). */
+async function javaMainClass(entry: string) {
+  const text = getDocument(entry)?.getValue() ?? (await getPlatform().fs.readFile(entry).catch(() => ""));
+  const pkg = /^\s*package\s+([\w.]+)\s*;/m.exec(text)?.[1];
+  const stem = basename(entry).replace(/\.java$/, "");
+  return pkg ? `${pkg}.${stem}` : stem;
+}
+
+/**
+ * Java attach: a JVM already listening for a debugger (Spring Boot or Maven
+ * started with -agentlib:jdwp=…,address=5005). Nothing is built.
+ */
+async function startJavaAttach(config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  const port = Number(resolved.port ?? 5005);
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: `Attaching to the JVM on port ${port}…` }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  log("Debug", `Attach "${config.name}" (java) to ${resolved.hostName ?? "127.0.0.1"}:${port}`);
+  try {
+    if (!opts.noConsent && !(await ensureAdapter("java"))) return fail();
+    const { type: _t, request: _r, name, ...rest } = resolved;
+    void _t;
+    void _r;
+    const sourcePaths = (resolved.sourcePaths as string[] | undefined) ?? [root, `${root}/src`, `${root}/src/main/java`, `${root}/src/test/java`, `${root}/src/main/kotlin`];
+    const args = { ...rest, type: "java", request: "attach", name, hostName: resolved.hostName ?? "127.0.0.1", port, sourcePaths, cwd: root };
+    const prepared: DebugPrepared = { root, entry: "", cwd: root, program: "", args: [] };
+    const session = await createSession("java", config, prepared, null);
+    await session.dap.initialize("java", { runInTerminal: false });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    await configureAndLaunch(session, args, "attach");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    notify("error", /ECONNREFUSED|connect/i.test(message) ? `No JVM is listening on port ${port}. Start it with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${port}` : message);
+    await stopDebugging();
+    return fail();
+  }
 }
 
 /**
@@ -514,10 +577,10 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     notify("error", `Configured debug type '${config.type}' is not supported.`);
     return false;
   }
-  if (kind === "java" || !host.kinds.includes(kind === "dart" ? "dart" : kind)) {
+  if (!host.kinds.includes(kind === "dart" ? "dart" : kind)) {
     notify(
       "info",
-      kind === "java" ? "Debugging Java is not available yet. Use Run Without Debugging (Ctrl+F5)." : `Debugging ${languageNoun(kind, extname(file ?? ""))} is available in the TMCode desktop app.`,
+      `Debugging ${languageNoun(kind, extname(file ?? ""))} is available in the TMCode desktop app.`,
       [{ label: "Run Without Debugging", run: () => file && void import("../run/runService").then((m) => m.runFile(file)) }],
     );
     return false;
@@ -531,6 +594,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
   const line = codeEditorFor(workbench.get().activeGroup)?.getPosition()?.lineNumber;
   const resolved = substitute(config, { root: ws.root, file, line, args: pickedArgs });
   if (kind === "go" || kind === "dart" || kind === "flutter") return startSelfHosted(kind, config, resolved, ws.root, opts);
+  if (kind === "java" && config.request === "attach") return startJavaAttach(config, resolved, ws.root, opts);
   const program = typeof resolved.program === "string" && resolved.program ? resolved.program : file ? `${ws.root}/${file}` : "";
   const entry = toWorkspacePath(program, ws.root, caseInsensitive()) ?? (program && !/^([a-z]+:|\/|[A-Za-z]:\\)/.test(program) ? program : null);
   const profile = entry ? profileForPath(entry) : null;
@@ -551,8 +615,11 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
       const probe = await host.probe(kind);
       if (!probe.available && probe.install) await runInstall(probe.install);
     }
-    if (profile.local.build.length) {
-      setProgress({ title: "Building…", detail: `${profile.label} with debug information (-g -O0)` });
+    // javac -g keeps the local variable table the Java debugger shows.
+    const build = kind === "java" ? profile.local.build.map((st) => (st.tool === "javac" ? { ...st, args: ["-g", ...st.args] } : st)) : profile.local.build;
+    if (kind === "java" && !resolved.mainClass) resolved.mainClass = await javaMainClass(entry);
+    if (build.length) {
+      setProgress({ title: "Building…", detail: `${profile.label} with debug information (${kind === "java" ? "javac -g" : "-g -O0"})` });
       clearRunMarkers();
       clearConsole();
       showPanel("run");
@@ -560,7 +627,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     let buildOut = "";
     let prepared: DebugPrepared;
     try {
-      prepared = await host.prepare({ entry, build: profile.local.build, run: profile.local.run }, (e: RunEvent) => {
+      prepared = await host.prepare({ entry, build, run: profile.local.run }, (e: RunEvent) => {
         writeConsole(e);
         if (e.type === "stdout" || e.type === "stderr") buildOut += e.data;
       });

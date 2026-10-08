@@ -94,6 +94,8 @@ export interface Platform {
   preview?: PreviewHost;
   /** The API Tester's transport (desktop: Rust, no CORS). */
   http?: HttpHost;
+  /** One-shot commands with captured output (the Testing view's framework runs); absent → none. */
+  proc?: ProcHost;
   /** Origin of extension webviews (desktop: tmwebview://, webview.rs); without it they use srcdoc with resources inlined. */
   webviews?: WebviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
@@ -561,4 +563,14 @@ export interface ApiResponse {
 
 export interface HttpHost {
   request(req: ApiRequest): Promise<ApiResponse>;
+}
+
+// ───────────── one-shot commands ─────────────
+
+export type ProcEvent = { type: "stdout"; data: string } | { type: "stderr"; data: string } | { type: "exit"; code: number | null };
+
+export interface ProcHost {
+  /** Runs `command` in the login shell, in `cwd` (workspace-relative); returns an id for `kill`. */
+  run(command: string, cwd: string, onEvent: (e: ProcEvent) => void): Promise<number>;
+  kill(id: number): Promise<void>;
 }

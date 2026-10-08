@@ -67,9 +67,9 @@ describe("launch.json (JSON with comments)", () => {
     }
   });
 
-  it("has Python, Node, C/C++, Go and Dart/Flutter templates", () => {
+  it("has Python, Node, C/C++, Java, Go and Dart/Flutter templates", () => {
     const kinds = new Set(TEMPLATES.map((t) => adapterKindFor(t.config.type)));
-    expect(kinds).toEqual(new Set(["python", "node", "native", "go", "dart"]));
+    expect(kinds).toEqual(new Set(["python", "node", "native", "java", "go", "dart"]));
   });
 
   it("Go and Dart files get an automatic configuration (their debuggers build the program)", () => {

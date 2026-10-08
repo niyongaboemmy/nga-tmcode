@@ -3,6 +3,7 @@ import { createMemoryExtensionHost } from "./memoryExtensions";
 import { createMemoryGit } from "./memoryGit";
 import { createMemoryAccountHost } from "./memoryProjects";
 import { createSimulatedDebugHost } from "../debug/fakeAdapter";
+import { createSimulatedProc } from "./memoryProc";
 import { createSimulatedTerminal } from "./memoryTerminal";
 import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
 
@@ -404,6 +405,8 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     exam,
     extensions: createMemoryExtensionHost(),
     http: createMemoryHttp(),
+    // Dev server / e2e: a pretend pytest for the Testing view's framework suites.
+    ...(import.meta.env?.DEV ? { proc: createSimulatedProc(fs) } : {}),
     // Dev server / e2e only: an NGA account and Task Mentor projects in memory.
     ...(import.meta.env?.DEV ? {
           account: createMemoryAccountHost(fs, {

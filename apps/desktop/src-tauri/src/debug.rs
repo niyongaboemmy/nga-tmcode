@@ -124,6 +124,9 @@ pub struct AdapterEnv {
     pub dlv: Option<PathBuf>,
     pub dart: Option<PathBuf>,
     pub flutter: Option<PathBuf>,
+    /// Java: TMCode's own adapter (`node resources/java-dap.cjs`, JDWP to the JVM) and the JDK's javac.
+    pub java_dap: Option<PathBuf>,
+    pub javac: Option<PathBuf>,
 }
 
 pub fn js_debug_server(dir: &Path) -> PathBuf {
@@ -171,7 +174,12 @@ pub fn adapter_command(kind: &str, env: &AdapterEnv, port: u16) -> Result<Adapte
             let flutter = env.flutter.clone().ok_or("TMCode could not find Flutter (flutter). Install the Flutter SDK, then try again.")?;
             Ok(AdapterCommand { program: flutter, args: vec!["debug_adapter".into()], transport: Transport::Stdio })
         }
-        "java" => Err("Debugging Java is not available yet. Use Run (Ctrl+F5) instead.".into()),
+        "java" => {
+            env.javac.as_ref().ok_or("TMCode could not find a Java JDK (javac). Install JDK 17 or newer, then try again.")?;
+            let node = env.node.clone().ok_or_else(|| crate::runner::missing_tool_message("node"))?;
+            let script = env.java_dap.clone().ok_or("The Java debugger is missing from this TMCode installation (resources/java-dap.cjs).")?;
+            Ok(AdapterCommand { program: node, args: vec![script.to_string_lossy().into_owned()], transport: Transport::Stdio })
+        }
         other => Err(format!("TMCode can't debug '{other}' programs.")),
     }
 }
@@ -346,6 +354,11 @@ fn app_data(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Is the open folder an exam folder (they live under `<app data>/exams`)?
+/// Whether the open folder is an exam's (other modules refuse risky things there too).
+pub(crate) fn in_exam(app: &AppHandle, ws: &Workspace) -> bool {
+    in_exam_folder(app, ws)
+}
+
 fn in_exam_folder(app: &AppHandle, ws: &Workspace) -> bool {
     matches!((ws.root(), app_data(app)), (Ok(root), Ok(data)) if root.starts_with(data.join("exams")))
 }
@@ -374,6 +387,14 @@ fn js_debug_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data(app)?.join("debug-adapters").join("js-debug").join(JS_DEBUG_VERSION))
 }
 
+pub const JAVA_DAP: &str = "resources/java-dap.cjs";
+
+/// The bundled Java adapter (next to exthost.cjs); in `tauri dev`, the source tree's copy.
+fn java_dap_script(app: &AppHandle) -> Option<PathBuf> {
+    let p = app.path().resolve(JAVA_DAP, tauri::path::BaseDirectory::Resource).ok().filter(|p| p.is_file());
+    p.or_else(|| Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(JAVA_DAP)).filter(|p| cfg!(debug_assertions) && p.is_file()))
+}
+
 fn adapter_env(app: &AppHandle, tools: &Toolchains, kind: &str) -> AdapterEnv {
     let mut env = AdapterEnv::default();
     match kind {
@@ -385,6 +406,11 @@ fn adapter_env(app: &AppHandle, tools: &Toolchains, kind: &str) -> AdapterEnv {
         "go" => env.dlv = find_dlv(),
         "dart" => env.dart = find_on_path(&["dart"]),
         "flutter" => env.flutter = find_on_path(&["flutter"]),
+        "java" => {
+            env.node = tools.get("node").map(|t| PathBuf::from(t.path));
+            env.javac = tools.get("javac").map(|t| PathBuf::from(t.path)).or_else(|| find_on_path(&["javac"]));
+            env.java_dap = java_dap_script(app);
+        }
         "native" => {
             env.lldb_dap = find_lldb_dap();
             if env.lldb_dap.is_none() {
@@ -952,7 +978,10 @@ mod tests {
         let pyw = adapter_command("python", &AdapterEnv { python: Some((PathBuf::from("py"), vec!["-3".into()])), ..env.clone() }, 0).unwrap();
         assert_eq!(pyw.args, vec!["-3", "-m", "debugpy.adapter"]);
         assert!(adapter_command("node", &AdapterEnv { js_debug: None, ..env.clone() }, 1).unwrap_err().contains("not installed"));
-        assert!(adapter_command("java", &env, 0).unwrap_err().contains("not available yet"));
+        assert!(adapter_command("java", &env, 0).unwrap_err().contains("could not find a Java JDK"));
+        let java = AdapterEnv { node: Some(PathBuf::from("/opt/node")), javac: Some(PathBuf::from("/jdk/bin/javac")), java_dap: Some(PathBuf::from("/app/resources/java-dap.cjs")), ..Default::default() };
+        let cmd = adapter_command("java", &java, 0).unwrap();
+        assert_eq!((cmd.program, cmd.args, cmd.transport), (PathBuf::from("/opt/node"), vec!["/app/resources/java-dap.cjs".to_string()], Transport::Stdio));
         assert!(adapter_command("python", &AdapterEnv::default(), 0).unwrap_err().contains("Python 3"));
     }
 

@@ -48,7 +48,8 @@
     ],
     "createUpdaterArtifacts": false,
     "resources": [
-      "resources/exthost.cjs"
+      "resources/exthost.cjs",
+      "resources/java-dap.cjs"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",

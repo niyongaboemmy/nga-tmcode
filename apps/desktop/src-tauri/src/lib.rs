@@ -4,6 +4,7 @@ pub mod askpass;
 mod debug;
 mod account;
 mod api;
+mod proc;
 mod projects;
 mod exam;
 mod extensions;
@@ -198,6 +199,7 @@ pub fn run() {
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
         .manage(debug::Debuggers::default())
+        .manage(proc::Procs::default())
         .manage(preview::Preview::default())
         .manage(watcher::Watcher::default())
         .manage(updates::Pending::default())
@@ -248,6 +250,8 @@ pub fn run() {
             debug::debug_policy,
             preview::preview_publish,
             api::api_request,
+            proc::proc_run,
+            proc::proc_kill,
             exam::exam_device,
             exam::exam_workspace,
             exam::journal_load,

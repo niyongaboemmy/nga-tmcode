@@ -49,6 +49,8 @@ export interface DevSession {
 
 export interface RunHubState {
   projects: ProjectInfo[];
+  /** The last workspace scan (the Testing view finds test frameworks in it). */
+  folders: FolderSnapshot[];
   /** Actions for the active file. */
   fileActions: RunAction[];
   scanning: boolean;
@@ -59,7 +61,7 @@ export interface RunHubState {
   session: DevSession | null;
 }
 
-export const useRunHub = create<RunHubState>()(() => ({ projects: [], fileActions: [], scanning: false, targetId: null, fileChoice: {}, session: null }));
+export const useRunHub = create<RunHubState>()(() => ({ projects: [], folders: [], fileActions: [], scanning: false, targetId: null, fileChoice: {}, session: null }));
 const set = useRunHub.setState;
 const get = useRunHub.getState;
 
@@ -119,7 +121,7 @@ let scanGen = 0;
 /** Projects at the root and up to two folders down (client/, server/, apps/web…). */
 export async function scanWorkspace() {
   if (!useWorkbench.getState().workspace) {
-    set({ projects: [], scanning: false });
+    set({ projects: [], folders: [], scanning: false });
     return;
   }
   const gen = ++scanGen;
@@ -129,7 +131,8 @@ export async function scanWorkspace() {
   const level1 = await Promise.all(sub(root).slice(0, 40).map(snapshot));
   const level2 = await Promise.all(level1.flatMap(sub).slice(0, 80).map(snapshot));
   if (gen !== scanGen) return;
-  set({ projects: detectProjects([root, ...level1, ...level2]), scanning: false });
+  const folders = [root, ...level1, ...level2];
+  set({ projects: detectProjects(folders), folders, scanning: false });
 }
 
 async function hasIndex(dir: string) {

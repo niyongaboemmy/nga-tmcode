@@ -3,12 +3,20 @@ import { getPlatform, loadDir, notify, setDirty, useWorkbench } from "../state/s
 import { dirname } from "../util/paths";
 import { markSaved } from "./documents";
 
+const listeners = new Set<(paths: string[]) => void>();
+/** Paths changed outside the editor (watcher, a new template, a project sync). */
+export function onExternalChanges(l: (paths: string[]) => void) {
+  listeners.add(l);
+  return () => void listeners.delete(l);
+}
+
 /**
  * Applies changes made outside TMCode (watcher events): refresh the loaded
  * explorer folders, reload open files that have no unsaved edits (keeping
  * undo history), and warn about files changed under unsaved edits.
  */
 export async function applyExternalChanges(paths: string[]) {
+  for (const l of listeners) l(paths);
   const s = useWorkbench.getState();
   const dirs = new Set<string>();
   for (const p of paths) {

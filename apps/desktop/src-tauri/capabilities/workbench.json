@@ -51,6 +51,8 @@
     "allow-debug-policy",
     "allow-preview-publish",
     "allow-api-request",
+    "allow-proc-run",
+    "allow-proc-kill",
     "allow-exam-device",
     "allow-exam-workspace",
     "allow-journal-load",
