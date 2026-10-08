@@ -1,5 +1,5 @@
 import type { TestSuite } from "./frameworks";
-import { parseCargo, parseDartJson, parseGoJson, parseJest, parseJUnit, parseRspec, parseSwift, parseTrx, parseUnittest, type TestResult } from "./parsers";
+import { parseMinitest, parseCargo, parseDartJson, parseGoJson, parseJest, parseJUnit, parseRspec, parseSwift, parseTrx, parseUnittest, type TestResult } from "./parsers";
 
 /** Results from the report (or the output, for tools that only print), workspace-relative.
  * `root` is the absolute folder the command ran in. Null = no usable report. */
@@ -37,6 +37,9 @@ export function parseRun(suite: TestSuite, reports: string[] | null, output: str
       break;
     case "unittest":
       rs = parseUnittest(output, root);
+      break;
+    case "minitest":
+      rs = parseMinitest(output, root);
       break;
     default:
       return null;

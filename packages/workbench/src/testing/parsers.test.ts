@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { locate, parseCargo, parseDartJson, parseGoJson, parseJest, parseJUnit, parseRspec, parseSwift, parseTrx, parseUnittest, summarize } from "./parsers";
+import { locate, parseMinitest, parseCargo, parseDartJson, parseGoJson, parseJest, parseJUnit, parseRspec, parseSwift, parseTrx, parseUnittest, summarize } from "./parsers";
 
 /** Output captured from the real tools (paths rewritten to /ws). */
 const fx = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
@@ -88,6 +88,13 @@ Failed asserting that 4 is identical to 5.
   it("python 3.11+ unittest names include the method", () => {
     const rs = parseUnittest("test_adds (test_calc.CalcTest.test_adds) ... ok\n", "/ws");
     expect(rs[0]).toMatchObject({ name: "test_adds", group: "test_calc.CalcTest", status: "passed" });
+  });
+
+  it("Rails / minitest -v output", () => {
+    const rs = parseMinitest(fx("minitest.txt"), "/ws");
+    expect(brief(rs)).toEqual(["failed test_fails test/models/calc_test.rb:9", "passed test_adds -:-", "error test_errors test/models/calc_test.rb:13"]);
+    expect(rs[0]).toMatchObject({ group: "CalcTest", message: "Expected: 5 · Actual: 4" });
+    expect(rs[2].message).toBe("RuntimeError: boom · test/models/calc_test.rb:13:in 'CalcTest#test_errors'");
   });
 
   it("go test -json", () => {

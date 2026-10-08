@@ -36,7 +36,8 @@ export function wireTestEditor() {
       const { state, running } = useFrameworkTests.getState();
       const results = Object.values(state).flatMap((s) => s.results);
       const busy = Object.keys(running).length > 0;
-      const statusOf = (name: string) => results.find((r) => r.name === name && (!r.file || r.file === path))?.status;
+      // Rails `test "adds"` reports as test_adds.
+      const statusOf = (name: string) => results.find((r) => (r.name === name || r.name === `test_${name.replace(/\s+/g, "_")}`) && (!r.file || r.file === path))?.status;
       const lenses: monaco.languages.CodeLens[] = [
         { range: new monaco.Range(1, 1, 1, 1), command: { id: RUN_FILE, title: busy ? "$(loading~spin) Running tests…" : "$(run-all) Run File Tests", arguments: [path] } },
         ...decls.map((d) => {

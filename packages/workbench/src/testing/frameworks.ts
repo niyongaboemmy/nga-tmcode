@@ -25,7 +25,7 @@ export type Framework =
   | "dotnet"
   | "swift";
 
-export type ReportKind = "junit" | "junit-dir" | "jest" | "rspec" | "trx" | "go" | "dart" | "cargo" | "swift" | "unittest" | "none";
+export type ReportKind = "junit" | "junit-dir" | "jest" | "rspec" | "trx" | "go" | "dart" | "cargo" | "swift" | "unittest" | "minitest" | "none";
 
 export interface Scope {
   /** Workspace-relative file. */
@@ -73,6 +73,9 @@ interface Pkg {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 }
+
+/** `test "adds two"` defines test_adds_two (ActiveSupport::TestCase). */
+const minitestName = (name: string) => (/^test_/.test(name) ? name : `test_${name.replace(/\s+/g, "_")}`);
 
 function suitesIn(f: FolderSnapshot): TestSuite[] {
   const out: TestSuite[] = [];
@@ -227,7 +230,7 @@ function suitesIn(f: FolderSnapshot): TestSuite[] {
   if (/rspec/.test(gems) || f.dirs.includes("spec")) {
     out.push({ id: id("rspec"), framework: "rspec", label: `RSpec${where(f.dir)}`, icon: "beaker", dir: f.dir, report: { kind: "rspec", path: resultPath("rspec.json") }, install: "bundle add rspec --group test", command: (s) => [has("Gemfile") ? "bundle exec rspec" : "rspec", "--format progress --format json", `--out ${out_("rspec.json")}`, scopedFile(s), s?.test ? `-e ${q(s.test.name)}` : null].filter(Boolean).join(" ") });
   } else if (/\brails\b/.test(gems)) {
-    out.push({ id: id("rails"), framework: "rails", label: `Rails tests${where(f.dir)}`, icon: "beaker", dir: f.dir, report: { kind: "none" }, command: (s) => ["bin/rails test", scopedFile(s)].filter(Boolean).join(" ") });
+    out.push({ id: id("rails"), framework: "rails", label: `Rails tests${where(f.dir)}`, icon: "beaker", dir: f.dir, report: { kind: "minitest" }, command: (s) => ["bin/rails test -v", scopedFile(s), s?.test ? `-n ${q(minitestName(s.test.name))}` : null].filter(Boolean).join(" ") });
   }
 
   // .NET

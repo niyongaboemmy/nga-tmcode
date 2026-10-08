@@ -19,7 +19,7 @@ What TMCode does for each technology. Every row has a template in **File › New
 | Rust (Cargo, axum, actix…) | `cargo run` | ✅ LLDB | API Tester | ✅ `cargo test` |
 | C# / .NET, ASP.NET Core | `dotnet run`, `dotnet watch run` | ✅ netcoredbg (downloaded once) | API Tester | ✅ `dotnet test` (xUnit, NUnit, MSTest) |
 | PHP, Laravel | `php -S`, `php artisan serve`; ▶ on a .php file | ✅ Xdebug + PHP Debug adapter (downloaded once); Listen for Xdebug for web requests | built-in browser, API Tester | ✅ PHPUnit, `php artisan test` |
-| Ruby, Rails, Sinatra | `ruby`, `bin/rails server`, Sinatra | ✅ rdbg (Ruby 3.1+) | built-in browser, API Tester | ✅ RSpec; `bin/rails test` |
+| Ruby, Rails, Sinatra | `ruby`, `bin/rails server`, Sinatra | ✅ rdbg (Ruby 3.1+) | built-in browser, API Tester | ✅ RSpec, Rails (minitest) |
 | Dart, Flutter | `dart run`; Flutter web in the built-in browser (hot reload: r) | ✅ Dart / Flutter debug adapters | built-in browser | ✅ `dart test`, `flutter test` |
 | Swift | `swift run`; ▶ on a .swift file | ✅ lldb-dap (Swift packages: `swift build` first) | — | ✅ `swift test` |
 | Kotlin | ▶ runs the file in a terminal | ✅ kotlinc + TMCode's Java debugger | — | ✅ JUnit via Gradle |
@@ -30,7 +30,7 @@ What TMCode does for each technology. Every row has a template in **File › New
 
 ## Notes
 
-- **Project tests:** the Testing view finds the test frameworks in the folder and its sub-folders: pytest, Django, Vitest, Jest, `node --test`, JUnit (Maven, Gradle), `go test`, `cargo test`, `dart test`, `flutter test`, PHPUnit, Laravel, RSpec, `dotnet test` and `swift test`. It runs them in your login shell and reads their reports (JUnit XML, Jest/RSpec JSON, TRX, `go test -json`…). Failures appear on their lines and in Problems. Run one test with ▶ Run Test above it, or **Test: Run Test at Cursor** (⌘/Ctrl+; C). Reports are kept in `.tmcode/test-results`, which is never uploaded.
+- **Project tests:** the Testing view finds the test frameworks in the folder and its sub-folders: pytest, Django, Vitest, Jest, `node --test`, JUnit (Maven, Gradle), `go test`, `cargo test`, `dart test`, `flutter test`, PHPUnit, Laravel, RSpec, Rails (minitest), `dotnet test` and `swift test`. It runs them in your login shell and reads their reports (JUnit XML, Jest/RSpec JSON, TRX, `go test -json`…). Failures appear on their lines and in Problems. Run one test with ▶ Run Test above it, or **Test: Run Test at Cursor** (⌘/Ctrl+; C). Reports are kept in `.tmcode/test-results`, which is never uploaded.
 - **Debugger downloads:** js-debug, netcoredbg (C#) and PHP Debug are downloaded only when first needed, after you agree. Each is checked against a pinned SHA-256. TMCode's Java debugger is built into the app.
 
 - **Missing tools:** when a tool is missing, the Run and Debug view shows how to install it for your system. You can also open it with **How to Install a Language…**.

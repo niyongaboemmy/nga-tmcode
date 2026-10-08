@@ -374,6 +374,35 @@ export function parseUnittest(text: string, root: string): TestResult[] {
   return out;
 }
 
+// ───────────── minitest (bin/rails test -v) ─────────────
+
+/** `CalcTest#test_adds = 0.00 s = .` lines, with the Failure:/Error: blocks that follow them. */
+export function parseMinitest(text: string, root: string): TestResult[] {
+  const t = text.replace(/\r/g, "");
+  const out: TestResult[] = [];
+  for (const m of t.matchAll(/^(\S+)#(\S+) = ([\d.]+) s = ([.FESN])$/gm)) {
+    const [, group, name, secs, mark] = m;
+    const status = mark === "." ? "passed" : mark === "F" ? "failed" : mark === "E" ? "error" : "skipped";
+    let message: string | null = null;
+    let details: string | null = null;
+    let file: string | null = null;
+    let line: number | null = null;
+    if (status === "failed" || status === "error") {
+      const esc = `${group}#${name}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const block = new RegExp(`^(?:Failure|Error):\\n${esc}(?: \\[([^\\]]+):(\\d+)\\])?:\\n([\\s\\S]*?)(?:\\n\\nbin/rails test ([^:\\s]+):(\\d+)|\\n\\n(?=\\S+#\\S+ = )|\\n\\nFinished|(?![\\s\\S]))`, "m").exec(t);
+      if (block) {
+        details = block[3].trim();
+        message = details.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 3).join(" · ").slice(0, 300);
+        const loc = block[1] ? { file: relative(block[1], root), line: Number(block[2]) } : locate(details, root, block[4] ? relative(block[4], root) : null);
+        file = loc?.file ?? (block[4] ? relative(block[4], root) : null);
+        line = loc?.line ?? (block[5] ? Number(block[5]) : null);
+      }
+    }
+    out.push(result({ name, group, file, line, status, durationMs: Math.round(Number(secs) * 1000), message, details }));
+  }
+  return out;
+}
+
 export function summarize(results: TestResult[]) {
   const s = { total: results.length, passed: 0, failed: 0, skipped: 0, error: 0 };
   for (const r of results) s[r.status]++;
