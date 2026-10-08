@@ -8,7 +8,7 @@ import { extname } from "../util/paths";
  * Plain data so it is easy to review and test.
  */
 
-export type GuideId = "python" | "node" | "java" | "c" | "cpp" | "go" | "rust" | "csharp";
+export type GuideId = "python" | "node" | "java" | "c" | "cpp" | "go" | "rust" | "csharp" | "dart" | "flutter" | "php" | "ruby" | "swift" | "kotlin";
 
 export interface InstallStep {
   text: string;
@@ -32,6 +32,8 @@ export interface InstallGuide {
   url: string;
   /** Debugger notes (debugpy, js-debug…), shown under the steps. */
   debugger?: string;
+  /** TMCode runs it in a terminal (Run Project, ▶) rather than in the Run panel. */
+  terminal?: boolean;
 }
 
 const PYTHON: InstallGuide = {
@@ -124,7 +126,8 @@ const GO: InstallGuide = {
   },
   verify: "go version",
   url: "https://go.dev/doc/install",
-  debugger: "TMCode can edit Go files, but running and debugging Go is not built in yet: use the terminal (go run .).",
+  terminal: true,
+  debugger: "Run Project runs `go run .`; ▶ runs the file. F5 debugs with Delve: install it once with `go install github.com/go-delve/delve/cmd/dlv@latest`.",
 };
 
 const RUST: InstallGuide = {
@@ -140,7 +143,8 @@ const RUST: InstallGuide = {
   },
   verify: "cargo --version",
   url: "https://www.rust-lang.org/tools/install",
-  debugger: "TMCode can edit Rust files, but running and debugging Rust is not built in yet: use the terminal (cargo run).",
+  terminal: true,
+  debugger: "Run Project runs `cargo run`; ▶ compiles and runs a single file. F5 debugs with LLDB (the C/C++ debugger).",
 };
 
 const CSHARP: InstallGuide = {
@@ -156,10 +160,116 @@ const CSHARP: InstallGuide = {
   },
   verify: "dotnet --version",
   url: "https://dotnet.microsoft.com/download",
-  debugger: "TMCode can edit C# files, but running and debugging C# is not built in yet: use the terminal (dotnet run).",
+  terminal: true,
+  debugger: "Run Project runs `dotnet run` (web projects: `dotnet watch run`). Debugging C# isn't built in yet.",
 };
 
-export const GUIDES: InstallGuide[] = [PYTHON, NODE, JAVA, C, CPP, GO, RUST, CSHARP];
+
+const guide = (g: Omit<InstallGuide, "tools" | "terminal">): InstallGuide => ({ ...g, tools: [], terminal: true });
+
+const DART = guide({
+  id: "dart",
+  language: "Dart",
+  icon: "symbol-method",
+  summary: "the Dart SDK (or Flutter, which includes it)",
+  steps: {
+    windows: [{ text: "Install Dart with winget, or install Flutter (which includes Dart):", command: "winget install -e --id Google.DartSDK" }],
+    mac: [{ text: "Install Dart with Homebrew:", command: "brew tap dart-lang/dart && brew install dart" }],
+    linux: [{ text: "Follow the apt instructions on dart.dev, or install Flutter (which includes Dart)." }],
+  },
+  verify: "dart --version",
+  url: "https://dart.dev/get-dart",
+  debugger: "F5 debugs Dart with the SDK's own debugger (dart debug_adapter); nothing else to install.",
+});
+
+const FLUTTER = guide({
+  id: "flutter",
+  language: "Flutter",
+  icon: "device-mobile",
+  summary: "the Flutter SDK",
+  steps: {
+    windows: [
+      { text: "Install Flutter with winget:", command: "winget install -e --id Google.Flutter" },
+      { text: "Then check what else is needed (Android Studio, Visual Studio for desktop apps):", command: "flutter doctor" },
+    ],
+    mac: [
+      { text: "Install Flutter with Homebrew:", command: "brew install --cask flutter" },
+      { text: "Then check what else is needed (Xcode for iOS/macOS, Android Studio for Android):", command: "flutter doctor" },
+    ],
+    linux: [
+      { text: "Install Flutter with snap:", command: "sudo snap install flutter --classic" },
+      { text: "Then check what else is needed:", command: "flutter doctor" },
+    ],
+  },
+  verify: "flutter --version",
+  url: "https://docs.flutter.dev/get-started/install",
+  debugger: "Run Project serves the web app in the built-in browser (hot reload: press r in its terminal). F5 debugs with Flutter's own debugger.",
+});
+
+const PHP = guide({
+  id: "php",
+  language: "PHP",
+  icon: "server",
+  summary: "PHP 8 (and Composer for Laravel)",
+  steps: {
+    windows: [
+      { text: "Install PHP and Composer with winget:", command: "winget install -e --id PHP.PHP.8.3" },
+      { text: "Then Composer:", command: "winget install -e --id Composer.Composer" },
+    ],
+    mac: [{ text: "Install PHP and Composer with Homebrew:", command: "brew install php composer" }],
+    linux: [{ text: "Install PHP and Composer:", command: "sudo apt install php-cli php-mbstring php-xml php-sqlite3 composer" }],
+  },
+  verify: "php --version",
+  url: "https://www.php.net/downloads",
+  debugger: "Run Project starts PHP's built-in server (Laravel: artisan serve); ▶ runs a .php file in a terminal.",
+});
+
+const RUBY = guide({
+  id: "ruby",
+  language: "Ruby",
+  icon: "ruby",
+  summary: "Ruby 3 (and Bundler)",
+  steps: {
+    windows: [{ text: "Install Ruby with the RubyInstaller (with DevKit):", command: "winget install -e --id RubyInstallerTeam.RubyWithDevKit.3.3" }],
+    mac: [{ text: "Install a current Ruby with Homebrew:", command: "brew install ruby" }],
+    linux: [{ text: "Install Ruby:", command: "sudo apt install ruby-full" }],
+  },
+  verify: "ruby --version",
+  url: "https://www.ruby-lang.org/en/documentation/installation/",
+  debugger: "Run Project starts Rails or Sinatra servers; ▶ runs a .rb file in a terminal; Run Task… has irb.",
+});
+
+const SWIFT = guide({
+  id: "swift",
+  language: "Swift",
+  icon: "symbol-method",
+  summary: "the Swift toolchain",
+  steps: {
+    windows: [{ text: "Install Swift with winget:", command: "winget install -e --id Swift.Toolchain" }],
+    mac: [{ text: "Install the Xcode Command Line Tools (they include Swift):", command: "xcode-select --install" }],
+    linux: [{ text: "Download the toolchain for your distribution from swift.org." }],
+  },
+  verify: "swift --version",
+  url: "https://www.swift.org/install/",
+  debugger: "Run Project runs `swift run`; ▶ runs a .swift file.",
+});
+
+const KOTLIN = guide({
+  id: "kotlin",
+  language: "Kotlin",
+  icon: "symbol-method",
+  summary: "the Kotlin compiler (and a JDK)",
+  steps: {
+    windows: [{ text: "Install Kotlin with Scoop (or use Gradle/IntelliJ projects):", command: "scoop install kotlin" }],
+    mac: [{ text: "Install Kotlin with Homebrew:", command: "brew install kotlin" }],
+    linux: [{ text: "Install Kotlin with SDKMAN:", command: "sdk install kotlin" }],
+  },
+  verify: "kotlinc -version",
+  url: "https://kotlinlang.org/docs/command-line.html",
+  debugger: "▶ compiles a .kt file with kotlinc and runs it; Gradle projects run with Run Project.",
+});
+
+export const GUIDES: InstallGuide[] = [PYTHON, NODE, JAVA, C, CPP, GO, RUST, CSHARP, DART, FLUTTER, PHP, RUBY, SWIFT, KOTLIN];
 
 const BY_EXT: Record<string, GuideId> = {
   py: "python",
@@ -179,6 +289,12 @@ const BY_EXT: Record<string, GuideId> = {
   go: "go",
   rs: "rust",
   cs: "csharp",
+  dart: "dart",
+  php: "php",
+  rb: "ruby",
+  swift: "swift",
+  kt: "kotlin",
+  kts: "kotlin",
 };
 
 export function guideById(id: GuideId): InstallGuide {

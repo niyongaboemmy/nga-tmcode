@@ -3,6 +3,7 @@ mod menus;
 pub mod askpass;
 mod debug;
 mod account;
+mod api;
 mod projects;
 mod exam;
 mod extensions;
@@ -246,6 +247,7 @@ pub fn run() {
             debug::debug_run_in_terminal,
             debug::debug_policy,
             preview::preview_publish,
+            api::api_request,
             exam::exam_device,
             exam::exam_workspace,
             exam::journal_load,

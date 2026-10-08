@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { profileById } from "@tmcode/profiles";
-import { TEMPLATES, adapterKindFor, adapterKindForProfile, addConfiguration, automaticConfig, newLaunchJson, parseLaunchJson, stripJsonc, substitute, toWorkspacePath } from "./launchJson";
+import { TEMPLATES, selfHostedConfig, adapterKindFor, adapterKindForProfile, addConfiguration, automaticConfig, newLaunchJson, parseLaunchJson, stripJsonc, substitute, toWorkspacePath } from "./launchJson";
 
 const VSCODE_STYLE = `{
     // Use IntelliSense to learn about possible attributes.
@@ -67,9 +67,15 @@ describe("launch.json (JSON with comments)", () => {
     }
   });
 
-  it("has Python, Node and C/C++ templates", () => {
+  it("has Python, Node, C/C++, Go and Dart/Flutter templates", () => {
     const kinds = new Set(TEMPLATES.map((t) => adapterKindFor(t.config.type)));
-    expect(kinds).toEqual(new Set(["python", "node", "native"]));
+    expect(kinds).toEqual(new Set(["python", "node", "native", "go", "dart"]));
+  });
+
+  it("Go and Dart files get an automatic configuration (their debuggers build the program)", () => {
+    expect(selfHostedConfig("cmd/main.go")).toMatchObject({ type: "go", mode: "debug", program: "${fileDirname}" });
+    expect(selfHostedConfig("bin/app.dart")).toMatchObject({ type: "dart", program: "${file}" });
+    expect(selfHostedConfig("main.py")).toBeNull();
   });
 
   it("adds a configuration at the top, keeping comments and the others", () => {

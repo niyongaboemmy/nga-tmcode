@@ -1,6 +1,6 @@
 import { registerCommand } from "../commands/registry";
 import { inExam } from "../exam/state";
-import { getPlatform, notify, openPathFromOs, revealView, showDialog, useWorkbench } from "../state/store";
+import { getPlatform, notify, openFile, openPathFromOs, openRecent, revealView, showDialog, showPanel, useWorkbench } from "../state/store";
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import {
   checkSync,
@@ -21,7 +21,7 @@ import {
   submitLink,
   useProjects,
 } from "./service";
-import { TEMPLATES, templateById } from "./templates";
+import { CATEGORY_ORDER, TEMPLATES, templateById, type Template } from "./templates";
 import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
 import { closeReview, refreshGrading, useGrading } from "../grading/service";
 import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject, TYPE_LABEL } from "./matching";
@@ -71,6 +71,79 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "project";
 
+/** Template items grouped by category, with the tools each needs. */
+function templateItems() {
+  return CATEGORY_ORDER.flatMap((cat) =>
+    TEMPLATES.filter((t) => t.category === cat).map((t, i) => ({
+      id: `tpl:${t.id}`,
+      label: t.label,
+      description: t.description,
+      detail: t.tools?.length ? `Needs ${t.tools.join(", ")}${t.setup ? ` · setup: ${t.setup.command}` : ""}` : undefined,
+      icon: t.icon,
+      separator: i === 0 ? cat : undefined,
+    })),
+  );
+}
+
+/** Writes a template's files into the open folder. */
+async function writeTemplate(tpl: Template) {
+  const fs = getPlatform().fs;
+  for (const [path, content] of Object.entries(tpl.files)) {
+    const parts = path.split("/");
+    for (let i = 1; i < parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
+    await fs.writeFile(path, content).catch(async () => {
+      await fs.createFile(path);
+      await fs.writeFile(path, content);
+    });
+  }
+  const readme = Object.keys(tpl.files).find((p) => /^readme\.md$/i.test(p));
+  const main = Object.keys(tpl.files).find((p) => !p.startsWith(".") && !/readme\.md$/i.test(p) && !/^(package|tsconfig|angular|nest-cli)\.json$|\.(toml|xml|yaml|csproj|mod)$|^Makefile$|^Gemfile$|^Package\.swift$|^requirements\.txt$/.test(p.split("/").pop()!));
+  if (main) openFile(main, { pinned: true });
+  else if (readme) openFile(readme, { pinned: true });
+}
+
+/** Runs the template's setup (npm install, flutter create …) in a terminal, when the user agrees. */
+async function offerSetup(tpl: Template) {
+  if (!tpl.setup) return;
+  if (!getPlatform().terminal) {
+    notify("info", `Next: run \`${tpl.setup.command}\` in a terminal (${tpl.setup.note.toLowerCase()}).`);
+    return;
+  }
+  const go = await showDialog({
+    severity: "info",
+    message: `Set up ${tpl.label} now?`,
+    detail: `${tpl.setup.note}. TMCode runs this in a terminal:\n\n${tpl.setup.command}${tpl.tools?.length ? `\n\nNeeds ${tpl.tools.join(", ")} on this computer (Run and Debug › How to Install… if missing).` : ""}`,
+    buttons: [
+      { id: "run", label: "Run Setup", primary: true },
+      { id: "later", label: "Later" },
+    ],
+    cancelId: "later",
+  });
+  if (go !== "run") return;
+  showPanel("terminal");
+  window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { command: tpl.setup.command, cwd: "", name: `Setup: ${tpl.label}` } }));
+}
+
+/** New Project from Template (no Task Mentor needed): a new folder with the files, opened. */
+export async function newProjectFromTemplate() {
+  const pick = await showQuickPick({ placeholder: "Create a project from a template", matchOnDescription: true, items: templateItems() });
+  if (!pick) return;
+  const tpl = templateById(pick.id.slice(4))!;
+  const name = await showInputBox({ title: `New ${tpl.label} project`, prompt: "Folder name", value: tpl.id, validate: (v) => (v.trim().length < 2 ? "Enter a name (2 characters or more)." : /[\\/:*?"<>|]/.test(v) ? "Use letters, numbers, - and _." : null) });
+  if (!name) return;
+  const host = getPlatform().account;
+  if (!host) return notify("info", "New projects from templates need the TMCode desktop app.");
+  try {
+    const folder = await host.newFolder(slugify(name));
+    await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder));
+    await writeTemplate(tpl);
+    notify("info", `Created ${name} from the ${tpl.label} template. Run Project: ⌘/Ctrl+Shift+F10.`);
+    await offerSetup(tpl);
+  } catch (e) {
+    notify("error", (e as Error).message);
+  }
+}
+
 /** New Project: a template in a new folder, the open folder, or a GitHub repository. */
 async function newProject() {
   if (!signedIn()) return void signIn();
@@ -78,7 +151,7 @@ async function newProject() {
   const choice = await showQuickPick({
     placeholder: "Create a Task Mentor project",
     items: [
-      ...TEMPLATES.map((t, i) => ({ id: `tpl:${t.id}`, label: t.label, description: t.description, icon: t.icon, separator: i === 0 ? "from a template" : undefined })),
+      ...templateItems(),
       ...(ws ? [{ id: "folder", label: `This folder (${ws.name})`, description: "Save the open folder to Task Mentor", icon: "folder-opened", separator: "from your work" }] : []),
       { id: "github", label: "A GitHub repository", description: "Task Mentor follows your git pushes", icon: "github", separator: ws ? undefined : "from your work" },
     ],
@@ -138,16 +211,12 @@ async function newProject() {
     if (tpl) {
       const host = getPlatform().account!;
       const folder = await host.newFolder(slugify(name));
-      await openPathFromOs(folder);
-      const fs = getPlatform().fs;
-      for (const [path, content] of Object.entries(tpl.files)) {
-        const parts = path.split("/");
-        for (let i = 1; i < parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
-        await fs.writeFile(path, content);
-      }
+      await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder));
+      await writeTemplate(tpl);
       await connectFolder(project);
       await saveToTaskMentor({ message: `Created from the ${tpl.label} template`, quiet: true });
       notify("info", `Created ${project.name} from the ${tpl.label} template and saved it to Task Mentor.`);
+      await offerSetup(tpl);
     } else if (choice.id === "folder" || kind === "github") {
       if (useWorkbench.getState().workspace) await connectFolder(project);
       if (kind === "tm") await saveToTaskMentor({ message: "First save from TMCode" });
@@ -246,6 +315,7 @@ export function registerProjectCommands() {
     enabled: () => bound() && useProjects.getState().current?.status === "submitted",
     run: () => withdrawSubmission(useProjects.getState().current!.id),
   });
+  registerCommand({ id: "workbench.action.newProjectFromTemplate", title: "New Project from Template…", category: "File", enabled: () => !!getPlatform().account && !inExam(), run: newProjectFromTemplate });
   registerCommand({ id: "workbench.view.grading", title: "Show Grading", category: "View", enabled: () => usable() && useGrading.getState().grader, run: () => revealView("grading") });
   registerCommand({ id: "grading.refresh", title: "Refresh Grading", category: "Grading", enabled: () => usable() && signedIn(), run: () => refreshGrading() });
   registerCommand({ id: "grading.closeReview", title: "Close Review (Back to My Folder)", category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });

@@ -4,7 +4,7 @@ import { debugAllowed, debugKindForPath, startDebugging } from "../debug/debugSe
 import { inExam } from "../exam/state";
 import { getDocument, onDocumentChanged } from "../monaco/documents";
 import type { OwnedTerminal, TerminalOwner } from "../parts/panel/TerminalView";
-import { activateEditor, activeFilePath, getPlatform, log, notify, openFile, showPanel, updateSetting, useWorkbench } from "../state/store";
+import { activateEditor, activeFilePath, getPlatform, log, notify, openEditorInput, openFile, showPanel, updateSetting, useWorkbench } from "../state/store";
 import { pickAndRunTask } from "../tasks/service";
 import { openBrowser, openExternalUrl } from "../terminal/browser";
 import { claimServerPort } from "../terminal/enhance";
@@ -232,6 +232,14 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean } =
     case "markdownPreview":
       if (a.entry && activeFilePath() !== a.entry) openFile(a.entry, { pinned: true });
       return executeCommand("markdown.showPreviewToSide");
+    case "sqlRun": {
+      const { runSql } = await import("../sql/service");
+      if (a.entry && activeFilePath() !== a.entry) openFile(a.entry, { pinned: true });
+      return runSql(a.entry!);
+    }
+    case "logicPreview":
+      if (a.entry && activeFilePath() !== a.entry) openFile(a.entry, { pinned: true });
+      return openEditorInput({ kind: "logic", id: `logic:${a.entry}`, path: a.entry!, preview: false }, { toSide: true });
   }
 }
 
@@ -548,6 +556,21 @@ function registerRunHubCommands() {
   const hasWorkspace = () => !!useWorkbench.getState().workspace;
   const terminalOk = () => targetContext().terminal && targetContext().practice;
   const activeIs = (re: RegExp) => () => re.test(activeFilePath() ?? "");
+  const sqlFile = () => /\.sql$/i.test(activeFilePath() ?? "");
+  registerCommand({ id: "sql.runFile", title: "Run SQL File", category: "SQL", keybinding: "mod+shift+enter", enabled: sqlFile, run: async () => (await import("../sql/service")).runSql(activeFilePath()!) });
+  registerCommand({ id: "sql.runStatement", title: "Run SQL Statement at Cursor (or Selection)", category: "SQL", keybinding: "mod+enter", enabled: sqlFile, run: async () => (await import("../sql/service")).runSql(activeFilePath()!, { scope: "statement" }) });
+  registerCommand({ id: "api.openTester", title: "Open API Tester", category: "Run", enabled: () => !!getPlatform().http, run: async () => (await import("../api/service")).openApiTester() });
+  registerCommand({ id: "sql.resetDatabase", title: "Reset SQL Database", category: "SQL", run: async () => (await import("../sql/service")).resetDatabase() });
+  registerCommand({
+    id: "logic.showTruthTables",
+    title: "Show Truth Tables",
+    category: "Logic",
+    enabled: () => /\.logic$/i.test(activeFilePath() ?? ""),
+    run: () => {
+      const p = activeFilePath()!;
+      openEditorInput({ kind: "logic", id: `logic:${p}`, path: p, preview: false }, { toSide: true });
+    },
+  });
   registerCommand({ id: "tmcode.runProject", title: "Run Project", category: "Run", keybinding: RUN_PROJECT_KB, enabled: hasWorkspace, run: runProject });
   registerCommand({ id: "tmcode.selectRunTarget", title: "Change Run Target...", category: "Run", enabled: hasWorkspace, run: () => pickRunTarget() });
   registerCommand({ id: "tmcode.runPick", title: "Run...", category: "Run", enabled: hasWorkspace, run: pickAndRun });

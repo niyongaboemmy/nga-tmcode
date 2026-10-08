@@ -40,6 +40,7 @@ fn main() {
             "debug_run_in_terminal",
             "debug_policy",
             "preview_publish",
+            "api_request",
             "exam_device",
             "exam_workspace",
             "journal_load",

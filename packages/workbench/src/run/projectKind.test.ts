@@ -235,3 +235,79 @@ describe("formatElapsed", () => {
     expect(formatElapsed(3_723_000)).toBe("1:02:03");
   });
 });
+
+describe("more technologies", () => {
+  it("Flutter: web dev server when web/ exists, else a task to add it; desktop, tests, analyze", () => {
+    const pub = "name: app\ndependencies:\n  flutter:\n    sdk: flutter\nflutter:\n  uses-material-design: true\n";
+    const web = detectProject(folder({ "pubspec.yaml": pub }, { dirs: ["lib", "web", ".dart_tool"] }))!;
+    expect(web.kind).toBe("flutter");
+    expect(web.actions[0]).toMatchObject({ kind: "devServer", port: 8686 });
+    expect(web.actions[0].command).toContain("flutter run -d web-server");
+    expect(web.actions.map((a) => a.label)).toEqual(expect.arrayContaining(["flutter: test", "flutter: run on this computer"]));
+    const noWeb = detectProject(folder({ "pubspec.yaml": pub }, { dirs: ["lib"] }))!;
+    expect(noWeb.actions[0]).toMatchObject({ kind: "task", command: "flutter create . --platforms=web" });
+    expect(noWeb.actions[1].prelude).toBe("flutter pub get");
+  });
+
+  it("Dart console apps run with dart run", () => {
+    const p = detectProject(folder({ "pubspec.yaml": "name: x\ndev_dependencies:\n  test: ^1.0.0\n" }, { dirs: ["bin"] }))!;
+    expect(p.kind).toBe("dart");
+    expect(p.actions[0]).toMatchObject({ kind: "task", command: "dart run" });
+  });
+
+  it("Laravel, Composer PHP and plain PHP", () => {
+    const l = detectProject(folder({ artisan: "", "composer.json": "{}" }, { dirs: ["vendor", "app"] }))!;
+    expect(l.kind).toBe("laravel");
+    expect(l.actions[0]).toMatchObject({ kind: "devServer", command: "php artisan serve", port: 8000 });
+    const php = detectProject(folder({ "index.php": "<?php echo 1;" }))!;
+    expect(php.kind).toBe("php");
+    expect(php.actions[0].command).toBe("php -S localhost:8000 -t .");
+    const pub = detectProject(folder({ "composer.json": '{"require-dev":{"phpunit/phpunit":"^11"}}' }, { dirs: ["public"] }))!;
+    expect(pub.actions[0].command).toBe("php -S localhost:8000 -t public");
+    expect(pub.actions[0].prelude).toBe("composer install");
+    expect(pub.actions.map((a) => a.label)).toContain("phpunit");
+  });
+
+  it("Rails, Sinatra and Ruby scripts", () => {
+    expect(detectProject(folder({ Gemfile: "gem 'rails'", "Gemfile.lock": "" }, { dirs: ["app", "config"] }))!.actions[0]).toMatchObject({ kind: "devServer", command: "bin/rails server", port: 3000 });
+    const s = detectProject(folder({ Gemfile: "gem 'sinatra'", "app.rb": "require 'sinatra'" }))!;
+    expect(s.kind).toBe("sinatra");
+    expect(s.actions[0]).toMatchObject({ kind: "devServer", port: 4567, prelude: "bundle install" });
+    expect(detectProject(folder({ "main.rb": "puts 1" }))!.actions[0]).toMatchObject({ kind: "task", command: "ruby main.rb" });
+  });
+
+  it("Swift packages", () => {
+    expect(detectProject(folder({ "Package.swift": "// swift-tools-version:5.9" }))!.actions.map((a) => a.command)).toEqual(["swift run", "swift test", "swift build"]);
+  });
+
+  it("NestJS starts with start:dev", () => {
+    const p = detectProject(folder({ "package.json": pkg({ scripts: { start: "nest start", "start:dev": "nest start --watch" }, dependencies: { "@nestjs/core": "^11" } }) }, { dirs: ["node_modules"] }))!;
+    expect(p.label).toBe("Node.js (NestJS)");
+    expect(p.actions[0]).toMatchObject({ kind: "devServer", command: "npm run start:dev" });
+  });
+
+  it("SQL and logic folders run in TMCode itself", () => {
+    const sql = detectProject(folder({ "schema.sql": "", "queries.sql": "" }))!;
+    expect(sql.kind).toBe("sql");
+    expect(sql.actions.map((a) => [a.kind, a.entry])).toEqual([
+      ["sqlRun", "queries.sql"],
+      ["sqlRun", "schema.sql"],
+    ]);
+    expect(detectProject(folder({ "laws.logic": "F = A" }))!.actions[0]).toMatchObject({ kind: "logicPreview", entry: "laws.logic" });
+  });
+
+  it("single files of many languages run in a terminal", () => {
+    const run = (p: string) => fileActions(p, { webRoot: null })[0];
+    expect(run("src/hello.php")).toMatchObject({ kind: "task", command: 'php "hello.php"', cwd: "src" });
+    expect(run("a.rb").command).toBe('ruby "a.rb"');
+    expect(run("a.dart").command).toBe('dart run "a.dart"');
+    expect(run("a.kt").command).toContain("kotlinc");
+    expect(run("a.lua").command).toBe('lua "a.lua"');
+    expect(run("a.R").command).toBe('Rscript "a.R"');
+    expect(run("q.sql")).toMatchObject({ kind: "sqlRun", entry: "q.sql", needs: "none" });
+    expect(run("x.logic")).toMatchObject({ kind: "logicPreview" });
+    // Built-in kinds work in exams too; terminal ones don't.
+    expect(actionAvailable(run("q.sql"), EXAM)).toBe(true);
+    expect(actionAvailable(run("a.rb"), EXAM)).toBe(false);
+  });
+});

@@ -6522,3 +6522,508 @@ kbd,
 .tm-grade-reviewing > span {
   flex: 1 1 110px;
 }
+
+/* ───────────── SQL results, truth tables, API Tester ───────────── */
+.tm-sql-page,
+.tm-api-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--editor-bg);
+  color: var(--foreground);
+  font-size: 13px;
+}
+.tm-sql-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-sql-head-spacer {
+  flex: 1;
+}
+.tm-sql-mode {
+  display: flex;
+  gap: 4px;
+}
+.tm-sql-body {
+  display: grid;
+  grid-template-columns: 1fr minmax(180px, 240px);
+  flex: 1;
+  min-height: 0;
+}
+.tm-sql-results {
+  overflow: auto;
+  padding: 10px 14px 24px;
+}
+.tm-sql-page > .tm-sql-results {
+  flex: 1;
+  min-height: 0;
+}
+.tm-sql-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  font-size: 12px;
+}
+.tm-sql-empty {
+  margin: 8px 0;
+  padding: 0 14px;
+  font-size: 12px;
+}
+.tm-sql-stmt,
+.tm-logic-expr {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.tm-sql-stmt.is-error {
+  border-color: color-mix(in srgb, var(--error) 50%, var(--border));
+}
+.tm-sql-stmt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  font-size: 12px;
+}
+.tm-sql-line {
+  flex: none;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--description);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.tm-sql-line:hover {
+  color: var(--link);
+}
+.tm-sql-text,
+.tm-logic-formula {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono-font, ui-monospace, monospace);
+}
+.tm-logic-formula {
+  font-size: 13px;
+}
+.tm-sql-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.tm-sql-status small {
+  color: var(--description);
+}
+.tm-sql-stmt.is-error .tm-sql-status {
+  color: var(--error);
+}
+.tm-sql-stmt:not(.is-error) .tm-sql-status .codicon {
+  color: var(--success);
+}
+.tm-sql-error,
+.tm-sql-plan {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.tm-sql-error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+}
+.tm-sql-plan {
+  color: var(--description);
+  border-top: 1px dashed var(--border);
+}
+.tm-sql-table-wrap {
+  max-height: 340px;
+  overflow: auto;
+}
+.tm-sql-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 12px;
+}
+.tm-sql-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--editor-bg);
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tm-sql-table td {
+  padding: 3px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  white-space: nowrap;
+}
+.tm-sql-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.tm-sql-table td.is-num {
+  text-align: right;
+}
+.tm-sql-rownum {
+  width: 1%;
+  color: var(--description);
+  text-align: right !important;
+}
+.tm-sql-null {
+  color: var(--description);
+  font-style: italic;
+}
+.tm-sql-schema {
+  overflow: auto;
+  padding: 10px 12px;
+  border-left: 1px solid var(--border);
+  font-size: 12px;
+}
+.tm-sql-schema h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--description);
+}
+.tm-sql-schema-table summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.tm-sql-schema-table summary small {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--description);
+}
+.tm-sql-schema-table ul {
+  margin: 0 0 6px;
+  padding: 0 0 0 6px;
+  list-style: none;
+}
+.tm-sql-schema-table li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 0;
+}
+.tm-sql-schema-table li small {
+  margin-left: auto;
+  color: var(--description);
+}
+.tm-sql-col-pad {
+  width: 16px;
+}
+.tm-logic-table th.is-var,
+.tm-logic-table td.is-var {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.tm-logic-table th.is-result,
+.tm-logic-table td.is-result {
+  font-weight: 600;
+}
+.tm-logic-table td {
+  text-align: center;
+}
+.tm-logic-table td.is-result.is-true {
+  color: var(--success);
+}
+.tm-logic-table td.is-result.is-false {
+  color: var(--error);
+}
+.tm-logic-table td.is-step {
+  color: var(--description);
+}
+.tm-logic-kind.is-tautology {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+.tm-logic-kind.is-contradiction {
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+  color: var(--error);
+}
+.tm-logic-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.tm-logic-facts dt {
+  color: var(--description);
+}
+.tm-logic-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tm-logic-help pre {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+@container sql (max-width: 640px) {
+  .tm-sql-body {
+    grid-template-columns: 1fr;
+  }
+  .tm-sql-schema {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+.tm-sql-page {
+  container-type: inline-size;
+  container-name: sql;
+}
+
+/* API Tester */
+.tm-api-page {
+  display: grid;
+  grid-template-columns: minmax(180px, 250px) 1fr;
+  container-type: inline-size;
+  container-name: api;
+}
+.tm-api-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.tm-api-side-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+}
+.tm-api-side-tabs .tm-action {
+  margin-left: auto;
+}
+.tm-api-side-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 8px;
+  font-size: 12px;
+}
+.tm-api-side-list > p {
+  margin: 4px 10px;
+}
+.tm-api-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.tm-api-route:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+.tm-api-method {
+  flex: none;
+  min-width: 46px;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+}
+.tm-api-method.is-get {
+  color: #3fb950;
+}
+.tm-api-method.is-post {
+  color: #d29922;
+}
+.tm-api-method.is-put,
+.tm-api-method.is-patch {
+  color: #58a6ff;
+}
+.tm-api-method.is-delete {
+  color: #f85149;
+}
+.tm-api-method.is-any {
+  color: var(--description);
+}
+.tm-api-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow: auto;
+}
+.tm-api-bar {
+  display: flex;
+  gap: 6px;
+}
+.tm-api-method-select {
+  flex: none;
+  width: 104px;
+  font-weight: 600;
+}
+.tm-api-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono-font, ui-monospace, monospace);
+}
+.tm-api-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.tm-api-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+.tm-api-tabs > button[role="tab"] {
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--description);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tm-api-tabs > button[role="tab"].is-active {
+  border-bottom-color: var(--accent);
+  color: var(--foreground);
+}
+.tm-api-format {
+  margin-left: auto !important;
+  font-size: 12px;
+}
+.tm-api-body {
+  display: block;
+  width: 100%;
+  border: 0 !important;
+  border-radius: 0 !important;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  resize: vertical;
+}
+.tm-api-hint {
+  margin: 10px;
+  font-size: 12px;
+}
+.tm-api-headers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+.tm-api-header-row {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 22px;
+  gap: 4px;
+}
+.tm-api-response {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+}
+.tm-api-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-api-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tm-api-status {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 12px;
+}
+.tm-api-status.is-ok {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+.tm-api-status.is-info {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
+}
+.tm-api-status.is-warn {
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  color: var(--warning);
+}
+.tm-api-status.is-error {
+  background: color-mix(in srgb, var(--error) 18%, transparent);
+  color: var(--error);
+}
+.tm-api-raw {
+  flex: 1;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tm-api-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  color: var(--error);
+}
+.tm-api-preview {
+  flex: 1;
+  min-height: 220px;
+  border: 0;
+  background: #fff;
+}
+.tm-api-header-table th {
+  position: static;
+  width: 34%;
+  font-weight: 500;
+  color: var(--description);
+}
+@container api (max-width: 640px) {
+  .tm-api-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .tm-api-side {
+    max-height: 160px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}

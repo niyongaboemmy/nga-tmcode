@@ -153,6 +153,11 @@ export function RunStatusItems() {
             <Codicon name="debug-restart" />
           </button>
         )}
+        {info.url && h.what === "dev" && getPlatform().http && (
+          <button type="button" className="tm-status-item is-clickable tm-prio-mid" title="Test this server's API (send requests, see responses)" aria-label="Open API Tester" onClick={() => executeCommand("api.openTester")} data-testid="status-api-tester">
+            <Codicon name="radio-tower" />
+          </button>
+        )}
         {info.url && (
           <button type="button" className="tm-status-item is-clickable tm-prio-mid" title={`Open ${info.url} in the built-in browser`} aria-label={`Open ${info.url}`} onClick={() => revealBrowser(info.url!)}>
             <Codicon name="globe" /> {info.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
@@ -218,6 +223,8 @@ const KIND_ICON: Record<RunAction["kind"], string> = {
   debug: "debug-alt",
   pickTask: "tasklist",
   markdownPreview: "open-preview",
+  sqlRun: "database",
+  logicPreview: "table",
 };
 
 function primaryTitle(a: RunAction) {
@@ -346,6 +353,7 @@ function buildRows(): Row[] {
   if (ctx.practice && ctx.terminal) rows.push({ kind: "item", id: "run-task", label: "Run Task...", icon: "tasklist", run: () => executeCommand("workbench.action.tasks.runTask") });
   if (debugAllowed() && getPlatform().debug) rows.push({ kind: "item", id: "debug", label: "Start Debugging", icon: "debug-alt", keybinding: formatKeybinding("f5", os), run: () => void startDebugging() });
   rows.push({ kind: "item", id: "js-console", label: "Show JavaScript Console", icon: "debug-console", run: () => showPanel("jsConsole") });
+  if (ctx.practice && getPlatform().http) rows.push({ kind: "item", id: "api-tester", label: "Open API Tester", icon: "radio-tower", run: () => executeCommand("api.openTester") });
   return rows;
 }
 
