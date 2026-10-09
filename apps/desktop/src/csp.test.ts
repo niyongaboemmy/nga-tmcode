@@ -19,4 +19,11 @@ describe("webview content security policy", () => {
     const conf = JSON.parse(read("src-tauri/tauri.conf.json"));
     expect(conf.app.security.csp["style-src"]).toContain("'unsafe-inline'");
   });
+
+  it("img-src loads assignment images from NGA servers (Task Mentor /uploads, the file server), not any site", () => {
+    const img: string = JSON.parse(read("src-tauri/tauri.conf.json")).app.security.csp["img-src"];
+    expect(img).toContain("https://*.amashuri.com");
+    // Other sites' images become links (widgets/richHtml.ts): no tracking pixels in briefs.
+    expect(img.split(/\s+/)).not.toContain("https:");
+  });
 });

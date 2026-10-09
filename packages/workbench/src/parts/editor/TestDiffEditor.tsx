@@ -84,7 +84,7 @@ export function TestDiffEditor({ input }: { input: DiffInput }) {
         <span>Expected output</span>
         <span>Your output</span>
       </div>
-      <div ref={host} className="tm-testdiff-editor" />
+      <div ref={host} className="tm-testdiff-editor monaco-component" />
     </div>
   );
 }

@@ -124,7 +124,11 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
           <span>{ago(p.last_activity_at ?? p.updated_at)}</span>
         </span>
       </span>
-      {current && <Codicon name="check" className="tm-project-current" aria-label="Open in this window" />}
+      {current && (
+        <span className="tm-open-here" title="This project is the folder open in this window">
+          <Codicon name="folder-opened" /> Open here
+        </span>
+      )}
     </div>
   );
 }

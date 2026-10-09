@@ -19,7 +19,7 @@
         "script-src": "'self' 'wasm-unsafe-eval'",
         "style-src": "'self' 'unsafe-inline'",
         "worker-src": "'self' blob:",
-        "img-src": "'self' data: blob:",
+        "img-src": "'self' data: blob: https://*.amashuri.com http://localhost:* http://127.0.0.1:*",
         "media-src": "'self' data: blob:",
         "font-src": "'self' data:",
         "connect-src": "'self' ipc: http://ipc.localhost",

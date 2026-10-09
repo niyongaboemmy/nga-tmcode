@@ -107,7 +107,7 @@ export function GitDiffEditor({ input, groupId }: { input: DiffInput; groupId: n
 
   return (
     <div className="tm-code-editor tm-git-diff" data-testid="git-diff">
-      <div ref={host} className="tm-monaco-host" />
+      <div ref={host} className="tm-monaco-host monaco-component" />
       {error && (
         <div className="tm-editor-error" role="alert">
           <code>{error}</code>

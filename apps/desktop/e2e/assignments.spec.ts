@@ -295,3 +295,38 @@ test("with nothing assigned, the view says what will appear and how (students an
   await expect(empty).toContainText("choose TMCode as the way students hand it in");
   await expect(page.getByTestId("assignments-create")).toBeVisible();
 });
+
+test("a brief written in Task Mentor's rich editor reads in the theme's colours, with its images", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  await row(page, 52).click();
+  const brief = page.getByTestId("assignment-page").locator(".tm-rich").first();
+  await expect(brief).toContainText("Model a small library");
+  // The black, serif, white-background look the rich editor baked in is gone: the theme decides.
+  const html = await brief.innerHTML();
+  expect(html).not.toMatch(/color|background|font-family|Times/i);
+  const colours = await brief.evaluate((el) => {
+    const page = getComputedStyle(el.closest(".tm-assignment-page")!);
+    return { text: getComputedStyle(el.querySelector("p")!).color, page: page.color, h2: getComputedStyle(el.querySelector("h2")!).textAlign };
+  });
+  expect(colours.text).toBe(colours.page);
+  expect(colours.h2).toBe("center"); // structure is kept
+  // An image the app can load is shown; one from another site becomes a link.
+  await expect(brief.locator("img")).toHaveCount(1);
+  await expect(brief.locator("img")).toHaveJSProperty("complete", true);
+  await expect(brief.locator("a.tm-ext-image")).toHaveText("Open image (images.example.org)");
+});
+
+test("the assignment open in this window is highlighted, and the one whose brief is showing is selected", async ({ page }) => {
+  await fresh(page);
+  await startPractical(page);
+  await command(page, "View: Show Assignments");
+  const open = row(page, 51);
+  await expect(open).toHaveClass(/is-current/);
+  await expect(open).toContainText("Open here");
+  await expect(open).toHaveAttribute("aria-selected", "true"); // its brief is the tab in front
+  await row(page, 52).click();
+  await expect(row(page, 52)).toHaveAttribute("aria-selected", "true");
+  await expect(open).toHaveClass(/is-current/); // still the open workspace
+  await expect(row(page, 52)).not.toHaveClass(/is-current/);
+});

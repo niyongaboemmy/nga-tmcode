@@ -398,3 +398,53 @@
     animation: none !important;
   }
 }
+
+/* High contrast: badges, chips and the open/viewed rows are outlined (fills vanish on black). */
+.tm-root[data-theme="dark-hc"] .tm-badge,
+.tm-root[data-theme="dark-hc"] .tm-open-here,
+.tm-root[data-theme="dark-hc"] .tm-status-chip,
+.tm-root[data-theme="dark-hc"] .tm-chip {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+.tm-root[data-theme="dark-hc"] .tm-assignment-row.is-current,
+.tm-root[data-theme="dark-hc"] .tm-project-row.is-current,
+.tm-root[data-theme="dark-hc"] .tm-assignment-row.is-viewing,
+.tm-root[data-theme="dark-hc"] .tm-grade-activity.is-viewing {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+
+/*
+ * VS Code's design tokens, which Monaco's own CSS uses (menu borders, corner
+ * radii, widget shadows, spacing) but the standalone build never defines.
+ * Undefined, `border: var(--vscode-strokeThickness) solid …` is invalid and the
+ * editor's context menu, suggestions and hovers lose their borders and radii.
+ * Values are VS Code's; colours still come from the theme (--vscode-widget-shadow).
+ */
+.tm-root {
+  --vscode-strokeThickness: 1px;
+  --vscode-cornerRadius-xSmall: 2px;
+  --vscode-cornerRadius-small: 4px;
+  --vscode-cornerRadius-medium: 6px;
+  --vscode-cornerRadius-large: 8px;
+  --vscode-cornerRadius-xLarge: 12px;
+  --vscode-cornerRadius-circle: 9999px;
+  --vscode-shadow-sm: 0 0 2px var(--vscode-widget-shadow, var(--shadow));
+  --vscode-shadow-md: 0 0 6px var(--vscode-widget-shadow, var(--shadow));
+  --vscode-shadow-lg: 0 2px 8px var(--vscode-widget-shadow, var(--shadow));
+  --vscode-shadow-xl: 0 4px 16px var(--vscode-widget-shadow, var(--shadow));
+  --vscode-spacing-sizeNone: 0;
+  --vscode-spacing-size20: 2px;
+  --vscode-spacing-size40: 4px;
+  --vscode-spacing-size60: 6px;
+  --vscode-spacing-size80: 8px;
+  --vscode-spacing-size100: 10px;
+  --vscode-spacing-size120: 12px;
+  --vscode-spacing-size160: 16px;
+  --vscode-spacing-size200: 20px;
+  --vscode-spacing-size240: 24px;
+  --vscode-spacing-size280: 28px;
+  --vscode-spacing-size320: 32px;
+  --vscode-spacing-size400: 40px;
+}

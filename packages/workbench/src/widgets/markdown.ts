@@ -29,7 +29,8 @@ export function renderBrief(src: string): string {
   if (!/^\s*</.test(src)) return renderMarkdown(src);
   return DOMPurify.sanitize(src, {
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input", "button", "a", "link", "meta"],
-    FORBID_ATTR: ["style", "srcset"],
+    // The theme decides colours and fonts (old <font color> / bgcolor attributes too).
+    FORBID_ATTR: ["style", "srcset", "color", "bgcolor", "face", "background"],
     KEEP_CONTENT: true,
   });
 }

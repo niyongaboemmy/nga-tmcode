@@ -7481,3 +7481,45 @@ kbd,
 .tm-assignments-who {
   font-size: 11px;
 }
+
+/* The assignment / project open in this window, and the one whose tab is in front (theme list colours). */
+.tm-assignment-row.is-current,
+.tm-project-row.is-current {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tm-assignment-row.is-viewing,
+.tm-grade-activity.is-viewing {
+  background: var(--list-inactive-bg);
+}
+.tm-assignment-row.is-current.is-viewing {
+  background: color-mix(in srgb, var(--accent) 20%, var(--list-inactive-bg));
+}
+.tm-projects-view:focus-within .tm-assignment-row.is-viewing,
+.tm-projects-view:focus-within .tm-grade-activity.is-viewing {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-open-here {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--foreground);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tm-open-here .codicon {
+  font-size: 11px !important;
+}
+/* The state chip sits on the row's second line: the title keeps its room. */
+.tm-assignment-row .tm-assignment-sub .tm-chip {
+  height: 15px;
+  padding: 0 5px;
+  font-size: 10px;
+}

@@ -1,9 +1,9 @@
-import DOMPurify from "dompurify";
 import { useEffect, useMemo, useState } from "react";
 import { executeCommand } from "../commands/registry";
 import type { EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
+import { taskMentorHtml } from "../widgets/richHtml";
 import { Codicon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { api, useProjects } from "./service";
@@ -108,8 +108,10 @@ export function AssignmentEditor({ input }: { input: Input }) {
     return () => clearInterval(t);
   }, [id, detail]);
 
-  const brief = useMemo(() => (detail?.description_html ? DOMPurify.sanitize(detail.description_html, { USE_PROFILES: { html: true } }) : ""), [detail?.description_html]);
-  const instructions = useMemo(() => (detail?.instructions ? renderDocMarkdown(detail.instructions) : ""), [detail?.instructions]);
+  // Task Mentor's rich text, in the editor theme's colours and fonts, with its images (served by its API at /uploads).
+  const tmApi = useProjects((s) => s.account?.tm_api ?? null);
+  const brief = useMemo(() => (detail?.description_html ? taskMentorHtml(detail.description_html, tmApi) : ""), [detail?.description_html, tmApi]);
+  const instructions = useMemo(() => (detail?.instructions ? taskMentorHtml(renderDocMarkdown(detail.instructions), tmApi) : ""), [detail?.instructions, tmApi]);
 
   if (!detail) {
     return (
@@ -259,13 +261,13 @@ export function AssignmentEditor({ input }: { input: Input }) {
       {brief && (
         <section className="tm-assignment-section">
           <h2>Brief</h2>
-          <div className="tm-markdown-body" dangerouslySetInnerHTML={{ __html: brief }} />
+          <div className="tm-markdown-body tm-rich" dangerouslySetInnerHTML={{ __html: brief }} />
         </section>
       )}
       {instructions && (
         <section className="tm-assignment-section">
           <h2>Instructions</h2>
-          <div className="tm-markdown-body" dangerouslySetInnerHTML={{ __html: instructions }} />
+          <div className="tm-markdown-body tm-rich" dangerouslySetInnerHTML={{ __html: instructions }} />
         </section>
       )}
       {detail.attachments?.length > 0 && (

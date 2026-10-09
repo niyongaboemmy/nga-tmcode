@@ -167,7 +167,9 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
 
   return (
     <div className="tm-code-editor">
-      <div ref={host} className="tm-monaco-host" data-testid="monaco-host" />
+      {/* monaco-component: Monaco's theme colours (--vscode-menu-background …) are scoped to it, and the
+          context menu's shadow host is a child of this element, so the menu gets the theme's colours. */}
+      <div ref={host} className="tm-monaco-host monaco-component" data-testid="monaco-host" />
       {loading && (
         <div className="tm-editor-loading">
           <SkeletonLines lines={12} label="Opening file" />
