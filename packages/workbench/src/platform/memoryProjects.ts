@@ -207,7 +207,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     }
     if ((m = p.match(/^\/assignments$/)) && req.method === "GET") {
       const scope = url.searchParams.get("scope") === "teaching" ? "teaching" : "student";
-      if (scope === "teaching") return { status: 200, body: { assignments: teacher ? assignments.map((a) => assignmentSummary(a, "teaching")) : [] } };
+      // Like Task Mentor: students are refused the teaching scope.
+      if (scope === "teaching") return teacher ? { status: 200, body: { assignments: assignments.map((a) => assignmentSummary(a, "teaching")) } } : err(403, "FORBIDDEN", "Only teachers have a teaching scope.");
       return { status: 200, body: { assignments: teacher ? [] : assignments.map((a) => assignmentSummary(a, "student")) } };
     }
     if ((m = p.match(/^\/assignments\/(\d+)$/))) {
@@ -442,6 +443,11 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     },
     setTeacher(on: boolean) {
       teacher = on;
+    },
+    /** No TMCode assignments or quiz practicals at all (the empty Assignments view). */
+    clearAssignments() {
+      assignments.splice(0, assignments.length);
+      for (let i = activities.length - 1; i >= 0; i--) if ((activities[i] as { practical_questions?: unknown[] }).practical_questions?.length) activities.splice(i, 1);
     },
     /** false: Task Mentor without GET /grading (TMCode falls back to its own list). */
     setGradingList(on: boolean) {

@@ -51,13 +51,17 @@ interface AssignmentsState {
   /** Quizzes of the student's subjects that have TMCode practical questions. */
   quizPracticals: LinkableActivity[] | null;
   teaching: AssignmentSummary[] | null;
+  /** Task Mentor answered the teaching scope (staff) or refused it (students); null until asked. */
+  staff: boolean | null;
+  /** When the lists were last fetched (ms). */
+  checkedAt: number | null;
   loading: boolean;
   error: string | null;
   details: Record<number, AssignmentDetail>;
   busy: Record<number, "starting" | "submitting" | undefined>;
 }
 
-export const useAssignments = create<AssignmentsState>(() => ({ student: null, quizPracticals: null, teaching: null, loading: false, error: null, details: {}, busy: {} }));
+export const useAssignments = create<AssignmentsState>(() => ({ student: null, quizPracticals: null, teaching: null, staff: null, checkedAt: null, loading: false, error: null, details: {}, busy: {} }));
 const set = useAssignments.setState;
 const get = useAssignments.getState;
 
@@ -69,17 +73,25 @@ export async function refreshAssignments() {
   if (!assignmentsSupported()) return;
   set({ loading: true, error: null });
   try {
+    let staff = true;
     const [student, teaching, quizPracticals] = await Promise.all([
       api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=student"),
-      api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=teaching").catch(() => ({ assignments: [] })),
+      // Students are refused the teaching scope (403): that's an answer, not an error.
+      api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=teaching").catch((e) => {
+        if (e instanceof TmError && e.status === 403) {
+          staff = false;
+          return { assignments: [] as AssignmentSummary[] };
+        }
+        throw e;
+      }),
       import("./matching").then((m) => m.linkableActivities()).then((list) => list.filter((a) => a.activity_type === "quiz" && (a.practical_questions?.length ?? 0) > 0)).catch(() => [] as LinkableActivity[]),
     ]);
     // Open assignment pages follow the list (state, grade, completed → read-only).
     const details = { ...get().details };
     for (const a of [...student.assignments, ...teaching.assignments]) if (details[a.id]) details[a.id] = { ...details[a.id], ...a };
-    set({ student: student.assignments, teaching: teaching.assignments, quizPracticals, details, loading: false });
+    set({ student: student.assignments, teaching: teaching.assignments, quizPracticals, details, staff, checkedAt: Date.now(), loading: false });
   } catch (e) {
-    set({ loading: false, error: e instanceof TmError && e.status === 404 ? "Your Task Mentor doesn't offer TMCode assignments yet." : (e as Error).message });
+    set({ loading: false, checkedAt: Date.now(), error: e instanceof TmError && e.status === 404 ? "Your Task Mentor doesn't offer TMCode assignments yet." : `Couldn't load your assignments: ${(e as Error).message}` });
   }
 }
 
@@ -91,12 +103,21 @@ export function wireAssignments() {
   let was = false;
   const follow = (signed: boolean) => {
     if (signed && !was) void refreshAssignments();
-    if (!signed && was) set({ student: null, quizPracticals: null, teaching: null, details: {} });
+    if (!signed && was) set({ student: null, quizPracticals: null, teaching: null, staff: null, checkedAt: null, details: {} });
     was = signed;
   };
   follow(signedIn());
   useProjects.subscribe((s) => follow(!!s.account?.signed_in));
   setInterval(() => signedIn() && void refreshAssignments(), 5 * 60_000);
+  // Back from Task Mentor (where a teacher just published one): the list catches up.
+  if (typeof window !== "undefined") window.addEventListener("focus", () => void refreshIfStale(20_000));
+}
+
+/** Refreshes unless the lists are fresher than `maxAgeMs` (opening the view, focusing the window). */
+export function refreshIfStale(maxAgeMs = 30_000) {
+  const { checkedAt, loading } = get();
+  if (!signedIn() || loading) return;
+  if (checkedAt === null || Date.now() - checkedAt > maxAgeMs) return refreshAssignments();
 }
 
 export async function loadAssignment(id: number): Promise<AssignmentDetail | null> {
