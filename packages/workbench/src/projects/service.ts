@@ -491,7 +491,10 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
       if (useWorkbench.getState().workspace?.root === known) {
         await bindWorkspace();
         // Still this project's folder (not emptied, not disconnected and reconnected elsewhere)?
-        if (get().binding?.project_id === projectId) return true;
+        if (get().binding?.project_id === projectId) {
+          void showBriefOfCurrent(projectId);
+          return true;
+        }
       }
     } catch {
       /* moved or deleted: get a fresh copy */
@@ -527,7 +530,19 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
   }
   await rememberFolder(project.id);
   await bindWorkspace();
+  void showBriefOfCurrent(projectId);
   return true;
+}
+
+/** An assignment's workspace opens with its brief beside the code (from Projects, Start or Continue alike). */
+async function showBriefOfCurrent(projectId?: number) {
+  // Binding the folder loads the project in the background: ask for it if it isn't here yet.
+  let project = get().current;
+  if (projectId && project?.id !== projectId) project = await api<{ project: Project }>("GET", `/projects/${projectId}`).then((r) => r.project).catch(() => null);
+  const a = project?.assignment;
+  if (!a) return;
+  const shown = useWorkbench.getState().groups.some((g) => g.editors.some((e) => e.kind === "assignment" && e.assignmentId === a.id));
+  if (!shown) (await import("./assignments")).showAssignment(a.id, { toSide: true });
 }
 
 /** Stop syncing the open folder: the binding goes, the files stay. */

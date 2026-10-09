@@ -1,7 +1,7 @@
 import { track } from "../state/activity";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
+import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { api, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
 import type { LinkableActivity, Project } from "./types";
@@ -134,6 +134,18 @@ export async function loadAssignment(id: number): Promise<AssignmentDetail | nul
 
 /** The assignment page (brief, state, Start / Submit) as an editor tab. */
 export function showAssignment(id: number, opts: { toSide?: boolean } = {}) {
+  // One brief tab per assignment: if it is open in a group, bring it to the front there.
+  const editorId = `assignment:${id}`;
+  const s = useWorkbench.getState();
+  const holder = s.groups.find((g) => g.editors.some((e) => e.id === editorId));
+  if (holder) {
+    const focused = s.activeGroup;
+    activateEditor(holder.id, editorId);
+    // Beside the code (opening a project): the code keeps the focus.
+    if (opts.toSide && focused !== holder.id) focusGroup(focused);
+    void loadAssignment(id);
+    return;
+  }
   const title = [...(get().student ?? []), ...(get().teaching ?? [])].find((a) => a.id === id)?.title ?? `Assignment ${id}`;
   openEditorInput({ kind: "assignment", id: `assignment:${id}`, assignmentId: id, title, preview: false }, opts);
   void loadAssignment(id);
@@ -160,9 +172,11 @@ async function startAssignmentNow(id: number) {
     const folder = slug(`${a?.course_name ?? ""}-${a?.title ?? project.name}`);
     const opened = await openProject(project.id, { folderName: folder });
     if (!opened) return;
-    await revealStarterFile();
     showAssignment(id, { toSide: true });
-    if (created) notify("info", `Your workspace for "${a?.title ?? project.name}" is ready${a?.starter ? ` with ${a.starter.file_count} starter file${a.starter.file_count === 1 ? "" : "s"}` : ""}. Save to Task Mentor as you go, then Submit.`);
+    // No starter files from the teacher (and nothing written yet): offer a way to begin instead of an empty folder.
+    const began = (await isEmptyWorkspace()) ? await offerStarter(a ?? null) : false;
+    if (!began) await revealStarterFile();
+    if (created && !began) notify("info", `Your workspace for "${a?.title ?? project.name}" is ready${a?.starter ? ` with ${a.starter.file_count} starter file${a.starter.file_count === 1 ? "" : "s"}` : ""}. Save to Task Mentor as you go, then Submit.`);
     void refreshAssignments();
     void refreshProjects();
   } catch (e) {
@@ -173,9 +187,67 @@ async function startAssignmentNow(id: number) {
   }
 }
 
+/** The open folder has no files of the student's yet (only TMCode's own .tmcode, .gitignore …). */
+async function isEmptyWorkspace() {
+  const entries = await getPlatform().fs.readDir("").catch(() => []);
+  return !entries.some((e) => !e.name.startsWith("."));
+}
+
+/** Templates that fit an assignment's language ("html", "javascript", "python", "java" …), best first. */
+export async function startersFor(language: string | null | undefined) {
+  const { TEMPLATES } = await import("./templates");
+  const lang = (language ?? "").toLowerCase();
+  const web = /^(html|css|web|javascript|js)$/.test(lang);
+  const fits = (t: (typeof TEMPLATES)[number]) => {
+    const tl = t.language.toLowerCase();
+    if (!lang) return false;
+    if (web) return t.category === "Websites" || tl === "html" || (lang === "javascript" && tl === "javascript" && t.category === "Languages");
+    return tl === lang || (lang === "c++" && tl === "cpp") || (lang === "c#" && tl === "csharp");
+  };
+  const matching = TEMPLATES.filter(fits);
+  return matching.length ? matching : TEMPLATES.filter((t) => t.category === "Languages");
+}
+
+/**
+ * An empty assignment workspace: pick how to begin (a template in the
+ * assignment's language) or keep it empty. The files are saved to Task Mentor.
+ */
+async function offerStarter(a: AssignmentSummary | null): Promise<boolean> {
+  const starters = await startersFor(a?.language);
+  const pick = await showQuickPick({
+    title: `Your project for "${a?.title ?? "this assignment"}" is empty. How do you want to begin?`,
+    placeholder: "Choose starter files (you can change everything)",
+    matchOnDescription: true,
+    items: [
+      ...starters.slice(0, 8).map((t, i) => ({ id: t.id, label: t.label, description: t.description, icon: t.icon, separator: i === 0 ? (a?.language ? `for ${a.language}` : "starters") : undefined })),
+      { id: "__empty", label: "Start with an empty project", description: "Create the files yourself", icon: "new-file", pinLast: true, separator: "other" },
+    ],
+  });
+  if (!pick || pick.id === "__empty") return false;
+  const { templateById } = await import("./templates");
+  const tpl = templateById(pick.id);
+  if (!tpl) return false;
+  const { writeTemplate, offerSetup } = await import("./commands");
+  focusCodeGroup();
+  await writeTemplate(tpl);
+  await saveToTaskMentor({ message: `Started from the ${tpl.label} template`, quiet: true });
+  notify("info", `Your project starts from the ${tpl.label} template and is saved to Task Mentor. Save as you go, then Submit.`);
+  await offerSetup(tpl);
+  return true;
+}
+
+/** The editor group for code: not the one holding briefs (focused, so new files open there). */
+function focusCodeGroup() {
+  const groups = useWorkbench.getState().groups;
+  const code = groups.find((g) => !g.editors.some((e) => e.kind === "assignment")) ?? groups[0];
+  if (code) focusGroup(code.id);
+}
+
 /** Opens the file to begin with (README, index.html, main.*), as the plan's "reveal the first file". */
 async function revealStarterFile() {
-  if (useWorkbench.getState().groups.some((g) => g.editors.length > 0)) return;
+  // The brief beside the code doesn't count: a file the student already has open does.
+  if (useWorkbench.getState().groups.some((g) => g.editors.some((e) => e.kind === "file"))) return;
+  focusCodeGroup();
   const entries = await getPlatform().fs.readDir("").catch(() => []);
   const files = entries.filter((e) => e.kind === "file").map((e) => e.path);
   const pick =

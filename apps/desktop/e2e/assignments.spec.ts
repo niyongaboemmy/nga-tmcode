@@ -64,7 +64,7 @@ test("the brief opens as a tab, sanitised, with links kept out of the workbench"
   const brief = page.getByTestId("assignment-page");
   await expect(brief.locator("h1")).toHaveText("Build a to-do list");
   await expect(brief).toContainText("20 points");
-  await expect(brief).toContainText("Starter files: 2 files");
+  await expect(brief).toContainText("your teacher's 2 starter files"); // in the next-step card
   await expect(brief.locator("script")).toHaveCount(0);
   await expect(brief.locator(".tm-markdown-body li")).toHaveCount(3);
   await expect(page.locator(".tm-tab", { hasText: "Build a to-do list" })).toBeVisible();
@@ -357,4 +357,63 @@ test("loading shows the instant a request starts, on a slow network too", async 
   await expect(page.getByTestId("status-busy")).toContainText("Saving to Task Mentor", { timeout: 400 });
   await expect(page.getByTestId("assignment-save")).toContainText("Save", { timeout: 15_000 });
   await expect(page.getByTestId("assignment-save")).not.toContainText("Saving…", { timeout: 15_000 });
+});
+
+test("a new student: opening the brief offers Start; Enter starts; the code opens with the brief beside it", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  await row(page, 51).click();
+  const next = page.getByTestId("assignment-next-step");
+  await expect(next).toContainText("Start this assignment");
+  await expect(next).toContainText("your teacher's 2 starter files");
+  // The offer has the keyboard: Enter starts.
+  await expect(page.getByTestId("assignment-start")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(next).toContainText("You're working on it in this window", { timeout: 15_000 });
+  // The starter file is open for coding, in another group than the brief.
+  await expect(page.locator(".tm-tab", { hasText: "index.html" })).toBeVisible();
+  const groupOf = (text: string) => page.locator(".tm-editor-group", { has: page.locator(".tm-tab", { hasText: text }) });
+  await expect(groupOf("index.html")).toHaveCount(1);
+  await expect(groupOf("Build a to-do list")).toHaveCount(1);
+  expect(await groupOf("index.html").evaluate((g, other) => g !== document.querySelectorAll(".tm-editor-group")[other], 1)).toBe(true);
+  // One brief tab, not two.
+  await expect(page.locator(".tm-tab", { hasText: "Build a to-do list" })).toHaveCount(1);
+});
+
+test("an assignment without starter files offers starters, saves the choice and opens it", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  await row(page, 52).click();
+  await expect(page.getByTestId("assignment-next-step")).toContainText("no starter files");
+  await page.getByTestId("assignment-start").click();
+  const pick = page.locator(".tm-quick-pick");
+  await expect(pick).toContainText("is empty. How do you want to begin?", { timeout: 15_000 });
+  await expect(pick.locator(".tm-qi-item").last()).toContainText("Start with an empty project");
+  await pick.locator(".tm-qi-item", { hasText: /^Python/ }).first().click();
+  await expect(page.locator(".tm-tab", { hasText: "main.py" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".tm-toast", { hasText: "starts from the Python template" })).toBeVisible();
+  // Saved to Task Mentor as the first revision of the student's project.
+  const revs = await mock(page, (m) => m.state().revisions.filter((r) => r.files.includes("main.py")).length);
+  expect(revs).toBeGreaterThan(0);
+});
+
+test("a started assignment offers Open on its row (and double-click), and its project opens with the brief from Projects too", async ({ page }) => {
+  await fresh(page);
+  await startPractical(page);
+  // Leave it: open another folder.
+  await command(page, "View: Show Assignments");
+  await row(page, 52).getByRole("button", { name: "Start" }).click();
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Start with an empty project" }).click();
+  await expect(row(page, 52)).toContainText("Open here", { timeout: 15_000 });
+  const practical = row(page, 51);
+  await expect(practical.getByRole("button", { name: "Open" })).toBeVisible();
+  await practical.dblclick();
+  await expect(practical).toContainText("Open here", { timeout: 15_000 });
+  await expect(page.getByTestId("assignment-next-step")).toContainText("You're working on it");
+
+  // From Projects: the case study's workspace opens with its brief beside the code.
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).locator(".tm-tab-close, [aria-label^='Close']").first().click();
+  await command(page, "View: Show Task Mentor Projects");
+  await page.getByTestId("project-row").filter({ hasText: "Library case study" }).click();
+  await expect(page.locator(".tm-tab", { hasText: "Library case study" })).toBeVisible({ timeout: 15_000 });
 });

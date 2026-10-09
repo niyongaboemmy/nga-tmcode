@@ -172,37 +172,82 @@ export function AssignmentEditor({ input }: { input: Input }) {
       )}
 
       {!teaching && (
-        <div className="tm-assignment-actions">
-          {!started && !detail.read_only && (
-            <button type="button" className="tm-button" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-start">
-              <Codicon name={busy === "starting" ? "loading" : "play"} className={busy === "starting" ? "codicon-modifier-spin" : ""} /> {busy === "starting" ? "Preparing your workspace…" : "Start"}
-            </button>
-          )}
-          {started && !here && (
-            <button type="button" className="tm-button" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue">
-              <Codicon name="folder-opened" /> {detail.read_only ? "Open My Work" : "Continue"}
-            </button>
-          )}
-          {started && here && !detail.read_only && projectStatus === "submitted" && (
-            <button type="button" className="tm-button tm-button--secondary" onClick={() => executeCommand("projects.withdraw")} data-testid="assignment-withdraw">
-              <Codicon name="discard" /> Withdraw Submission to Edit
-            </button>
-          )}
-          {started && here && !detail.read_only && projectStatus !== "submitted" && projectStatus !== "graded" && (
+        <section className={`tm-next-step is-${!started ? "start" : !here ? "open" : projectStatus === "submitted" || projectStatus === "graded" ? "done" : "working"}`} data-testid="assignment-next-step" aria-label="Next step">
+          {!started && !detail.read_only ? (
             <>
-              <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
-                <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
-              </button>
-              <button type="button" className="tm-button" disabled={saving || !!busy} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
-                <Codicon name={busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}
-                {busy === "submitting" ? "Submitting…" : my?.state === "submitted" || my?.state === "graded" ? "Submit Again" : "Submit"}
+              <div className="tm-next-step-text">
+                <h2>
+                  <Codicon name="rocket" /> Start this assignment
+                </h2>
+                <p>
+                  TMCode creates your own project{detail.starter ? ` with your teacher's ${detail.starter.file_count} starter file${detail.starter.file_count === 1 ? "" : "s"}` : ""} and opens it in this window, with this brief beside your code.
+                  {!detail.starter && " Your teacher gave no starter files: you can begin from a template."}
+                </p>
+                <small className="tm-muted">The folder open now stays on this computer; reopen it any time from File › Open Recent.</small>
+              </div>
+              <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-start" autoFocus>
+                <Codicon name={busy === "starting" ? "loading" : "play"} className={busy === "starting" ? "codicon-modifier-spin" : ""} /> {busy === "starting" ? "Preparing your project…" : "Start Assignment"}
               </button>
             </>
+          ) : started && !here ? (
+            <>
+              <div className="tm-next-step-text">
+                <h2>
+                  <Codicon name="folder-opened" /> {detail.read_only ? "Your work" : "Continue your work"}
+                </h2>
+                <p>
+                  {detail.read_only
+                    ? "This assignment is completed. Open your project to read it."
+                    : `Your project is saved in Task Mentor${my?.state === "submitted" ? " and submitted" : my?.state === "graded" ? " and graded" : ""}. Open it in this window to keep working${my?.state === "in_progress" ? ", then Submit" : ""}.`}
+                </p>
+              </div>
+              <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue" autoFocus>
+                <Codicon name={busy === "starting" ? "loading" : "folder-opened"} className={busy === "starting" ? "codicon-modifier-spin" : ""} /> {busy === "starting" ? "Opening…" : detail.read_only ? "Open My Work" : "Open My Project"}
+              </button>
+            </>
+          ) : here && !detail.read_only && projectStatus === "submitted" ? (
+            <>
+              <div className="tm-next-step-text">
+                <h2>
+                  <Codicon name="lock" /> Submitted
+                </h2>
+                <p>Your teacher sees the version you handed in. Withdraw it if you need to change something before it's graded.</p>
+              </div>
+              <button type="button" className="tm-button tm-button--secondary" onClick={() => executeCommand("projects.withdraw")} data-testid="assignment-withdraw">
+                <Codicon name="discard" /> Withdraw Submission to Edit
+              </button>
+            </>
+          ) : here && !detail.read_only && projectStatus !== "graded" ? (
+            <>
+              <div className="tm-next-step-text">
+                <h2>
+                  <Codicon name="edit" /> You're working on it in this window
+                </h2>
+                <p>Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded.</p>
+              </div>
+              <div className="tm-next-step-actions">
+                <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
+                  <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
+                </button>
+                <button type="button" className="tm-button" disabled={saving || !!busy} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
+                  <Codicon name={busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}
+                  {busy === "submitting" ? "Submitting…" : my?.state === "submitted" || my?.state === "graded" ? "Submit Again" : "Submit"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="tm-next-step-text">
+              <h2>
+                <Codicon name={detail.read_only ? "lock" : "pass"} /> {detail.read_only ? "Completed" : "Graded"}
+              </h2>
+              <p>{detail.read_only ? "Your teacher marked this assignment as completed." : "Your grade and your teacher's feedback are below."}</p>
+            </div>
           )}
-          <button type="button" className="tm-button tm-button--secondary" onClick={() => openAssignmentInTaskMentor(id)}>
+          <span className="tm-next-step-break" />
+          <button type="button" className="tm-link-button tm-next-step-tm" onClick={() => openAssignmentInTaskMentor(id)}>
             <Codicon name="link-external" /> Open in Task Mentor
           </button>
-        </div>
+        </section>
       )}
 
       {!teaching && my && (my.submitted_at || my.state === "graded") && (
@@ -254,7 +299,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
         </>
       )}
 
-      {detail.starter && (
+      {detail.starter && teaching && (
         <p className="tm-muted tm-assignment-starter">
           <Codicon name="files" /> Starter files: {detail.starter.file_count} file{detail.starter.file_count === 1 ? "" : "s"}
           {!teaching && !started && " — copied into your own workspace when you start."}

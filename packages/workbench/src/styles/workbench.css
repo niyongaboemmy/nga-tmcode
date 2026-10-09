@@ -7563,3 +7563,78 @@ kbd,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* The brief's next step: start, open, keep working, or done. */
+.tm-next-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 4px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: calc(var(--radius) + 4px);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.tm-next-step.is-working,
+.tm-next-step.is-done {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+.tm-next-step-text {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.tm-next-step-text h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.tm-next-step-text h2 .codicon {
+  color: var(--accent);
+}
+.tm-next-step-text p {
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+.tm-next-step-text small {
+  font-size: 11.5px;
+}
+.tm-next-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tm-next-step-tm {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  margin: -4px 0 0;
+  font-size: 12px;
+}
+.tm-button--large {
+  height: 34px;
+  padding: 0 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.tm-root[data-theme="dark-hc"] .tm-next-step {
+  border-color: var(--focus-border);
+}
+.tm-assignment-page .tm-next-step-text h2 {
+  padding: 0;
+  border: 0;
+}
+.tm-next-step .tm-next-step-tm {
+  display: inline-flex;
+  flex-basis: auto;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+  text-align: left;
+}
+.tm-next-step-break {
+  flex-basis: 100%;
+  height: 0;
+}
