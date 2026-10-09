@@ -5,22 +5,36 @@ import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
 import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, setSharePresence, signIn, useProjects } from "./service";
-import { showAssignment } from "./assignments";
+import { showAssignment, useAssignments } from "./assignments";
 import type { Link, Project, SyncState } from "./types";
 import { openInTaskMentor } from "./commands";
-import { TYPE_LABEL } from "./matching";
+import { dueText, TYPE_LABEL } from "./matching";
 
+/** Short: the sync row shares the side bar's width with Save. The tooltip says it in full. */
 const SYNC_LABEL: Record<SyncState, string> = {
-  unbound: "Not a Task Mentor project",
+  unbound: "Not connected",
   checking: "Checking…",
-  synced: "Saved to Task Mentor",
-  "local-changes": "Changes not saved to Task Mentor",
-  "remote-changes": "Newer changes in Task Mentor",
-  both: "Changes here and in Task Mentor",
+  synced: "Saved online",
+  "local-changes": "Not saved yet",
+  "remote-changes": "Newer version online",
+  both: "Changed here and online",
   conflict: "Conflicts to resolve",
   saving: "Saving…",
   pulling: "Getting the latest…",
   offline: "Offline",
+  error: "Sync problem",
+};
+const SYNC_TIP: Record<SyncState, string> = {
+  unbound: "This folder is not a Task Mentor project",
+  checking: "Comparing this folder with Task Mentor",
+  synced: "Everything here is saved to Task Mentor",
+  "local-changes": "Changes in this folder are not saved to Task Mentor yet: Save",
+  "remote-changes": "Task Mentor has newer changes: Get Latest",
+  both: "Changes here and in Task Mentor: Save and Get Latest",
+  conflict: "The same files changed here and in Task Mentor",
+  saving: "Saving to Task Mentor",
+  pulling: "Getting the latest from Task Mentor",
+  offline: "Task Mentor can't be reached",
   error: "Sync problem",
 };
 
@@ -71,6 +85,7 @@ function ago(iso: string | null | undefined) {
 
 function ProjectRow({ p, current }: { p: Project; current: boolean }) {
   const online = p.presence?.online;
+  const status = p.status ?? "draft";
   return (
     <div
       className={`tm-list-row tm-project-row ${current ? "is-current" : ""}`}
@@ -87,18 +102,27 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
           { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor(p.id) },
           ...(p.assignment ? [{ kind: "item" as const, label: "Show Assignment Brief", run: () => showAssignment(p.assignment!.id) }] : []),
           ...(current ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") }] : []),
-          ...(p.my_role === "owner" && (p.status ?? "draft") === "draft" ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Remove Project…", run: () => void removeProject(p) }] : []),
+          ...(p.my_role === "owner" && status === "draft" ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Remove Project…", run: () => void removeProject(p) }] : []),
         ]);
       }}
     >
       <Codicon name={p.kind === "github" ? "github" : "cloud"} className="tm-project-kind" />
-      <span className="tm-project-name">{p.name}</span>
-      {p.assignment && <Codicon name="mortar-board" className="tm-project-kind" title={`Assignment: ${p.assignment.title}`} />}
-      {p.status && p.status !== "draft" && <StatusChip status={p.status} />}
-      {online && <span className="tm-live-dot" title="Open in TMCode now" aria-label="Open now" />}
-      <span className="tm-project-meta">
-        {p.language && <span className="tm-chip">{p.language}</span>}
-        {ago(p.last_activity_at ?? p.updated_at)}
+      <span className="tm-assignment-text">
+        <span className="tm-project-name">
+          {p.name}
+          {online && <span className="tm-live-dot" title="Open in TMCode now" aria-label="Open now" />}
+        </span>
+        <span className="tm-assignment-sub">
+          {status !== "draft" && <StatusChip status={status} />}
+          {p.assignment ? (
+            <span className="tm-assignment-course" title={`For: ${p.assignment.title}`}>
+              <Codicon name="mortar-board" /> {p.assignment.title === p.name ? "Assignment" : p.assignment.title}
+            </span>
+          ) : (
+            p.language && <span>{p.language}</span>
+          )}
+          <span>{ago(p.last_activity_at ?? p.updated_at)}</span>
+        </span>
       </span>
       {current && <Codicon name="check" className="tm-project-current" aria-label="Open in this window" />}
     </div>
@@ -117,7 +141,7 @@ function ThisFolder() {
     return (
       <div className="tm-projects-connect">
         <p className="tm-muted">
-          <b>{workspace.name}</b> is not a Task Mentor project yet. Connect it to save it online, continue on any computer and link it to your activities.
+          <b>{workspace.name}</b> is only on this computer. Connect it to save it online, continue on any computer, and hand it in for an assignment or quiz.
         </p>
         <button type="button" className="tm-button tm-button--block" onClick={() => executeCommand("projects.connectFolder")} title="Connect This Folder to Task Mentor" aria-label="Connect This Folder to Task Mentor" data-testid="connect-folder">
           <Codicon name="cloud-upload" />
@@ -128,6 +152,7 @@ function ThisFolder() {
   }
   const busy = sync === "saving" || sync === "pulling" || sync === "checking";
   const links = Array.isArray(project?.links) ? (project!.links as Link[]) : [];
+  const changes = plan ? changeCount(plan.localChanges) : 0;
   return (
     <div className="tm-projects-folder" data-testid="project-folder">
       <div className="tm-projects-folder-head">
@@ -135,7 +160,6 @@ function ThisFolder() {
         <b className="tm-project-name" title={project?.name ?? binding.name}>
           {project?.name ?? binding.name}
         </b>
-        {project?.status ? <StatusChip status={project.status} /> : <span className="tm-chip">{binding.kind === "github" ? "GitHub" : "Task Mentor"}</span>}
         <ActionButton
           icon="ellipsis"
           label="More Project Actions…"
@@ -143,8 +167,8 @@ function ThisFolder() {
             const r = e.currentTarget.getBoundingClientRect();
             openContextMenu(r.left, r.bottom + 2, [
               { kind: "item", label: "Open in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
+              ...(binding.kind === "tm" ? [{ kind: "item" as const, label: "Get Latest from Task Mentor", run: () => executeCommand("projects.pull") }] : []),
               ...(binding.kind === "tm" ? [{ kind: "item" as const, label: "Use as Starter for an Assignment…", run: () => executeCommand("assignments.useAsStarter") }] : []),
-              { kind: "item", label: "Change Assessment…", run: () => executeCommand("projects.linkActivity") },
               { kind: "separator" },
               { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
               ...(project && (project.status ?? "draft") === "draft" ? [{ kind: "item" as const, label: "Remove Project…", run: () => executeCommand("projects.remove") }] : []),
@@ -152,31 +176,32 @@ function ThisFolder() {
           }}
         />
       </div>
-      {project?.assignment && (
-        <button type="button" className="tm-project-assignment" onClick={() => showAssignment(project.assignment!.id, { toSide: true })} title="Show the assignment brief">
-          <Codicon name="mortar-board" />
-          <span className="tm-project-name">{project.assignment.title}</span>
-          {project.read_only ? <span className="tm-chip">Read-only</span> : <Codicon name="chevron-right" />}
-        </button>
-      )}
+      {project && <AssessmentCard project={project} links={links} busy={busy} />}
       {binding.kind === "tm" ? (
         <>
-          <div className={`tm-sync-line is-${sync}`} data-testid="sync-state">
+          <div className={`tm-sync-line is-${sync}`} data-testid="sync-state" title={SYNC_TIP[sync]}>
             <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
             <span>{SYNC_LABEL[sync]}</span>
-            {plan && changeCount(plan.localChanges) > 0 && sync !== "saving" && <span className="tm-badge tm-badge--accent">{changeCount(plan.localChanges)}</span>}
+            {changes > 0 && sync !== "saving" && (
+              <span className="tm-badge tm-badge--accent" title={`${changes} changed file${changes === 1 ? "" : "s"}`}>
+                {changes}
+              </span>
+            )}
+            <span className="tm-sync-actions">
+              <button
+                type="button"
+                className={`tm-button tm-button--small ${changes > 0 || sync === "local-changes" ? "" : "tm-button--secondary"}`}
+                disabled={busy || !!lockReason(project)}
+                onClick={() => executeCommand("projects.save")}
+                data-testid="save-to-tm"
+                title={lockReason(project) ?? "Save to Task Mentor (⌘⌥U)"}
+              >
+                <Codicon name="cloud-upload" /> Save
+              </button>
+              <ActionButton icon="cloud-download" label="Get Latest from Task Mentor" disabled={busy} onClick={() => executeCommand("projects.pull")} />
+            </span>
           </div>
           {message && <p className="tm-muted tm-projects-hint">{message}</p>}
-          <div className="tm-projects-actions">
-            <button type="button" className="tm-button" disabled={busy || !!lockReason(project)} onClick={() => executeCommand("projects.save")} data-testid="save-to-tm" title="Save to Task Mentor">
-              <Codicon name="cloud-upload" />
-              <span className="tm-button-label">Save</span>
-            </button>
-            <button type="button" className="tm-button tm-button--secondary" disabled={busy} onClick={() => executeCommand("projects.pull")} title="Get Latest from Task Mentor">
-              <Codicon name="cloud-download" />
-              <span className="tm-button-label">Get Latest</span>
-            </button>
-          </div>
           {plan && plan.conflicts.length > 0 && (
             <div className="tm-projects-conflicts" data-testid="conflicts">
               <p>These files changed here and in Task Mentor:</p>
@@ -198,12 +223,12 @@ function ThisFolder() {
         </div>
       )}
       {project && <SharePresence project={project} />}
-      {project && <StatusPanel project={project} links={links} busy={busy} />}
     </div>
   );
 }
 
-export const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", graded: "Graded", removed: "Removed" } as const;
+/** One vocabulary for students everywhere (Assignments says "In progress" too). */
+export const STATUS_LABEL = { draft: "In progress", submitted: "Submitted", graded: "Graded", removed: "Removed" } as const;
 type Status = keyof typeof STATUS_LABEL;
 
 export function StatusChip({ status }: { status?: Status }) {
@@ -215,88 +240,126 @@ export function StatusChip({ status }: { status?: Status }) {
   );
 }
 
-/** The project's lifecycle (Draft → Submitted → Graded) and the assessment it is matched with. */
-function StatusPanel({ project, links, busy }: { project: Project; links: Link[]; busy: boolean }) {
+const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
+
+/**
+ * What this project is for, where it stands (In progress → Submitted →
+ * Graded) and the one thing to do next: match it, submit it, withdraw it, or
+ * read the grade.
+ */
+function AssessmentCard({ project, links, busy }: { project: Project; links: Link[]; busy: boolean }) {
   const status: Status = project.status ?? "draft";
   const link = links.find((l) => l.activity_type === "assignment") ?? links[0] ?? null;
+  const assignment = useAssignments((s) => (project.assignment ? s.student?.find((a) => a.id === project.assignment!.id) : undefined));
   const steps: Status[] = ["draft", "submitted", "graded"];
   const at = steps.indexOf(status);
-  const icon = link ? TYPE_LABEL[link.activity_type].icon : "circle-slash";
-  return (
-    <div className="tm-status-panel" data-testid="project-status-panel">
-      <div className="tm-projects-links-head">
-        <span>Status</span>
-      </div>
-      {status === "removed" ? (
+  const title = link?.activity?.title ?? project.assignment?.title ?? (link ? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}` : null);
+  const kind = link ? (link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one) : project.assignment ? "Assignment" : null;
+  const due = dueText(link?.activity?.due_date ?? assignment?.due_date, link?.activity?.open !== false && !project.read_only);
+  const closed = link?.activity?.open === false;
+  const openBrief = project.assignment ? () => showAssignment(project.assignment!.id, { toSide: true }) : undefined;
+
+  if (status === "removed") {
+    return (
+      <div className="tm-assess-card is-removed" data-testid="project-status-panel" data-status="removed">
         <div className="tm-projects-locked">
           <Codicon name="trash" />
-          <span>Removed.</span>
+          <span>Removed. Restore it to work on it again.</span>
           <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("projects.restore")}>
             Restore
           </button>
         </div>
-      ) : (
-        <ol className="tm-status-steps" aria-label="Project status">
-          {steps.map((s, i) => (
-            <li key={s} className={`${i < at ? "is-done" : ""} ${i === at ? "is-current" : ""}`} aria-current={i === at ? "step" : undefined}>
-              <span className="tm-status-dot">{i < at ? <Codicon name="check" /> : null}</span>
-              <span>{STATUS_LABEL[s]}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      <div className="tm-projects-links-head">
-        <span>Assessment</span>
-        {status === "draft" && links.length > 0 && (
-          <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.linkActivity")} data-testid="change-assessment">
-            Change…
-          </button>
-        )}
       </div>
-      {link ? (
-        <div className="tm-list-row tm-link-row" data-testid="project-assessment" title={link.activity?.title ?? ""}>
-          <Codicon name={icon} />
-          <span className="tm-project-name">{link.activity?.title ?? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}`}</span>
-          <span className="tm-chip">{link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one}</span>
-          {link.status === "submitted" && (
-            <span className="tm-chip is-success" title={link.submitted_at ?? ""}>
-              {link.revision_number ? `v${link.revision_number}` : link.git_commit ? link.git_commit.slice(0, 7) : "Sent"}
-            </span>
-          )}
+    );
+  }
+  if (!title) {
+    return (
+      <div className="tm-assess-card is-unmatched" data-testid="project-status-panel" data-status={status}>
+        <div className="tm-assess-empty">
+          <Codicon name="link" />
+          <span>
+            <b>Not for an assessment yet</b>
+            <small>Match it with an assignment or quiz to hand it in.</small>
+          </span>
         </div>
-      ) : (
-        <button type="button" className="tm-button tm-button--secondary tm-button--block" onClick={() => executeCommand("projects.linkActivity")} data-testid="match-assessment">
+        <button type="button" className="tm-button tm-button--block" onClick={() => executeCommand("projects.linkActivity")} data-testid="match-assessment">
           <Codicon name="link" />
           <span className="tm-button-label">Match with an Assessment…</span>
         </button>
-      )}
+      </div>
+    );
+  }
+  return (
+    <div className={`tm-assess-card is-${status}`} data-testid="project-status-panel" data-status={status}>
+      <div className="tm-assess-head">
+        <Codicon name={link ? (link.question_id ? "beaker" : TYPE_LABEL[link.activity_type].icon) : "notebook"} className="tm-assess-icon" />
+        <span className="tm-assess-title-wrap">
+          {openBrief ? (
+            <button type="button" className="tm-assess-title is-link" onClick={openBrief} title="Show the brief" data-testid="project-assessment">
+              {title}
+            </button>
+          ) : (
+            <span className="tm-assess-title" data-testid="project-assessment" title={title}>
+              {title}
+            </span>
+          )}
+          <span className="tm-assess-sub">
+            {kind}
+            {due && <span className={`tm-assess-due ${/was due|closed/.test(due) ? "is-late" : /today|tomorrow/.test(due) ? "is-soon" : ""}`}> · {due}</span>}
+            {project.read_only && <span> · read-only</span>}
+          </span>
+        </span>
+      </div>
+      <ol className="tm-status-steps" aria-label="Project status" data-testid="project-steps">
+        {steps.map((st, i) => (
+          <li key={st} className={`${i < at ? "is-done" : ""} ${i === at ? "is-current" : ""}`} aria-current={i === at ? "step" : undefined}>
+            <span className="tm-status-dot">{i < at ? <Codicon name="check" /> : null}</span>
+            <span>{STATUS_LABEL[st]}</span>
+          </li>
+        ))}
+      </ol>
       {status === "draft" && (
-        <button
-          type="button"
-          className="tm-button tm-button--block"
-          disabled={busy || !!project.read_only || link?.activity?.open === false}
-          onClick={() => executeCommand("projects.submit")}
-          data-testid="submit-project"
-          title={link?.activity?.open === false ? "This assessment is closed" : "Save, then hand in this exact version"}
-        >
-          <Codicon name="send" />
-          <span className="tm-button-label">Submit Project</span>
-        </button>
+        <>
+          <button
+            type="button"
+            className="tm-button tm-button--block"
+            disabled={busy || !!project.read_only || closed}
+            onClick={() => executeCommand("projects.submit")}
+            data-testid="submit-project"
+            title={closed ? "This assessment is closed" : "Save, then hand in this exact version"}
+          >
+            <Codicon name="send" />
+            <span className="tm-button-label">{closed ? "Closed for Submissions" : "Submit Project"}</span>
+          </button>
+          <button type="button" className="tm-link-button tm-assess-change" onClick={() => executeCommand("projects.linkActivity")} data-testid="change-assessment">
+            Change assessment…
+          </button>
+        </>
       )}
       {status === "submitted" && (
-        <div className="tm-projects-locked" data-testid="project-submitted">
-          <Codicon name="lock" />
-          <span>Locked until graded.</span>
-          <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("projects.withdraw")}>
-            Withdraw
+        <div className="tm-assess-locked" data-testid="project-submitted">
+          <span>
+            <Codicon name="lock" /> Handed in{link?.revision_number ? ` (version ${link.revision_number})` : ""}
+            {link?.submitted_at ? `, ${when(link.submitted_at)}` : ""}. Locked until graded.
+          </span>
+          <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.withdraw")} title="Unlock it to change your work, then submit again">
+            Withdraw to make changes
           </button>
         </div>
       )}
-      {status === "graded" && (
-        <p className="tm-muted tm-projects-hint tm-status-note">
-          <Codicon name="pass" /> Graded: see your grade and feedback in Task Mentor.
-        </p>
-      )}
+      {status === "graded" &&
+        (assignment?.my?.grade != null ? (
+          <div className="tm-assess-grade" data-testid="project-grade">
+            <span className="tm-assess-score">
+              <b>{assignment.my.grade}</b> / {assignment.my.max_points ?? assignment.points ?? "–"}
+            </span>
+            {assignment.my.feedback && <p className="tm-assess-feedback">{assignment.my.feedback}</p>}
+          </div>
+        ) : (
+          <button type="button" className="tm-button tm-button--secondary tm-button--block" onClick={() => executeCommand("projects.openInTaskMentor")} data-testid="project-grade">
+            <Codicon name="link-external" /> See Your Grade in Task Mentor
+          </button>
+        ))}
     </div>
   );
 }

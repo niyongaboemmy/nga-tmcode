@@ -514,7 +514,8 @@ export async function openProject(projectId: number, opts: { folderName?: string
     // The browser build (dev server, e2e) has no OS paths: its folders reopen like recent ones.
     await (getPlatform().openPath ? openPathFromOs(path) : openRecent(path));
     await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "tm", name: project.name, base_revision_id: null, base: null });
-    await pullFromTaskMentor();
+    // A fresh folder: its files arriving is the point, not news.
+    await pullFromTaskMentor({ quiet: true });
   }
   await rememberFolder(project.id);
   await bindWorkspace();

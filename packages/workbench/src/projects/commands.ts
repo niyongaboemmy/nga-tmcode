@@ -24,7 +24,7 @@ import {
 import { CATEGORY_ORDER, TEMPLATES, templateById, type Template } from "./templates";
 import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
 import { closeReview, refreshGrading, useGrading } from "../grading/service";
-import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject, TYPE_LABEL } from "./matching";
+import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject } from "./matching";
 import type { ProjectKind } from "./types";
 
 const usable = () => projectsSupported() && useWorkbench.getState().policy.mode === "practice";
@@ -148,20 +148,24 @@ export async function newProjectFromTemplate() {
   }
 }
 
-/** New Project: a template in a new folder, the open folder, or a GitHub repository. */
-async function newProject() {
+/** New Project: the open folder, a GitHub repository, or a template in a new folder. `from: "folder"` skips the choice. */
+async function newProject(opts: { from?: "folder" } = {}) {
   if (!signedIn()) return void signIn();
   const ws = useWorkbench.getState().workspace;
-  const choice = await showQuickPick({
-    placeholder: "Create a Task Mentor project",
-    items: [
-      ...templateItems(),
-      ...(ws ? [{ id: "folder", label: `This folder (${ws.name})`, description: "Save the open folder to Task Mentor", icon: "folder-opened", separator: "from your work" }] : []),
-      { id: "github", label: "A GitHub repository", description: "Task Mentor follows your git pushes", icon: "github", separator: ws ? undefined : "from your work" },
-    ],
-  });
+  // Your own work first: with a folder open, saving it is what you most likely want.
+  const choice =
+    opts.from === "folder" && ws
+      ? { id: "folder" }
+      : await showQuickPick({
+          placeholder: "Create a Task Mentor project",
+          items: [
+            ...(ws ? [{ id: "folder", label: `This folder (${ws.name})`, description: "Save the open folder to Task Mentor", icon: "folder-opened", separator: "from your work" }] : []),
+            { id: "github", label: "A GitHub repository", description: "Task Mentor follows your git pushes", icon: "github", separator: ws ? undefined : "from your work" },
+            ...templateItems(),
+          ],
+        });
   if (!choice) return;
-  const name = await showInputBox({ title: "New Project", prompt: "Project name", value: choice.id === "folder" ? ws?.name : "", validate: (v) => (v.trim().length < 2 ? "Enter a name (2 characters or more)." : v.length > 120 ? "The name is too long." : null) });
+  const name = await showInputBox({ title: choice.id === "folder" ? `Connect "${ws?.name}" to Task Mentor` : "New Project", prompt: "Project name (as your teacher will see it)", value: choice.id === "folder" ? ws?.name : "", validate: (v) => (v.trim().length < 2 ? "Enter a name (2 characters or more)." : v.length > 120 ? "The name is too long." : null) });
   if (!name) return;
   let kind: ProjectKind = "tm";
   let repo_url: string | undefined;
@@ -172,7 +176,7 @@ async function newProject() {
     if (!repo_url) return;
   }
   // Which assessment is this project for? (Optional: personal projects stay unmatched.)
-  const assessment = await pickAssessment({ title: `New Project "${name.trim()}": match with an assessment`, allowNone: true });
+  const assessment = await pickAssessment({ title: `Which assessment is "${name.trim()}" for?`, allowNone: true });
   if (!assessment) return;
   if (assessment !== "none" && assessment.question) {
     // A quiz's TMCode practical: Task Mentor creates the project from the question's starter files.
@@ -223,13 +227,13 @@ async function newProject() {
       await offerSetup(tpl);
     } else if (choice.id === "folder" || kind === "github") {
       if (useWorkbench.getState().workspace) await connectFolder(project);
-      if (kind === "tm") await saveToTaskMentor({ message: "First save from TMCode" });
-      else notify("info", `${project.name} is linked to ${repo_url}. Task Mentor now follows your pushes.`);
+      if (kind === "tm") await saveToTaskMentor({ message: "First save from TMCode", quiet: true });
     }
-    if (matched && assessment !== "none") {
-      notify("info", `${project.name} is matched with the ${TYPE_LABEL[assessment.activity_type].one.toLowerCase()} "${assessment.title}". When your work is ready, use Submit (status: Draft → Submitted).`);
-      await checkSync();
-    }
+    // One message for the whole thing (saved + matched), not one per step.
+    const where = kind === "github" ? `linked to ${repo_url}: Task Mentor follows your pushes` : "saved to Task Mentor";
+    const forWhat = matched && assessment !== "none" ? ` for "${assessment.question?.title ?? assessment.title}". Submit it when your work is ready.` : ".";
+    if (!tpl) notify("info", `${project.name} is ${where}${forWhat}`);
+    if (matched) await checkSync();
     revealView("projects");
   } catch (e) {
     notify("error", (e as Error).message);
@@ -249,13 +253,15 @@ async function guessRemote(): Promise<string | null> {
 async function connect() {
   if (!signedIn()) return void signIn();
   const { mine } = useProjects.getState();
+  // Nothing to choose from: straight to naming the new project.
+  if (!mine?.length) return newProject({ from: "folder" });
   const items = [
     { id: "new", label: "New Project from This Folder…", icon: "add", description: "Create a Task Mentor project and save this folder to it" },
     ...(mine ?? []).map((p, i) => ({ id: String(p.id), label: p.name, description: p.kind === "github" ? p.repo_full_name ?? "GitHub" : "Task Mentor", icon: p.kind === "github" ? "github" : "cloud", separator: i === 0 ? "existing projects" : undefined })),
   ];
   const pick = await showQuickPick({ placeholder: "Connect this folder to a Task Mentor project", items, matchOnDescription: true });
   if (!pick) return;
-  if (pick.id === "new") return newProject();
+  if (pick.id === "new") return newProject({ from: "folder" });
   const project = mine?.find((p) => String(p.id) === pick.id);
   if (project) {
     await connectFolder(project);
@@ -267,7 +273,7 @@ export function registerProjectCommands() {
   registerCommand({ id: "workbench.view.projects", title: "Show Task Mentor Projects", category: "View", keybinding: "mod+shift+j", enabled: usable, run: () => revealView("projects") });
   registerCommand({ id: "projects.signIn", title: "Sign in with NGA (Central MIS + Task Mentor)", category: "Accounts", enabled: () => usable() && !signedIn(), run: signIn });
   registerCommand({ id: "projects.signOut", title: "Sign Out of NGA", category: "Accounts", enabled: () => signedIn(), run: signOut });
-  registerCommand({ id: "projects.new", title: "New Project…", category: "Projects", enabled: usable, run: newProject });
+  registerCommand({ id: "projects.new", title: "New Project…", category: "Projects", enabled: usable, run: () => newProject() });
   registerCommand({ id: "projects.connectFolder", title: "Connect This Folder to Task Mentor…", category: "Projects", enabled: () => usable() && !!useWorkbench.getState().workspace, run: connect });
   registerCommand({ id: "projects.save", title: "Save to Task Mentor", category: "Projects", keybinding: "mod+alt+u", enabled: bound, run: () => saveToTaskMentor() });
   registerCommand({ id: "projects.pull", title: "Get Latest from Task Mentor", category: "Projects", enabled: bound, run: () => pullFromTaskMentor() });

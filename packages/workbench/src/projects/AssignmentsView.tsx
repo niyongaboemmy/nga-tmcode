@@ -33,8 +33,9 @@ function StateChip({ a }: { a: AssignmentSummary }) {
   if (a.read_only) return <span className="tm-chip">Read-only</span>;
   const s = a.my?.state ?? "not_started";
   if (s === "graded") return <span className="tm-chip is-success">{a.my?.grade ?? "–"}/{a.my?.max_points ?? a.points ?? "–"}</span>;
-  if (s === "submitted") return <span className="tm-chip is-success">Submitted</span>;
-  if (s === "in_progress") return <span className="tm-chip is-info">In progress</span>;
+  // The same colours as project statuses: in progress grey, submitted blue, graded green.
+  if (s === "submitted") return <span className="tm-chip tm-status-chip is-submitted">Submitted</span>;
+  if (s === "in_progress") return <span className="tm-chip tm-status-chip is-draft">In progress</span>;
   return null;
 }
 

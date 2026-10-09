@@ -44,105 +44,85 @@ export async function linkableActivities(): Promise<LinkableActivity[]> {
 }
 
 const subjectOf = (a: LinkableActivity) => a.course_name ?? "Other";
-const due = (iso: string | null | undefined) => (iso ? `due ${new Date(iso).toLocaleDateString([], { day: "numeric", month: "short" })}` : "");
-const BACK = "__back";
 const NONE = "__none";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** "due 10 Oct · 2 days left", "closed", "overdue by 3 days". */
+export function dueText(iso: string | null | undefined, open = true): string {
+  if (!open) return "closed";
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  const day = new Date(t).toLocaleDateString([], { day: "numeric", month: "short" });
+  const days = Math.round((t - Date.now()) / 86_400_000);
+  if (t < Date.now()) return `was due ${day}`;
+  return `due ${day} · ${days <= 0 ? "today" : days === 1 ? "tomorrow" : `${days} days left`}`;
+}
 
 /** An assessment, and for a quiz optionally one of its TMCode practical questions. */
 export type Picked = LinkableActivity & { question?: PracticalQuestion };
 export type Pick = Picked | "none";
 
-/**
- * Subject → kind of assessment → assessment. Resolves to the activity, to "none"
- * (no assessment, when `allowNone`), or undefined when cancelled.
- */
-export async function pickAssessment(opts: { title: string; allowNone?: boolean; noneLabel?: string; current?: { activity_type: ActivityType; activity_id: number } | null } = { title: "Match with an assessment" }): Promise<Pick | undefined> {
-  let all: LinkableActivity[];
-  const loading = linkableActivities();
-  try {
-    // The first step shows a skeleton while the list loads.
-    const subjects = loading.then((list) => {
-      all = list;
-      const bySubject = new Map<string, LinkableActivity[]>();
-      for (const a of list) bySubject.set(subjectOf(a), [...(bySubject.get(subjectOf(a)) ?? []), a]);
-      const items: PickItem[] = [...bySubject.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([name, acts], i) => ({
-          id: `s:${name}`,
-          label: name,
-          icon: "library",
-          description: (Object.keys(TYPE_LABEL) as ActivityType[])
-            .map((t) => acts.filter((x) => x.activity_type === t).length && plural(acts.filter((x) => x.activity_type === t).length, TYPE_LABEL[t].one.toLowerCase(), TYPE_LABEL[t].many.toLowerCase()))
-            .filter(Boolean)
-            .join(" · "),
-          separator: i === 0 ? "subjects" : undefined,
-        }));
-      if (opts.allowNone) items.unshift({ id: NONE, label: opts.noneLabel ?? "No assessment (a personal project)", icon: "circle-slash", alwaysShow: true, description: "You can match it later" });
-      if (list.length === 0) items.push({ id: "__empty", label: "No open assessments in your subjects", icon: "info", alwaysShow: true, description: "Ask your teacher to publish one" });
-      return items;
-    });
-    for (;;) {
-      const subject = await showQuickPick({ title: `${opts.title} (1/3)`, placeholder: "Choose a subject", items: subjects, matchOnDescription: true });
-      if (!subject || subject.id === "__empty") return undefined;
-      if (subject.id === NONE) return "none";
-      const name = subject.id.slice(2);
-      const inSubject = all!.filter((a) => subjectOf(a) === name);
-      const types = (Object.keys(TYPE_LABEL) as ActivityType[]).filter((t) => inSubject.some((a) => a.activity_type === t));
-      for (;;) {
-        let type: ActivityType | undefined = types[0];
-        if (types.length > 1) {
-          const t = await showQuickPick({
-            title: `${opts.title} (2/3) · ${name}`,
-            placeholder: "Choose the kind of assessment",
-            items: [
-              ...types.map((t) => ({ id: t, label: TYPE_LABEL[t].many, icon: TYPE_LABEL[t].icon, description: plural(inSubject.filter((a) => a.activity_type === t).length, "open", "open") })),
-              { id: BACK, label: "Back to subjects", icon: "arrow-left", alwaysShow: true, separator: " " },
-            ],
-          });
-          if (!t) return undefined;
-          if (t.id === BACK) break;
-          type = t.id as ActivityType;
-        }
-        const acts = inSubject.filter((a) => a.activity_type === type).sort((x, y) => (x.due_date ? Date.parse(x.due_date) : Infinity) - (y.due_date ? Date.parse(y.due_date) : Infinity));
-        const item = await showQuickPick({
-          title: `${opts.title} (3/3) · ${name} › ${TYPE_LABEL[type!].many}`,
-          placeholder: `Choose the ${TYPE_LABEL[type!].one.toLowerCase()}`,
-          matchOnDescription: true,
-          items: [
-            ...acts.map((a) => ({
-              id: `${a.activity_type}:${a.activity_id}`,
-              label: a.title,
-              icon: TYPE_LABEL[a.activity_type].icon,
-              description: [due(a.due_date), a.practical_questions?.length ? `${a.practical_questions.length} TMCode practical${a.practical_questions.length === 1 ? "" : "s"}` : "", opts.current && opts.current.activity_type === a.activity_type && opts.current.activity_id === a.activity_id ? "current" : ""].filter(Boolean).join(" · "),
-            })),
-            { id: BACK, label: types.length > 1 ? "Back to kinds of assessment" : "Back to subjects", icon: "arrow-left", alwaysShow: true, separator: " " },
-          ],
+/** One searchable list: every assessment (and each quiz's practical questions), by subject, soonest due first. */
+export function assessmentItems(list: LinkableActivity[], current?: { activity_type: ActivityType; activity_id: number; question_id?: number | null } | null): PickItem[] {
+  const bySubject = new Map<string, LinkableActivity[]>();
+  for (const a of list) bySubject.set(subjectOf(a), [...(bySubject.get(subjectOf(a)) ?? []), a]);
+  const dueAt = (a: LinkableActivity) => (a.open === false ? Infinity : a.due_date ? Date.parse(a.due_date) : Number.MAX_SAFE_INTEGER);
+  const items: PickItem[] = [];
+  for (const [subject, acts] of [...bySubject.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    let first = true;
+    for (const a of [...acts].sort((x, y) => dueAt(x) - dueAt(y) || x.title.localeCompare(y.title))) {
+      const isCurrent = (q?: number) => !!current && current.activity_type === a.activity_type && current.activity_id === a.activity_id && (current.question_id ?? null) === (q ?? null);
+      const when = dueText(a.due_date, a.open !== false);
+      // A quiz's TMCode practical questions come first: that is what a project is usually for.
+      for (const q of a.activity_type === "quiz" ? (a.practical_questions ?? []) : []) {
+        items.push({
+          id: `${a.activity_type}:${a.activity_id}:${q.question_id}`,
+          label: q.title,
+          icon: "beaker",
+          description: [`Quiz practical · ${a.title}`, plural(q.points, "point", "points"), subject, isCurrent(q.question_id) ? "current" : ""].filter(Boolean).join(" · "),
+          detail: when || undefined,
+          separator: first ? subject : undefined,
         });
-        if (!item) return undefined;
-        if (item.id === BACK) {
-          if (types.length > 1) continue;
-          break;
-        }
-        const act = acts.find((a) => `${a.activity_type}:${a.activity_id}` === item.id)!;
-        const practicals = act.practical_questions ?? [];
-        if (act.activity_type !== "quiz" || practicals.length === 0) return act;
-        // A quiz with TMCode practical questions: which one is this project for?
-        const q = await showQuickPick({
-          title: `${opts.title} (4/4) · ${act.title}`,
-          placeholder: "Choose the practical question",
-          items: [
-            ...practicals.map((p, i) => ({ id: `q:${p.question_id}`, label: p.title, icon: "beaker", description: `${p.points} point${p.points === 1 ? "" : "s"} · TMCode practical`, separator: i === 0 ? "practical questions" : undefined })),
-            { id: "q:none", label: "The whole quiz (no particular question)", icon: "checklist", separator: "other" },
-            { id: BACK, label: "Back to the quizzes", icon: "arrow-left", alwaysShow: true },
-          ],
-        });
-        if (!q) return undefined;
-        if (q.id === BACK) continue;
-        if (q.id === "q:none") return act;
-        return { ...act, question: practicals.find((p) => `q:${p.question_id}` === q.id) };
+        first = false;
       }
+      items.push({
+        id: `${a.activity_type}:${a.activity_id}`,
+        label: a.title,
+        icon: TYPE_LABEL[a.activity_type].icon,
+        description: [a.activity_type === "quiz" && a.practical_questions?.length ? "Whole quiz" : TYPE_LABEL[a.activity_type].one, subject, isCurrent() ? "current" : ""].filter(Boolean).join(" · "),
+        detail: when || undefined,
+        separator: first ? subject : undefined,
+      });
+      first = false;
     }
+  }
+  return items;
+}
+
+/**
+ * Which assessment is this project for: one list to search by title or
+ * subject. Resolves to the activity (with the practical question for a quiz
+ * practical), to "none" (no assessment, when `allowNone`), or undefined when cancelled.
+ */
+export async function pickAssessment(opts: { title: string; allowNone?: boolean; noneLabel?: string; current?: { activity_type: ActivityType; activity_id: number; question_id?: number | null } | null } = { title: "Match with an assessment" }): Promise<Pick | undefined> {
+  let all: LinkableActivity[] = [];
+  try {
+    const items = linkableActivities().then((list) => {
+      all = list;
+      const rows = assessmentItems(list, opts.current);
+      if (list.length === 0) rows.push({ id: "__empty", label: "No open assessments in your subjects", icon: "info", alwaysShow: true, description: "Ask your teacher to publish one" });
+      // Last, so Enter never makes it a personal project by accident.
+      if (opts.allowNone) rows.push({ id: NONE, label: opts.noneLabel ?? "No assessment (a personal project)", icon: "circle-slash", pinLast: true, description: "You can match it later", separator: "other" });
+      return rows;
+    });
+    const pick = await showQuickPick({ title: opts.title, placeholder: "Search assessments by title or subject", items, matchOnDescription: true });
+    if (!pick || pick.id === "__empty") return undefined;
+    if (pick.id === NONE) return "none";
+    const [type, id, qid] = pick.id.split(":");
+    const act = all.find((a) => a.activity_type === type && String(a.activity_id) === id);
+    if (!act) return undefined;
+    const question = qid ? act.practical_questions?.find((q) => String(q.question_id) === qid) : undefined;
+    return question ? { ...act, question } : act;
   } catch (e) {
     notify("error", `Could not load your assessments: ${(e as Error).message}`);
     return undefined;
@@ -187,7 +167,7 @@ export async function changeAssessment() {
     title: old ? "Change the assessment" : "Match with an assessment",
     allowNone: !!old,
     noneLabel: "Remove the match (keep it as a personal project)",
-    current: old,
+    current: old ? { activity_type: old.activity_type, activity_id: old.activity_id, question_id: old.question_id ?? null } : null,
   });
   if (!picked) return;
   if (picked !== "none" && old && old.activity_type === picked.activity_type && old.activity_id === picked.activity_id && (old.question_id ?? null) === (picked.question?.question_id ?? null)) return notify("info", "That is already this project's assessment.");
@@ -204,7 +184,7 @@ export async function changeAssessment() {
         if (old) await api("POST", `/projects/${current.id}/links`, { activity_type: old.activity_type, activity_id: old.activity_id, ...(old.question_id ? { question_id: old.question_id } : {}) }).catch(() => {});
         return;
       }
-      notify("info", `${current.name} is now matched with "${picked.title}"${picked.question ? ` › ${picked.question.title}` : ""}${picked.course_name ? ` (${picked.course_name})` : ""}. Submit it when your work is ready.`);
+      notify("info", `${current.name} is now for "${picked.question?.title ?? picked.title}"${picked.course_name ? ` (${picked.course_name})` : ""}. Submit it when your work is ready.`);
     }
   } catch (e) {
     notify("error", (e as Error).message);

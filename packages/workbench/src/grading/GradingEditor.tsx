@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getPlatform, showDialog, type EditorInput } from "../state/store";
+import { getPlatform, openFile, showDialog, useWorkbench, type EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
-import { Codicon } from "../widgets/icons";
+import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { taskMentorWeb } from "../projects/commands";
 import { useProjects } from "../projects/service";
 import { ProgressBar } from "./GradingView";
-import { keyOf, loadRoster, openGrading, openSubmission, parseKey, previewSubmission, progressOf, saveGrade, selectStudent, useGrading, type Criterion, type Roster, type RosterRow, type RowState } from "./service";
+import { closeReview, keyOf, loadRoster, openGrading, openSubmission, parseKey, previewSubmission, progressOf, saveGrade, selectStudent, useGrading, type Criterion, type Roster, type RosterRow, type RowState } from "./service";
 
 type Input = Extract<EditorInput, { kind: "grading" }>;
 type Filter = "to-grade" | "graded" | "working" | "not-started" | "all";
@@ -46,6 +46,27 @@ function draftFrom(roster: Roster, row: RosterRow): Draft {
   // Feedback composed by Task Mentor carries "Criteria notes:"; edit only the teacher's part.
   const feedback = (g?.feedback ?? "").split(/\n\nCriteria notes:\n/)[0];
   return { scores, comments, score: rubric.length ? null : (g?.score ?? null), feedback };
+}
+
+/** The review folder's top-level files, opened in the code group (not the grading tab's). */
+function SubmissionFiles() {
+  const entries = useWorkbench((s) => s.dirs[""]);
+  const files = (entries ?? []).filter((e) => e.kind === "file" && !e.name.startsWith(".")).slice(0, 10);
+  if (!files.length) return null;
+  const open = (path: string) => {
+    const groups = useWorkbench.getState().groups;
+    const code = groups.find((g) => !g.editors.some((e) => e.kind === "grading"))?.id ?? groups[0].id;
+    openFile(path, { pinned: true, group: code });
+  };
+  return (
+    <div className="tm-grade-files" aria-label="Submitted files">
+      {files.map((f) => (
+        <button key={f.name} type="button" className="tm-filter-chip" onClick={() => open(f.name)} title={`Open ${f.name}`}>
+          <Codicon name="file" /> {f.name}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function GradePanel({ gkey, roster, row, onNext }: { gkey: string; roster: Roster; row: RosterRow; onNext: () => void }) {
@@ -129,23 +150,29 @@ function GradePanel({ gkey, roster, row, onNext }: { gkey: string; roster: Roste
           <button type="button" className="tm-button tm-button--secondary" onClick={() => row.project?.repo_url && void openExternalUrl(row.link?.git_commit ? `${row.project.repo_url.replace(/\.git$/, "")}/tree/${row.link.git_commit}` : row.project.repo_url)} title="The repository at the submitted commit">
             <Codicon name="github" /> Open on GitHub
           </button>
+        ) : loaded ? (
+          <span className="tm-grade-opened" data-testid="load-project" title="The files in the editor are this student's submitted version. You can read and run them; edits are refused.">
+            <Codicon name="pass-filled" /> Their project is open in the editor (read-only)
+          </span>
         ) : (
           <button
             type="button"
-            className="tm-button tm-button--secondary"
+            className="tm-button"
             disabled={!row.link?.revision_id || loading}
             onClick={() => void openSubmission(gkey, row)}
             data-testid="load-project"
-            title={row.link?.revision_id ? "Open the submitted version in this window (read-only)" : "Nothing submitted yet"}
+            title={row.link?.revision_id ? "Open the submitted version in the editor (read-only)" : "Nothing submitted yet"}
           >
-            <Codicon name={loading ? "loading" : loaded ? "pass-filled" : "folder-opened"} className={loading ? "codicon-modifier-spin" : ""} />
-            {loading ? "Loading…" : loaded ? "Loaded in this window" : "Load Project"}
+            <Codicon name={loading ? "loading" : "folder-opened"} className={loading ? "codicon-modifier-spin" : ""} />
+            {loading ? "Opening…" : "Open Their Project"}
           </button>
         )}
         <button type="button" className="tm-button tm-button--secondary" disabled={!row.link?.revision_id || row.project?.kind === "github"} onClick={() => void previewSubmission(row)} title="Run the submitted website in the built-in browser">
           <Codicon name="globe" /> Preview
         </button>
       </div>
+
+      {loaded && <SubmissionFiles />}
 
       {!gradable && (
         <p className="tm-grade-hint" data-testid="grade-hint">
@@ -161,6 +188,18 @@ function GradePanel({ gkey, roster, row, onNext }: { gkey: string; roster: Roste
       <section className="tm-grade-criteria" aria-label="Criteria">
         <div className="tm-grade-criteria-head">
           <h3>{rubric.length ? "Criteria" : "Score"}</h3>
+          {gradable && rubric.length > 0 && (
+            <span className="tm-grade-bulk">
+              <button type="button" className="tm-link-button" onClick={() => setDraft({ ...draft, scores: rubric.map((c) => c.max_score) })} data-testid="grade-full-marks" title="Give every criterion its full score, then lower what was missed">
+                Full marks
+              </button>
+              {draft.scores.some((x) => x !== null) && (
+                <button type="button" className="tm-link-button" onClick={() => setDraft({ ...draft, scores: rubric.map(() => null) })} title="Clear every score">
+                  Clear
+                </button>
+              )}
+            </span>
+          )}
           <span className={`tm-grade-total ${complete ? "" : "is-incomplete"}`} data-testid="grade-total" title={complete ? "Total of the criteria" : "Score every criterion"}>
             {total}
             <small> / {max}</small>
@@ -230,7 +269,17 @@ function GradePanel({ gkey, roster, row, onNext }: { gkey: string; roster: Roste
       </section>
 
       <footer className="tm-grade-footer">
-        <span className="tm-muted">{dirty ? "Unsaved changes" : row.grade?.graded_at ? `Graded ${when(row.grade.graded_at)}` : ""}</span>
+        <span className={`tm-muted ${gradable && !complete ? "is-hint" : ""}`} data-testid="grade-status">
+          {gradable && !complete
+            ? rubric.length
+              ? `Score ${draft.scores.filter((x) => x === null).length === rubric.length ? "every criterion" : `${draft.scores.filter((x) => x === null).length} more criteri${draft.scores.filter((x) => x === null).length === 1 ? "on" : "a"}`} to save`
+              : "Enter a score to save"
+            : dirty
+              ? "Unsaved changes"
+              : row.grade?.graded_at
+                ? `Graded ${when(row.grade.graded_at)}`
+                : ""}
+        </span>
         <button type="button" className="tm-button tm-button--secondary" disabled={!gradable || !complete || saving} onClick={() => void save(false)} data-testid="grade-save">
           Save
         </button>
@@ -251,6 +300,11 @@ export function GradingEditor({ input }: { input: Input }) {
   const [filter, setFilter] = useState<Filter>("to-grade");
   const [query, setQuery] = useState("");
   const [autoLoad, setAutoLoad] = useState(true);
+  // Beside the code the tab is narrow: the roster folds into a switcher bar so the grade form fits.
+  const [showList, setShowList] = useState(false);
+  // Save & Next found nothing left: show the finish line instead of the last form.
+  const [finished, setFinished] = useState(false);
+  const reviewing = useGrading((s) => s.review);
   const listRef = useRef<HTMLDivElement>(null);
   useProjects((s) => s.account);
 
@@ -294,6 +348,8 @@ export function GradingEditor({ input }: { input: Input }) {
       }
     }
     selectStudent(key, r.student.id);
+    setFinished(false);
+    setShowList(false);
     if (autoLoad && r.project?.kind === "tm" && r.link?.revision_id) void openSubmission(key, r);
   };
 
@@ -303,6 +359,13 @@ export function GradingEditor({ input }: { input: Input }) {
     const i = all.findIndex((r) => r.student?.id === selected);
     const after = [...all.slice(i + 1), ...all.slice(0, Math.max(0, i))].find((r) => r.state === "submitted" && r.student?.id !== selected);
     if (after) void choose(after);
+    else setFinished(true);
+  };
+  /** Previous / next in the list as filtered (the switcher's arrows, ↑/↓ in the list). */
+  const step = (d: 1 | -1) => {
+    const i = rows.findIndex((r) => r.student?.id === selected);
+    const n = rows[i + d];
+    if (n) void choose(n);
   };
 
   if (!roster) {
@@ -323,7 +386,7 @@ export function GradingEditor({ input }: { input: Input }) {
   };
 
   return (
-    <div className="tm-grade-page" data-testid="grading-page">
+    <div className={`tm-grade-page ${row ? "has-selection" : ""}`} data-testid="grading-page">
       <header className="tm-grade-head">
         <div className="tm-assignment-kicker">
           <Codicon name={a.type === "quiz" ? "checklist" : "notebook"} />
@@ -378,7 +441,7 @@ export function GradingEditor({ input }: { input: Input }) {
         </div>
       </header>
 
-      <div className="tm-grade-body">
+      <div className={`tm-grade-body ${row && !finished ? "has-selection" : ""} ${showList ? "show-list" : ""}`}>
         <aside className="tm-grade-list" aria-label="Students">
           <div className="tm-grade-filters" role="tablist" aria-label="Show">
             {(["to-grade", "graded", "working", "not-started", "all"] as Filter[]).map((f) => (
@@ -401,7 +464,7 @@ export function GradingEditor({ input }: { input: Input }) {
                 void getPlatform().store.set("grading.autoLoad", e.target.checked).catch(() => {});
               }}
             />
-            <span>Load projects automatically</span>
+            <span>Open each student's project when selected</span>
           </label>
           <div
             className="tm-grade-rows"
@@ -450,7 +513,49 @@ export function GradingEditor({ input }: { input: Input }) {
           </div>
         </aside>
         <main className="tm-grade-main">
-          {row ? (
+          {row && !finished && (
+            <div className="tm-grade-switcher" data-testid="grade-switcher">
+              <ActionButton icon="chevron-left" label="Previous student" disabled={rows.findIndex((r) => r.student?.id === selected) <= 0} onClick={() => step(-1)} />
+              <button type="button" className="tm-grade-switcher-who" onClick={() => setShowList(!showList)} aria-expanded={showList} title={showList ? "Hide the list of students" : "Show all students"} data-testid="grade-switcher-toggle">
+                <span className={`tm-grade-avatar is-${STATE[row.state].tone}`} aria-hidden>
+                  {initials(row.student?.name ?? "?")}
+                </span>
+                <b>{row.student?.name ?? "Unknown"}</b>
+                <span className="tm-muted">
+                  {rows.some((r) => r.student?.id === selected) ? `${rows.findIndex((r) => r.student?.id === selected) + 1} of ${rows.length}` : ""} · {roster.counts.to_grade} to grade
+                </span>
+                <Codicon name={showList ? "chevron-up" : "chevron-down"} />
+              </button>
+              <ActionButton icon="chevron-right" label="Next student" disabled={(() => { const i = rows.findIndex((r) => r.student?.id === selected); return i < 0 || i >= rows.length - 1; })()} onClick={() => step(1)} />
+            </div>
+          )}
+          {finished && roster.counts.to_grade === 0 ? (
+            <div className="tm-view-empty tm-grade-empty tm-grade-finished" data-testid="grade-finished">
+              <Codicon name="pass-filled" className="tm-projects-hero" />
+              <h3>All handed-in work is graded</h3>
+              <p className="tm-muted">
+                {p.graded} of {p.submitted} graded{p.inProgress ? ` · ${p.inProgress} still working: their work appears here when they submit` : ""}.
+              </p>
+              <div className="tm-grade-finished-actions">
+                {reviewing && (
+                  <button type="button" className="tm-button" onClick={() => void closeReview()}>
+                    <Codicon name="home" /> Back to My Folder
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="tm-button tm-button--secondary"
+                  onClick={() => {
+                    setFinished(false);
+                    setFilter("graded");
+                    setShowList(true);
+                  }}
+                >
+                  Review Graded Work
+                </button>
+              </div>
+            </div>
+          ) : row && !finished ? (
             <GradePanel key={`${key}:${row.student?.id}`} gkey={key} roster={roster} row={row} onNext={next} />
           ) : (
             <div className="tm-view-empty tm-grade-empty">

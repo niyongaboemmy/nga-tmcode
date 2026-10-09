@@ -100,6 +100,13 @@ test("start copies the starter files, then save and submit reach the teacher", a
   await expect(page.getByTestId("assignment-result")).toContainText("Nice work");
   await command(page, "View: Show Assignments");
   await expect(row(page, 51)).toContainText("18/20");
+  // …and in the project's assessment card, without leaving TMCode.
+  await page.evaluate(`window.__TMCODE_PROJECTS__.setProjectStatus(${ws}, "graded")`);
+  await command(page, "Projects: Refresh Projects");
+  await command(page, "View: Show Task Mentor Projects");
+  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "graded");
+  await expect(page.getByTestId("project-grade")).toContainText("18");
+  await expect(page.getByTestId("project-grade")).toContainText("Nice work");
 });
 
 test("starting again continues the same workspace instead of copying the starter twice", async ({ page }) => {
@@ -146,7 +153,9 @@ test("disconnect stops syncing; live status sharing is locked on for open assign
   const share = page.getByTestId("share-presence");
   await expect(share).toBeChecked();
   await expect(share).toBeDisabled();
-  await expect(page.locator(".tm-project-assignment")).toContainText("Build a to-do list");
+  // The assessment card names the assignment and opens its brief.
+  await expect(page.getByTestId("project-assessment")).toContainText("Build a to-do list");
+  await expect(page.getByTestId("project-status-panel")).toContainText("due");
 
   await command(page, "Projects: Disconnect This Folder from Task Mentor");
   await page.locator(".tm-dialog").getByRole("button", { name: "Disconnect" }).click();
@@ -161,12 +170,10 @@ test("a personal project can stop sharing its live status", async ({ page }) => 
   await fresh(page);
   await command(page, "View: Show Task Mentor Projects");
   await page.getByRole("button", { name: "Connect This Folder to Task Mentor" }).click();
-  await page.locator(".tm-quick-pick .tm-qi-item").first().click();
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "This folder" }).click();
   await page.locator(".tm-quick-pick input").fill("Private work");
   await page.keyboard.press("Enter");
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "No assessment" }).click();
-  await expect(page.getByTestId("sync-state")).toContainText("Saved to Task Mentor", { timeout: 15_000 });
+  await expect(page.getByTestId("sync-state")).toContainText("Saved online", { timeout: 15_000 });
   const share = page.getByTestId("share-presence");
   await expect(share).toBeChecked();
   await share.click();
@@ -238,11 +245,11 @@ test("a quiz's TMCode practical starts from the Assignments view, then is submit
 
   await command(page, "View: Show Task Mentor Projects");
   await expect(page.getByTestId("project-assessment")).toContainText("Web Quiz 3");
-  await expect(page.getByTestId("project-assessment")).toContainText("Quiz practical");
+  await expect(page.getByTestId("project-status-panel")).toContainText("Quiz practical");
   await page.getByTestId("submit-project").click();
   await expect(page.locator(".tm-dialog")).toContainText("keep the quiz open in Task Mentor");
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
-  await expect(page.getByTestId("project-status-chip").first()).toHaveText("Submitted", { timeout: 15_000 });
+  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
 
   // Starting again opens the same workspace.
   await command(page, "View: Show Assignments");
@@ -252,21 +259,17 @@ test("a quiz's TMCode practical starts from the Assignments view, then is submit
   expect(state.links.filter((l) => l.question_id === 501)).toHaveLength(1);
 });
 
-test("New Project offers a quiz's practical questions as a 4th step and starts the practical", async ({ page }) => {
+test("the assessment list offers a quiz's practical questions directly and starts the practical", async ({ page }) => {
   await fresh(page);
   await command(page, "View: Show Task Mentor Projects");
   await page.getByRole("button", { name: "Connect This Folder to Task Mentor" }).click();
-  await page.locator(".tm-quick-pick .tm-qi-item").first().click();
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "This folder" }).click();
   await page.locator(".tm-quick-pick input").fill("Navbar");
   await page.keyboard.press("Enter");
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Web Development" }).click();
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Quizzes" }).click();
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Web Quiz 3" }).click();
-  await expect(page.locator(".tm-quick-pick")).toContainText("(4/4)");
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Build a navbar" }).click();
+  const navbar = page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Build a navbar" });
+  await expect(navbar).toContainText("Quiz practical · Web Quiz 3");
+  await navbar.click();
   await page.locator(".tm-dialog").getByRole("button", { name: "Start the Practical" }).click();
-  await expect(page.getByTestId("project-assessment")).toContainText("Quiz practical", { timeout: 15_000 });
+  await expect(page.getByTestId("project-status-panel")).toContainText("Quiz practical", { timeout: 15_000 });
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
 });

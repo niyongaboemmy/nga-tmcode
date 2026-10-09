@@ -18,6 +18,15 @@ export function ProgressBar({ graded, toGrade, inProgress, total, compact }: { g
   );
 }
 
+/** "2 to grade", "All 3 graded", "1 working, none handed in", "No submissions yet". */
+export function workload(p: ReturnType<typeof progressOf>) {
+  if (!p) return "Loading…";
+  if (p.toGrade > 0) return `${p.toGrade} to grade`;
+  if (p.submitted > 0) return `All ${p.graded} graded`;
+  if (p.inProgress > 0) return `${p.inProgress} working, none handed in`;
+  return "No submissions yet";
+}
+
 function ActivityRow({ a }: { a: Gradable }) {
   const roster = useGrading((s) => s.rosters[a.key]);
   const error = useGrading((s) => s.rosterErrors[a.key]);
@@ -39,7 +48,9 @@ function ActivityRow({ a }: { a: Gradable }) {
       <span className="tm-assignment-text">
         <span className="tm-project-name">{a.question_title ?? a.title}</span>
         <span className="tm-assignment-sub">
-          <span className="tm-assignment-course">{a.question_title ? `${a.title} · quiz` : (a.course_name ?? "Assignment")}</span>
+          {/* The subject heads the group: the row says what is waiting. */}
+          {a.question_title && <span className="tm-assignment-course">{a.title}</span>}
+          <span className="tm-grade-workload" data-testid="grading-workload">{workload(p)}</span>
           {due && a.status !== "completed" && <span className={`tm-due is-${due.tone}`}>{due.text}</span>}
         </span>
         {p ? <ProgressBar graded={p.graded} toGrade={p.toGrade} inProgress={p.inProgress} total={Math.max(p.total, 1)} compact /> : error ? null : <span className="tm-grade-progress is-compact is-loading" />}
