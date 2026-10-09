@@ -1948,7 +1948,7 @@ kbd,
   color: var(--error);
 }
 .tm-test-icon.is-error {
-  color: var(--warning);
+  color: var(--error); /* errored, like VS Code's testing.iconErrored */
 }
 .tm-test-icon.is-idle {
   color: var(--description);
@@ -4584,15 +4584,22 @@ kbd,
 .tm-sync-line.is-synced {
   color: var(--success);
 }
+/* Status colours mean the same everywhere (as in VS Code): red error, orange needs attention,
+   blue information, green success, grey neutral. Unsaved work needs attention; newer work online is information. */
 .tm-sync-line.is-local-changes,
-.tm-sync-line.is-both,
+.tm-sync-line.is-both {
+  color: var(--warning);
+}
 .tm-sync-line.is-remote-changes {
   color: var(--info);
 }
-.tm-sync-line.is-conflict,
-.tm-sync-line.is-error {
+.tm-sync-line.is-conflict {
   color: var(--warning);
   background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.tm-sync-line.is-error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
 }
 .tm-projects-actions {
   display: flex;
@@ -5015,10 +5022,11 @@ kbd,
   background: color-mix(in srgb, var(--success) 22%, transparent);
   animation: tm-pop-in var(--dur-fast) var(--ease-out);
 }
+/* Starting / building / stopping is work in progress (information), not a warning. */
 .tm-run-status.is-starting,
 .tm-run-status.is-building,
 .tm-run-status.is-stopping {
-  background: color-mix(in srgb, var(--warning) 22%, transparent);
+  background: color-mix(in srgb, var(--info) 22%, transparent);
 }
 .is-starting > .tm-run-pulse,
 .is-building > .tm-run-pulse,
@@ -5589,7 +5597,7 @@ kbd,
   transition: background-color var(--dur-fast, 120ms);
 }
 .tm-assignment-row.is-current .tm-project-name {
-  font-weight: 600;
+  font-weight: inherit;
 }
 .tm-assignment-row > .codicon,
 .tm-assignment-row > .tm-chip,
@@ -5680,15 +5688,18 @@ kbd,
 .tm-state-dot.is-not_started {
   color: var(--description);
 }
+/* The same as the status chips: in progress grey, submitted blue, graded green; completed is neutral. */
 .tm-state-dot.is-in_progress {
+  color: var(--description);
+}
+.tm-state-dot.is-submitted {
   color: var(--info);
 }
-.tm-state-dot.is-submitted,
 .tm-state-dot.is-graded {
   color: var(--success);
 }
 .tm-state-dot.is-readonly {
-  color: var(--warning);
+  color: var(--description);
 }
 .tm-assignment-banner {
   display: flex;
@@ -5697,11 +5708,12 @@ kbd,
   margin: 16px 0 0;
   padding: 10px 12px;
   border-radius: var(--radius);
-  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  /* Completed and locked is information, not a problem. */
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
 }
 .tm-assignment-banner .codicon {
-  color: var(--warning);
+  color: var(--info);
   margin-top: 2px;
 }
 .tm-assignment-actions {
@@ -6134,7 +6146,7 @@ kbd,
   margin-left: 0;
 }
 .tm-grade-error {
-  color: var(--warning);
+  color: var(--error);
 }
 .tm-grade-reviewing {
   display: flex;
@@ -6303,9 +6315,10 @@ kbd,
 .tm-grade-avatar.is-success {
   background: color-mix(in srgb, var(--success) 28%, transparent);
 }
+/* Handed in late: a flag for the teacher (attention), not a failure. */
 .tm-chip.is-late {
-  background: color-mix(in srgb, var(--error) 16%, transparent);
-  color: var(--error);
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
 }
 .tm-state-chip.is-info {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
@@ -6386,7 +6399,8 @@ kbd,
 .tm-grade-total {
   font-size: 22px;
   font-weight: 600;
-  color: var(--success);
+  /* A score isn't a success state: 4 / 20 in green would say "good". */
+  color: var(--foreground);
   transition: color var(--dur-fast, 120ms);
 }
 .tm-grade-total small {
@@ -7229,14 +7243,12 @@ kbd,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Chips never wrap into a second row in a narrow side bar: they scroll. */
-.tm-status-filters,
+/* Grade filter chips scroll in a narrow side bar (the status filters wrap instead, below). */
 .tm-grade-filters {
   flex-wrap: nowrap !important;
   overflow-x: auto;
   scrollbar-width: none;
 }
-.tm-status-filters::-webkit-scrollbar,
 .tm-grade-filters::-webkit-scrollbar {
   display: none;
 }
@@ -7482,23 +7494,27 @@ kbd,
   font-size: 11px;
 }
 
-/* The assignment / project open in this window, and the one whose tab is in front (theme list colours). */
-.tm-assignment-row.is-current,
-.tm-project-row.is-current {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
+/*
+ * Rows as VS Code lists draw them: the row whose tab is in front is selected with the theme's
+ * list colours (inactive selection; active selection + focus outline while the view has focus).
+ * The workspace open in this window is not a row colour: it carries the "Open here" badge.
+ */
 .tm-assignment-row.is-viewing,
+.tm-project-row.is-viewing,
 .tm-grade-activity.is-viewing {
   background: var(--list-inactive-bg);
 }
-.tm-assignment-row.is-current.is-viewing {
-  background: color-mix(in srgb, var(--accent) 20%, var(--list-inactive-bg));
-}
 .tm-projects-view:focus-within .tm-assignment-row.is-viewing,
 .tm-projects-view:focus-within .tm-grade-activity.is-viewing {
+  background: var(--list-active-bg);
+  color: var(--list-active-fg);
   outline: 1px solid var(--list-focus-outline);
   outline-offset: -1px;
+}
+.tm-projects-view:focus-within .tm-assignment-row.is-viewing .tm-assignment-sub,
+.tm-projects-view:focus-within .tm-assignment-row.is-viewing .tm-due,
+.tm-projects-view:focus-within .tm-grade-activity.is-viewing .tm-assignment-sub {
+  color: color-mix(in srgb, var(--list-active-fg) 75%, transparent);
 }
 .tm-open-here {
   display: inline-flex;
@@ -7508,8 +7524,9 @@ kbd,
   padding: 0 6px;
   height: 18px;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--foreground);
+  /* The theme's badge colours (activityBarBadge / badge), like VS Code's counters. */
+  background: var(--badge-bg);
+  color: var(--badge-fg);
   font-size: 10.5px;
   font-weight: 600;
   white-space: nowrap;
@@ -7637,4 +7654,46 @@ kbd,
 .tm-next-step-break {
   flex-basis: 100%;
   height: 0;
+}
+
+/* Alignment and grouping (0.10.4). */
+/* Brief header: the state leads the facts row (where you are, then when and how much),
+   and the gap to the next-step card matches the gap after it. */
+.tm-assignment-head .tm-assignment-facts {
+  margin-bottom: 14px;
+}
+.tm-fact--state {
+  color: var(--foreground);
+}
+/* Status filters wrap onto a second line: a hidden scroll clipped the last chip with no hint more existed. */
+.tm-status-filters {
+  flex-wrap: wrap;
+  row-gap: 4px;
+  overflow: visible;
+}
+/* Criterion scores line up in one column whatever the maximum ("/ 8" vs "/ 12"). */
+.tm-grade-max {
+  min-width: 3.5em;
+  font-variant-numeric: tabular-nums;
+}
+.tm-grade-score {
+  font-variant-numeric: tabular-nums;
+}
+/* Reviewing a student's work: icon and text on one line, the way back under the text.
+   Read-only review is information, so it is blue (info), like the assignment banner. */
+.tm-grade-reviewing {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+}
+.tm-grade-reviewing > .codicon {
+  color: var(--info);
+}
+.tm-grade-reviewing > .tm-button {
+  grid-column: 2;
+  justify-self: start;
+  margin-left: 0;
 }

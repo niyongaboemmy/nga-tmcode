@@ -407,9 +407,8 @@
   outline: 1px solid var(--focus-border);
   outline-offset: -1px;
 }
-.tm-root[data-theme="dark-hc"] .tm-assignment-row.is-current,
-.tm-root[data-theme="dark-hc"] .tm-project-row.is-current,
 .tm-root[data-theme="dark-hc"] .tm-assignment-row.is-viewing,
+.tm-root[data-theme="dark-hc"] .tm-project-row.is-viewing,
 .tm-root[data-theme="dark-hc"] .tm-grade-activity.is-viewing {
   outline: 1px solid var(--focus-border);
   outline-offset: -1px;
