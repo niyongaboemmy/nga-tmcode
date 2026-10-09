@@ -110,6 +110,8 @@ test("a new project is matched from one assessment list, then submitted (In prog
   await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "draft");
 
   await page.getByTestId("submit-project").click();
+  // The same words as Assignments › Submit, true to Task Mentor's lock.
+  await expect(page.locator(".tm-dialog")).toContainText("Submitted work is locked until your teacher grades it or you withdraw it. You can withdraw and submit again until the assignment closes.");
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
   await expect(page.locator(".tm-toast", { hasText: "Your teacher sees exactly this version" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("project-submitted")).toBeVisible();
@@ -118,7 +120,16 @@ test("a new project is matched from one assessment list, then submitted (In prog
   expect(await mock(page, (m) => m.state().links[0].status)).toBe("submitted");
 
   // Withdraw → Draft again; then the teacher grades it → Graded.
-  await page.getByTestId("project-submitted").getByRole("button", { name: "Withdraw" }).click();
+  await expect(page.getByTestId("project-withdraw")).toHaveText("Withdraw to Edit");
+  await page.getByTestId("project-withdraw").click();
+  // A light, non-destructive confirmation; Cancel keeps it submitted.
+  const dialog = page.locator(".tm-dialog");
+  await expect(dialog).toContainText("Withdraw your submission?");
+  await expect(dialog).toContainText("Your teacher won't see version 1 until you submit again.");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "submitted");
+  await command(page, "Projects: Withdraw to Edit");
+  await page.locator(".tm-dialog").getByRole("button", { name: "Withdraw to Edit" }).click();
   await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "draft");
   await expect(page.getByTestId("submit-project")).toBeEnabled();
   const id = await mock(page, (m) => m.state().projects[0].id);
@@ -206,4 +217,27 @@ test("projects are hidden during exams and signed-out views explain sign-in", as
   await fresh(page);
   await command(page, "View: Show Task Mentor Projects");
   await expect(page.getByTestId("projects-signin")).toContainText("Sign in with NGA");
+});
+
+test("only teachers are offered Use as Starter in the This Folder menu", async ({ page }) => {
+  await fresh(page, true);
+  await command(page, "View: Show Task Mentor Projects");
+  await page.getByRole("button", { name: "Connect This Folder to Task Mentor" }).click();
+  await page.locator(".tm-quick-pick input").fill("Starter check");
+  await page.keyboard.press("Enter");
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "No assessment" }).click();
+  await expect(page.getByTestId("sync-state")).toContainText("Saved online", { timeout: 15_000 });
+  const menu = async () => {
+    await page.getByTestId("project-folder").getByLabel("More Project Actions…").click();
+    await expect(page.locator(".tm-menu")).toContainText("Get Latest from Task Mentor");
+    const has = await page.locator(".tm-menu", { hasText: "Use as Starter for an Assignment…" }).count();
+    await page.locator(".tm-menu").press("Escape");
+    await expect(page.locator(".tm-menu")).toHaveCount(0);
+    return has;
+  };
+  expect(await menu()).toBe(0);
+
+  await page.evaluate("window.__TMCODE_PROJECTS__.setTeacher(true)");
+  await command(page, "Assignments: Refresh Assignments");
+  await expect.poll(menu).toBe(1);
 });

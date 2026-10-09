@@ -4,6 +4,7 @@ import { inExam } from "../exam/state";
 import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { api, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
+import { explainSubmitError, notifySubmitted, submitConfirmDetail } from "./submitFlow";
 import type { LinkableActivity, Project } from "./types";
 
 /**
@@ -35,6 +36,11 @@ export interface AssignmentSummary {
     grade: number | null;
     max_points: number | null;
     feedback: string | null;
+    /** The hand-in was after the due date (servers that send it; else `late` is all there is). */
+    is_late?: boolean | null;
+    /** The teacher returned the work for changes: when, and their message. */
+    returned_at?: string | null;
+    returned_message?: string | null;
   } | null;
   teaching?: { students: number; started: number; submitted: number; graded: number };
 }
@@ -58,11 +64,13 @@ interface AssignmentsState {
   checkedAt: number | null;
   loading: boolean;
   error: string | null;
+  /** "scope": Task Mentor couldn't say what the student has (MIS down, sign-in expired); the lists may be incomplete. */
+  errorKind: "scope" | "unsupported" | null;
   details: Record<number, AssignmentDetail>;
   busy: Record<number, "starting" | "submitting" | undefined>;
 }
 
-export const useAssignments = create<AssignmentsState>(() => ({ student: null, quizPracticals: null, teaching: null, staff: null, checkedAt: null, loading: false, error: null, details: {}, busy: {} }));
+export const useAssignments = create<AssignmentsState>(() => ({ student: null, quizPracticals: null, teaching: null, staff: null, checkedAt: null, loading: false, error: null, errorKind: null, details: {}, busy: {} }));
 const set = useAssignments.setState;
 const get = useAssignments.getState;
 
@@ -72,28 +80,56 @@ export function assignmentsSupported() {
 
 export async function refreshAssignments() {
   if (!assignmentsSupported()) return;
-  set({ loading: true, error: null });
-  try {
-    let staff = true;
-    const [student, teaching, quizPracticals] = await Promise.all([
-      api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=student"),
-      // Students are refused the teaching scope (403): that's an answer, not an error.
-      api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=teaching").catch((e) => {
-        if (e instanceof TmError && e.status === 403) {
-          staff = false;
-          return { assignments: [] as AssignmentSummary[] };
-        }
+  set({ loading: true });
+  let staff: boolean | null = true;
+  const [student, teaching, quizPracticals] = await Promise.allSettled([
+    api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=student"),
+    // Students are refused the teaching scope (403): that's an answer, not an error.
+    api<{ assignments: AssignmentSummary[] }>("GET", "/assignments?scope=teaching").catch((e) => {
+      if (e instanceof TmError && e.status === 403 && e.code !== "MIS_SCOPE_UNAVAILABLE") {
+        staff = false;
+        return { assignments: [] as AssignmentSummary[] };
+      }
+      throw e;
+    }),
+    // A failure here is shown too: an empty list would read as "no quiz practicals". (Refused: not for this account.)
+    import("./matching")
+      .then((m) => m.linkableActivities())
+      .then((list) => list.filter((a) => a.activity_type === "quiz" && (a.practical_questions?.length ?? 0) > 0))
+      .catch((e) => {
+        if (e instanceof TmError && e.status === 403 && e.code !== "MIS_SCOPE_UNAVAILABLE") return [] as LinkableActivity[];
         throw e;
       }),
-      import("./matching").then((m) => m.linkableActivities()).then((list) => list.filter((a) => a.activity_type === "quiz" && (a.practical_questions?.length ?? 0) > 0)).catch(() => [] as LinkableActivity[]),
-    ]);
-    // Open assignment pages follow the list (state, grade, completed → read-only).
-    const details = { ...get().details };
-    for (const a of [...student.assignments, ...teaching.assignments]) if (details[a.id]) details[a.id] = { ...details[a.id], ...a };
-    set({ student: student.assignments, teaching: teaching.assignments, quizPracticals, details, staff, checkedAt: Date.now(), loading: false });
-  } catch (e) {
-    set({ loading: false, checkedAt: Date.now(), error: e instanceof TmError && e.status === 404 ? "Your Task Mentor doesn't offer TMCode assignments yet." : `Couldn't load your assignments: ${(e as Error).message}` });
-  }
+  ]);
+  // What did load is kept (and what didn't keeps its last answer): the error says the lists may be incomplete.
+  const s = get();
+  const studentList = student.status === "fulfilled" ? student.value.assignments : s.student;
+  const teachingList = teaching.status === "fulfilled" ? teaching.value.assignments : s.teaching;
+  if (teaching.status === "rejected") staff = s.staff;
+  // Open assignment pages follow the list (state, grade, completed → read-only).
+  const details = { ...s.details };
+  for (const a of [...(studentList ?? []), ...(teachingList ?? [])]) if (details[a.id]) details[a.id] = { ...details[a.id], ...a };
+  const failed = [student, teaching, quizPracticals].find((r) => r.status === "rejected")?.reason as unknown;
+  const unsupported = student.status === "rejected" && student.reason instanceof TmError && student.reason.status === 404;
+  set({
+    student: studentList,
+    teaching: teachingList,
+    quizPracticals: quizPracticals.status === "fulfilled" ? (quizPracticals.value as LinkableActivity[]) : s.quizPracticals,
+    details,
+    staff,
+    checkedAt: Date.now(),
+    loading: false,
+    error: !failed ? null : unsupported ? "Your Task Mentor doesn't offer TMCode assignments yet." : scopeErrorDetail(failed),
+    errorKind: !failed ? null : unsupported ? "unsupported" : "scope",
+  });
+}
+
+/** Why Task Mentor couldn't say what the student has to do. */
+function scopeErrorDetail(e: unknown) {
+  if (e instanceof TmError && e.code === "MIS_SCOPE_UNAVAILABLE") return "Central MIS, which knows your subjects, can't be reached right now.";
+  if (e instanceof TmError && e.status === 401) return "Your sign-in has expired.";
+  if (e instanceof TmError && e.status === 0) return "Task Mentor can't be reached. Check your internet connection.";
+  return (e as Error)?.message || "Task Mentor didn't answer.";
 }
 
 /** Loaded on sign-in and kept fresh (the activity bar badge counts what is left to do). */
@@ -104,7 +140,7 @@ export function wireAssignments() {
   let was = false;
   const follow = (signed: boolean) => {
     if (signed && !was) void refreshAssignments();
-    if (!signed && was) set({ student: null, quizPracticals: null, teaching: null, staff: null, checkedAt: null, details: {} });
+    if (!signed && was) set({ student: null, quizPracticals: null, teaching: null, staff: null, checkedAt: null, error: null, errorKind: null, details: {} });
     was = signed;
   };
   follow(signedIn());
@@ -116,9 +152,10 @@ export function wireAssignments() {
 
 /** Refreshes unless the lists are fresher than `maxAgeMs` (opening the view, focusing the window). */
 export function refreshIfStale(maxAgeMs = 30_000) {
-  const { checkedAt, loading } = get();
+  const { checkedAt, loading, errorKind } = get();
   if (!signedIn() || loading) return;
-  if (checkedAt === null || Date.now() - checkedAt > maxAgeMs) return refreshAssignments();
+  // After a failure (back from signing in again, say), any check is worth it.
+  if (checkedAt === null || errorKind === "scope" || Date.now() - checkedAt > maxAgeMs) return refreshAssignments();
 }
 
 export async function loadAssignment(id: number): Promise<AssignmentDetail | null> {
@@ -275,7 +312,7 @@ export async function submitAssignment(id: number) {
   const choice = await showDialog({
     severity: "info",
     message: `Submit "${a.title}"?`,
-    detail: `TMCode saves your work to Task Mentor, then submits that exact version${a.late ? ". The due date has passed: it will be marked late" : ""}. You can submit again until the assignment is completed.`,
+    detail: submitConfirmDetail({ late: !!a.due_date && Date.parse(a.due_date) < Date.now() }),
     buttons: [
       { id: "submit", label: "Save and Submit", primary: true },
       { id: "cancel", label: "Cancel" },
@@ -287,11 +324,10 @@ export async function submitAssignment(id: number) {
   try {
     // submitLink saves first, and refuses while there are unsaved changes or conflicts.
     const res = await submitLink(a.my.project_id, a.my.link_id);
-    const late = (res.submission as { is_late?: boolean } | null)?.is_late;
-    notify("info", `Submitted "${a.title}"${late ? " (late)" : ""}. Your teacher sees exactly this version.`);
+    notifySubmitted(`"${a.title}"`, res.submission);
     await Promise.all([refreshAssignments(), loadAssignment(id)]);
   } catch (e) {
-    notify("error", (e as Error).message);
+    await explainSubmitError(e);
   } finally {
     setBusy(id, undefined);
   }
@@ -367,6 +403,17 @@ export function dueLabel(due: string | null, now = Date.now()): { text: string; 
   const amount = h < 1 ? `${Math.max(1, Math.round(abs / 60_000))} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`;
   if (ms < 0) return { text: `${amount} late`, tone: "late" };
   return { text: `${amount} left`, tone: h < 24 ? "soon" : "ok" };
+}
+
+/** Was the hand-in late? `my.is_late` when Task Mentor sends it; older servers only say the due date has passed. */
+export function handedInLate(a: AssignmentSummary): boolean {
+  const v = a.my?.is_late;
+  return v === undefined ? a.late : !!v;
+}
+
+/** The teacher returned the work for changes, and it isn't handed in again yet. */
+export function returnedForChanges(a: AssignmentSummary): boolean {
+  return !!a.my?.returned_at && a.my.state === "in_progress" && !a.read_only;
 }
 
 /** Assignments grouped for the view. */

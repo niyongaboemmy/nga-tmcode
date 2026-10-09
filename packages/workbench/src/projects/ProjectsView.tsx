@@ -140,6 +140,8 @@ function ThisFolder() {
   const sync = useProjects((s) => s.sync);
   const plan = useProjects((s) => s.plan);
   const message = useProjects((s) => s.syncMessage);
+  // Teachers only: students have no assignment to give starter files to.
+  const staff = useAssignments((s) => s.staff === true);
   const workspace = useWorkbench((s) => s.workspace);
   // Saving starts with a scan of the folder: the button says so from the click, not after the scan.
   // (A hook: before the early returns below.)
@@ -176,7 +178,7 @@ function ThisFolder() {
             openContextMenu(r.left, r.bottom + 2, [
               { kind: "item", label: "Open in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
               ...(binding.kind === "tm" ? [{ kind: "item" as const, label: "Get Latest from Task Mentor", run: () => executeCommand("projects.pull") }] : []),
-              ...(binding.kind === "tm" ? [{ kind: "item" as const, label: "Use as Starter for an Assignment…", run: () => executeCommand("assignments.useAsStarter") }] : []),
+              ...(binding.kind === "tm" && staff ? [{ kind: "item" as const, label: "Use as Starter for an Assignment…", run: () => executeCommand("assignments.useAsStarter") }] : []),
               { kind: "separator" },
               { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
               ...(project && (project.status ?? "draft") === "draft" ? [{ kind: "item" as const, label: "Remove Project…", run: () => executeCommand("projects.remove") }] : []),
@@ -263,7 +265,8 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
   const at = steps.indexOf(status);
   const title = link?.activity?.title ?? project.assignment?.title ?? (link ? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}` : null);
   const kind = link ? (link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one) : project.assignment ? "Assignment" : null;
-  const due = dueText(link?.activity?.due_date ?? assignment?.due_date, link?.activity?.open !== false && !project.read_only);
+  // Handed in: no countdown (late or not is the submission's, not the date's).
+  const due = status === "submitted" || status === "graded" ? "" : dueText(link?.activity?.due_date ?? assignment?.due_date, link?.activity?.open !== false && !project.read_only);
   const closed = link?.activity?.open === false;
   const openBrief = project.assignment ? () => showAssignment(project.assignment!.id, { toSide: true }) : undefined;
 
@@ -350,8 +353,8 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
             <Codicon name="lock" /> Handed in{link?.revision_number ? ` (version ${link.revision_number})` : ""}
             {link?.submitted_at ? `, ${when(link.submitted_at)}` : ""}. Locked until graded.
           </span>
-          <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.withdraw")} title="Unlock it to change your work, then submit again">
-            Withdraw to make changes
+          <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.withdraw")} title="Unlock it to change your work, then submit again" data-testid="project-withdraw">
+            Withdraw to Edit
           </button>
         </div>
       )}

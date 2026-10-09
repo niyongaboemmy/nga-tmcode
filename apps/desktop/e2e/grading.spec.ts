@@ -178,3 +178,45 @@ test("each practical in the list says what is waiting", async ({ page }) => {
   await expect(activity(page, "assignment:51:").getByTestId("grading-workload")).toHaveText("2 to grade", { timeout: 10_000 });
   await expect(activity(page, "quiz:78:501").getByTestId("grading-workload")).toHaveText("1 to grade");
 });
+
+type Stored = { rubric_scores: { index: number; score: number; comment?: string | null }[] | null; feedback: string } | null;
+const storedBen = (page: Page) => page.evaluate(`window.__TMCODE_PROJECTS__.gradeOf("assignment", 51, null, 21)`) as Promise<Stored>;
+
+test("notes per criterion survive a re-save, from servers that keep them and from older ones that only have the feedback text", async ({ page }) => {
+  await teacher(page);
+  await activity(page, "assignment:51:").click();
+  await page.getByTestId("grade-start").click();
+  const panel = page.getByTestId("grade-panel");
+  await expect(panel).toContainText("Ben Learner", { timeout: 15_000 });
+  await panel.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "12" }).click();
+  await panel.getByTestId("grade-criterion").nth(1).getByLabel(/Code quality score/).fill("6");
+  await panel.getByLabel("Note for Adding items works").click();
+  await panel.locator(".tm-grade-note").fill("Adding works, even with an empty box.");
+  await page.getByTestId("grade-feedback").fill("Nice and tidy.");
+  await page.getByTestId("grade-save").click();
+  await expect(page.locator(".tm-toast", { hasText: "Grade saved: 18/20" })).toBeVisible();
+  let stored = await storedBen(page);
+  expect(stored?.rubric_scores?.[0].comment).toBe("Adding works, even with an empty box.");
+  expect(stored?.feedback).toBe("Nice and tidy.\n\nCriteria notes:\n• Adding items works: Adding works, even with an empty box.");
+
+  // An older Task Mentor: the notes come back only inside the feedback. Reloaded, the form still has them apart.
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLegacyGradeComments(true)");
+  await command(page, "Grading: Refresh Grading");
+  await page.locator(".tm-tab", { hasText: "Grade: Build a to-do list" }).click();
+  await page.getByTestId("grade-switcher-toggle").click();
+  await page.getByTestId("grade-filter-graded").click();
+  await page.getByTestId("grade-row").filter({ hasText: "Ben Learner" }).click();
+  await expect(page.getByTestId("grade-panel")).toContainText("Ben Learner");
+  await expect(page.getByTestId("grade-feedback")).toHaveValue("Nice and tidy.");
+  const note = page.getByTestId("grade-panel").locator(".tm-grade-note");
+  if ((await note.count()) === 0) await page.getByTestId("grade-panel").getByLabel("Note for Adding items works").click();
+  await expect(note).toHaveValue("Adding works, even with an empty box.");
+
+  // Re-saved with another score: the note is kept, and written once.
+  await page.getByTestId("grade-panel").getByTestId("grade-criterion").nth(1).getByLabel(/Code quality score/).fill("7");
+  await page.getByTestId("grade-save").click();
+  await expect(page.locator(".tm-toast", { hasText: "Grade saved: 19/20" })).toBeVisible();
+  stored = await storedBen(page);
+  expect(stored?.feedback).toBe("Nice and tidy.\n\nCriteria notes:\n• Adding items works: Adding works, even with an empty box.");
+  expect(stored?.rubric_scores?.[0].comment).toBe("Adding works, even with an empty box.");
+});
