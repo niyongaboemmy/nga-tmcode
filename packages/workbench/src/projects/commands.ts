@@ -44,6 +44,15 @@ export function openInTaskMentor(projectId: number) {
   else window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/** A Task Mentor web page (`/assignments/create`, `/assignments`) in the system browser. */
+export function openTaskMentorPage(path: string) {
+  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
+  const url = `${taskMentorWeb(api)}${path}`;
+  const p = getPlatform();
+  if (p.openExternal) void p.openExternal(url);
+  else window.open(url, "_blank", "noopener");
+}
+
 export function openAssignmentInTaskMentor(assignmentId: number) {
   const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
   const url = `${taskMentorWeb(api)}/assignments/${assignmentId}`;

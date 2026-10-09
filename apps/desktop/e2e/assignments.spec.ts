@@ -10,6 +10,7 @@ type Mock = {
   setAssignmentStatus(id: number, status: string): void;
   grade(id: number, grade: number, feedback: string): void;
   setTeacher(on: boolean): void;
+  clearAssignments(): void;
   setLifecycle(on: boolean): void;
 };
 const mock = <T>(page: Page, fn: (m: Mock) => T | Promise<T>) => page.evaluate(`(${fn.toString()})(window.__TMCODE_PROJECTS__)`) as Promise<T>;
@@ -272,4 +273,25 @@ test("the assessment list offers a quiz's practical questions directly and start
   await expect(page.getByTestId("project-status-panel")).toContainText("Quiz practical", { timeout: 15_000 });
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
+});
+
+test("with nothing assigned, the view says what will appear and how (students and teachers differ)", async ({ page }) => {
+  await fresh(page);
+  await mock(page, (m) => m.clearAssignments());
+  await command(page, "View: Show Assignments");
+  await page.getByTestId("assignments-refresh").click();
+  const empty = page.getByTestId("assignments-empty");
+  await expect(empty).toContainText("Nothing to do in TMCode yet", { timeout: 10_000 });
+  await expect(empty).toContainText("Start button");
+  await expect(empty.getByRole("button", { name: "Refresh" })).toBeVisible();
+  await expect(empty.getByRole("button", { name: "Open Task Mentor" })).toBeVisible();
+  await expect(empty).toContainText("Signed in as");
+  await expect(page.getByTestId("assignments-checked")).toContainText("Checked just now");
+
+  // A teacher learns which option makes an assignment appear here, with a way to create one.
+  await mock(page, (m) => m.setTeacher(true));
+  await empty.getByRole("button", { name: "Refresh" }).click();
+  await expect(empty).toContainText("No TMCode assignments in your subjects yet");
+  await expect(empty).toContainText("choose TMCode as the way students hand it in");
+  await expect(page.getByTestId("assignments-create")).toBeVisible();
 });

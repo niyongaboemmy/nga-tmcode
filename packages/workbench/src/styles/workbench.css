@@ -7458,3 +7458,26 @@ kbd,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Assignments view: when it last checked, and an empty state that says what to do */
+.tm-assignments-checked {
+  margin: -2px 12px 6px 20px;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-assignments-empty h3 {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.tm-assignments-empty p {
+  line-height: 1.5;
+}
+.tm-assignments-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.tm-assignments-who {
+  font-size: 11px;
+}

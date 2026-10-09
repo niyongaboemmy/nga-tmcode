@@ -551,8 +551,12 @@ pub async fn tm_api(app: AppHandle, request: TmRequest) -> Result<TmResponse, St
     };
     let method = reqwest::Method::from_bytes(request.method.to_uppercase().as_bytes()).map_err(|_| "Bad method")?;
     let mut req = client()?.request(method, format!("{}{}", origins().tm_api, request.path)).bearer_auth(token);
-    // Course scope (linkable activities) comes from MIS, which Task Mentor asks with this token.
-    if let Some(mis) = mis.filter(|_| request.path.contains("/activities") || request.path.contains("/links")) {
+    // Which subjects the user studies or teaches comes from MIS, and Task Mentor asks MIS
+    // with this token: assignments, Start, grading and linkable activities all need it.
+    // (Sending it only on /activities and /links left /assignments with no subjects at all:
+    // an empty Assignments view and "You aren't enrolled in this assignment's course".)
+    // valid_tm_path already limits requests to the Task Mentor API's /api/tmcode/ routes.
+    if let Some(mis) = mis {
         req = req.header("X-MIS-Token", mis);
     }
     if let Some(json) = request.json {
