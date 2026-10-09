@@ -1,6 +1,6 @@
 [package]
 name = "tmcode"
-version = "0.10.3"
+version = "0.10.4"
 description = "TMCode: the VS Code-style exam code editor controlled and graded by Task Mentor"
 authors = ["New Generation Academy"]
 edition = "2021"

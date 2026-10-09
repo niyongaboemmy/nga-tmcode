@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.4 — 2026-10-09
+
+**TMCode 0.10.4: colours that mean something, and a tidier layout.**
+
+### The selected assignment looks like VS Code
+- **The selected row uses your theme's list selection**, like the Explorer: grey when the side bar isn't focused, the theme's selection colour when it is. Light, dark and high-contrast themes each get their own; the old navy tint and side bar are gone.
+- **"Open here" is a badge** in your theme's badge colour, so it reads as a label, not a second highlight.
+
+### One meaning per colour
+- **Red** is only for errors: failed saves, sync errors, test errors, grading errors.
+- **Orange** is for things that need your attention: unsaved local changes, conflicts, late work, due soon.
+- **Blue** is for information: changes waiting on Task Mentor, submitted work, "starting…/building…", read-only banners, reviewing a student's work.
+- **Green** is for success: graded work and tests that passed.
+- **Grey** is neutral: in progress, completed or read-only.
+
+### Alignment and grouping
+- **Brief header:** the assignment's state comes first in the facts row (state, due, points, language), with even spacing around the next-step card.
+- **Grading:** criterion scores line up in one column whatever the maximum (`/ 8` or `/ 12`). The "Reviewing …" card shows the icon and the student on one line, with **Back to my folder** under them.
+- **Projects:** status filters wrap onto a second line, so no chip is cut off.
+
+### All changes
+
+- Status colours by meaning, VS Code list selection, alignment fixes
+
 ## 0.10.3 — 2026-10-09
 
 **TMCode 0.10.3: from an assignment straight into its project.**
