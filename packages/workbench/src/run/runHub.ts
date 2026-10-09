@@ -26,6 +26,7 @@ import {
   type TargetContext,
 } from "./projectKind";
 import { isRunning, openPreview, runFile, stopRun } from "./runService";
+import { terminalAllowed } from "@tmcode/protocol";
 
 /**
  * The Run hub: one place that knows how to run the open project or file.
@@ -77,7 +78,7 @@ export function targetContext(): TargetContext {
   const nativeRunner = !!p.runner?.interactive || p.kind === "desktop";
   return {
     practice,
-    terminal: !!p.terminal && policy.terminal !== "off",
+    terminal: !!p.terminal && terminalAllowed(policy),
     // The browser build's runner only knows JavaScript.
     runner: (entry: string) => !!p.runner && (nativeRunner || /\.(m|c)?js$/i.test(entry)),
     debugger: debugAllowed() && !!p.debug,

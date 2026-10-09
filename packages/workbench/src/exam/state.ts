@@ -20,6 +20,9 @@ export interface ExamTaskState {
 
 export type ExamPhase = "idle" | "starting" | "active" | "locked" | "submitting" | "submitted" | "error";
 
+/** Why a session is locked; each has its own full-window card. */
+export type LockReason = "superseded" | "revoked" | "ended" | "submit_failed" | "time_rejected";
+
 export interface ExamState {
   phase: ExamPhase;
   error: string | null;
@@ -34,6 +37,13 @@ export interface ExamState {
   paused: boolean;
   message: string | null;
   results: Results | null;
+  /** The deadline passed: the editor is locked and the exam submits itself. */
+  timeUp: boolean;
+  lock: { reason: LockReason; detail?: string } | null;
+  /** While submitting can't reach Task Mentor: when the next attempt starts. */
+  retryAt: number | null;
+  /** Results polling gave up while Task Mentor was still grading. */
+  resultsSlow: boolean;
 }
 
 export const initialExamState: ExamState = {
@@ -49,6 +59,10 @@ export const initialExamState: ExamState = {
   paused: false,
   message: null,
   results: null,
+  timeUp: false,
+  lock: null,
+  retryAt: null,
+  resultsSlow: false,
 };
 
 export const useExam = create<ExamState>()(() => ({ ...initialExamState }));

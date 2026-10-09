@@ -21,6 +21,7 @@ import { OutputChannelPicker, useOutputChannelFilter } from "../../exthost/ui";
 // ── extension view containers in the panel (exthost/views) ──
 import { ExtViewPanes } from "../../exthost/views/ViewPanes";
 import { useViews } from "../../exthost/views/model";
+import { terminalAllowed } from "@tmcode/protocol";
 
 function ProblemsView({ filter }: { filter: string }) {
   const problems = useWorkbench((s) => s.problems);
@@ -109,7 +110,7 @@ export function Panel() {
   const active = useWorkbench((s) => s.activePanel);
   const maximized = useWorkbench((s) => s.panelMaximized);
   const problemCount = useWorkbench((s) => s.problems.filter((p) => p.severity !== "info").length);
-  const terminalAllowed = useWorkbench((s) => s.policy.terminal !== "off");
+  const terminalOn = useWorkbench((s) => terminalAllowed(s.policy));
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const run = useWorkbench((s) => s.run);
   const js = { status: useJsConsole((s) => s.status), file: useJsConsole((s) => s.file), last: useJsConsole((s) => s.last), startedAt: useJsConsole((s) => s.startedAt) };
@@ -127,7 +128,7 @@ export function Panel() {
     ...(debugTab ? [{ id: "debugConsole" as const, label: "Debug Console" }] : []),
     { id: "run", label: "Run" },
     { id: "jsConsole", label: "JavaScript Console" },
-    ...(terminalAllowed ? [{ id: "terminal" as const, label: "Terminal" }] : []),
+    ...(terminalOn ? [{ id: "terminal" as const, label: "Terminal" }] : []),
     ...extPanels.map((c) => ({ id: c.key as PanelId, label: c.title })),
   ];
   const current = tabs.some((t) => t.id === active) ? active : "problems";
@@ -215,7 +216,7 @@ export function Panel() {
         {debugTab && <DebugConsole visible={panelVisible && current === "debugConsole"} filter={filter} />}
         <RunConsole visible={panelVisible && current === "run"} />
         <JsConsoleView visible={panelVisible && current === "jsConsole"} filter={filter} />
-        {terminalAllowed && <TerminalView visible={panelVisible && current === "terminal"} />}
+        {terminalOn && <TerminalView visible={panelVisible && current === "terminal"} />}
         {current.startsWith("ext:") && <ExtViewPanes key={current} container={current} fill />}
       </div>
     </section>
