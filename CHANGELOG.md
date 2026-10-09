@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.10.2 — 2026-10-09
+
+**TMCode 0.10.2: everything follows your colour theme, assignment images show, and loading shows at once.**
+
+### Fixed
+- **The editor's right-click menu** had no background, so its items were drawn over your code. It now uses your theme's menu colours, with a border, rounded corners and a shadow, in light, dark and high-contrast themes.
+- **Assignment briefs** written in Task Mentor kept the rich editor's own look: black text, white backgrounds and Times New Roman, which made them unreadable in dark themes. Briefs now use your theme's colours and fonts and keep their structure (headings, lists, bold, alignment).
+- **Images in briefs** showed as empty boxes. Images uploaded in Task Mentor now display. An image from another website shows as an **Open image** link.
+- **Suggestions, hovers and find in the editor** get proper borders, rounded corners and shadows.
+
+### Loading shows at once
+- **Instant feedback:** as soon as TMCode starts talking to Task Mentor, a thin line runs under the title bar and the status bar says what's happening ("Saving to Task Mentor…", "Opening the student's project…"). This covers saving, getting the latest, starting and submitting work, opening a project or a student's submission, and saving a grade.
+- **Save reacts on click:** **Save** now shows "Saving…" the moment you click it. Before, nothing showed until TMCode had compared every file with Task Mentor.
+
+### Clearer assignment lists
+- **The assignment you're working on stands out:** its row has an accent bar and an **Open here** label.
+- **The assignment whose brief is on screen is selected,** like the open file in the Explorer.
+- **Status on its own line:** "In progress" moved to the row's second line, so titles aren't cut off.
+- **Projects and Grading** highlight the open project and the practical being graded the same way.
+- **High-contrast themes** outline badges, labels and highlighted rows.
+
+### All changes
+
+- Fix hook order: useActivity before the early returns in ThisFolder and the assignment page
+- Loading shows the instant work starts
+- Theme harmony: themed editor menus, Task Mentor briefs in the theme with their images, clear assignment highlight
+
 ## 0.10.1 — 2026-10-09
 
 **TMCode 0.10.1: assignments from Task Mentor show up in TMCode.**

@@ -1,7 +1,7 @@
 {
   "name": "@tmcode/protocol",
   "private": true,
-  "version": "0.10.1",
+  "version": "0.10.2",
   "type": "module",
   "description": "Wire formats shared by TMCode and Task Mentor (profiles, exam package, snapshots, telemetry)",
   "main": "src/index.ts",
