@@ -33,8 +33,29 @@ interface Item {
   run: () => void;
 }
 
-const recentCommands: string[] = [];
+/** Recently run commands, kept across restarts as in VS Code. */
+const RECENT_KEY = "tmcode:recent-commands";
+const recentCommands: string[] = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+})();
 const recentFiles: string[] = [];
+/**
+ * Shown first while nothing has been run yet, so the palette never opens on an
+ * alphabetical pick like "Accounts: Sign Out of NGA" that one Enter would run.
+ */
+const COMMON_COMMANDS = [
+  "workbench.action.quickOpen",
+  "workbench.view.assignments",
+  "workbench.action.terminal.toggleTerminal",
+  "workbench.view.search",
+  "workbench.action.openSettings",
+  "workbench.action.selectTheme",
+];
 
 /** Colour themes grouped like VS Code's picker: light, dark, high contrast (built-ins first, then extensions). */
 function themeItems() {
@@ -114,7 +135,9 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
       // Equal scores: the shorter (closer) label first, as VS Code ranks "Format Document" above "Format Document With...".
       if (query) scored.sort((a, b) => b.m.score - a.m.score || a.label.length - b.label.length);
       else scored.sort((a, b) => a.label.localeCompare(b.label));
-      const recent = query ? [] : recentCommands.map((id) => scored.find((s) => s.c.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
+      const pick = (ids: string[]) => ids.map((id) => scored.find((s) => s.c.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
+      const recent = query ? [] : recentCommands.length ? pick(recentCommands) : pick(COMMON_COMMANDS);
+      const firstGroup = recentCommands.length ? "recently used" : "commonly used";
       const rest = scored.filter((s) => !recent.includes(s));
       const toItem = (s: (typeof scored)[number], group?: string): Item => ({
         id: s.c.id,
@@ -127,11 +150,16 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           if (at >= 0) recentCommands.splice(at, 1);
           recentCommands.unshift(s.c.id);
           recentCommands.length = Math.min(recentCommands.length, 5);
+          try {
+            localStorage.setItem(RECENT_KEY, JSON.stringify(recentCommands));
+          } catch {
+            /* private window: recents stay in memory */
+          }
           closeQuickInput();
           executeCommand(s.c.id);
         },
       });
-      return [...recent.map((s, i) => toItem(s, i === 0 ? "recently used" : undefined)), ...rest.map((s, i) => toItem(s, i === 0 && recent.length ? "other commands" : undefined))];
+      return [...recent.map((s, i) => toItem(s, i === 0 ? firstGroup : undefined)), ...rest.map((s, i) => toItem(s, i === 0 && recent.length ? "other commands" : undefined))];
     }
     if (mode === "files") {
       const all = files ?? [];

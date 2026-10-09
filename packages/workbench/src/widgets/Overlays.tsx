@@ -94,12 +94,23 @@ export function ContextMenu() {
 
 export function Dialog() {
   const dialog = useWorkbench((s) => s.dialog);
-  const primaryRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => primaryRef.current?.focus(), [dialog]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  // Focus the default button: the primary one, or Cancel when the primary one is destructive.
+  // Focus goes back where it was when the dialog closes.
+  useEffect(() => {
+    if (!dialog) return;
+    const before = document.activeElement as HTMLElement | null;
+    const id = dialog.buttons.some((b) => b.primary && b.destructive) ? dialog.cancelId : (dialog.buttons.find((b) => b.primary)?.id ?? dialog.cancelId);
+    boxRef.current?.querySelector<HTMLButtonElement>(`[data-dialog-button="${CSS.escape(id)}"]`)?.focus();
+    return () => {
+      if (before?.isConnected) before.focus();
+    };
+  }, [dialog]);
   if (!dialog) return null;
   return (
     <div className="tm-dialog-backdrop" onMouseDown={() => dialog.resolve(dialog.cancelId)}>
       <div
+        ref={boxRef}
         className="tm-dialog"
         role="alertdialog"
         aria-modal
@@ -110,6 +121,14 @@ export function Dialog() {
           if (e.key === "Escape") {
             e.stopPropagation();
             dialog.resolve(dialog.cancelId);
+          } else if (e.key === "Tab") {
+            // Keep focus inside the dialog.
+            const buttons = [...(boxRef.current?.querySelectorAll<HTMLButtonElement>("[data-dialog-button]") ?? [])];
+            if (!buttons.length) return;
+            const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            const next = e.shiftKey ? (at <= 0 ? buttons.length - 1 : at - 1) : (at + 1) % buttons.length;
+            e.preventDefault();
+            buttons[next].focus();
           }
         }}
       >
@@ -130,7 +149,7 @@ export function Dialog() {
           {dialog.buttons.map((b) => (
             <button
               key={b.id}
-              ref={b.primary ? primaryRef : undefined}
+              data-dialog-button={b.id}
               type="button"
               className={`tm-button ${b.primary ? "" : "tm-button--secondary"}`}
               onClick={() => dialog.resolve(b.id)}

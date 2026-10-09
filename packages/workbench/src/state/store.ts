@@ -99,6 +99,8 @@ export interface DialogButton {
   id: string;
   label: string;
   primary?: boolean;
+  /** Hard to undo (sign out everywhere, disconnect, remove): Cancel gets the focus, so Enter can't confirm it by accident. */
+  destructive?: boolean;
 }
 
 export interface DialogRequest {

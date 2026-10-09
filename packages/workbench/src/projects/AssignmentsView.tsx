@@ -131,6 +131,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
   const [busy, setBusy] = useState(false);
   const due = dueLabel(quiz.due_date ?? null);
   const start = async () => {
+    if (busy) return;
     setBusy(true);
     try {
       await startQuizPractical(quiz, q);
@@ -139,7 +140,22 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
     }
   };
   return (
-    <div className="tm-list-row tm-assignment-row" data-testid="quiz-practical-row" title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}`}>
+    // Its task is in the quiz (there is no brief tab): the row opens the workspace, as a project row does.
+    <div
+      className="tm-list-row tm-assignment-row"
+      data-testid="quiz-practical-row"
+      role="button"
+      tabIndex={0}
+      aria-busy={busy || undefined}
+      title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}\nOpen its workspace (keep the quiz open in Task Mentor)`}
+      onClick={() => void start()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          void start();
+        }
+      }}
+    >
       <Codicon name="beaker" className="tm-project-kind" />
       <span className="tm-assignment-text">
         <span className="tm-project-name">{q.title}</span>
@@ -150,7 +166,15 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
           {due && <span className={`tm-due is-${due.tone}`}>{due.text}</span>}
         </span>
       </span>
-      <button type="button" className="tm-button tm-button--small" disabled={busy} onClick={() => void start()}>
+      <button
+        type="button"
+        className="tm-button tm-button--small"
+        disabled={busy}
+        onClick={(e) => {
+          e.stopPropagation();
+          void start();
+        }}
+      >
         {busy ? "Opening…" : "Start"}
       </button>
     </div>

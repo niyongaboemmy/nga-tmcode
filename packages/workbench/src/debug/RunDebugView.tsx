@@ -555,7 +555,6 @@ function Welcome() {
         <button type="button" className="tm-link-button" onClick={() => void pickConfiguration(true)}>
           Show all automatic debug configurations
         </button>
-        .
       </p>
     </div>
   );

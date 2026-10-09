@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatKeybinding } from "../commands/registry";
 import { getPlatform, openFile, showDialog, useWorkbench, type EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { ActionButton, Codicon } from "../widgets/icons";
@@ -283,7 +284,7 @@ function GradePanel({ gkey, roster, row, onNext }: { gkey: string; roster: Roste
         <button type="button" className="tm-button tm-button--secondary" disabled={!gradable || !complete || saving} onClick={() => void save(false)} data-testid="grade-save">
           Save
         </button>
-        <button type="button" className="tm-button" disabled={!gradable || !complete || saving} onClick={() => void save(true)} data-testid="grade-save-next" title="Save, then the next one to grade (⌘Enter)">
+        <button type="button" className="tm-button" disabled={!gradable || !complete || saving} onClick={() => void save(true)} data-testid="grade-save-next" title={`Save, then the next one to grade (${formatKeybinding("mod+enter", getPlatform().os)})`}>
           <Codicon name={saving ? "loading" : "arrow-right"} className={saving ? "codicon-modifier-spin" : ""} /> Save &amp; Next
         </button>
       </footer>
