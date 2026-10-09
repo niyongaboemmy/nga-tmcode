@@ -67,15 +67,23 @@ describe("launch.json (JSON with comments)", () => {
     }
   });
 
-  it("has Python, Node, C/C++, Go and Dart/Flutter templates", () => {
+  it("has Python, Node, C/C++, Java, Go, Dart/Flutter, Ruby, C#, PHP and Swift templates", () => {
     const kinds = new Set(TEMPLATES.map((t) => adapterKindFor(t.config.type)));
-    expect(kinds).toEqual(new Set(["python", "node", "native", "go", "dart"]));
+    expect(kinds).toEqual(new Set(["python", "node", "native", "java", "go", "dart", "ruby", "dotnet", "php"]));
   });
 
   it("Go and Dart files get an automatic configuration (their debuggers build the program)", () => {
     expect(selfHostedConfig("cmd/main.go")).toMatchObject({ type: "go", mode: "debug", program: "${fileDirname}" });
     expect(selfHostedConfig("bin/app.dart")).toMatchObject({ type: "dart", program: "${file}" });
     expect(selfHostedConfig("main.py")).toBeNull();
+    expect(selfHostedConfig("lib/app.rb")).toMatchObject({ type: "rdbg", script: "${file}" });
+    expect(selfHostedConfig("Sources/App/main.swift")).toMatchObject({ type: "swift", request: "launch" });
+    expect(adapterKindFor("rdbg")).toBe("ruby");
+    expect(adapterKindFor("swift")).toBe("native");
+    expect(adapterKindFor("coreclr")).toBe("dotnet");
+    expect(adapterKindFor("php")).toBe("php");
+    expect(selfHostedConfig("src/Program.cs")).toMatchObject({ type: "coreclr", request: "launch" });
+    expect(selfHostedConfig("public/index.php")).toMatchObject({ type: "php", program: "${file}", port: 0, env: { XDEBUG_CONFIG: "client_port=${port}" } });
   });
 
   it("adds a configuration at the top, keeping comments and the others", () => {
@@ -133,5 +141,23 @@ describe("command-line arguments", async () => {
   it("splits on spaces and honours quotes", () => {
     expect(splitArgs(`a "b c" 'd e' f\\ g "h \\"i\\""`)).toEqual(["a", "b c", "d e", "f\\", "g", 'h "i"']);
     expect(splitArgs("   ")).toEqual([]);
+  });
+});
+
+describe("swiftProduct", () => {
+  it("picks the executable target, else the product, else the package name", async () => {
+    const { swiftProduct } = await import("./debugService");
+    expect(swiftProduct(`let package = Package(name: "Pkg", targets: [.target(name: "Lib"), .executableTarget(name: "Hello", dependencies: ["Lib"])])`)).toBe("Hello");
+    expect(swiftProduct(`Package(name: "Pkg", products: [.executable(name: "tool", targets: ["Tool"])])`)).toBe("tool");
+    expect(swiftProduct(`let package = Package(\n  name: "Only"\n)`)).toBe("Only");
+    expect(swiftProduct("// nothing")).toBeNull();
+  });
+});
+
+describe("kotlinMainClass", () => {
+  it("names the file class like kotlinc", async () => {
+    const { kotlinMainClass } = await import("./debugService");
+    expect(kotlinMainClass("src/com/example/main.kt", "package com.example\n\nfun main() {}")).toBe("com.example.MainKt");
+    expect(kotlinMainClass("hello-world.kt", "fun main() {}")).toBe("Hello_worldKt");
   });
 });

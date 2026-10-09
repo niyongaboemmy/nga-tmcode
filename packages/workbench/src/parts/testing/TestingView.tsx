@@ -1,7 +1,9 @@
 import { executeCommand } from "../../commands/registry";
 import { getPlatform, openFile, useWorkbench, type TestItem } from "../../state/store";
 import { TESTS_FILE, openTestDiff, runTests } from "../../run/testService";
+import { useFrameworkTests } from "../../testing/service";
 import { ActionButton, Codicon } from "../../widgets/icons";
+import { FrameworkTests } from "./FrameworkTests";
 
 const STATUS_ICON: Record<TestItem["status"], { icon: string; cls: string; label: string }> = {
   idle: { icon: "circle-large-outline", cls: "is-idle", label: "Not run" },
@@ -23,12 +25,23 @@ const SAMPLE = `{
 export function TestingView() {
   const tests = useWorkbench((s) => s.tests);
   const workspace = useWorkbench((s) => s.workspace);
+  const hasSuites = useFrameworkTests((s) => s.suites.length > 0);
   const canRun = !!getPlatform().runner;
   const passed = tests.items.filter((t) => t.status === "passed").length;
   const failed = tests.items.filter((t) => t.status === "failed" || t.status === "error").length;
   const done = tests.items.filter((t) => ["passed", "failed", "error"].includes(t.status)).length;
 
   if (!workspace) return <div className="tm-view-empty">Open a folder or start a task from Task Mentor to see its tests.</div>;
+
+  if (!tests.items.length && hasSuites) {
+    return (
+      <div className="tm-pane tm-testing">
+        <div className="tm-pane-body tm-scroll">
+          <FrameworkTests />
+        </div>
+      </div>
+    );
+  }
 
   if (!tests.items.length) {
     return (
@@ -39,6 +52,9 @@ export function TestingView() {
         </p>
         <p className="tm-muted">
           To practise with your own tests, describe them in <code>{TESTS_FILE}</code>.
+        </p>
+        <p className="tm-muted">
+          Project tests (pytest, JUnit, Vitest, Jest, go test, cargo test, PHPUnit, RSpec, dotnet test…) appear here when the folder has them.
         </p>
         <button
           type="button"
@@ -58,6 +74,11 @@ export function TestingView() {
 
   return (
     <div className="tm-pane tm-testing">
+      {hasSuites && (
+        <div className="tm-fwtests-wrap tm-scroll">
+          <FrameworkTests />
+        </div>
+      )}
       <div className="tm-pane-header" aria-label="Tests">
         <Codicon name="chevron-down" />
         <span className="tm-pane-title">{tests.entry}</span>

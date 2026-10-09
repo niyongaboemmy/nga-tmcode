@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { profileForPath } from "@tmcode/profiles";
 import { inExam, useExam } from "../exam/state";
-import { onDocumentChanged, saveAll } from "../monaco/documents";
+import { getDocument, onDocumentChanged, saveAll } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
-import type { DebugAdapterKind, DebugConnection, DebugPrepared, RunEvent, Toolchain } from "../platform/types";
+import type { DebugAdapterKind, DebugComponent, DebugConnection, DebugPrepared, RunEvent, Toolchain } from "../platform/types";
 import { attachDebuggeeRun, clearConsole, clearRunMarkers, refreshToolchains, runFile, showDiagnostics, writeConsole } from "../run/runService";
 import { activeFilePath, getPlatform, loadDir, log, notify, openFile, revealView, showDialog, showPanel, useWorkbench, workbench } from "../state/store";
 import { basename, extname } from "../util/paths";
@@ -225,6 +225,8 @@ interface Session {
   bpIds: Map<number, string>;
   config: LaunchConfig;
   ended: boolean;
+  /** rdbg pauses at load until a debugger connects: continue past it unless stopOnEntry. */
+  skipEntryPause?: boolean;
 }
 
 const sessions = new Map<number, Session>();
@@ -335,14 +337,19 @@ async function ensureAdapter(kind: DebugAdapterKind): Promise<boolean> {
   let probe = await host.probe(kind);
   if (!probe.available && probe.install && host.install && installAllowed()) {
     const what = probe.install;
+    const download = what !== "debugpy";
     const choice = await showDialog({
-      message: what === "js-debug" ? "Download the JavaScript debugger?" : "Install debugpy to debug Python?",
+      message: what === "js-debug" ? "Download the JavaScript debugger?" : what === "netcoredbg" ? "Download the .NET debugger?" : what === "php-debug" ? "Download the PHP debugger?" : "Install debugpy to debug Python?",
       detail:
         what === "js-debug"
           ? `${probe.message ?? ""}\n\nTMCode downloads Microsoft's js-debug (MIT licence) from github.com/microsoft/vscode-js-debug and checks its SHA-256 before use.`
-          : `${probe.message ?? ""}\n\nTMCode will run: python -m pip install --user debugpy (output in the Run panel).`,
+          : what === "netcoredbg"
+            ? `${probe.message ?? ""}\n\nTMCode downloads Samsung's netcoredbg (MIT licence) from github.com/Samsung/netcoredbg and checks its SHA-256 before use.`
+            : what === "php-debug"
+              ? `${probe.message ?? ""}\n\nTMCode downloads the PHP Debug adapter by the Xdebug team (MIT licence) from open-vsx.org and checks its SHA-256 before use.`
+            : `${probe.message ?? ""}\n\nTMCode will run: python -m pip install --user debugpy (output in the Run panel).`,
       buttons: [
-        { id: "install", label: what === "js-debug" ? "Download" : "Install", primary: true },
+        { id: "install", label: download ? "Download" : "Install", primary: true },
         { id: "cancel", label: "Cancel" },
       ],
       cancelId: "cancel",
@@ -361,7 +368,7 @@ async function ensureAdapter(kind: DebugAdapterKind): Promise<boolean> {
 }
 
 /** Installs debugpy (pip, output in the Run panel) or downloads js-debug (progress bar). Throws on failure. */
-export async function runInstall(what: "debugpy" | "js-debug") {
+export async function runInstall(what: DebugComponent) {
   const host = getPlatform().debug!;
   if (!installAllowed()) throw new Error("Debugger components are never installed during an exam.");
   if (what === "debugpy") {
@@ -369,11 +376,12 @@ export async function runInstall(what: "debugpy" | "js-debug") {
     showPanel("run");
     writeConsole({ type: "step", phase: "build", command: "python -m pip install --user debugpy" });
   }
-  setProgress({ title: what === "js-debug" ? "Downloading JavaScript debugger…" : "Installing debugpy…", percent: null });
+  const title = what === "js-debug" ? "Downloading JavaScript debugger…" : what === "netcoredbg" ? "Downloading .NET debugger…" : what === "php-debug" ? "Downloading PHP debugger…" : "Installing debugpy…";
+  setProgress({ title, percent: null });
   try {
     await host.install!(what, (e) => {
       if (e.type === "output") writeConsole({ type: "stdout", data: e.data });
-      else setProgress({ title: "Downloading JavaScript debugger…", detail: `${(e.downloaded / 1e6).toFixed(1)} MB${e.total ? ` of ${(e.total / 1e6).toFixed(1)} MB` : ""}`, percent: e.total ? Math.round((e.downloaded / e.total) * 100) : null });
+      else setProgress({ title, detail: `${(e.downloaded / 1e6).toFixed(1)} MB${e.total ? ` of ${(e.total / 1e6).toFixed(1)} MB` : ""}`, percent: e.total ? Math.round((e.downloaded / e.total) * 100) : null });
     });
     if (what === "debugpy") writeConsole({ type: "info", text: "debugpy installed." });
     log("Debug", `${what} installed`);
@@ -416,6 +424,25 @@ function launchArguments(kind: DebugAdapterKind, config: LaunchConfig, prepared:
       outputCapture: consoleMode === "internalConsole" ? "std" : undefined,
     };
   }
+  if (kind === "java") {
+    // The profile's run step is `java -cp <out> <Main>`; the adapter starts the JVM itself with JDWP.
+    const cp = prepared.args[prepared.args.indexOf("-cp") + 1];
+    const file = `${prepared.root}/${entry}`;
+    return {
+      ...rest,
+      type: "java",
+      request: "launch",
+      name,
+      mainClass: config.mainClass ?? prepared.args.at(-1),
+      classPaths: config.classPaths ?? (cp ? [cp] : []),
+      sourcePaths: config.sourcePaths ?? [prepared.root, file.slice(0, file.lastIndexOf("/"))],
+      javaExec: prepared.program,
+      args,
+      cwd,
+      console: consoleMode,
+      stopOnEntry: !!config.stopOnEntry,
+    };
+  }
   // C/C++ (lldb-dap or gdb -i dap): the program is the binary the build just wrote.
   const env = config.env ? Object.entries(config.env).map(([k, v]) => `${k}=${v}`) : undefined;
   void entry;
@@ -427,14 +454,320 @@ export interface StartOptions {
   noConsent?: boolean;
 }
 
+/** Runs a command through the proc host; `show` streams it to the Run console. */
+function procRun(command: string, cwd: string, show: boolean) {
+  const proc = getPlatform().proc!;
+  return new Promise<{ code: number | null; out: string }>((resolve, reject) => {
+    let out = "";
+    proc
+      .run(command, cwd, (e) => {
+        if (e.type === "exit") return resolve({ code: e.code, out });
+        out += e.data;
+        if (show) writeConsole({ type: e.type, data: e.data });
+      })
+      .catch(reject);
+  });
+}
+
+/** The .csproj of a C# file: in its folder or the nearest one above it (workspace-relative). */
+async function findCsproj(file: string | null): Promise<string | null> {
+  const fs = getPlatform().fs;
+  let dir = file && file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+  for (;;) {
+    const entries = await fs.readDir(dir).catch(() => []);
+    const proj = entries.find((e) => e.kind === "file" && /\.(cs|fs|vb)proj$/.test(e.name));
+    if (proj) return dir ? `${dir}/${proj.name}` : proj.name;
+    if (!dir) return null;
+    dir = dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "";
+  }
+}
+
+/**
+ * C# / .NET: `dotnet build -c Debug` the project, ask MSBuild for the
+ * assembly it wrote, then netcoredbg runs `dotnet <assembly>` under the debugger.
+ */
+async function startDotnet(config: LaunchConfig, resolved: LaunchConfig, root: string, file: string | null, opts: StartOptions): Promise<boolean> {
+  if (!getPlatform().proc) {
+    notify("info", "Debugging C# is available in the TMCode desktop app.");
+    return false;
+  }
+  const project = typeof resolved.project === "string" ? resolved.project.replace(`${root}/`, "") : await findCsproj(file);
+  if (!project) {
+    notify("error", "Debugging C# needs a project (.csproj). Create one with: dotnet new console");
+    return false;
+  }
+  const dir = project.includes("/") ? project.slice(0, project.lastIndexOf("/")) : "";
+  const name = basename(project);
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: "Building…", detail: `dotnet build ${name} (Debug)` }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  try {
+    if (!opts.noConsent && !(await ensureAdapter("dotnet"))) return fail();
+    clearRunMarkers();
+    clearConsole();
+    showPanel("run");
+    writeConsole({ type: "step", phase: "build", command: `dotnet build ${name} -c Debug` });
+    const built = await procRun(`dotnet build "${name}" -c Debug -nologo -clp:NoSummary`, dir, true);
+    if (built.code !== 0) {
+      const files = await showDiagnostics(built.out, project);
+      if (files) showPanel("problems");
+      throw new Error(built.code === 127 ? "TMCode could not find the .NET SDK (dotnet). Install .NET 8 or newer, then try again." : "The build failed. See Problems for the errors.");
+    }
+    const target = (await procRun(`dotnet msbuild "${name}" -getProperty:TargetPath -p:Configuration=Debug -nologo`, dir, false)).out.trim().split(/\r?\n/).pop()!.trim();
+    const dotnet = (await procRun(getPlatform().os === "windows" ? "where dotnet" : "command -v dotnet", "", false)).out.trim().split(/\r?\n/)[0];
+    if (!/\.dll$/i.test(target)) throw new Error(`Could not find the program the build produced (${target || "no TargetPath"}).`);
+    setProgress({ title: "Starting debugger…" });
+    const cwd = typeof resolved.cwd === "string" ? resolved.cwd : dir ? `${root}/${dir}` : root;
+    const prepared: DebugPrepared = { root, entry: project, cwd, program: target, args: [] };
+    const session = await createSession("dotnet", config, prepared, null);
+    await session.dap.initialize("coreclr", { runInTerminal: false });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    const { type: _t, request: _r, name: label, ...rest } = resolved;
+    void _t;
+    void _r;
+    const args = ((resolved.args as string[] | undefined) ?? []).map(String);
+    await configureAndLaunch(session, { justMyCode: true, ...rest, type: "coreclr", request: "launch", name: label, program: dotnet || "dotnet", args: [target, ...args], cwd, console: "internalConsole", stopAtEntry: !!resolved.stopAtEntry }, "launch");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    if (/could not find/i.test(message)) showMissing(message);
+    else notify("error", message);
+    await stopDebugging();
+    return fail();
+  }
+}
+
+/**
+ * PHP: the PHP Debug adapter starts php with Xdebug, which connects back on a
+ * free port (`port: 0`, `client_port=${port}`), as VS Code's "Launch currently open script".
+ */
+async function startPhp(config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: "Starting the PHP debugger…" }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  try {
+    if (!opts.noConsent && !(await ensureAdapter("php"))) return fail();
+    // The adapter inherits TMCode's environment: ask the login shell where php is (Homebrew, Herd, XAMPP…).
+    const php = getPlatform().proc ? (await procRun(getPlatform().os === "windows" ? "where php" : "command -v php", "", false)).out.trim().split(/\r?\n/)[0] : "";
+    const prepared: DebugPrepared = { root, entry: String(resolved.program ?? ""), cwd: String(resolved.cwd ?? root), program: php || "php", args: [] };
+    const session = await createSession("php", config, prepared, null);
+    await session.dap.initialize("php", { runInTerminal: false });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    const { type: _t, request: _r, ...rest } = resolved;
+    void _t;
+    void _r;
+    await configureAndLaunch(session, { port: 0, ...rest, type: "php", request: resolved.request ?? "launch", ...(php && !resolved.runtimeExecutable ? { runtimeExecutable: php } : {}), externalConsole: false }, resolved.request === "attach" ? "attach" : "launch");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    if (/could not find/i.test(message)) showMissing(message);
+    else notify("error", message);
+    await stopDebugging();
+    return fail();
+  }
+}
+
+/** Kotlin's class for top-level functions in a file: com.example.MainKt for com/example/main.kt. */
+export function kotlinMainClass(file: string, source: string) {
+  const pkg = /^\s*package\s+([\w.]+)/m.exec(source)?.[1];
+  const stem = basename(file).replace(/\.kt$/, "");
+  const cls = `${stem.charAt(0).toUpperCase()}${stem.slice(1).replace(/[^\w$]/g, "_")}Kt`;
+  return pkg ? `${pkg}.${cls}` : cls;
+}
+
+/**
+ * Kotlin files: kotlinc → a jar with the Kotlin runtime (in .tmcode, never
+ * uploaded), then TMCode's Java debugger runs its MainKt class.
+ */
+async function startKotlin(config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  if (!getPlatform().proc) {
+    notify("info", "Debugging Kotlin is available in the TMCode desktop app.");
+    return false;
+  }
+  const program = String(resolved.program ?? "");
+  const entry = toWorkspacePath(program, root, caseInsensitive());
+  if (!entry || !entry.endsWith(".kt")) {
+    notify("error", "Open the .kt file with fun main() to debug it.");
+    return false;
+  }
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: "Building…", detail: "kotlinc (the first build takes a while)" }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  try {
+    if (!opts.noConsent && !(await ensureAdapter("java"))) return fail();
+    clearRunMarkers();
+    clearConsole();
+    showPanel("run");
+    const jar = ".tmcode/kotlin/app.jar";
+    writeConsole({ type: "step", phase: "build", command: `kotlinc ${entry} -include-runtime -d ${jar}` });
+    const built = await procRun(`kotlinc "${entry}" -include-runtime -d "${jar}"`, "", true);
+    if (built.code !== 0) {
+      const files = await showDiagnostics(built.out, entry);
+      if (files) showPanel("problems");
+      throw new Error(built.code === 127 ? "TMCode could not find the Kotlin compiler (kotlinc). Install Kotlin, then try again." : "The build failed. See Problems for the errors.");
+    }
+    const java = (await procRun(getPlatform().os === "windows" ? "where java" : "command -v java", "", false)).out.trim().split(/\r?\n/)[0];
+    const source = getDocument(entry)?.getValue() ?? (await getPlatform().fs.readFile(entry).catch(() => ""));
+    const dir = `${root}/${entry}`.slice(0, `${root}/${entry}`.lastIndexOf("/"));
+    setProgress({ title: "Starting debugger…" });
+    const prepared: DebugPrepared = { root, entry, cwd: root, program: java || "java", args: [] };
+    const session = await createSession("java", config, prepared, null);
+    const terminal = !!getPlatform().debug?.runInTerminal;
+    await session.dap.initialize("java", { runInTerminal: terminal });
+    adoptCapabilities(session);
+    const { type: _t, request: _r, program: _p, name, ...rest } = resolved;
+    void _t;
+    void _r;
+    void _p;
+    const consoleMode = resolved.console === "internalConsole" || !terminal ? "internalConsole" : "integratedTerminal";
+    if (consoleMode !== "integratedTerminal") showPanel("debugConsole");
+    await configureAndLaunch(
+      session,
+      { ...rest, type: "java", request: "launch", name, mainClass: resolved.mainClass ?? kotlinMainClass(entry, source), classPaths: [`${root}/${jar}`], sourcePaths: [root, dir], javaExec: java || "java", args: ((resolved.args as string[] | undefined) ?? []).map(String), cwd: typeof resolved.cwd === "string" ? resolved.cwd : root, console: consoleMode, stopOnEntry: !!resolved.stopOnEntry },
+      "launch",
+    );
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    if (/could not find/i.test(message)) showMissing(message);
+    else notify("error", message);
+    await stopDebugging();
+    return fail();
+  }
+}
+
+/** The executable a Swift package builds: its first executable target (or product), else the package name. */
+export function swiftProduct(manifest: string): string | null {
+  return /\.executable(?:Target)?\(\s*name:\s*"([^"]+)"/.exec(manifest)?.[1] ?? /Package\(\s*name:\s*"([^"]+)"/.exec(manifest)?.[1] ?? null;
+}
+
+/**
+ * Swift packages: `swift build` (debug configuration) through the proc host,
+ * then lldb-dap on .build/debug/<product> — Xcode's lldb understands Swift.
+ */
+async function startSwift(config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  const proc = getPlatform().proc;
+  const fs = getPlatform().fs;
+  if (!proc) {
+    notify("info", "Debugging Swift is available in the TMCode desktop app.");
+    return false;
+  }
+  const manifest = await fs.readFile("Package.swift").catch(() => null);
+  const product = manifest ? swiftProduct(manifest) : null;
+  if (!product) {
+    notify("error", "Debugging Swift needs a Swift package (Package.swift with an executable target) at the root of the folder.");
+    return false;
+  }
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: "Building…", detail: "swift build (debug)" }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  const run = (command: string, show: boolean) => procRun(command, "", show);
+  try {
+    if (!opts.noConsent && !(await ensureAdapter("native"))) return fail();
+    clearRunMarkers();
+    clearConsole();
+    showPanel("run");
+    writeConsole({ type: "step", phase: "build", command: "swift build" });
+    const built = await run("swift build", true);
+    if (built.code !== 0) {
+      const files = await showDiagnostics(built.out, "Package.swift");
+      if (files) showPanel("problems");
+      throw new Error(built.code === 127 ? "TMCode could not find Swift (swift). Install Xcode or the Swift toolchain, then try again." : "The build failed. See Problems for the errors.");
+    }
+    const bin = (await run("swift build --show-bin-path", false)).out.trim().split("\n").pop()!;
+    const program = `${bin}/${product}`;
+    setProgress({ title: "Starting debugger…" });
+    const cwd = typeof resolved.cwd === "string" ? resolved.cwd : root;
+    const prepared: DebugPrepared = { root, entry: "Package.swift", cwd, program, args: [] };
+    const session = await createSession("native", config, prepared, null);
+    await session.dap.initialize("lldb", { runInTerminal: !!getPlatform().debug?.runInTerminal });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    const { type: _t, request: _r, name, ...rest } = resolved;
+    void _t;
+    void _r;
+    await configureAndLaunch(session, { ...rest, type: "lldb", request: "launch", name, program, args: ((resolved.args as string[] | undefined) ?? []).map(String), cwd, stopOnEntry: !!resolved.stopOnEntry }, "launch");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    if (/could not find/i.test(message)) showMissing(message);
+    else notify("error", message);
+    await stopDebugging();
+    return fail();
+  }
+}
+
+/** `com.example.App` for src/com/example/App.java (from its package declaration). */
+async function javaMainClass(entry: string) {
+  const text = getDocument(entry)?.getValue() ?? (await getPlatform().fs.readFile(entry).catch(() => ""));
+  const pkg = /^\s*package\s+([\w.]+)\s*;/m.exec(text)?.[1];
+  const stem = basename(entry).replace(/\.java$/, "");
+  return pkg ? `${pkg}.${stem}` : stem;
+}
+
+/**
+ * Java attach: a JVM already listening for a debugger (Spring Boot or Maven
+ * started with -agentlib:jdwp=…,address=5005). Nothing is built.
+ */
+async function startJavaAttach(config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  const port = Number(resolved.port ?? 5005);
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: `Attaching to the JVM on port ${port}…` }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  log("Debug", `Attach "${config.name}" (java) to ${resolved.hostName ?? "127.0.0.1"}:${port}`);
+  try {
+    if (!opts.noConsent && !(await ensureAdapter("java"))) return fail();
+    const { type: _t, request: _r, name, ...rest } = resolved;
+    void _t;
+    void _r;
+    const sourcePaths = (resolved.sourcePaths as string[] | undefined) ?? [root, `${root}/src`, `${root}/src/main/java`, `${root}/src/test/java`, `${root}/src/main/kotlin`];
+    const args = { ...rest, type: "java", request: "attach", name, hostName: resolved.hostName ?? "127.0.0.1", port, sourcePaths, cwd: root };
+    const prepared: DebugPrepared = { root, entry: "", cwd: root, program: "", args: [] };
+    const session = await createSession("java", config, prepared, null);
+    await session.dap.initialize("java", { runInTerminal: false });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    await configureAndLaunch(session, args, "attach");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    notify("error", /ECONNREFUSED|connect/i.test(message) ? `No JVM is listening on port ${port}. Start it with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${port}` : message);
+    await stopDebugging();
+    return fail();
+  }
+}
+
 /**
  * Go (Delve), Dart and Flutter: their debug adapters build and run the program
  * themselves, so TMCode skips its own build step and passes the paths.
  */
-async function startSelfHosted(kind: "go" | "dart" | "flutter", config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+async function startSelfHosted(kind: "go" | "dart" | "flutter" | "ruby", config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
   const host = getPlatform().debug!;
   const abs = (p: string) => (/^([a-z]+:|\/|[A-Za-z]:\\)/.test(p) ? p : `${root}/${p.replace(/^\.\//, "")}`);
-  const program = typeof resolved.program === "string" && resolved.program ? abs(resolved.program) : root;
+  const target = kind === "ruby" ? resolved.script ?? resolved.program : resolved.program;
+  const program = typeof target === "string" && target ? abs(target) : root;
   // A Dart program inside a Flutter project debugs with Flutter's adapter.
   if (kind === "dart") {
     const pub = await getPlatform().fs.readFile("pubspec.yaml").catch(() => "");
@@ -445,7 +778,7 @@ async function startSelfHosted(kind: "go" | "dart" | "flutter", config: LaunchCo
     return false;
   }
   lastLaunch = { config };
-  set({ phase: "initializing", sessionName: config.name, progress: { title: kind === "go" ? "Building with Delve…" : kind === "flutter" ? "Starting Flutter (the first build takes a while)…" : "Starting the Dart debugger…" }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  set({ phase: "initializing", sessionName: config.name, progress: { title: kind === "go" ? "Building with Delve…" : kind === "flutter" ? "Starting Flutter (the first build takes a while)…" : kind === "ruby" ? "Starting rdbg…" : "Starting the Dart debugger…" }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
   clearDebugConsole();
   revealView("debug");
   log("Debug", `Start "${config.name}" (${kind}) for ${program}`);
@@ -463,6 +796,19 @@ async function startSelfHosted(kind: "go" | "dart" | "flutter", config: LaunchCo
         ? { ...rest, type: "go", request: "launch", name, mode: resolved.mode ?? "debug", program, cwd, args: resolved.args ?? [] }
         : { ...rest, type: "dart", request: "launch", name, program, cwd, args: resolved.args ?? [], console: "debugConsole", sendLogsToClient: false };
     const prepared: DebugPrepared = { root, entry: program, cwd, program, args: [] };
+    if (kind === "ruby") {
+      // rdbg runs the script and waits on a port; TMCode attaches (as vscode-rdbg does).
+      const scriptArgs = ((resolved.args as string[] | undefined) ?? []).map(String);
+      const session = await createSession(kind, config, prepared, null, [program, ...scriptArgs]);
+      session.skipEntryPause = !resolved.stopOnEntry;
+      await session.dap.initialize("rdbg", { runInTerminal: false });
+      adoptCapabilities(session);
+      showPanel("debugConsole");
+      await configureAndLaunch(session, { type: "rdbg", request: "attach", name, localfs: true }, "attach");
+      setProgress(null);
+      if (get().phase === "initializing") set({ phase: "running" });
+      return true;
+    }
     const session = await createSession(kind, config, prepared, null);
     await session.dap.initialize(kind === "go" ? "go" : "dart", { runInTerminal: false });
     adoptCapabilities(session);
@@ -514,10 +860,10 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     notify("error", `Configured debug type '${config.type}' is not supported.`);
     return false;
   }
-  if (kind === "java" || !host.kinds.includes(kind === "dart" ? "dart" : kind)) {
+  if (!host.kinds.includes(kind === "dart" ? "dart" : kind)) {
     notify(
       "info",
-      kind === "java" ? "Debugging Java is not available yet. Use Run Without Debugging (Ctrl+F5)." : `Debugging ${languageNoun(kind, extname(file ?? ""))} is available in the TMCode desktop app.`,
+      `Debugging ${languageNoun(kind, extname(file ?? ""))} is available in the TMCode desktop app.`,
       [{ label: "Run Without Debugging", run: () => file && void import("../run/runService").then((m) => m.runFile(file)) }],
     );
     return false;
@@ -530,7 +876,12 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
   }
   const line = codeEditorFor(workbench.get().activeGroup)?.getPosition()?.lineNumber;
   const resolved = substitute(config, { root: ws.root, file, line, args: pickedArgs });
-  if (kind === "go" || kind === "dart" || kind === "flutter") return startSelfHosted(kind, config, resolved, ws.root, opts);
+  if (kind === "go" || kind === "dart" || kind === "flutter" || kind === "ruby") return startSelfHosted(kind, config, resolved, ws.root, opts);
+  if (kind === "java" && config.request === "attach") return startJavaAttach(config, resolved, ws.root, opts);
+  if (config.type === "swift") return startSwift(config, resolved, ws.root, opts);
+  if (config.type === "kotlin") return startKotlin(config, resolved, ws.root, opts);
+  if (kind === "dotnet") return startDotnet(config, resolved, ws.root, file, opts);
+  if (kind === "php") return startPhp(config, resolved, ws.root, opts);
   const program = typeof resolved.program === "string" && resolved.program ? resolved.program : file ? `${ws.root}/${file}` : "";
   const entry = toWorkspacePath(program, ws.root, caseInsensitive()) ?? (program && !/^([a-z]+:|\/|[A-Za-z]:\\)/.test(program) ? program : null);
   const profile = entry ? profileForPath(entry) : null;
@@ -551,8 +902,11 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
       const probe = await host.probe(kind);
       if (!probe.available && probe.install) await runInstall(probe.install);
     }
-    if (profile.local.build.length) {
-      setProgress({ title: "Building…", detail: `${profile.label} with debug information (-g -O0)` });
+    // javac -g keeps the local variable table the Java debugger shows.
+    const build = kind === "java" ? profile.local.build.map((st) => (st.tool === "javac" ? { ...st, args: ["-g", ...st.args] } : st)) : profile.local.build;
+    if (kind === "java" && !resolved.mainClass) resolved.mainClass = await javaMainClass(entry);
+    if (build.length) {
+      setProgress({ title: "Building…", detail: `${profile.label} with debug information (${kind === "java" ? "javac -g" : "-g -O0"})` });
       clearRunMarkers();
       clearConsole();
       showPanel("run");
@@ -560,7 +914,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     let buildOut = "";
     let prepared: DebugPrepared;
     try {
-      prepared = await host.prepare({ entry, build: profile.local.build, run: profile.local.run }, (e: RunEvent) => {
+      prepared = await host.prepare({ entry, build, run: profile.local.run }, (e: RunEvent) => {
         writeConsole(e);
         if (e.type === "stdout" || e.type === "stderr") buildOut += e.data;
       });
@@ -669,11 +1023,11 @@ function adoptCapabilities(s: Session) {
   });
 }
 
-async function createSession(kind: DebugAdapterKind, config: LaunchConfig, prepared: DebugPrepared, parent: Session | null): Promise<Session> {
+async function createSession(kind: DebugAdapterKind, config: LaunchConfig, prepared: DebugPrepared, parent: Session | null, target?: string[]): Promise<Session> {
   const host = getPlatform().debug!;
   let session: Session | null = null;
   const early: string[] = [];
-  const conn = await host.start(kind, { parent: parent?.conn.id }, (e) => {
+  const conn = await host.start(kind, { parent: parent?.conn.id, target }, (e) => {
     if (e.type === "message") {
       if (session) session.dap.handleMessage(e.message);
       else early.push(e.message);
@@ -793,6 +1147,13 @@ function frameView(s: Session, f: StackFrame): FrameView {
 }
 
 async function onStopped(s: Session, b: StoppedEventBody) {
+  if (s.skipEntryPause) {
+    s.skipEntryPause = false;
+    if (b.reason === "pause" || b.reason === "entry") {
+      void s.dap.continue(b.threadId ?? 1).catch(() => {});
+      return;
+    }
+  }
   await refreshThreads(s);
   const threadId = b.threadId ?? get().threads.find((t) => t.sessionId === s.id)?.id ?? 1;
   const frames = (await s.dap.stackTrace(threadId).catch(() => [] as StackFrame[])).map((f) => frameView(s, f));

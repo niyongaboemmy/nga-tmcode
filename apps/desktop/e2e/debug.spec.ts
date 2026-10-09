@@ -47,7 +47,11 @@ test("Run and Debug view: welcome, then create a launch.json from a template", a
 
   await debugView(page).getByRole("button", { name: "create a launch.json file" }).click();
   const pick = page.getByRole("dialog");
-  await expect(pick.getByRole("option")).toHaveCount(9); // Python ×2, Node ×2, Go, Dart, Flutter, lldb, gdb
+  // Python ×2, Node ×2, Ruby, Swift, C#, PHP ×2, Kotlin, Java ×2, Go, Dart, Flutter, lldb, gdb
+  await expect(pick.getByRole("option")).toHaveCount(17);
+  for (const label of ["Kotlin: Current File", "Java: Current File", "Java: Attach to JVM (port 5005)", "C#: Debug Project", "PHP: Launch current script", "Ruby: Debug current file", "Swift: Debug Package"]) {
+    await expect(pick.getByRole("option", { name: new RegExp(label.replace(/[()]/g, "\\$&")) })).toBeVisible();
+  }
   await expect(pick.getByRole("option").filter({ hasText: "Node.js: Launch Program" })).toBeVisible();
   await expect(pick.getByRole("option").filter({ hasText: "C/C++: (lldb) Launch" })).toBeVisible();
   await page.keyboard.type("python file with");

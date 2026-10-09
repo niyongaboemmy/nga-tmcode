@@ -106,6 +106,18 @@ export function adapterKindFor(type: string): DebugAdapterKind | null {
       return "dart";
     case "flutter":
       return "flutter";
+    case "rdbg":
+    case "ruby":
+      return "ruby";
+    case "swift":
+      return "native";
+    case "coreclr":
+    case "netcoredbg":
+      return "dotnet";
+    case "php":
+      return "php";
+    case "kotlin":
+      return "java";
     default:
       return null;
   }
@@ -116,14 +128,36 @@ export function selfHostedKindForPath(path: string): DebugAdapterKind | null {
   const ext = extname(path);
   if (ext === "go") return "go";
   if (ext === "dart") return "dart";
+  if (ext === "rb") return "ruby";
+  if (ext === "swift") return "native";
+  if (ext === "cs" || ext === "fs") return "dotnet";
+  if (ext === "php") return "php";
+  if (ext === "kt") return "java";
   return null;
 }
+
+/** VS Code PHP Debug's "Launch currently open script" (Xdebug 3 connects back on a free port). */
+const PHP_SCRIPT: LaunchConfig = {
+  type: "php",
+  request: "launch",
+  name: "PHP: Launch current script",
+  program: "${file}",
+  cwd: "${fileDirname}",
+  port: 0,
+  runtimeArgs: ["-dxdebug.start_with_request=yes"],
+  env: { XDEBUG_MODE: "debug,develop", XDEBUG_CONFIG: "client_port=${port}" },
+};
 
 /** The automatic configuration for those files (VS Code's Go and Dart extensions use the same shape). */
 export function selfHostedConfig(file: string): LaunchConfig | null {
   const kind = selfHostedKindForPath(file);
   if (kind === "go") return { type: "go", request: "launch", name: "Go: Launch Package", mode: "debug", program: "${fileDirname}" };
   if (kind === "dart") return { type: "dart", request: "launch", name: `Dart: ${basename(file)}`, program: "${file}" };
+  if (extname(file) === "swift") return { type: "swift", request: "launch", name: "Swift: Debug Package", cwd: "${workspaceFolder}", args: [] };
+  if (kind === "php") return PHP_SCRIPT;
+  if (extname(file) === "kt") return { type: "kotlin", request: "launch", name: "Kotlin: Current File", program: "${file}" };
+  if (kind === "dotnet") return { type: "coreclr", request: "launch", name: "C#: Debug Project", args: [] };
+  if (kind === "ruby") return { type: "rdbg", request: "launch", name: "Ruby: Debug current file", script: "${file}", args: [] };
   return null;
 }
 
@@ -143,6 +177,9 @@ export function languageNoun(kind: DebugAdapterKind, ext = ""): string {
   if (kind === "go") return "Go";
   if (kind === "dart") return "Dart";
   if (kind === "flutter") return "Flutter";
+  if (kind === "ruby") return "Ruby";
+  if (kind === "dotnet") return "C#";
+  if (kind === "php") return "PHP";
   return "Java";
 }
 
@@ -153,7 +190,7 @@ export function automaticConfig(profile: Profile, file: string): LaunchConfig | 
   if (kind === "python") return { type: "debugpy", request: "launch", name: "Python Debugger: Current File", program: "${file}", console: "integratedTerminal" };
   if (kind === "node") return { type: "node", request: "launch", name: `Node.js: ${basename(file)}`, program: "${file}", console: "integratedTerminal" };
   if (kind === "native") return { type: "lldb", request: "launch", name: `${extname(file) === "c" ? "C" : "C++"}: Debug Active File`, program: "${file}" };
-  return { type: "java", request: "launch", name: "Java: Current File", program: "${file}" };
+  return { type: "java", request: "launch", name: "Java: Current File", program: "${file}", console: "integratedTerminal" };
 }
 
 export interface ConfigTemplate {
@@ -188,6 +225,46 @@ export const TEMPLATES: ConfigTemplate[] = [
     label: "C/C++: (lldb) Launch",
     description: "Build and debug the active C or C++ file with lldb-dap",
     config: { name: "(lldb) Launch", type: "lldb", request: "launch", program: "${file}", args: [], cwd: "${fileDirname}", stopOnEntry: false },
+  },
+  {
+    label: "Ruby: Debug current file",
+    description: "Debug the active Ruby file with rdbg (Ruby 3.1+)",
+    config: { name: "Ruby: Debug current file", type: "rdbg", request: "launch", script: "${file}", args: [] },
+  },
+  {
+    label: "Swift: Debug Package",
+    description: "swift build, then debug the package's executable with lldb-dap",
+    config: { name: "Swift: Debug Package", type: "swift", request: "launch", cwd: "${workspaceFolder}", args: [] },
+  },
+  {
+    label: "C#: Debug Project",
+    description: "dotnet build the project of the active file, then debug it with netcoredbg",
+    config: { name: "C#: Debug Project", type: "coreclr", request: "launch", args: [] },
+  },
+  {
+    label: "PHP: Launch current script",
+    description: "Debug the active PHP file with Xdebug",
+    config: { ...PHP_SCRIPT },
+  },
+  {
+    label: "PHP: Listen for Xdebug",
+    description: "Laravel / web requests: Xdebug connects to port 9003 (xdebug.start_with_request=yes)",
+    config: { name: "PHP: Listen for Xdebug", type: "php", request: "launch", port: 9003 },
+  },
+  {
+    label: "Kotlin: Current File",
+    description: "Compile the active .kt file with kotlinc and debug it (TMCode's Java debugger)",
+    config: { name: "Kotlin: Current File", type: "kotlin", request: "launch", program: "${file}" },
+  },
+  {
+    label: "Java: Current File",
+    description: "Compile the active Java file with javac -g and debug it",
+    config: { name: "Java: Current File", type: "java", request: "launch", program: "${file}", console: "integratedTerminal" },
+  },
+  {
+    label: "Java: Attach to JVM (port 5005)",
+    description: "Spring Boot / Maven: start with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005",
+    config: { name: "Java: Attach (5005)", type: "java", request: "attach", hostName: "127.0.0.1", port: 5005 },
   },
   {
     label: "Go: Launch Package",

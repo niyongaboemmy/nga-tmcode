@@ -1,0 +1,11 @@
+{
+  "name": "@tmcode/java-dap",
+  "private": true,
+  "version": "0.8.0",
+  "type": "module",
+  "description": "TMCode's Java/Kotlin debug adapter: DAP over stdio, JDWP straight to the JVM",
+  "main": "src/main.ts",
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

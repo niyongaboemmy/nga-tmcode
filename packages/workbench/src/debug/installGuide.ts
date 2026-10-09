@@ -87,7 +87,7 @@ const JAVA: InstallGuide = {
   },
   verify: "javac -version",
   url: "https://adoptium.net/",
-  debugger: "Java runs with Run Without Debugging (Ctrl+F5); stepping through Java is not available yet.",
+  debugger: "F5 compiles with javac -g and debugs with TMCode's own Java debugger (breakpoints, conditions, logpoints, variables, stepping). For Spring Boot or Maven apps, start the JVM with -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005 and use \"Java: Attach to JVM\".",
 };
 
 const nativeSteps: Record<OsKind, InstallStep[]> = {
@@ -161,7 +161,7 @@ const CSHARP: InstallGuide = {
   verify: "dotnet --version",
   url: "https://dotnet.microsoft.com/download",
   terminal: true,
-  debugger: "Run Project runs `dotnet run` (web projects: `dotnet watch run`). Debugging C# isn't built in yet.",
+  debugger: "F5 builds the project (dotnet build -c Debug) and debugs it with netcoredbg, downloaded once (breakpoints, conditions, variables, stepping). Run Project runs `dotnet run` (web projects: `dotnet watch run`).",
 };
 
 
@@ -215,13 +215,20 @@ const PHP = guide({
     windows: [
       { text: "Install PHP and Composer with winget:", command: "winget install -e --id PHP.PHP.8.3" },
       { text: "Then Composer:", command: "winget install -e --id Composer.Composer" },
+      { text: "For debugging (F5), download php_xdebug.dll for your PHP from xdebug.org/wizard and add zend_extension=xdebug to php.ini." },
     ],
-    mac: [{ text: "Install PHP and Composer with Homebrew:", command: "brew install php composer" }],
-    linux: [{ text: "Install PHP and Composer:", command: "sudo apt install php-cli php-mbstring php-xml php-sqlite3 composer" }],
+    mac: [
+      { text: "Install PHP and Composer with Homebrew:", command: "brew install php composer" },
+      { text: "For debugging (F5), add the Xdebug extension:", command: "pecl install xdebug" },
+    ],
+    linux: [
+      { text: "Install PHP and Composer:", command: "sudo apt install php-cli php-mbstring php-xml php-sqlite3 composer" },
+      { text: "For debugging (F5), add the Xdebug extension:", command: "sudo apt install php-xdebug" },
+    ],
   },
   verify: "php --version",
   url: "https://www.php.net/downloads",
-  debugger: "Run Project starts PHP's built-in server (Laravel: artisan serve); ▶ runs a .php file in a terminal.",
+  debugger: "F5 debugs the open .php file with Xdebug (breakpoints, conditions, variables, stepping); \"PHP: Listen for Xdebug\" debugs web requests (Laravel). Run Project starts PHP's built-in server (Laravel: artisan serve); ▶ runs a .php file in a terminal.",
 });
 
 const RUBY = guide({
@@ -236,7 +243,7 @@ const RUBY = guide({
   },
   verify: "ruby --version",
   url: "https://www.ruby-lang.org/en/documentation/installation/",
-  debugger: "Run Project starts Rails or Sinatra servers; ▶ runs a .rb file in a terminal; Run Task… has irb.",
+  debugger: "F5 debugs a .rb file with rdbg (Ruby 3.1+ includes it): breakpoints, conditions, variables, stepping, the program's output in the Debug Console. Run Project starts Rails or Sinatra servers; Run Task… has irb.",
 });
 
 const SWIFT = guide({
@@ -251,7 +258,7 @@ const SWIFT = guide({
   },
   verify: "swift --version",
   url: "https://www.swift.org/install/",
-  debugger: "Run Project runs `swift run`; ▶ runs a .swift file.",
+  debugger: "F5 in a Swift package runs swift build and debugs its executable with lldb-dap (breakpoints, variables, stepping). Run Project runs `swift run`; ▶ runs a single .swift file.",
 });
 
 const KOTLIN = guide({
@@ -266,7 +273,7 @@ const KOTLIN = guide({
   },
   verify: "kotlinc -version",
   url: "https://kotlinlang.org/docs/command-line.html",
-  debugger: "▶ compiles a .kt file with kotlinc and runs it; Gradle projects run with Run Project.",
+  debugger: "F5 compiles the open .kt file with kotlinc and debugs it with TMCode's Java debugger (breakpoints, variables, stepping); ▶ runs it; Gradle projects run with Run Project.",
 });
 
 export const GUIDES: InstallGuide[] = [PYTHON, NODE, JAVA, C, CPP, GO, RUST, CSHARP, DART, FLUTTER, PHP, RUBY, SWIFT, KOTLIN];

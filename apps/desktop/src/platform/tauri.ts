@@ -18,6 +18,7 @@ import type {
   GitTask,
   JournalEntry,
   Platform,
+  ProcEvent,
   RunEvent,
   StoredExtension,
   TerminalSession,
@@ -31,7 +32,7 @@ type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | 
 /** Run and Debug over the Rust DAP bridge (src-tauri/src/debug.rs). */
 function createDebugHost(): DebugHost {
   return {
-    kinds: ["python", "node", "native", "go", "dart", "flutter"],
+    kinds: ["python", "node", "native", "java", "go", "dart", "flutter", "ruby", "dotnet", "php"],
     probe: (kind) => invoke<DebugProbe>("debug_probe", { kind }),
     async install(what, onEvent) {
       const channel = new Channel<DebugInstallEvent>();
@@ -43,10 +44,10 @@ function createDebugHost(): DebugHost {
       channel.onmessage = onEvent;
       return invoke<DebugPrepared>("debug_prepare", { request, onEvent: channel });
     },
-    async start(kind, { parent }, onEvent) {
+    async start(kind, { parent, target }, onEvent) {
       const channel = new Channel<DebugTransportEvent>();
       channel.onmessage = onEvent;
-      const id = await invoke<number>("debug_start", { kind, parent: parent ?? null, onEvent: channel });
+      const id = await invoke<number>("debug_start", { kind, parent: parent ?? null, target: target ?? null, onEvent: channel });
       return {
         id,
         send: (message) => void invoke("debug_send", { id, message }).catch(() => {}),
@@ -197,6 +198,14 @@ export async function createTauriPlatform(): Promise<Platform> {
     debug: createDebugHost(),
     http: {
       request: (req) => invoke("api_request", { req: { ...req, body: req.body ?? null } }),
+    },
+    proc: {
+      run: async (command, cwd, onEvent) => {
+        const channel = new Channel<ProcEvent>();
+        channel.onmessage = onEvent;
+        return invoke<number>("proc_run", { command, cwd: cwd || null, onEvent: channel });
+      },
+      kill: (id) => invoke("proc_kill", { id }),
     },
     preview: {
       publish: (root, entry, overlay, { internet }) => invoke<string>("preview_publish", { root, entry, overlay, internet }),

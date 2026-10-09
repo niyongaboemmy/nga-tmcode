@@ -1,4 +1,9 @@
-import { registerCommand } from "./registry";
+import { executeCommand, getCommand, isEnabled, registerCommand } from "./registry";
+
+const executeCommandEnabled = (id: string) => {
+  const c = getCommand(id);
+  return !!c && isEnabled(c);
+};
 import { registerExtensionCommands } from "../extensions/commands";
 import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
@@ -265,10 +270,11 @@ export function registerBuiltinCommands() {
     title: "Run All Tests",
     category: "Test",
     keybinding: "mod+; a",
-    enabled: () => useWorkbench.getState().tests.items.length > 0 && !useWorkbench.getState().tests.running,
+    enabled: () => (useWorkbench.getState().tests.items.length > 0 && !useWorkbench.getState().tests.running) || executeCommandEnabled("testing.runAll"),
     run: () => {
       revealView("testing");
-      void runTests();
+      if (useWorkbench.getState().tests.items.length) void runTests();
+      if (executeCommandEnabled("testing.runAll")) void executeCommand("testing.runAll");
     },
   });
   registerCommand({ id: "tmcode.reloadTests", title: "Reload Tests", category: "Test", enabled: hasWorkspace, run: loadTests });

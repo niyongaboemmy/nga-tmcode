@@ -41,6 +41,8 @@ fn main() {
             "debug_policy",
             "preview_publish",
             "api_request",
+            "proc_run",
+            "proc_kill",
             "exam_device",
             "exam_workspace",
             "journal_load",
