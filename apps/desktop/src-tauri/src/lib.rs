@@ -232,6 +232,7 @@ pub fn run() {
             workspace::ws_create_dir,
             workspace::ws_rename,
             workspace::ws_remove,
+            workspace::ws_trash,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

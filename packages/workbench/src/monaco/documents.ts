@@ -6,6 +6,8 @@ import {
   onEditorsClosed,
   onEntryDeleted,
   onEntryRenamed,
+  onWorkspaceChanged,
+  beforeDeleteHooks,
   saveHandlers,
   setDirty,
   setProblems,
@@ -14,7 +16,7 @@ import {
 } from "../state/store";
 import { basename, extname, isWithin, rebase } from "../util/paths";
 import { setIconLanguageResolver } from "../themes/iconThemes";
-import { recordSave } from "../history/localHistory";
+import { recordSave, snapshotBeforeDelete } from "../history/localHistory";
 
 /**
  * One Monaco text model per open file. The workbench store only knows paths
@@ -29,6 +31,8 @@ interface Doc {
 
 const docs = new Map<string, Doc>();
 const pending = new Map<string, Promise<monaco.editor.ITextModel>>();
+/** Bumped when another folder opens: a read still in flight belongs to the old folder. */
+let generation = 0;
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const SCHEME = "tmcode";
@@ -80,14 +84,19 @@ export function ensureDocument(path: string): Promise<monaco.editor.ITextModel> 
   if (existing) return Promise.resolve(existing.model);
   const inflight = pending.get(path);
   if (inflight) return inflight;
+  const gen = generation;
   const p = getPlatform()
     .fs.readFile(path)
-    .then((content) => {
+    .then((content): monaco.editor.ITextModel | Promise<monaco.editor.ITextModel> => {
+      // Read from the folder that was open before: read it again from the new one.
+      if (gen !== generation) return ensureDocument(path);
       const model = createTrackedModel(path, content);
       docs.set(path, { model, savedVersion: model.getAlternativeVersionId(), diskText: content });
       return model;
     })
-    .finally(() => pending.delete(path));
+    .finally(() => {
+      if (pending.get(path) === p) pending.delete(path);
+    });
   pending.set(path, p);
   return p;
 }
@@ -176,10 +185,10 @@ export function markSaved(path: string) {
   setDirty(path, false);
 }
 
-export function revertDocument(path: string) {
+export function revertDocument(path: string): Promise<void> {
   const doc = docs.get(path);
-  if (!doc) return;
-  void getPlatform()
+  if (!doc) return Promise.resolve();
+  return getPlatform()
     .fs.readFile(path)
     .then((content) => {
       doc.model.setValue(content);
@@ -222,6 +231,18 @@ export function wireDocuments() {
     setDirty(path, false);
     disposeDoc(path);
   };
+  saveHandlers.discard = revertDocument;
+
+  // Models are keyed by workspace-relative path: a new folder starts with none.
+  onWorkspaceChanged(() => {
+    generation++;
+    pending.clear();
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+    for (const p of [...docs.keys()]) disposeDoc(p);
+  });
+
+  beforeDeleteHooks.push(snapshotBeforeDelete);
 
   onEditorsClosed((paths) => {
     for (const p of paths) disposeDoc(p);

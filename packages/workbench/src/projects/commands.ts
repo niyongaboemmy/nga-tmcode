@@ -1,6 +1,6 @@
 import { registerCommand } from "../commands/registry";
 import { inExam } from "../exam/state";
-import { getPlatform, notify, openFile, openPathFromOs, openRecent, revealView, showDialog, showPanel, useWorkbench } from "../state/store";
+import { confirmLeaveWorkspace, getPlatform, notify, openFile, openPathFromOs, openRecent, revealView, showDialog, showPanel, useWorkbench } from "../state/store";
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import {
   checkSync,
@@ -146,9 +146,11 @@ export async function newProjectFromTemplate() {
   if (!name) return;
   const host = getPlatform().account;
   if (!host) return notify("info", "New projects from templates need the TMCode desktop app.");
+  if (!(await confirmLeaveWorkspace())) return;
   try {
     const folder = await host.newFolder(slugify(name));
-    await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder));
+    // Kept the current folder (Cancel on unsaved files): never write the template into it.
+    if (!(await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder)))) return;
     await writeTemplate(tpl);
     notify("info", `Created ${name} from the ${tpl.label} template. Run Project: ⌘/Ctrl+Shift+F10.`);
     await offerSetup(tpl);
@@ -228,7 +230,10 @@ async function newProject(opts: { from?: "folder" } = {}) {
     if (tpl) {
       const host = getPlatform().account!;
       const folder = await host.newFolder(slugify(name));
-      await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder));
+      if (!(await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder)))) {
+        notify("info", `Created ${project.name} in Task Mentor. Open it from Projects to start.`);
+        return;
+      }
       await writeTemplate(tpl);
       await connectFolder(project);
       await saveToTaskMentor({ message: `Created from the ${tpl.label} template`, quiet: true });

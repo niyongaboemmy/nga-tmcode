@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
 import { useGit } from "../scm/gitService";
-import { activeFilePath, getPlatform, log, notify, notifyProgress, openPathFromOs, openRecent, showDialog, useWorkbench } from "../state/store";
+import { activeFilePath, confirmLeaveWorkspace, getPlatform, log, notify, notifyProgress, openPathFromOs, openRecent, showDialog, useWorkbench } from "../state/store";
 import { applyExternalChanges } from "../monaco/external";
 import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
 import type { Binding, Link, Project, ProjectKind, Revision, SyncState } from "./types";
@@ -482,6 +482,8 @@ export async function resolveConflict(path: string, keep: "mine" | "theirs") {
 async function openProjectNow(projectId: number, opts: { folderName?: string } = {}): Promise<boolean> {
   if (!projectsSupported()) return false;
   if (!(await requireSignIn())) return false;
+  // Unsaved files first (Cancel keeps the open folder), not after cloning or downloading.
+  if (!(await confirmLeaveWorkspace())) return false;
   const store = getPlatform().store;
   const folders = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
   const known = folders[String(projectId)];
@@ -512,7 +514,7 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
     const progress = notifyProgress(`Cloning ${project.repo_full_name ?? project.name}…`);
     try {
       const path = await git.clone(project.repo_url, (e) => e.type === "progress" && progress.update({ message: `Cloning: ${e.line}` })).done;
-      await openPathFromOs(path);
+      if (!(await openPathFromOs(path))) return false;
     } catch (e) {
       notify("error", `Could not clone the repository: ${(e as Error).message}`);
       return false;
@@ -523,7 +525,8 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
   } else {
     const path = await host.newFolder(opts.folderName ?? project.slug);
     // The browser build (dev server, e2e) has no OS paths: its folders reopen like recent ones.
-    await (getPlatform().openPath ? openPathFromOs(path) : openRecent(path));
+    // Kept the current folder: never bind or pull this project into it.
+    if (!(await (getPlatform().openPath ? openPathFromOs(path) : openRecent(path)))) return false;
     await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "tm", name: project.name, base_revision_id: null, base: null });
     // A fresh folder: its files arriving is the point, not news.
     await pullFromTaskMentor({ quiet: true });

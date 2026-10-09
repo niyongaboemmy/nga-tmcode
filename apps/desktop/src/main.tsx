@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 import {
   Workbench,
   createMemoryPlatform,
+  beforeQuit,
   executeCommand,
+  registerCommand,
   initWorkbench,
   openPathFromOs,
   parseLaunchLink,
@@ -63,6 +65,8 @@ async function boot() {
       startedWorkers,
       externalWrite: (path: string, content: string) => simulateExternalWrite(platform, path, content),
       uiProbe: runUiProbe,
+      // e2e: the close / quit guard the desktop window runs (Tauri close events don't exist in a browser).
+      beforeQuit,
     };
   }
   createRoot(document.getElementById("root")!).render(
@@ -90,6 +94,15 @@ async function boot() {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");
     void listen<string>("menu", (e) => executeCommand(e.payload));
+    // Close / quit guard: the close button, Alt+F4 and ⌘Q (the app menu's Quit runs
+    // workbench.action.quit) first ask about unsaved files and unsent exam changes.
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    await win.onCloseRequested(async (e) => {
+      // Never trap the student: a failing check lets the window close.
+      if (!(await beforeQuit().catch(() => true))) e.preventDefault();
+    });
+    registerCommand({ id: "workbench.action.quit", title: "Quit TMCode", category: "File", run: () => void win.close() });
     // A second `tmcode <path>`, or files dropped on the Dock icon / "Open With".
     await listen<string>("open-path", (e) => void openPathFromOs(e.payload));
     // Anything that arrived between startup and this listener.
