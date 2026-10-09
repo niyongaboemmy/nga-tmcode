@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.3 — 2026-10-09
+
+**TMCode 0.10.3: from an assignment straight into its project.**
+
+### Opening an assignment offers its project
+- **Every brief starts with the next step:**
+  - **Not started:** **Start this assignment** explains that TMCode creates your own project (with your teacher's starter files) and opens it here, with the brief beside your code. Press Enter, or click **Start Assignment**.
+  - **Started, but not open:** **Continue your work** offers **Open My Project**.
+  - **Open here:** **You're working on it in this window**, with **Save** and **Submit**.
+- **Each row in Assignments shows its action:** **Start** for a new one, **Open** for one you started, **Open here** for the one in this window. Double-click a row to go straight in.
+- **Opening an assignment's project from anywhere** (Assignments, Projects, Start) shows its brief beside the code, in a single tab.
+
+### No more empty folders
+- **Starters for empty projects:** when a teacher gave no starter files, TMCode asks how you want to begin. Pick starter files for the assignment's language, or start with an empty project. Your choice is saved to Task Mentor straight away.
+- **The first file opens beside the brief:** after Start, the starter file (`index.html`, `main.py` …) opens for coding, with the brief to the right.
+
+### All changes
+
+- From an assignment straight into its project
+
 ## 0.10.2 — 2026-10-09
 
 **TMCode 0.10.2: everything follows your colour theme, assignment images show, and loading shows at once.**
