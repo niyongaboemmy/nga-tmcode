@@ -21,6 +21,8 @@ export interface PickItem {
   separator?: string;
   /** Shown whatever the filter. */
   alwaysShow?: boolean;
+  /** Shown whatever the filter, and kept last (an opt-out such as "No assessment" must never be the default). */
+  pinLast?: boolean;
 }
 
 export interface QuickPickOptions {
@@ -151,10 +153,11 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
     const scored = (items ?? [])
       .map((it) => {
         const m = fuzzyMatch(value, it.label) ?? (options.matchOnDescription && it.description && fuzzyMatch(value, it.description) ? { score: 0, indices: [] } : null);
-        return m || it.alwaysShow ? { it, indices: m?.indices ?? [], score: m?.score ?? -1 } : null;
+        return m || it.alwaysShow || it.pinLast ? { it, indices: m?.indices ?? [], score: m?.score ?? -1 } : null;
       })
       .filter((x): x is NonNullable<typeof x> => !!x);
-    if (value.trim()) scored.sort((a, b) => Number(!!b.it.alwaysShow) - Number(!!a.it.alwaysShow) || b.score - a.score);
+    const rank = (it: PickItem) => (it.pinLast ? -1 : it.alwaysShow ? 1 : 0);
+    if (value.trim()) scored.sort((a, b) => rank(b.it) - rank(a.it) || b.score - a.score);
     // Separators only make sense in the unfiltered order.
     const list = scored.map((s) => ({ ...s, it: value.trim() ? { ...s.it, separator: undefined } : s.it }));
     return [...dyn.map((it) => ({ it, indices: [] as number[], score: 0 })), ...list];

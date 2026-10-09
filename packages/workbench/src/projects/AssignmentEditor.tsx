@@ -10,6 +10,7 @@ import { api, useProjects } from "./service";
 import { dueLabel, isOpenWorkspaceOf, loadAssignment, startAssignment, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
 import { STATE_LABEL } from "./AssignmentsView";
 import { openAssignmentInTaskMentor } from "./commands";
+import { keyOf, openGrading } from "../grading/service";
 
 type Input = Extract<EditorInput, { kind: "assignment" }>;
 
@@ -226,8 +227,11 @@ export function AssignmentEditor({ input }: { input: Input }) {
             <button type="button" className="tm-button" onClick={() => void publishAsStarter()}>
               <Codicon name="file-symlink-directory" /> Use Open Project as Starter…
             </button>
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => openGrading(keyOf("assignment", id, null))} data-testid="assignment-grade">
+              <Codicon name="tasklist" /> Grade Submissions
+            </button>
             <button type="button" className="tm-button tm-button--secondary" onClick={() => openAssignmentInTaskMentor(id)}>
-              <Codicon name="link-external" /> Grade in Task Mentor
+              <Codicon name="link-external" /> Open in Task Mentor
             </button>
           </div>
           {detail.teaching && (

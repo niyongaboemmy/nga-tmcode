@@ -58,7 +58,7 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
   await pageEl.getByTestId("grade-start").click();
 
   // Ben's submitted version is loaded in this window, read-only, with the grading tab beside it.
-  await expect(page.getByTestId("load-project")).toHaveText(/Loaded in this window/, { timeout: 15_000 });
+  await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="app.js"]')).toBeVisible();
   await page.locator('.tm-explorer [data-path="app.js"]').dblclick();
@@ -81,6 +81,8 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
   await expect(page.getByTestId("grade-panel")).toContainText("Chloe Coder", { timeout: 15_000 });
   await expect(page.getByTestId("grading-progress")).toContainText("1 graded");
   await expect(page.getByTestId("grading-progress")).toContainText("50%");
+  // Beside the code the roster is folded: the switcher unfolds it.
+  await page.getByTestId("grade-switcher-toggle").click();
   await page.getByTestId("grade-filter-graded").click();
   await expect(page.getByTestId("grade-row")).toContainText("18/20");
 });
@@ -105,7 +107,7 @@ test("students still working or not started can't be graded yet; Back to my fold
   await expect(page.getByTestId("grade-hint")).toContainText("Still working");
   await expect(page.getByTestId("load-project")).toBeDisabled();
   await page.getByTestId("grade-row").filter({ hasText: "Chloe Coder" }).click();
-  await expect(page.getByTestId("load-project")).toHaveText(/Loaded in this window/, { timeout: 15_000 });
+  await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
   await command(page, "View: Show Grading");
   await page.getByTestId("grading-reviewing").getByRole("button", { name: "Back to my folder" }).click();
   await expect(page.getByTestId("grading-reviewing")).toHaveCount(0);
@@ -131,4 +133,48 @@ test("icons show styled tooltips with their shortcut, and the title comes back a
   await page.mouse.move(700, 400);
   await expect(tip).toHaveCount(0);
   await expect(explorer).toHaveAttribute("title", /Explorer/);
+});
+
+test("beside the code the roster folds into a switcher; Full marks, the save hint and the finish line", async ({ page }) => {
+  await teacher(page);
+  await activity(page, "assignment:51:").click();
+  await page.getByTestId("grade-start").click();
+  await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
+  // The student's files are one click away.
+  await expect(page.locator(".tm-grade-files")).toContainText("app.js");
+
+  // The grading tab is narrow beside the code: one bar names the student, the form gets the height.
+  const switcher = page.getByTestId("grade-switcher");
+  await expect(switcher).toBeVisible();
+  await expect(switcher).toContainText("Ben Learner");
+  await expect(switcher).toContainText("1 of 2");
+  await expect(page.locator(".tm-grade-list")).toBeHidden();
+  await expect(page.getByTestId("grade-feedback")).toBeInViewport();
+  await page.getByTestId("grade-switcher-toggle").click();
+  await expect(page.locator(".tm-grade-list")).toBeVisible();
+  await page.getByTestId("grade-switcher-toggle").click();
+
+  // Save explains what's missing; Full marks fills every criterion.
+  await expect(page.getByTestId("grade-status")).toHaveText("Score every criterion to save");
+  await page.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "12" }).click();
+  await expect(page.getByTestId("grade-status")).toHaveText("Score 1 more criterion to save");
+  await page.getByTestId("grade-full-marks").click();
+  await expect(page.getByTestId("grade-total")).toContainText("20");
+  await page.getByTestId("grade-save-next").click();
+  await expect(switcher).toContainText("Chloe Coder", { timeout: 15_000 });
+  await page.getByTestId("grade-full-marks").click();
+  await page.getByTestId("grade-save-next").click();
+
+  // Nothing left: the finish line, with the way back to the teacher's own folder.
+  const done = page.getByTestId("grade-finished");
+  await expect(done).toContainText("All handed-in work is graded", { timeout: 15_000 });
+  await expect(done).toContainText("2 of 2 graded");
+  await done.getByRole("button", { name: "Back to My Folder" }).click();
+  await expect(page.getByTestId("grading-reviewing")).toHaveCount(0);
+});
+
+test("each practical in the list says what is waiting", async ({ page }) => {
+  await teacher(page);
+  await expect(activity(page, "assignment:51:").getByTestId("grading-workload")).toHaveText("2 to grade", { timeout: 10_000 });
+  await expect(activity(page, "quiz:78:501").getByTestId("grading-workload")).toHaveText("1 to grade");
 });
