@@ -3,7 +3,7 @@ import { onDocumentChanged, saveAll } from "../monaco/documents";
 import { onRunStarted } from "../run/runService";
 import { loadTests, setVisibleTests } from "../run/testService";
 import type { ExamHost, JournalEntry } from "../platform/types";
-import { getPlatform, log, notify, openFile, refreshExplorer, revealView, setPolicy, setTests, setWorkspace, showDialog, useWorkbench } from "../state/store";
+import { getPlatform, log, notify, openFile, refreshExplorer, revealView, saveDirtyFiles, setPolicy, setTests, setWorkspace, showDialog, useWorkbench } from "../state/store";
 import { PRACTICE_POLICY } from "@tmcode/protocol";
 import { ApiError, TmApi, isAllowedApi } from "./api";
 import { ServerClock, formatRemaining } from "./clock";
@@ -127,8 +127,10 @@ export async function startExam(apiBase: string, ticket: string) {
 }
 
 async function prepareWorkspace(pkg: ExamPackage, sessionId: string) {
+  // Unsaved practice files are saved first: the launch ticket is used, so there is no Cancel.
+  await saveDirtyFiles();
   const ws = await host!.openExamWorkspace(pkg.submission_id, pkg.quiz.title);
-  await setWorkspace(ws);
+  if (!(await setWorkspace(ws))) throw new Error("Save or close your unsaved files, then open the exam link again.");
   const fs = getPlatform().fs;
   const tasks: ExamTaskState[] = [];
   for (const t of [...pkg.tasks].sort((a, b) => a.order - b.order)) {

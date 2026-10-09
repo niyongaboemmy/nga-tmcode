@@ -93,7 +93,7 @@ test("new file validation, rename and delete in the explorer", async ({ page }) 
   await row(page, "web/contact.html").click({ button: "right" });
   await page.locator(".tm-menu-item", { hasText: "Delete" }).click();
   await expect(page.locator(".tm-dialog")).toContainText("Are you sure you want to delete 'contact.html'?");
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Move to Trash" }).click();
   await expect(row(page, "web/contact.html")).toHaveCount(0);
   await expect(tab(page, "contact.html")).toHaveCount(0);
 });

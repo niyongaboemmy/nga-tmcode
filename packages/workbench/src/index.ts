@@ -2,6 +2,7 @@ export { Workbench } from "./Workbench";
 export { initWorkbench, setWorkspace, setPolicy, notify, log, useWorkbench } from "./state/store";
 export { createMemoryPlatform, MemoryFileSystem, DEMO_PROJECT, simulateExternalWrite } from "./platform/memory";
 export { openPathFromOs } from "./state/store";
+export { beforeQuit, registerQuitGuard, type QuitGuard } from "./state/quit";
 export { checkForUpdates, useUpdate } from "./update/updateService";
 export type * from "./platform/types";
 export { registerCommand, executeCommand } from "./commands/registry";
