@@ -23,6 +23,8 @@ export interface FileSystem {
   /** Copies a file or folder (recursively, binary-safe). */
   copy?(from: string, to: string): Promise<void>;
   remove(path: string): Promise<void>;
+  /** Moves a file or folder to the OS Trash / Recycle Bin; absent where there is none (Delete is then permanent). */
+  trash?(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;
 }

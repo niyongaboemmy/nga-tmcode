@@ -52,3 +52,12 @@ export const EXAM_POLICY_DEFAULTS: Policy = {
   allow_offline_grace_minutes: 10,
   locked_settings: [],
 };
+
+/**
+ * Whether the session may open a shell (terminal, REPL, run in terminal).
+ * "restricted" has no restricted console yet, so it counts as off: a full
+ * shell would let a student read or run anything on the computer.
+ */
+export function terminalAllowed(p: Pick<Policy, "terminal">): boolean {
+  return p.terminal === "full";
+}

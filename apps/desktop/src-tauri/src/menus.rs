@@ -97,7 +97,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&PredefinedMenuItem::hide_others(app, None)?)
         .item(&PredefinedMenuItem::show_all(app, None)?)
         .separator()
-        .item(&PredefinedMenuItem::quit(app, None)?)
+        // Not the predefined Quit (it ends the app at once): the workbench asks about unsaved
+        // files and unsent exam changes first, then closes the window.
+        .item(&MenuItemBuilder::with_id("cmd:workbench.action.quit", "Quit TMCode").accelerator("CmdOrCtrl+Q").build(app)?)
         .build()?;
 
     // Undo/redo go to Monaco's own stacks (as in VS Code); clipboard stays native.

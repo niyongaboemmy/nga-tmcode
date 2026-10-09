@@ -84,7 +84,7 @@ export function WelcomePage() {
           </div>
         </div>
         <footer className="tm-welcome-footer">
-          <span className={`tm-mode-pill is-${mode}`}>{mode === "practice" ? "Practice mode" : mode === "monitored" ? "Monitored exam" : "Secure exam"}</span>
+          <span className={`tm-mode-pill is-${mode}`}>{mode === "practice" ? "Practice mode" : "Monitored exam"}</span>
           <span className="tm-muted">New Generation Academy · TMCode {getPlatform().version}</span>
         </footer>
       </div>

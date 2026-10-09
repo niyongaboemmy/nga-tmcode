@@ -12,6 +12,11 @@ type Mock = {
   setTeacher(on: boolean): void;
   clearAssignments(): void;
   setLifecycle(on: boolean): void;
+  setQuizOpen(on: boolean): void;
+  returnForChanges(id: number, message: string | null): void;
+  setDueDate(id: number, iso: string | null): void;
+  failAssignments(code: string | null): void;
+  setQuota(bytes: number | null): void;
 };
 const mock = <T>(page: Page, fn: (m: Mock) => T | Promise<T>) => page.evaluate(`(${fn.toString()})(window.__TMCODE_PROJECTS__)`) as Promise<T>;
 
@@ -84,6 +89,8 @@ test("start copies the starter files, then save and submit reach the teacher", a
   await page.evaluate(() => (window as unknown as { __TMCODE_DEBUG__: { externalWrite(p: string, c: string): Promise<void> } }).__TMCODE_DEBUG__.externalWrite("app.js", "const items = [];\n"));
   await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
   await page.getByTestId("assignment-submit").click();
+  // The same words as Projects › Submit Project, true to Task Mentor's lock.
+  await expect(page.locator(".tm-dialog")).toContainText("Submitted work is locked until your teacher grades it or you withdraw it. You can withdraw and submit again until the assignment closes.");
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
   await expect(page.locator(".tm-toast", { hasText: "Submitted" })).toBeVisible({ timeout: 15_000 });
   const state = await mock(page, (m) => m.state());
@@ -226,7 +233,13 @@ test("with Task Mentor's project lifecycle, a submitted workspace is locked unti
   await expect(page.getByTestId("save-to-tm")).toBeDisabled();
 
   await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await expect(page.getByTestId("assignment-withdraw")).toHaveText("Withdraw to Edit");
   await page.getByTestId("assignment-withdraw").click();
+  // A light confirmation: nothing is lost, the teacher just stops seeing this version.
+  const dialog = page.locator(".tm-dialog");
+  await expect(dialog).toContainText("Withdraw your submission?");
+  await expect(dialog).toContainText("Your teacher won't see version 1 until you submit again.");
+  await dialog.getByRole("button", { name: "Withdraw to Edit" }).click();
   await expect(page.locator(".tm-toast", { hasText: "Submission withdrawn" })).toBeVisible();
   await expect(page.getByTestId("assignment-submit")).toBeVisible();
   await command(page, "View: Show Task Mentor Projects");
@@ -416,4 +429,159 @@ test("a started assignment offers Open on its row (and double-click), and its pr
   await command(page, "View: Show Task Mentor Projects");
   await page.getByTestId("project-row").filter({ hasText: "Library case study" }).click();
   await expect(page.locator(".tm-tab", { hasText: "Library case study" })).toBeVisible({ timeout: 15_000 });
+});
+
+async function submitFromBrief(page: Page) {
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await page.getByTestId("assignment-submit").click();
+  await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
+}
+
+test("a quiz practical submitted while the quiz isn't open says so, offers the quiz, and claims nothing", async ({ page }) => {
+  await fresh(page);
+  await mock(page, (m) => m.setQuizOpen(false));
+  await command(page, "View: Show Assignments");
+  await page.getByTestId("quiz-practical-row").getByRole("button", { name: "Start" }).click();
+  await expect(page.locator(".tm-toast", { hasText: "is ready" })).toBeVisible({ timeout: 15_000 });
+  await command(page, "View: Show Task Mentor Projects");
+  await page.evaluate(() => {
+    const w = window as unknown as { __opened: string[] };
+    w.__opened = [];
+    window.open = ((url: string) => {
+      w.__opened.push(url);
+      return null;
+    }) as typeof window.open;
+  });
+  await page.getByTestId("submit-project").click();
+  await expect(page.locator(".tm-dialog")).toContainText("until the quiz closes");
+  await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
+
+  const dialog = page.locator(".tm-dialog");
+  await expect(dialog).toContainText("The quiz isn't open in Task Mentor. Open the quiz, then submit again.", { timeout: 15_000 });
+  await expect(page.locator(".tm-toast", { hasText: "Your teacher sees exactly this version" })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Open the Quiz in Task Mentor" }).click();
+  expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual([expect.stringContaining("/quizzes/78/take")]);
+  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "draft");
+  expect(await mock(page, (m) => m.state().links.find((l) => (l as unknown as { question_id: number | null }).question_id === 501)?.status)).toBe("linked");
+
+  // With the quiz open, the same submit goes through.
+  await mock(page, (m) => m.setQuizOpen(true));
+  await page.getByTestId("submit-project").click();
+  await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
+  await expect(page.locator(".tm-toast", { hasText: "Your teacher sees exactly this version" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "submitted");
+});
+
+test("work returned for changes shows the teacher's message on the brief and the row, until it is handed in again", async ({ page }) => {
+  await fresh(page);
+  await startPractical(page);
+  await submitFromBrief(page);
+  await expect(page.locator(".tm-toast", { hasText: "Submitted" }).last()).toBeVisible({ timeout: 15_000 });
+
+  await mock(page, (m) => m.returnForChanges(51, "Add a Delete button to each item."));
+  await command(page, "Projects: Refresh Projects");
+  await command(page, "Assignments: Refresh Assignments");
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  const banner = page.getByTestId("assignment-returned");
+  await expect(banner).toContainText("Returned by your teacher", { timeout: 10_000 });
+  await expect(banner).toContainText("Add a Delete button to each item.");
+  // Attention (orange), not an error.
+  expect(await banner.evaluate((el) => el.className)).toContain("is-warning");
+  await expect(page.getByTestId("assignment-submit")).toBeVisible();
+  await command(page, "View: Show Assignments");
+  const chip = row(page, 51).getByTestId("assignment-returned-chip");
+  await expect(chip).toHaveText("Returned");
+  await expect(chip).toHaveAttribute("title", "Returned by your teacher: Add a Delete button to each item.");
+
+  // Handed in again: the banner and the chip go.
+  await submitFromBrief(page);
+  await expect(page.locator(".tm-toast", { hasText: "Submitted" }).last()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("assignment-returned")).toHaveCount(0);
+  await command(page, "View: Show Assignments");
+  await expect(row(page, 51).getByTestId("assignment-returned-chip")).toHaveCount(0);
+});
+
+test("late is the submission's: on time stays on time after the due date, a late hand-in says so, and no countdown once handed in", async ({ page }) => {
+  await fresh(page);
+  await startPractical(page);
+  await submitFromBrief(page);
+  await expect(page.locator(".tm-toast", { hasText: "Submitted" }).last()).toBeVisible({ timeout: 15_000 });
+
+  // The due date passes after an on-time hand-in.
+  await mock(page, (m) => m.setDueDate(51, new Date(Date.now() - 3_600_000).toISOString()));
+  await command(page, "Assignments: Refresh Assignments");
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await expect(page.getByTestId("assignment-result")).toContainText("Submitted");
+  await expect(page.getByTestId("assignment-result-late")).toHaveCount(0);
+  await expect(page.getByTestId("assignment-due")).not.toContainText("late");
+  await expect(page.getByTestId("assignment-due")).not.toHaveClass(/is-late/);
+  await command(page, "View: Show Assignments");
+  await expect(row(page, 51)).toContainText("Submitted");
+  await expect(row(page, 51).getByTestId("assignment-late-chip")).toHaveCount(0);
+  await expect(row(page, 51).locator(".tm-due")).toHaveCount(0);
+
+  // Withdrawn and handed in again after the due date: late.
+  await command(page, "Projects: Refresh Projects");
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await page.getByTestId("assignment-withdraw").click();
+  await page.locator(".tm-dialog").getByRole("button", { name: "Withdraw to Edit" }).click();
+  await expect(page.getByTestId("assignment-submit")).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId("assignment-submit").click();
+  await expect(page.locator(".tm-dialog")).toContainText("The due date has passed, so it will be marked late.");
+  await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
+  await expect(page.locator(".tm-toast", { hasText: "(late)" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("assignment-result-late")).toBeVisible();
+  await command(page, "View: Show Assignments");
+  await expect(row(page, 51).getByTestId("assignment-late-chip")).toBeVisible();
+});
+
+test("when Task Mentor can't check the student's subjects, the view says so instead of 'Nothing to do'", async ({ page }) => {
+  await fresh(page);
+  await mock(page, (m) => m.clearAssignments());
+  await command(page, "View: Show Assignments");
+  await page.getByTestId("assignments-refresh").click();
+  await expect(page.getByTestId("assignments-empty")).toContainText("Nothing to do in TMCode yet", { timeout: 10_000 });
+
+  // Central MIS is down (MIS_SCOPE_UNAVAILABLE).
+  await mock(page, (m) => m.failAssignments("MIS_SCOPE_UNAVAILABLE"));
+  await page.getByTestId("assignments-refresh").click();
+  const error = page.getByTestId("assignments-error");
+  await expect(error).toContainText("Couldn't check your subjects in Task Mentor.", { timeout: 10_000 });
+  await expect(error).toContainText("Central MIS");
+  await expect(error.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(error.getByRole("button", { name: "Sign in again" })).toBeVisible();
+  await expect(page.getByTestId("assignments-empty")).toHaveCount(0);
+
+  // An expired sign-in (401) too.
+  await mock(page, (m) => m.failAssignments("UNAUTHENTICATED"));
+  await error.getByRole("button", { name: "Retry" }).click();
+  await expect(error).toContainText("Your sign-in has expired.");
+
+  // Back: Retry clears it.
+  await mock(page, (m) => m.failAssignments(null));
+  await error.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByTestId("assignments-error")).toHaveCount(0);
+  await expect(page.getByTestId("assignments-empty")).toBeVisible();
+});
+
+test("submit errors say why: offline keeps the work safe, and a project over the size limit says the limit", async ({ page }) => {
+  await fresh(page);
+  await startPractical(page);
+  const write = (text: string) => page.evaluate((t) => (window as unknown as { __TMCODE_DEBUG__: { externalWrite(p: string, c: string): Promise<void> } }).__TMCODE_DEBUG__.externalWrite("app.js", t), text);
+
+  // Offline (the browser says so): nothing is sent, and the work stays here.
+  await write("const items = [1];\n");
+  await page.evaluate(() => Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false }));
+  await submitFromBrief(page);
+  await expect(page.locator(".tm-toast", { hasText: "You're offline. Your work is safe on this computer; submit when you're back online." })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".tm-toast", { hasText: "unsaved changes or conflicts" })).toHaveCount(0);
+  await page.evaluate(() => Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true }));
+
+  // Over Task Mentor's size limit (413 QUOTA_EXCEEDED): the limit, and what to do.
+  await mock(page, (m) => m.setQuota(40));
+  await write("const items = ['a much longer line than forty bytes in all'];\n");
+  await submitFromBrief(page);
+  await expect(page.locator(".tm-toast", { hasText: "This project is too large to submit: a project can be at most 40 bytes in all." })).toBeVisible({ timeout: 15_000 });
+  expect(await mock(page, (m) => m.state().links.filter((l) => l.status === "submitted").length)).toBe(0);
+  await mock(page, (m) => m.setQuota(null));
 });

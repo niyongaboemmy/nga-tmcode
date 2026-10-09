@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
-import { dueLabel, groupAssignments, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
+import { dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, returnedForChanges, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
 import type { LinkableActivity, PracticalQuestion } from "./types";
@@ -33,9 +33,34 @@ export const STATE_LABEL = { not_started: "Not started", in_progress: "In progre
 function StateChip({ a }: { a: AssignmentSummary }) {
   if (a.read_only) return <span className="tm-chip">Read-only</span>;
   const s = a.my?.state ?? "not_started";
-  if (s === "graded") return <span className="tm-chip is-success">{a.my?.grade ?? "–"}/{a.my?.max_points ?? a.points ?? "–"}</span>;
-  // The same colours as project statuses: in progress grey, submitted blue, graded green.
-  if (s === "submitted") return <span className="tm-chip tm-status-chip is-submitted">Submitted</span>;
+  // Handed in after the due date (the submission's own flag, not "the due date has passed").
+  const late = (s === "submitted" || s === "graded") && handedInLate(a) && (
+    <span className="tm-chip is-late" data-testid="assignment-late-chip">
+      Late
+    </span>
+  );
+  if (s === "graded")
+    return (
+      <>
+        <span className="tm-chip is-success">{a.my?.grade ?? "–"}/{a.my?.max_points ?? a.points ?? "–"}</span>
+        {late}
+      </>
+    );
+  // The same colours as project statuses: in progress grey, submitted blue, graded green; returned needs attention (orange).
+  if (s === "submitted")
+    return (
+      <>
+        <span className="tm-chip tm-status-chip is-submitted">Submitted</span>
+        {late}
+      </>
+    );
+  if (returnedForChanges(a)) {
+    return (
+      <span className="tm-chip is-warning" data-testid="assignment-returned-chip" title={`Returned by your teacher${a.my?.returned_message ? `: ${a.my.returned_message}` : ""}`}>
+        Returned
+      </span>
+    );
+  }
   if (s === "in_progress") return <span className="tm-chip tm-status-chip is-draft">In progress</span>;
   return null;
 }
@@ -194,6 +219,7 @@ export function AssignmentsView() {
   const quizPracticals = useAssignments((s) => s.quizPracticals);
   const loading = useAssignments((s) => s.loading);
   const error = useAssignments((s) => s.error);
+  const errorKind = useAssignments((s) => s.errorKind);
   const staff = useAssignments((s) => s.staff);
   const checkedAt = useAssignments((s) => s.checkedAt);
   const workspace = useWorkbench((s) => s.workspace);
@@ -231,7 +257,8 @@ export function AssignmentsView() {
   const teach = (teaching ?? []).filter(match);
   const quizzes = (quizPracticals ?? []).filter((q) => !filter || `${q.title} ${q.course_name ?? ""} ${(q.practical_questions ?? []).map((p) => p.title).join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
   const practicalCount = quizzes.reduce((n, q) => n + (q.practical_questions?.length ?? 0), 0);
-  const nothing = student !== null && student.length === 0 && teach.length === 0 && practicalCount === 0;
+  // A failed check is never "nothing to do": Task Mentor just couldn't say.
+  const nothing = !error && student !== null && student.length === 0 && teach.length === 0 && practicalCount === 0;
 
   return (
     <div className="tm-projects-view" data-testid="assignments-view">
@@ -246,7 +273,26 @@ export function AssignmentsView() {
           {loading ? "Checking Task Mentor…" : `Checked ${checkedAgo(checkedAt)}`}
         </p>
       )}
-      {error && <p className="tm-error-text">{error}</p>}
+      {error && errorKind === "scope" ? (
+        <div className="tm-view-empty tm-assignments-empty tm-assignments-error" role="alert" data-testid="assignments-error">
+          <Codicon name="error" className="tm-projects-hero" />
+          <h3>Couldn't check your subjects in Task Mentor.</h3>
+          <p>
+            {error}
+            {(student?.length ?? 0) + teach.length + practicalCount > 0 ? " The list below may be incomplete." : ""}
+          </p>
+          <div className="tm-assignments-empty-actions">
+            <button type="button" className="tm-button" disabled={loading} onClick={() => void refreshAssignments()} data-testid="assignments-retry">
+              <Codicon name="refresh" className={loading ? "codicon-modifier-spin" : ""} /> Retry
+            </button>
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => void signIn()}>
+              <Codicon name="account" /> Sign in again
+            </button>
+          </div>
+        </div>
+      ) : (
+        error && <p className="tm-error-text">{error}</p>
+      )}
       {student === null && !error ? (
         <SkeletonRows rows={4} label="Loading assignments" />
       ) : nothing ? (

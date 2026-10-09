@@ -17,8 +17,14 @@ import { useDebug } from "../debug/debugService";
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
 
-const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Secure exam" } as const;
-const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "shield" } as const;
+// TMCode has no lab lockdown yet, so a "secure" exam runs exactly like a monitored one and says so.
+const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Monitored exam" } as const;
+const MODE_ICON = { practice: "beaker", monitored: "eye", secure: "eye" } as const;
+const MODE_TITLE = {
+  practice: "TMCode: Practice",
+  monitored: "TMCode: Monitored exam. Task Mentor records your saves and runs.",
+  secure: "TMCode: Monitored exam. Your teacher chose lab lockdown, which TMCode doesn't offer yet, so this exam is monitored.",
+} as const;
 
 function Item({
   children,
@@ -170,7 +176,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
   return (
     <footer className={`tm-statusbar is-${mode} ${debugging ? "is-debugging" : ""}`} role="status" aria-label="Status Bar">
       <div className="tm-status-left">
-        <Item className="tm-status-mode" title={`TMCode — ${MODE_LABEL[mode]}`}>
+        <Item className="tm-status-mode" title={MODE_TITLE[mode]}>
           <Codicon name={MODE_ICON[mode]} />
           <span>{MODE_LABEL[mode]}</span>
         </Item>

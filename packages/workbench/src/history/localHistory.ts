@@ -70,3 +70,26 @@ export async function recordSave(path: string, content: string) {
     log("Local History", `Could not keep a copy of ${path}: ${String((e as Error)?.message ?? e)}`, "warn");
   }
 }
+
+/**
+ * Before an explorer delete: keeps a copy of the file (or of up to 200 files in
+ * the folder) in Local History, so it can still be restored from the Timeline
+ * when the Trash is emptied or there is none.
+ */
+export async function snapshotBeforeDelete(path: string) {
+  if (inExam() || SKIP.test(path) || !useWorkbench.getState().workspace) return;
+  const fs = getPlatform().fs;
+  let budget = 200;
+  const visit = async (p: string): Promise<void> => {
+    if (budget <= 0 || SKIP.test(p)) return;
+    const entries = await fs.readDir(p).catch(() => null);
+    if (entries) {
+      for (const e of entries) await visit(e.path);
+      return;
+    }
+    budget--;
+    const content = await fs.readFile(p).catch(() => null);
+    if (content !== null) await recordSave(p, content);
+  };
+  await visit(path);
+}

@@ -11,8 +11,9 @@ import { clearCommandHistory, recentCommands } from "../terminal/history";
 import { normalizeUrl } from "../parts/editor/BrowserEditor";
 import { showQuickPick } from "../widgets/QuickPick";
 import { inExam } from "../exam/state";
+import { terminalAllowed as allowsTerminal } from "@tmcode/protocol";
 
-const terminalAllowed = () => !!getPlatform().terminal && useWorkbench.getState().policy.terminal !== "off";
+const terminalAllowed = () => !!getPlatform().terminal && allowsTerminal(useWorkbench.getState().policy);
 const previewable = () => /\.(md|markdown|svg)$/i.test(activeFilePath() ?? "");
 
 /** Developer conveniences from VS Code: previews, Simple Browser, tasks, recent commands, Zen Mode. */

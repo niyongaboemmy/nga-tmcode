@@ -358,6 +358,34 @@ pub fn ws_remove(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
     }
 }
 
+/// Explorer Delete: to the OS Trash / Recycle Bin, so the student can restore it.
+/// An error (no Trash on this drive, a network share) lets the workbench offer a
+/// permanent delete instead.
+#[tauri::command]
+pub fn ws_trash(ws: State<'_, Workspace>, path: String) -> Result<(), String> {
+    let root = ws.root()?;
+    move_to_trash(&root, &path)
+}
+
+pub fn move_to_trash(root: &Path, path: &str) -> Result<(), String> {
+    let target = resolve(root, path)?;
+    if target == root {
+        return Err("The workspace folder itself cannot be deleted.".into());
+    }
+    if fs::symlink_metadata(&target).is_err() {
+        return Err(format!("'{path}' does not exist"));
+    }
+    #[allow(unused_mut)]
+    let mut ctx = trash::TrashContext::default();
+    // macOS: NSFileManager, not the default Finder script, which asks for permission to control Finder.
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    ctx.delete(&target).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,6 +403,16 @@ mod tests {
         assert!(copy_entry(&root, "src", "src/sub/inner").is_err(), "into itself");
         assert!(copy_entry(&root, "src/a.txt", "a copy.txt").is_err(), "exists");
         assert!(copy_entry(&root, "src/a.txt", "../outside.txt").is_err(), "outside");
+    }
+
+    #[test]
+    fn trash_refuses_the_root_paths_outside_and_missing_files() {
+        // Only the refusals: a real move would fill the Trash of whoever runs the tests.
+        let (_d, root) = root();
+        assert!(move_to_trash(&root, "").is_err(), "root");
+        assert!(move_to_trash(&root, "../outside.txt").is_err(), "outside");
+        assert!(move_to_trash(&root, "nope.py").is_err(), "missing");
+        assert!(root.join("main.py").exists());
     }
 
     #[test]

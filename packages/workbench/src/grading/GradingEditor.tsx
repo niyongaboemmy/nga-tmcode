@@ -6,6 +6,7 @@ import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { taskMentorWeb } from "../projects/commands";
 import { useProjects } from "../projects/service";
+import { splitFeedback } from "./feedback";
 import { ProgressBar } from "./GradingView";
 import { closeReview, keyOf, loadRoster, openGrading, openSubmission, parseKey, previewSubmission, progressOf, saveGrade, selectStudent, useGrading, type Criterion, type Roster, type RosterRow, type RowState } from "./service";
 
@@ -43,10 +44,12 @@ function draftFrom(roster: Roster, row: RosterRow): Draft {
   const rubric = roster.activity.rubric;
   const g = row.grade;
   const scores = rubric.map((_, i) => g?.rubric_scores?.find((s) => s.index === i)?.score ?? null);
-  const comments = rubric.map((_, i) => g?.rubric_scores?.find((s) => s.index === i)?.comment ?? "");
-  // Feedback composed by Task Mentor carries "Criteria notes:"; edit only the teacher's part.
-  const feedback = (g?.feedback ?? "").split(/\n\nCriteria notes:\n/)[0];
-  return { scores, comments, score: rubric.length ? null : (g?.score ?? null), feedback };
+  // Feedback composed by Task Mentor carries "Criteria notes:"; edit only the teacher's part (the server adds the notes again).
+  const split = splitFeedback(g?.feedback, rubric.map((c) => c.criteria));
+  // Servers that keep a comment per score send it; older ones only have the notes block.
+  const kept = g?.rubric_scores?.some((s) => s.comment?.trim());
+  const comments = kept ? rubric.map((_, i) => g?.rubric_scores?.find((s) => s.index === i)?.comment ?? "") : split.comments;
+  return { scores, comments, score: rubric.length ? null : (g?.score ?? null), feedback: split.feedback };
 }
 
 /** The review folder's top-level files, opened in the code group (not the grading tab's). */

@@ -1,7 +1,7 @@
 import { track } from "../state/activity";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, useWorkbench } from "../state/store";
+import { confirmLeaveWorkspace, getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, useWorkbench } from "../state/store";
 import { api, projectsSupported, signedIn, TmError, useProjects } from "../projects/service";
 import { linkableActivities } from "../projects/matching";
 import type { Manifest } from "../projects/plan";
@@ -319,6 +319,8 @@ async function openSubmissionNow(key: string, row: RosterRow): Promise<boolean> 
   const a = get().activities?.find((x) => x.key === key);
   const activity = a?.question_title ?? a?.title ?? get().rosters[key]?.activity.title ?? "the activity";
   const review: Review = { key, project_id: row.project.id, revision_id: revId, student: row.student.name, student_id: row.student.id, activity };
+  // Unsaved files first (Cancel keeps the teacher's folder), not halfway through the download.
+  if (!(await confirmLeaveWorkspace())) return false;
   const ws = useWorkbench.getState().workspace;
   if (ws && !get().review && !get().homeRoot) set({ homeRoot: ws.root });
   set({ loadingReview: `${row.project.id}@${revId}` });
@@ -338,7 +340,8 @@ async function openSubmissionNow(key: string, row: RosterRow): Promise<boolean> 
     }
     const { files } = await api<{ files: Manifest }>("GET", `/projects/${row.project.id}/revisions/${revId}/manifest`);
     const folder = await host.newFolder(slug(`review-${row.student.name}-${activity}-v${row.link?.revision_number ?? revId}`));
-    await openFolder(folder);
+    // Kept the current folder: the submission's files must not be written into it.
+    if (!(await openFolder(folder))) return false;
     let done = 0;
     for (const f of files) {
       const res = await api<{ base64: string }>("GET", `/projects/${row.project.id}/blobs/${f.sha256}`, undefined, { response: "base64" });
@@ -376,9 +379,11 @@ async function afterOpen(key: string) {
 export async function closeReview() {
   const home = get().homeRoot;
   const key = get().review?.key;
-  set({ homeRoot: null });
-  if (home) await openFolder(home);
-  else applyReview(null);
+  if (home) {
+    // Kept the review open (Cancel on unsaved files): try again later.
+    if (!(await openFolder(home))) return;
+    set({ homeRoot: null });
+  } else applyReview(null);
   if (key) openGrading(key, { toSide: false });
 }
 

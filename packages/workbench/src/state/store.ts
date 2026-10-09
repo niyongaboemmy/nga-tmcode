@@ -279,7 +279,40 @@ export function resetWorkbenchForTests() {
   set({ ...initialState }, true);
 }
 
-export async function setWorkspace(ws: { name: string; root: string }) {
+/**
+ * Before the open folder changes: Save / Don't Save / Cancel for unsaved files,
+ * as VS Code does. False = keep this folder (Cancel, or a save failed). Ask
+ * *before* the host switches folders (reopenFolder / openPath point the file
+ * system at the new root), and before slow work such as cloning or downloading.
+ */
+export async function confirmLeaveWorkspace(): Promise<boolean> {
+  const dirtyPaths = Object.keys(get().dirty);
+  if (!dirtyPaths.length) return true;
+  const choice = await confirmCloseDirty(dirtyPaths).catch(() => "cancel" as const);
+  if (choice === "cancel") return false;
+  if (choice === "discard") for (const p of dirtyPaths) await saveHandlers.discard(p);
+  return !Object.keys(get().dirty).length;
+}
+
+/** Saves every unsaved file without asking (exam start: the launch ticket is already used, so no Cancel). */
+export async function saveDirtyFiles() {
+  for (const p of Object.keys(get().dirty)) await saveHandlers.save(p).catch(() => {});
+}
+
+/**
+ * Shows a folder the host has opened. Returns false when the student chose
+ * Cancel on the unsaved files prompt: the old folder stays, and callers stop.
+ */
+export async function setWorkspace(ws: { name: string; root: string }): Promise<boolean> {
+  const prev = get().workspace;
+  if (Object.keys(get().dirty).length) {
+    // Asked late: the host already points at the new folder. Point it back while
+    // saving, so the old files are written where they belong.
+    const moved = !!prev && prev.root !== ws.root;
+    if (moved) await getPlatform().reopenFolder(prev.root).catch(() => null);
+    if (!(await confirmLeaveWorkspace())) return false;
+    if (moved && !(await getPlatform().reopenFolder(ws.root).catch(() => null))) return false;
+  }
   const recent = [ws, ...get().recent.filter((r) => r.root !== ws.root)].slice(0, 10);
   set({
     workspace: ws,
@@ -292,10 +325,20 @@ export async function setWorkspace(ws: { name: string; root: string }) {
     dirty: {},
     problems: [],
   });
+  // The old folder's documents go: B's main.py must never show (or save over) A's.
+  workspaceListeners.forEach((l) => l());
   persist();
   await loadDir("");
   log("Workspace", `Opened ${ws.name}`);
   await restoreEditors(ws.root);
+  return true;
+}
+
+const workspaceListeners = new Set<() => void>();
+/** Fires when a folder is opened, right after the editors were reset (documents drop every model). */
+export function onWorkspaceChanged(l: () => void) {
+  workspaceListeners.add(l);
+  return () => workspaceListeners.delete(l);
 }
 
 // ── open editors per folder (restored when the folder is opened again, as in VS Code) ──
@@ -325,43 +368,64 @@ useWorkbench.subscribe((s, prev) => {
   }, 500);
 });
 
-export async function openFolder() {
+// The open* functions return false when nothing was opened: the picker was
+// closed, the path failed, or the student kept the current folder (Cancel on
+// unsaved files). Callers that then write files must stop there.
+
+export async function openFolder(): Promise<boolean> {
+  if (!(await confirmLeaveWorkspace())) return false;
   const ws = await getPlatform().openFolder();
-  if (ws) await setWorkspace(ws);
+  return ws ? setWorkspace(ws) : false;
 }
 
-export async function openFileDialog() {
+export async function openFileDialog(): Promise<boolean> {
   const p = getPlatform();
   if (!p.openFile) return openFolder();
+  // The picked file may sit in another folder, which the host opens straight away.
+  if (!(await confirmLeaveWorkspace())) return false;
   const ws = await p.openFile().catch((e) => {
     notify("error", String((e as Error)?.message ?? e));
     return null;
   });
-  if (!ws) return;
-  if (get().workspace?.root !== ws.root) await setWorkspace(ws);
+  if (!ws) return false;
+  if (get().workspace?.root !== ws.root && !(await setWorkspace(ws))) return false;
   if (ws.file) openFile(ws.file, { pinned: true });
+  return true;
+}
+
+/** Inside the open folder (an OS path): opening it doesn't change folders. */
+function insideWorkspace(path: string) {
+  const root = get().workspace?.root;
+  if (!root) return false;
+  const norm = (x: string) => x.replace(/\\/g, "/").replace(/\/+$/, "");
+  return isWithin(norm(path), norm(root));
 }
 
 /** Opens an absolute path from the command line, a second launch or "Open With". */
-export async function openPathFromOs(path: string) {
+export async function openPathFromOs(path: string): Promise<boolean> {
   const p = getPlatform();
-  if (!p.openPath) return;
+  if (!p.openPath) return false;
+  if (!insideWorkspace(path) && !(await confirmLeaveWorkspace())) return false;
   try {
     const ws = await p.openPath(path);
-    if (get().workspace?.root !== ws.root) await setWorkspace(ws);
+    if (get().workspace?.root !== ws.root && !(await setWorkspace(ws))) return false;
     if (ws.file) openFile(ws.file, { pinned: true });
+    return true;
   } catch (e) {
     notify("error", String((e as Error)?.message ?? e));
+    return false;
   }
 }
 
-export async function openRecent(root: string) {
+export async function openRecent(root: string): Promise<boolean> {
+  if (get().workspace?.root !== root && !(await confirmLeaveWorkspace())) return false;
   const ws = await getPlatform().reopenFolder(root).catch((e) => {
     notify("error", `Could not open '${root}': ${String(e?.message ?? e)}`);
     return null;
   });
-  if (ws) await setWorkspace(ws);
-  else set({ recent: get().recent.filter((r) => r.root !== root) });
+  if (ws) return setWorkspace(ws);
+  set({ recent: get().recent.filter((r) => r.root !== root) });
+  return false;
 }
 
 // ───────────────────────────── explorer ─────────────────────────────
@@ -494,19 +558,63 @@ export async function moveEntry(from: string, to: string) {
   log("Explorer", `Moved ${from} → ${to}`);
 }
 
-export async function deleteEntry(path: string) {
-  const choice = await showDialog({
-    message: `Are you sure you want to delete '${basename(path)}'?`,
-    detail: "This cannot be undone. TMCode does not use the Trash.",
+/** Run before an explorer delete (Local History keeps a copy of the files). Never blocks the delete. */
+export const beforeDeleteHooks: ((path: string) => Promise<void>)[] = [];
+
+/** "Delete permanently?" with Cancel focused: Enter can't confirm it by accident. */
+function confirmPermanentDelete(message: string, detail: string) {
+  return showDialog({
+    message,
+    detail,
     severity: "warning",
     buttons: [
-      { id: "delete", label: "Delete", primary: true },
+      { id: "delete", label: "Delete Permanently", primary: true, destructive: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",
   });
-  if (choice !== "delete") return false;
-  await getPlatform().fs.remove(path);
+}
+
+/**
+ * Explorer Delete, as in VS Code: moves the file or folder to the OS Trash
+ * (Recycle Bin), so it can be restored. Where there is no Trash, or moving
+ * fails, it asks again before deleting for good.
+ */
+export async function deleteEntry(path: string) {
+  const fs = getPlatform().fs;
+  const name = basename(path);
+  const isDir = Object.values(get().dirs).some((list) => list.some((e) => e.path === path && e.kind === "dir"));
+  if (fs.trash) {
+    const choice = await showDialog({
+      message: `Are you sure you want to delete '${name}'?`,
+      detail: `You can restore this ${isDir ? "folder" : "file"} from the Trash.`,
+      severity: "warning",
+      buttons: [
+        { id: "trash", label: "Move to Trash", primary: true },
+        { id: "cancel", label: "Cancel" },
+      ],
+      cancelId: "cancel",
+    });
+    if (choice !== "trash") return false;
+  } else {
+    const choice = await confirmPermanentDelete(`Are you sure you want to permanently delete '${name}'?`, "This cannot be undone.");
+    if (choice !== "delete") return false;
+  }
+  for (const hook of beforeDeleteHooks) await hook(path).catch(() => {});
+  let trashed = false;
+  if (fs.trash) {
+    try {
+      await fs.trash(path);
+      trashed = true;
+    } catch (e) {
+      const choice = await confirmPermanentDelete(
+        `Could not move '${name}' to the Trash. Do you want to permanently delete it instead?`,
+        `${String((e as Error)?.message ?? e)}\n\nThis cannot be undone.`,
+      );
+      if (choice !== "delete") return false;
+    }
+  }
+  if (!trashed) await fs.remove(path);
   const s = get();
   const groups = s.groups.map((g) => {
     const editors = g.editors.filter((e) => !((e.kind === "file" || e.kind === "markdown" || e.kind === "image") && isWithin(e.path, path)));
@@ -520,7 +628,7 @@ export async function deleteEntry(path: string) {
   set({ groups, dirty, dirs, selection: null });
   deleteListeners.forEach((l) => l(path));
   await loadDir(dirname(path));
-  log("Explorer", `Deleted ${path}`);
+  log("Explorer", trashed ? `Moved ${path} to the Trash` : `Deleted ${path}`);
   return true;
 }
 
@@ -650,7 +758,7 @@ export function focusGroup(groupId: number) {
   if (get().activeGroup !== groupId) set({ activeGroup: groupId });
 }
 
-async function confirmCloseDirty(paths: string[]): Promise<"save" | "discard" | "cancel"> {
+export async function confirmCloseDirty(paths: string[]): Promise<"save" | "discard" | "cancel"> {
   const dirtyPaths = paths.filter((p) => get().dirty[p]);
   if (!dirtyPaths.length) return "discard";
   const choice = await showDialog({
@@ -674,9 +782,16 @@ async function confirmCloseDirty(paths: string[]): Promise<"save" | "discard" | 
 }
 
 /** Registered by the documents module (Monaco models live there). */
-export const saveHandlers: { save: (path: string) => Promise<void>; revert: (path: string) => void } = {
+export const saveHandlers: {
+  save: (path: string) => Promise<void>;
+  /** Closing without saving: drops the document. */
+  revert: (path: string) => void;
+  /** "Don't Save" while the editor stays open: reloads the file from disk. */
+  discard: (path: string) => Promise<void>;
+} = {
   save: async () => {},
   revert: () => {},
+  discard: async () => {},
 };
 
 /** The document an editor edits: a file, or the right side of a working-tree git diff. */
@@ -868,9 +983,29 @@ export function clearOutput() {
   set({ output: [] });
 }
 
+const MAX_NOTIFICATIONS = 5;
+/** Notifications the student still has to act on: buttons, or a running operation's progress / Cancel. */
+const needsAction = (n: Notification) => !!n.actions?.length || n.progress !== undefined || !!n.cancel;
+
+/**
+ * Keeps at most five toasts without ever pushing out one with buttons ("changed
+ * on disk… Discard my changes") or a running operation: the oldest plain info
+ * goes first, then the oldest plain warning or error.
+ */
+function capNotifications(list: Notification[]): Notification[] {
+  const out = [...list];
+  while (out.length > MAX_NOTIFICATIONS) {
+    let i = out.findIndex((n) => n.severity === "info" && !needsAction(n));
+    if (i < 0) i = out.findIndex((n) => !needsAction(n));
+    if (i < 0) break;
+    out.splice(i, 1);
+  }
+  return out;
+}
+
 export function notify(severity: Notification["severity"], message: string, actions?: Notification["actions"]) {
   const id = ++notificationSeq;
-  set({ notifications: [...get().notifications, { id, severity, message, actions }].slice(-5) });
+  set({ notifications: capNotifications([...get().notifications, { id, severity, message, actions }]) });
   log("Notifications", message, severity === "error" ? "error" : severity === "warning" ? "warn" : "info");
   if (severity === "info" && !actions?.length) setTimeout(() => dismissNotification(id), 6000);
   return id;
@@ -882,7 +1017,7 @@ export function notify(severity: Notification["severity"], message: string, acti
  */
 export function notifyProgress(message: string, opts: { cancel?: () => void } = {}) {
   const id = ++notificationSeq;
-  set({ notifications: [...get().notifications, { id, severity: "info" as const, message, progress: null, cancel: opts.cancel }].slice(-5) });
+  set({ notifications: capNotifications([...get().notifications, { id, severity: "info" as const, message, progress: null, cancel: opts.cancel }]) });
   return {
     id,
     update(patch: { message?: string; progress?: number | null }) {

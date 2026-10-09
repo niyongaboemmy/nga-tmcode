@@ -2,6 +2,7 @@ import { track } from "../state/activity";
 import { notify, showDialog } from "../state/store";
 import { showQuickPick, type PickItem } from "../widgets/QuickPick";
 import { api, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
+import { explainSubmitError, notifySubmitted, submitConfirmDetail } from "./submitFlow";
 import type { Link, LinkableActivity, PracticalQuestion, Project } from "./types";
 
 /**
@@ -203,7 +204,7 @@ export async function changeAssessment() {
 export async function submitProject() {
   const { binding, current } = useProjects.getState();
   if (!binding || !current) return notify("info", "Open a Task Mentor project first.");
-  if (current.status === "submitted") return notify("info", "This project is already submitted. Withdraw the submission to change it.");
+  if (current.status === "submitted") return notify("info", "This project is already submitted. Use Withdraw to Edit to change it.");
   if (current.status === "graded") return notify("info", "This project is already graded.");
   if (current.read_only) return notify("info", "This assignment is completed: it can no longer be submitted.");
   let links = currentLinks();
@@ -228,12 +229,11 @@ export async function submitProject() {
   }
   const target = links.find((l) => l.activity_type === "assignment") ?? links[0];
   const title = target.activity?.title ?? TYPE_LABEL[target.activity_type].one;
+  const due = target.activity?.due_date;
   const choice = await showDialog({
     severity: "info",
     message: `Submit "${current.name}" for "${title}"?`,
-    detail:
-      "TMCode saves your work to Task Mentor, then submits that exact version. The project is then Submitted and locked: withdraw the submission if you need to change it before it is graded." +
-      (target.activity_type === "quiz" && target.question_id ? "\n\nThis is a quiz practical: keep the quiz open in Task Mentor while you submit, so your project is recorded as your answer." : ""),
+    detail: submitConfirmDetail({ late: !!due && Date.parse(due) < Date.now(), quizPractical: target.activity_type === "quiz" && !!target.question_id }),
     buttons: [
       { id: "submit", label: "Save and Submit", primary: true },
       { id: "cancel", label: "Cancel" },
@@ -243,10 +243,9 @@ export async function submitProject() {
   if (choice !== "submit") return;
   try {
     const res = await submitLink(current.id, target.id);
-    const late = (res.submission as { is_late?: boolean } | null)?.is_late;
-    notify("info", `Submitted "${current.name}" for "${title}"${late ? " (late)" : ""}. Your teacher sees exactly this version.`);
+    notifySubmitted(`"${current.name}" for "${title}"`, res.submission);
   } catch (e) {
-    notify("error", (e as Error).message);
+    await explainSubmitError(e, target);
   } finally {
     await checkSync();
     void refreshProjects();

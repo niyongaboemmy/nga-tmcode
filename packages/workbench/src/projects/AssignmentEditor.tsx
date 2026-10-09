@@ -8,7 +8,7 @@ import { taskMentorHtml } from "../widgets/richHtml";
 import { Codicon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { api, useProjects } from "./service";
-import { dueLabel, isOpenWorkspaceOf, loadAssignment, startAssignment, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
+import { dueLabel, handedInLate, isOpenWorkspaceOf, loadAssignment, returnedForChanges, startAssignment, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
 import { STATE_LABEL } from "./AssignmentsView";
 import { openAssignmentInTaskMentor } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
@@ -128,6 +128,9 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const started = !!my?.project_id;
   const here = isOpenWorkspaceOf(detail);
   const saving = savingNow || sync === "saving" || sync === "pulling";
+  // Handed in: the countdown is over (and "late" is about the submission, below).
+  const handedIn = my?.state === "submitted" || my?.state === "graded";
+  const returned = !teaching && returnedForChanges(detail);
 
   return (
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>
@@ -146,9 +149,9 @@ export function AssignmentEditor({ input }: { input: Input }) {
             </span>
           )}
           {detail.due_date && (
-            <span className={`tm-fact ${due && !detail.read_only ? `is-${due.tone}` : ""}`}>
+            <span className={`tm-fact ${due && !detail.read_only && !handedIn ? `is-${due.tone}` : ""}`} data-testid="assignment-due">
               <Codicon name="calendar" /> Due {when(detail.due_date)}
-              {due && !detail.read_only && my?.state !== "submitted" && my?.state !== "graded" && <b> · {due.text}</b>}
+              {due && !detail.read_only && !handedIn && <b> · {due.text}</b>}
             </span>
           )}
           {detail.points != null && (
@@ -168,6 +171,16 @@ export function AssignmentEditor({ input }: { input: Input }) {
         <div className="tm-assignment-banner" role="status" data-testid="assignment-readonly">
           <Codicon name="lock" />
           <span>Your teacher marked this assignment as completed. You can still read your work, but it can no longer be changed, saved or submitted.</span>
+        </div>
+      )}
+
+      {returned && (
+        <div className="tm-assignment-banner is-warning" role="status" data-testid="assignment-returned">
+          <Codicon name="reply" />
+          <span>
+            <b>Returned by your teacher</b> on {when(my!.returned_at!)}. Make the changes, then submit again.
+            {my!.returned_message && <q className="tm-assignment-returned-message">{my!.returned_message}</q>}
+          </span>
         </div>
       )}
 
@@ -214,7 +227,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
                 <p>Your teacher sees the version you handed in. Withdraw it if you need to change something before it's graded.</p>
               </div>
               <button type="button" className="tm-button tm-button--secondary" onClick={() => executeCommand("projects.withdraw")} data-testid="assignment-withdraw">
-                <Codicon name="discard" /> Withdraw Submission to Edit
+                <Codicon name="discard" /> Withdraw to Edit
               </button>
             </>
           ) : here && !detail.read_only && projectStatus !== "graded" ? (
@@ -223,7 +236,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
                 <h2>
                   <Codicon name="edit" /> You're working on it in this window
                 </h2>
-                <p>Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded.</p>
+                <p>{returned ? "Make the changes your teacher asked for, save, then submit again." : "Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded."}</p>
               </div>
               <div className="tm-next-step-actions">
                 <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
@@ -265,7 +278,14 @@ export function AssignmentEditor({ input }: { input: Input }) {
             <p className="tm-muted">
               Submitted {when(my.submitted_at)}
               {my.revision_number ? ` (version ${my.revision_number})` : ""}
-              {detail.late ? " — late" : ""}
+              {handedInLate(detail) && (
+                <>
+                  {" "}
+                  <span className="tm-chip is-late" data-testid="assignment-result-late">
+                    Late
+                  </span>
+                </>
+              )}
             </p>
           )}
         </div>

@@ -8,6 +8,7 @@ import { SkeletonLines } from "../../widgets/Skeleton";
 import { focusGroup, getPlatform, setCursor, setEditorInfo, useWorkbench } from "../../state/store";
 import type { OsKind } from "../../platform/types";
 import { attachDebugEditor } from "../../debug/editorContrib";
+import { guardEditorHelp, guardEditorPaste, intelligenceOptions } from "../../exam/editorPolicy";
 
 const KEY_CODES: Record<string, number> = {
   "`": monaco.KeyCode.Backquote,
@@ -82,6 +83,8 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const settings = useWorkbench((s) => s.settings);
   const readOnly = useWorkbench((s) => s.readOnly);
   const readOnlyReason = useWorkbench((s) => s.readOnlyReason);
+  const intelligence = useWorkbench((s) => s.policy.intelligence);
+  const setHelpLevel = useRef<((level: typeof intelligence) => void) | null>(null);
   const os = getPlatform().os;
 
   // Create the editor once per group.
@@ -89,6 +92,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     setupMonaco();
     const ed = monaco.editor.create(host.current!, {
       ...editorOptions(useWorkbench.getState().settings, os),
+      ...intelligenceOptions(useWorkbench.getState().policy.intelligence),
       model: null,
       theme: monacoThemeFor(),
       ariaLabel: "Editor content",
@@ -109,7 +113,10 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       ed.onDidFocusEditorText(() => focusGroup(groupId)),
       ed.onDidBlurEditorText(() => saveOnFocusChange()),
       attachDebugEditor(ed),
+      { dispose: guardEditorPaste(ed) },
     ];
+    setHelpLevel.current = guardEditorHelp(ed);
+    setHelpLevel.current(useWorkbench.getState().policy.intelligence);
 
     // Chorded workbench commands (⌘K ⌘T …) must be bound inside Monaco, which owns ⌘K while focused.
     for (const cmd of allCommands()) {
@@ -124,6 +131,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       unregister();
       ed.dispose();
       editorRef.current = null;
+      setHelpLevel.current = null;
     };
   }, [groupId, os]);
 
@@ -161,8 +169,14 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   }, [path]);
 
   useEffect(() => {
-    editorRef.current?.updateOptions({ ...editorOptions(settings, os), readOnly, readOnlyMessage: { value: readOnlyReason ?? "Time is up — your code can no longer be changed." } });
-  }, [settings, os, readOnly, readOnlyReason]);
+    editorRef.current?.updateOptions({
+      ...editorOptions(settings, os),
+      ...intelligenceOptions(intelligence),
+      readOnly,
+      readOnlyMessage: { value: readOnlyReason ?? "Time is up. Your code can no longer be changed." },
+    });
+    setHelpLevel.current?.(intelligence);
+  }, [settings, os, readOnly, readOnlyReason, intelligence]);
 
 
   return (

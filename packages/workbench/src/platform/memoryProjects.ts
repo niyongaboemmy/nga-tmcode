@@ -7,7 +7,10 @@ import type { AccountHost, AccountStatus, FileSystem, ScannedFile, TmRequest, Tm
  *
  * Test hooks on `window.__TMCODE_PROJECTS__`: `remoteSave(projectId, files)`
  * (another computer saved), `state()`, `setAssignmentStatus(id, status)`,
- * `grade(assignmentId, grade, feedback)`, `setTeacher(on)`.
+ * `grade(assignmentId, grade, feedback)`, `setTeacher(on)`, `setQuizOpen(on)`,
+ * `returnForChanges(assignmentId, message)`, `setDueDate(assignmentId, iso)`,
+ * `failAssignments(code | null)`, `setQuota(maxProjectBytes | null)`,
+ * `setLegacyGradeComments(on)`, `gradeOf(type, id, questionId, studentId)`.
  *
  * Assignments follow docs/ASSIGNMENTS_PLAN.md: practical 51 has starter files,
  * case study 52 has none.
@@ -75,6 +78,14 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   const people = new Map<number, string>([[21, "Ben Learner"], [22, "Chloe Coder"], [23, "Dan Doer"]]);
   const studentGrades = new Map<string, { score: number; rubric_scores: { index: number; score: number; comment?: string | null }[] | null; feedback: string; graded_at: string }>();
   let gradingSeeded = false;
+  let legacyComments = false;
+  // Is the student's quiz attempt open? (Task Mentor records a practical answer only then.)
+  let quizOpen = true;
+  // Teachers' "Return for changes", per assignment: when, and their message.
+  const returned = new Map<number, { at: string; message: string | null }>();
+  // GET /assignments and /activities/linkable fail with this (Central MIS down: MIS_SCOPE_UNAVAILABLE).
+  let failScope: string | null = null;
+  let maxProjectBytes: number | null = null;
   async function seedGrading() {
     if (gradingSeeded) return;
     gradingSeeded = true;
@@ -115,7 +126,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
         state,
         project: { id: proj.id, name: proj.name, status: proj.status ?? "draft", kind: "tm", language: proj.language ?? null, repo_url: null },
         link: { id: l.id, status: l.status, submitted_at: l.submitted_at, revision_id: l.revision_id, revision_number: l.revision_number, git_commit: null },
-        grade: g ? { score: g.score, rubric_scores: g.rubric_scores, feedback: g.feedback, graded_at: g.graded_at, ref_id: 1 } : null,
+        // Older servers keep the notes only inside the feedback (setLegacyGradeComments).
+        grade: g ? { score: g.score, rubric_scores: legacyComments ? (g.rubric_scores ?? []).map(({ index, score }) => ({ index, score })) : g.rubric_scores, feedback: g.feedback, graded_at: g.graded_at, ref_id: 1 } : null,
         submitted_at: l.submitted_at,
         late: false,
       };
@@ -175,7 +187,20 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       late: !!a.due_date && Date.parse(a.due_date as string) < Date.now(),
       my:
         scope === "student"
-          ? { project_id: ws?.id ?? null, link_id: link?.id ?? null, state, submitted_at: link?.submitted_at ?? null, revision_number: link?.revision_number ?? null, grade: g?.grade ?? null, max_points: g ? a.points : null, feedback: g?.feedback ?? null }
+          ? {
+              project_id: ws?.id ?? null,
+              link_id: link?.id ?? null,
+              state,
+              submitted_at: link?.submitted_at ?? null,
+              revision_number: link?.revision_number ?? null,
+              grade: g?.grade ?? null,
+              max_points: g ? a.points : null,
+              feedback: g?.feedback ?? null,
+              // Whether the hand-in itself was late (Task Mentor's submissions.is_late), null before one.
+              is_late: link?.submitted_at ? !!link.is_late : null,
+              returned_at: returned.get(a.id as number)?.at ?? null,
+              returned_message: returned.get(a.id as number)?.message ?? null,
+            }
           : null,
       ...(scope === "teaching" ? { teaching: { students: 24, started: ws ? 1 : 0, submitted: link?.status === "submitted" ? 1 : 0, graded: g ? 1 : 0 } } : {}),
     };
@@ -208,6 +233,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       const proj = { id, name: body.name, slug, description: body.description ?? null, language: body.language ?? null, kind: body.kind, visibility: "private", repo_url: body.repo_url ?? null, repo_full_name: body.repo_url ? String(body.repo_url).replace("https://github.com/", "") : null, default_branch: null, size_bytes: 0, file_count: 0, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: user.id, name: user.name, avatar_url: null }, my_role: "owner" };
       projects.push(proj);
       return { status: 201, body: { project: projectOut(proj) } };
+    }
+    if (failScope && (p === "/assignments" || p === "/activities/linkable")) {
+      return failScope === "UNAUTHENTICATED" ? err(401, failScope, "Sign in again.") : { status: 409, body: { code: failScope, message: "Central MIS can't be reached, so your subjects are unknown." } };
     }
     if ((m = p.match(/^\/assignments$/)) && req.method === "GET") {
       const scope = url.searchParams.get("scope") === "teaching" ? "teaching" : "student";
@@ -273,7 +301,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       }
       const total = r.activity.rubric.length ? scores.reduce((n, x) => n + x.score, 0) : Number(body.score ?? 0);
       const sid = Number(m[3]);
-      studentGrades.set(`${m[1]}:${m[2]}:${m[1] === "quiz" ? r.activity.question!.id : ""}:${sid}`, { score: total, rubric_scores: scores, feedback: String(body.feedback ?? ""), graded_at: now() });
+      // Like Task Mentor: the notes per criterion also go into the feedback the student reads.
+      const notes = scores.filter((x) => x.comment?.trim()).map((x) => `• ${r.activity.rubric[x.index]?.criteria ?? `Criterion ${x.index + 1}`}: ${x.comment!.trim()}`);
+      const feedback = [String(body.feedback ?? "").trim(), notes.length ? `Criteria notes:\n${notes.join("\n")}` : ""].filter(Boolean).join("\n\n");
+      studentGrades.set(`${m[1]}:${m[2]}:${m[1] === "quiz" ? r.activity.question!.id : ""}:${sid}`, { score: total, rubric_scores: scores.map((x) => ({ index: x.index, score: x.score, comment: x.comment?.trim() || null })), feedback, graded_at: now() });
       const row = r.rows.find((x) => x.student.id === sid);
       const proj = row?.project ? projects.find((x) => x.id === row.project!.id) : null;
       if (proj) proj.status = "graded";
@@ -325,6 +356,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       if (lifecycle && owner && (owner.status ?? "draft") === "submitted") return err(409, "PROJECT_LOCKED", "This project is submitted. Withdraw the submission to change it.");
       if ((body.base_revision_id ?? null) !== (h?.id ?? null)) return err(409, "REVISION_CONFLICT", "Task Mentor has newer changes.", { head: revOut(h) });
       const files = body.files as ScannedFile[];
+      const total = files.reduce((n, f) => n + f.size, 0);
+      if (maxProjectBytes !== null && total > maxProjectBytes) return err(413, "QUOTA_EXCEEDED", `A project may be at most ${maxProjectBytes} bytes.`, { limit: "project_size", max: maxProjectBytes });
       const missing = files.filter((f) => !blobs.has(f.sha256)).map((f) => f.sha256);
       if (missing.length) return err(422, "BLOBS_MISSING", "Upload these first", { missing });
       const rev: Rev = { id: ++seq, project_id: pid, number: (h?.number ?? 0) + 1, parent_id: h?.id ?? null, author_id: user.id, message: String(body.message ?? ""), files, source: String(body.source ?? "save"), created_at: now() };
@@ -356,10 +389,15 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       if (!link) return err(404, "NOT_FOUND", "No link");
       const owner = projects.find((x) => x.id === Number(m![1]));
       if (owner && assignmentOfProject(owner)?.status === "completed") return err(409, "ASSIGNMENT_COMPLETED", "This assignment is completed: it can no longer be submitted.");
+      // Like Task Mentor (2026-10-10): a practical answer needs the student's quiz attempt open.
+      if (link.activity_type === "quiz" && !quizOpen) return { status: 409, body: { code: "QUIZ_NOT_OPEN", message: "Open the quiz in Task Mentor first." } };
       const h = head(Number(m[1]));
-      Object.assign(link, { status: "submitted", revision_id: h?.id ?? null, revision_number: h?.number ?? null, submitted_at: now() });
+      const due = link.activity_type === "assignment" ? (assignments.find((a) => a.id === link.activity_id)?.due_date as string | null | undefined) : null;
+      const isLate = !!due && Date.parse(due) < Date.now();
+      Object.assign(link, { status: "submitted", revision_id: h?.id ?? null, revision_number: h?.number ?? null, submitted_at: now(), is_late: isLate });
       if (lifecycle && owner) owner.status = "submitted";
-      return { status: 200, body: { link, submission: { id: 1, status: "submitted", is_late: false } } };
+      if (link.activity_type === "assignment") returned.delete(link.activity_id as number);
+      return { status: 200, body: { link, submission: { id: 1, status: "submitted", is_late: isLate } } };
     }
     if ((m = p.match(/^\/quizzes\/(\d+)\/questions\/(\d+)\/start$/)) && req.method === "POST") {
       const quiz = activities.find((a) => a.type === "quiz" && a.id === Number(m![1]));
@@ -463,6 +501,38 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     },
     setLifecycle(on: boolean) {
       lifecycle = on;
+    },
+    /** false: the student's quiz attempt isn't open, so a practical submit is refused (409 QUIZ_NOT_OPEN). */
+    setQuizOpen(on: boolean) {
+      quizOpen = on;
+    },
+    /** The teacher sends the student's submitted work back for changes, with a message. */
+    returnForChanges(assignmentId: number, message: string | null) {
+      const ws = workspaceOf(assignmentId);
+      if (!ws) return;
+      ws.status = "draft";
+      for (const l of links) if (l.project_id === ws.id && l.status === "submitted") l.status = "linked";
+      returned.set(assignmentId, { at: now(), message });
+    },
+    setDueDate(assignmentId: number, iso: string | null) {
+      const a = assignments.find((x) => x.id === assignmentId);
+      if (a) a.due_date = iso;
+    },
+    /** GET /assignments and /activities/linkable fail with this code (MIS_SCOPE_UNAVAILABLE, UNAUTHENTICATED), or work again (null). */
+    failAssignments(code: string | null) {
+      failScope = code;
+    },
+    /** Saves bigger than this (bytes, all files) are refused with 413 QUOTA_EXCEEDED; null: no limit. */
+    setQuota(bytes: number | null) {
+      maxProjectBytes = bytes;
+    },
+    /** true: an older Task Mentor that keeps criterion notes only inside the feedback text. */
+    setLegacyGradeComments(on: boolean) {
+      legacyComments = on;
+    },
+    /** What Task Mentor stored for a student's grade. */
+    gradeOf(type: string, id: number, questionId: number | null, studentId: number) {
+      return studentGrades.get(`${type}:${id}:${type === "quiz" ? questionId : ""}:${studentId}`) ?? null;
     },
     assignments: () => assignments,
     // The student's view of the data: the teacher's starter project is not theirs.

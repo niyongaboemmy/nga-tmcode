@@ -5,7 +5,8 @@ import { Logo } from "../widgets/Logo";
 import { renderBrief } from "../widgets/markdown";
 import { examClock, focusTask, stopExam, submitExam } from "./session";
 import { formatRemaining } from "./clock";
-import { useExam } from "./state";
+import { useExam, type LockReason } from "./state";
+import { useWorkbench } from "../state/store";
 
 /** Re-renders every second while mounted (countdowns). */
 function useNow(active: boolean) {
@@ -37,13 +38,16 @@ export function Countdown({ compact = false }: { compact?: boolean }) {
 export function ExamTitle() {
   const quiz = useExam((s) => s.quiz);
   const phase = useExam((s) => s.phase);
+  const timeUp = useExam((s) => s.timeUp);
   if (!quiz) return null;
+  // Submit only while it can work: after time is up the exam submits itself, and a locked session has its own card.
+  const open = phase === "active" && !timeUp;
   return (
     <div className="tm-exam-title">
       <Codicon name="mortar-board" />
       <span className="tm-exam-title-name">{quiz.title}</span>
-      {phase === "active" && <Countdown compact />}
-      {(phase === "active" || phase === "locked") && (
+      {open && <Countdown compact />}
+      {open && (
         <button type="button" className="tm-button tm-exam-submit" onClick={() => void submitExam()} data-testid="exam-submit">
           <Codicon name="send" /> Submit
         </button>
@@ -57,9 +61,9 @@ export function SyncStatus() {
   const phase = useExam((s) => s.phase);
   if (phase === "idle" || phase === "error" || phase === "starting") return null;
   const label = sync.tampered
-    ? "Saving failed — tell your teacher"
+    ? "Saving failed. Tell your teacher."
     : sync.offline
-      ? `Offline — ${sync.pending} change${sync.pending === 1 ? "" : "s"} saved on this computer`
+      ? `Offline: ${sync.pending} change${sync.pending === 1 ? "" : "s"} saved on this computer`
       : sync.pending || sync.queued
         ? "Saving to Task Mentor…"
         : "All work saved";
@@ -139,7 +143,7 @@ export function TaskView() {
 
 /** Full-window states around an exam: opening, failed to open, submitted. */
 export function ExamOverlay() {
-  const { phase, error, results, quiz, message, tasks } = useExam();
+  const { phase, error, results, quiz, tasks, lock, resultsSlow } = useExam();
   if (phase === "starting") {
     return (
       <div className="tm-exam-overlay" role="status" aria-live="polite">
@@ -166,17 +170,8 @@ export function ExamOverlay() {
       </div>
     );
   }
-  if (phase === "submitting") {
-    return (
-      <div className="tm-exam-overlay" role="status" aria-live="polite">
-        <div className="tm-exam-card">
-          <Codicon name="sync" className="tm-exam-card-icon codicon-modifier-spin" />
-          <h2>Submitting…</h2>
-          <p className="tm-muted">{message ?? "Sending your final code to Task Mentor."}</p>
-        </div>
-      </div>
-    );
-  }
+  if (phase === "submitting") return <SubmittingCard />;
+  if (phase === "locked" && lock) return <LockCard reason={lock.reason} detail={lock.detail} />;
   if (phase === "submitted") {
     const released = results?.status === "released";
     return (
@@ -185,7 +180,11 @@ export function ExamOverlay() {
           <Codicon name="pass-filled" className="tm-exam-card-icon is-ok" />
           <h2>Submitted</h2>
           <p>{quiz?.title} was submitted to Task Mentor.</p>
-          {!results || results.status === "grading" ? (
+          {(!results || results.status === "grading") && resultsSlow ? (
+            <p className="tm-muted" data-testid="exam-grading-slow">
+              Grading takes longer than usual. Your results will appear in Task Mentor.
+            </p>
+          ) : !results || results.status === "grading" ? (
             <p className="tm-muted">
               <Codicon name="loading" className="codicon-modifier-spin" /> Grading your code…
             </p>
@@ -223,4 +222,74 @@ export function ExamOverlay() {
     );
   }
   return null;
+}
+
+const at = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/** One card while the final code goes to Task Mentor, including when time is up offline. */
+function SubmittingCard() {
+  const { timeUp, retryAt, sync, deadline } = useExam();
+  const grace = useWorkbench((s) => s.policy.allow_offline_grace_minutes);
+  const waiting = retryAt !== null || sync.offline;
+  useNow(waiting);
+  const secs = retryAt !== null ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)) : 0;
+  return (
+    <div className="tm-exam-overlay" role="status" aria-live="polite" data-testid="exam-submitting">
+      <div className="tm-exam-card">
+        <Codicon name={waiting ? "cloud-offline" : "sync"} className={`tm-exam-card-icon ${waiting ? "" : "codicon-modifier-spin"}`} />
+        <h2>{timeUp ? "Time is up" : "Submitting…"}</h2>
+        {waiting ? (
+          <>
+            <p>Your work is saved on this computer and will be sent when you're back online.</p>
+            <p className="tm-muted" data-testid="exam-retry">
+              {secs > 0 ? `Can't reach Task Mentor. Trying again in ${secs} s.` : "Trying to reach Task Mentor…"} Keep TMCode open.
+            </p>
+            {timeUp && deadline && grace > 0 && <p className="tm-muted">Task Mentor accepts it until {at(deadline + grace * 60_000)}.</p>}
+          </>
+        ) : (
+          <p className="tm-muted">Sending your final code to Task Mentor.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const LOCK_COPY: Record<LockReason, { title: string; body: string; icon: string }> = {
+  superseded: {
+    title: "Continued on another computer",
+    body: "This exam was opened on another computer or window. Continue there. Your work up to now is saved. To continue here, open the exam from Task Mentor again.",
+    icon: "device-desktop",
+  },
+  revoked: { title: "Your exam session was ended", body: "Your teacher or Task Mentor ended this session. Your saved work stays with Task Mentor.", icon: "circle-slash" },
+  ended: { title: "This exam has ended", body: "Your saved work stays with Task Mentor.", icon: "watch" },
+  submit_failed: { title: "Submitting failed", body: "Your work is saved on this computer.", icon: "error" },
+  time_rejected: {
+    title: "Time is up",
+    body: "Task Mentor did not accept your last changes because the time had ended. Your work is saved on this computer. Tell your teacher.",
+    icon: "watch",
+  },
+};
+
+/** A locked session: why, and the one thing the student can still do. */
+function LockCard({ reason, detail }: { reason: LockReason; detail?: string }) {
+  const copy = LOCK_COPY[reason];
+  return (
+    <div className="tm-exam-overlay" role="alert" data-testid="exam-locked">
+      <div className="tm-exam-card">
+        <Codicon name={copy.icon} className={`tm-exam-card-icon ${reason === "submit_failed" ? "is-error" : ""}`} />
+        <h2>{copy.title}</h2>
+        <p>{copy.body}</p>
+        {detail && <p className="tm-muted">{detail}</p>}
+        {reason === "submit_failed" ? (
+          <button type="button" className="tm-button" onClick={() => void submitExam({ auto: true })}>
+            Try again
+          </button>
+        ) : (
+          <button type="button" className="tm-button tm-button--secondary" onClick={() => stopExam()}>
+            Close exam
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }

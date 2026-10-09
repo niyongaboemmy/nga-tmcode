@@ -1,6 +1,7 @@
 import { getPlatform, notify, showPanel, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { MANIFESTS, detectTasks, type Task } from "./detect";
+import { terminalAllowed } from "@tmcode/protocol";
 
 const SKIP = new Set(["node_modules", ".git", "dist", "build", "target", ".venv", "venv", "__pycache__", ".next", "out"]);
 
@@ -44,7 +45,7 @@ const recent: string[] = [];
 
 /** Terminal → Run Task… */
 export async function pickAndRunTask() {
-  if (!getPlatform().terminal || useWorkbench.getState().policy.terminal === "off") {
+  if (!getPlatform().terminal || !terminalAllowed(useWorkbench.getState().policy)) {
     notify("info", "Tasks run in the integrated terminal, which is not available here.");
     return;
   }

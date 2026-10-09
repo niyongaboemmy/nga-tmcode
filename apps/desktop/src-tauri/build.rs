@@ -21,6 +21,7 @@ fn main() {
             "ws_create_dir",
             "ws_rename",
             "ws_remove",
+            "ws_trash",
             "pty_spawn",
             "pty_write",
             "pty_resize",

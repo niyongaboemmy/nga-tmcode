@@ -15,10 +15,11 @@ function reset() {
     deadlineMs: Date.now() + 30 * 60_000,
     message: null,
     paused: false,
-    offline: false, // simulate the network being down for snapshot uploads
+    offline: false, // simulate the network being down (snapshots, heartbeat, submit)
     submitted: null,
     released: true,
     debugger: false, // policy.debugger: Run and Debug allowed in the exam
+    policy: {}, // overrides of the exam policy (e.g. { terminal: "restricted" })
   };
 }
 reset();
@@ -140,6 +141,8 @@ createServer(async (req, res) => {
       const s = session(req, res, m[1]);
       if (!s) return;
       const action = m[2];
+      // The network is down: only the session start (already done) got through.
+      if (state.offline && ["snapshots", "heartbeat", "submit", "telemetry", "results"].includes(action)) return req.destroy();
       if (action === "package" && req.method === "GET") {
         // Latest synced snapshot of the question across all of this submission's sessions.
         const latest = (qid) =>
@@ -153,7 +156,7 @@ createServer(async (req, res) => {
           quiz: { id: 77, title: "Practical 1 — JavaScript basics", type: "Exam" },
           deadline: new Date(state.deadlineMs).toISOString(),
           server_time: new Date().toISOString(),
-          policy: { mode: "monitored", intelligence: "basic", paste: "internal_only", terminal: "off", internet_in_preview: false, require_seb: false, allow_offline_grace_minutes: 10, locked_settings: [], ...(state.debugger ? { debugger: true } : {}) },
+          policy: { mode: "monitored", intelligence: "basic", paste: "internal_only", terminal: "off", internet_in_preview: false, require_seb: false, allow_offline_grace_minutes: 10, locked_settings: [], ...(state.debugger ? { debugger: true } : {}), ...state.policy },
           journal_nonce: s.nonce,
           profiles: [PROFILE],
           toolchains: ["node"],
@@ -165,9 +168,10 @@ createServer(async (req, res) => {
         });
       }
       if (action === "snapshots" && req.method === "POST") {
-        if (state.offline) return req.destroy();
         const b = await body(req);
         if (s.status !== "active") return err(res, 409, "SESSION_SUPERSEDED");
+        // As Task Mentor does: work stamped after the deadline is refused (a final snapshot carries the deadline).
+        if (Date.parse(b.client_ts) > state.deadlineMs + 2000) return err(res, 409, "ATTEMPT_TIME_EXPIRED", "Time is up.");
         const existing = s.snapshots.find((x) => x.seq === b.seq);
         if (existing) return existing.hmac === b.hmac ? send(res, 200, { accepted_seq: b.seq, server_ts: existing.server_ts }) : err(res, 409, "SEQ_CONFLICT");
         const expected = (s.snapshots.at(-1)?.seq ?? 0) + 1;

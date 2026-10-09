@@ -4,6 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { revealInEditor } from "../monaco/reveal";
 import { getPlatform, notify, useWorkbench } from "../state/store";
+import { pasteRefusal, refusePaste, rememberCopy } from "../exam/pasteGuard";
 import { findFileRefs, findLocalUrls, portOf, toWorkspaceRef } from "./links";
 import { openBrowser, openExternalUrl } from "./browser";
 
@@ -66,6 +67,7 @@ export function clipboardAction(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrl
 async function copySelection(term: Terminal) {
   const text = term.getSelection();
   if (!text) return;
+  rememberCopy(text);
   const clip = getPlatform().clipboard;
   try {
     if (clip) await clip.writeText(text);
@@ -76,14 +78,12 @@ async function copySelection(term: Terminal) {
 }
 
 async function pasteInto(term: Terminal) {
-  // Exams that only allow pasting what was copied inside the exam keep outside text out of the shell too.
-  if (useWorkbench.getState().policy.paste !== "allow") {
-    notify("info", "Pasting from outside is turned off for this exam.");
-    return;
-  }
   const clip = getPlatform().clipboard;
   try {
     const text = clip ? await clip.readText() : await navigator.clipboard.readText();
+    // Exams that only allow pasting what was copied inside the exam keep outside text out of the shell too.
+    const why = pasteRefusal(text);
+    if (why) return refusePaste(why);
     if (text) term.paste(text);
   } catch {
     notify("warning", "Could not read the clipboard.");

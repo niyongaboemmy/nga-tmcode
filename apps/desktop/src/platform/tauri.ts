@@ -154,6 +154,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       rename: (from, to) => invoke("ws_rename", { from, to }),
       copy: (from, to) => invoke("ws_copy", { from, to }),
       remove: (path) => invoke("ws_remove", { path }),
+      trash: (path) => invoke("ws_trash", { path }),
     },
     terminal: {
       async spawn({ cols, rows, cwd, onData, onExit }): Promise<TerminalSession> {

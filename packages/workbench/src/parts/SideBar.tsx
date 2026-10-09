@@ -13,6 +13,7 @@ import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsV
 import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
 import { AssignmentsView } from "../projects/AssignmentsView";
+import { useAssignments } from "../projects/assignments";
 import { GradingView } from "../grading/GradingView";
 import { TimelinePane } from "../history/TimelinePane";
 import { OutlinePane } from "../outline/OutlinePane";
@@ -48,7 +49,8 @@ function moreActions(view: ViewId): ContextMenuItem[] {
   if (view === "assignments") {
     return [
       { kind: "item", label: "Refresh", run: () => executeCommand("assignments.refresh") },
-      { kind: "item", label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") },
+      // A teacher action: students never see it.
+      ...(useAssignments.getState().staff ? [{ kind: "item" as const, label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") }] : []),
       { kind: "separator" },
       { kind: "item", label: "Hide Primary Side Bar", run: () => executeCommand("workbench.action.toggleSidebarVisibility") },
     ];

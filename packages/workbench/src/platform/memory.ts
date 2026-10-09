@@ -141,6 +141,8 @@ export class SwitchableFileSystem implements FileSystem {
   remove(p: string) {
     return this.target.remove(p);
   }
+  /** Set by the dev / e2e platform only: the browser has no Trash. */
+  trash?: (p: string) => Promise<void>;
 }
 
 /** Journal in localStorage (browser build); survives reloads like the desktop one survives crashes. */
@@ -348,15 +350,33 @@ function createMemoryHttp(): import("./types").HttpHost {
   };
 }
 
+/** Dev server / e2e: localStorage "tmcode:mock-folder:<root>" = { path: content } seeds that folder (a second project). */
+function mockFolderSeed(root: string): Record<string, string> {
+  if (!import.meta.env?.DEV) return {};
+  try {
+    return JSON.parse(localStorage.getItem(`tmcode:mock-folder:${root}`) ?? "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
 export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT): Platform {
   const practice = new MemoryFileSystem(seed);
   const fs = new SwitchableFileSystem(practice);
   const exams = new Map<number, MemoryFileSystem>();
   // Dev server / e2e: folders TMCode creates for projects and assignments (memory://folders/<name>).
   const folders = new Map<string, MemoryFileSystem>();
+  // Dev server / e2e: a pretend Trash, so Delete behaves as on the desktop (deleted in memory).
+  // localStorage "tmcode:mock-trash-fail" makes it fail, for the permanent-delete fallback.
+  if (import.meta.env?.DEV) {
+    fs.trash = async (p) => {
+      if (localStorage.getItem("tmcode:mock-trash-fail")) throw new Error("The Trash is not available.");
+      await fs.remove(p);
+    };
+  }
   const switchTo = (root: string) => {
     if (root.startsWith("memory://folders/")) {
-      if (!folders.has(root)) folders.set(root, new MemoryFileSystem({}));
+      if (!folders.has(root)) folders.set(root, new MemoryFileSystem(mockFolderSeed(root)));
       fs.target = folders.get(root)!;
     } else if (root === "memory://practice-project") fs.target = practice;
     return { name: root.split("/").pop() || root, root };
