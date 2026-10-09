@@ -45,10 +45,19 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
   useProjects((s) => s.binding);
   const due = dueLabel(a.due_date);
   const open = !teaching && isOpenWorkspaceOf(a);
+  // Its brief is the front tab of a group (on screen): selected, as the Explorer shows the open file.
+  const viewing = useWorkbench((s) =>
+    s.groups.some((g) => {
+      const e = g.editors.find((x) => x.id === g.activeId);
+      return e?.kind === "assignment" && e.assignmentId === a.id;
+    }),
+  );
   const started = !!a.my?.project_id;
   return (
     <div
-      className={`tm-list-row tm-assignment-row ${open ? "is-current" : ""}`}
+      className={`tm-list-row tm-assignment-row ${open ? "is-current" : ""} ${viewing ? "is-viewing" : ""}`}
+      aria-current={open ? "true" : undefined}
+      aria-selected={viewing}
       role="button"
       tabIndex={0}
       data-testid="assignment-row"
@@ -72,6 +81,7 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
       <span className="tm-assignment-text">
         <span className="tm-project-name">{a.title}</span>
         <span className="tm-assignment-sub">
+          {!teaching && <StateChip a={a} />}
           {a.course_name && <span className="tm-assignment-course">{a.course_name}</span>}
           {teaching && (a.status as string) === "draft" ? (
             <span className="tm-due is-soon" title="Publish it in Task Mentor so students can start it">
@@ -86,8 +96,11 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
           )}
         </span>
       </span>
-      {!teaching && <StateChip a={a} />}
-      {open && <Codicon name="check" className="tm-project-current" aria-label="Open in this window" />}
+      {open && (
+        <span className="tm-open-here" title="Your work for this assignment is the folder open in this window">
+          <Codicon name="folder-opened" /> Open here
+        </span>
+      )}
       {!teaching && !a.read_only && !started && (
         <button
           type="button"

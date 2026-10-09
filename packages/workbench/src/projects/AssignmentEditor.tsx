@@ -1,9 +1,10 @@
-import DOMPurify from "dompurify";
+import { useActivity } from "../state/activity";
 import { useEffect, useMemo, useState } from "react";
 import { executeCommand } from "../commands/registry";
 import type { EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
+import { taskMentorHtml } from "../widgets/richHtml";
 import { Codicon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { api, useProjects } from "./service";
@@ -97,6 +98,8 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const busy = useAssignments((s) => s.busy[id]);
   const teaching = useAssignments((s) => !!s.teaching?.some((a) => a.id === id));
   const sync = useProjects((s) => s.sync);
+  // Saving starts with a scan of the folder: "Saving…" from the click (a hook: before the early return).
+  const savingNow = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
   // Task Mentor's project lifecycle (when the server has it): a submitted workspace is locked until withdrawn.
   const projectStatus = useProjects((s) => s.current?.status);
   useProjects((s) => s.binding);
@@ -108,8 +111,10 @@ export function AssignmentEditor({ input }: { input: Input }) {
     return () => clearInterval(t);
   }, [id, detail]);
 
-  const brief = useMemo(() => (detail?.description_html ? DOMPurify.sanitize(detail.description_html, { USE_PROFILES: { html: true } }) : ""), [detail?.description_html]);
-  const instructions = useMemo(() => (detail?.instructions ? renderDocMarkdown(detail.instructions) : ""), [detail?.instructions]);
+  // Task Mentor's rich text, in the editor theme's colours and fonts, with its images (served by its API at /uploads).
+  const tmApi = useProjects((s) => s.account?.tm_api ?? null);
+  const brief = useMemo(() => (detail?.description_html ? taskMentorHtml(detail.description_html, tmApi) : ""), [detail?.description_html, tmApi]);
+  const instructions = useMemo(() => (detail?.instructions ? taskMentorHtml(renderDocMarkdown(detail.instructions), tmApi) : ""), [detail?.instructions, tmApi]);
 
   if (!detail) {
     return (
@@ -122,7 +127,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const my = detail.my;
   const started = !!my?.project_id;
   const here = isOpenWorkspaceOf(detail);
-  const saving = sync === "saving" || sync === "pulling";
+  const saving = savingNow || sync === "saving" || sync === "pulling";
 
   return (
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>
@@ -186,7 +191,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
           {started && here && !detail.read_only && projectStatus !== "submitted" && projectStatus !== "graded" && (
             <>
               <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
-                <Codicon name="cloud-upload" /> Save
+                <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
               </button>
               <button type="button" className="tm-button" disabled={saving || !!busy} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
                 <Codicon name={busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}
@@ -259,13 +264,13 @@ export function AssignmentEditor({ input }: { input: Input }) {
       {brief && (
         <section className="tm-assignment-section">
           <h2>Brief</h2>
-          <div className="tm-markdown-body" dangerouslySetInnerHTML={{ __html: brief }} />
+          <div className="tm-markdown-body tm-rich" dangerouslySetInnerHTML={{ __html: brief }} />
         </section>
       )}
       {instructions && (
         <section className="tm-assignment-section">
           <h2>Instructions</h2>
-          <div className="tm-markdown-body" dangerouslySetInnerHTML={{ __html: instructions }} />
+          <div className="tm-markdown-body tm-rich" dangerouslySetInnerHTML={{ __html: instructions }} />
         </section>
       )}
       {detail.attachments?.length > 0 && (

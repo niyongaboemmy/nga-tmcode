@@ -1,3 +1,4 @@
+import { track } from "../state/activity";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
 import { getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, useWorkbench } from "../state/store";
@@ -242,7 +243,7 @@ export interface GradeInput {
   feedback: string;
 }
 
-export async function saveGrade(key: string, studentId: number, input: GradeInput): Promise<boolean> {
+async function saveGradeNow(key: string, studentId: number, input: GradeInput): Promise<boolean> {
   const { type, id, question_id } = parseKey(key);
   try {
     const res = await api<{ ok: true; score: number; max_points: number }>("PUT", `/grading/${type}/${id}/students/${studentId}`, { ...input, question_id });
@@ -302,7 +303,7 @@ const openFolder = (path: string) => (getPlatform().openPath ? openPathFromOs(pa
  * Loads the student's submitted version (the frozen revision) into its own
  * folder, opens it read-only with the grading tab beside it.
  */
-export async function openSubmission(key: string, row: RosterRow): Promise<boolean> {
+async function openSubmissionNow(key: string, row: RosterRow): Promise<boolean> {
   const host = getPlatform().account;
   if (!host || !row.project || !row.student) return false;
   if (row.project.kind === "github") {
@@ -415,3 +416,9 @@ export function wireGrading() {
     void check();
   });
 }
+
+/** openSubmission, shown as activity from its first step: "Opening the student's project…". */
+export const openSubmission = (...args: Parameters<typeof openSubmissionNow>) => track("Opening the student's project…", () => openSubmissionNow(...args));
+
+/** saveGrade, shown as activity from its first step: "Saving the grade…". */
+export const saveGrade = (...args: Parameters<typeof saveGradeNow>) => track("Saving the grade…", () => saveGradeNow(...args));

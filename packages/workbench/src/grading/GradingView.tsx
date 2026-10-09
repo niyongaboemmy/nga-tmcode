@@ -33,9 +33,16 @@ function ActivityRow({ a }: { a: Gradable }) {
   const p = progressOf(roster);
   const due = dueLabel(a.due_date);
   const done = !!p && p.submitted > 0 && p.toGrade === 0;
+  const viewing = useWorkbench((s) =>
+    s.groups.some((g) => {
+      const e = g.editors.find((x) => x.id === g.activeId);
+      return e?.kind === "grading" && e.gradingKey === a.key;
+    }),
+  );
   return (
     <div
-      className="tm-list-row tm-grade-activity"
+      className={`tm-list-row tm-grade-activity ${viewing ? "is-viewing" : ""}`}
+      aria-selected={viewing}
       role="button"
       tabIndex={0}
       data-testid="grading-activity"

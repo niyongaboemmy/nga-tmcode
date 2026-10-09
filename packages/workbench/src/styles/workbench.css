@@ -7481,3 +7481,85 @@ kbd,
 .tm-assignments-who {
   font-size: 11px;
 }
+
+/* The assignment / project open in this window, and the one whose tab is in front (theme list colours). */
+.tm-assignment-row.is-current,
+.tm-project-row.is-current {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tm-assignment-row.is-viewing,
+.tm-grade-activity.is-viewing {
+  background: var(--list-inactive-bg);
+}
+.tm-assignment-row.is-current.is-viewing {
+  background: color-mix(in srgb, var(--accent) 20%, var(--list-inactive-bg));
+}
+.tm-projects-view:focus-within .tm-assignment-row.is-viewing,
+.tm-projects-view:focus-within .tm-grade-activity.is-viewing {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-open-here {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--foreground);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tm-open-here .codicon {
+  font-size: 11px !important;
+}
+/* The state chip sits on the row's second line: the title keeps its room. */
+.tm-assignment-row .tm-assignment-sub .tm-chip {
+  height: 15px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+/* Work in flight: a running line under the title bar (VS Code's progress bar) and a status bar item,
+   shown the instant work starts. Theme colours: --accent / --statusbar-fg. */
+.tm-progress-line {
+  position: relative;
+  flex: none;
+  height: 2px;
+  overflow: hidden;
+  background: transparent;
+  z-index: 5;
+}
+.tm-progress-line.is-busy::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: var(--progress-bar, var(--accent));
+  animation: tm-progress-run 1.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes tm-progress-run {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+.tm-root[data-motion="reduced"] .tm-progress-line.is-busy::before {
+  width: 100%;
+  animation: none;
+  opacity: 0.7;
+}
+.tm-status-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.tm-status-busy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

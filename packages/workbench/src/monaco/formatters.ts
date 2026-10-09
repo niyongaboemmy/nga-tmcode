@@ -126,8 +126,12 @@ export async function formatDocumentWith(editor: monaco.editor.ICodeEditor) {
   }
 }
 
-/** Editor context menu + palette entries, like VS Code's. */
+let actionsRegistered = false;
+
+/** Editor context menu + palette entries, like VS Code's (once: React may run the setup twice). */
 export function registerFormatterActions() {
+  if (actionsRegistered) return;
+  actionsRegistered = true;
   monaco.editor.addEditorAction({
     id: "editor.action.formatDocument.multiple",
     label: "Format Document With...",

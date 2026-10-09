@@ -1,3 +1,4 @@
+import { track } from "../state/activity";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
 import { getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
@@ -150,7 +151,7 @@ function setBusy(id: number, b: "starting" | "submitting" | undefined) {
 }
 
 /** Start (first time: Task Mentor copies the starter files into the student's own project) or continue. */
-export async function startAssignment(id: number) {
+async function startAssignmentNow(id: number) {
   if (inExam()) return notify("info", "Finish your exam first.");
   setBusy(id, "starting");
   try {
@@ -310,3 +311,5 @@ export function groupAssignments(list: AssignmentSummary[]) {
   return groups;
 }
 
+/** startAssignment, shown as activity from its first step: "Preparing your workspace…". */
+export const startAssignment = (...args: Parameters<typeof startAssignmentNow>) => track("Preparing your workspace…", () => startAssignmentNow(...args));

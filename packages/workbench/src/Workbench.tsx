@@ -1,3 +1,4 @@
+import { useActivity } from "./state/activity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
@@ -247,6 +248,7 @@ export function Workbench() {
       }}
     >
       <TitleBar focused={focused} />
+      <ProgressLine />
       <div className="tm-main">
         <ActivityBar />
         <Allotment className="tm-split" proportionalLayout={false}>
@@ -280,4 +282,10 @@ export function Workbench() {
       <Notifications />
     </div>
   );
+}
+
+/** A thin running line under the title bar while anything is in flight (VS Code's progress bar). */
+function ProgressLine() {
+  const busy = useActivity((s) => s.running.length > 0);
+  return <div className={`tm-progress-line ${busy ? "is-busy" : ""}`} role="progressbar" aria-hidden={!busy} aria-label="Working" data-testid="progress-line" />;
 }

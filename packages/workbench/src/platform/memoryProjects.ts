@@ -58,12 +58,16 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   ];
   let seq = 100;
   let teacher = false;
+  let latency = 0;
   // Task Mentor's project lifecycle (live since 2026-10-07); setLifecycle(false) mimics an older server.
   let lifecycle = true;
   const day = 86_400_000;
   const assignments: Record<string, unknown>[] = [
     { id: 51, title: "Build a to-do list", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 2 * day).toISOString(), points: 20, language: "javascript", description_html: '<p>Build a <b>to-do list</b> page. <a href="https://developer.mozilla.org/">MDN</a> helps.</p><script>alert(1)</script>', instructions: "1. Open `index.html`\n2. Make **Add** work\n3. Submit", attachments: [], rubric: [{ criteria: "Adding items works", description: "Typing a task and pressing Add shows it in the list", max_score: 12 }, { criteria: "Code quality", description: "Clear names, no repeated code", max_score: 8 }], starter_project_id: 0 },
-    { id: 52, title: "Library case study", kind: "case_study", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() - day).toISOString(), points: 10, language: null, description_html: "<p>Model a small library.</p>", instructions: null, attachments: [], rubric: null, starter_project_id: null },
+    { id: 52, title: "Library case study", kind: "case_study", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() - day).toISOString(), points: 10, language: null, description_html:
+        // Like Task Mentor's rich editor writes it: black serif text, a white background, an uploaded image and one from another site.
+        '<h2 style="color: rgb(0, 0, 0); font-family: \'Times New Roman\'; text-align: center">Model a small library</h2><p style="color: black; background-color: #ffffff; font-size: 12pt; font-family: \'Times New Roman\'">Design the <strong>books</strong>, <strong>members</strong> and <strong>loans</strong> tables.</p><p><img src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%2290%22%3E%3Crect width=%22240%22 height=%2290%22 rx=%2210%22 fill=%22%233b82f6%22/%3E%3Ctext x=%2220%22 y=%2255%22 font-size=%2228%22 fill=%22white%22%3EER diagram%3C/text%3E%3C/svg%3E" alt="ER diagram"></p><p><img src="https://images.example.org/library.png"></p>',
+      instructions: null, attachments: [], rubric: null, starter_project_id: null },
   ];
   const grades = new Map<number, { grade: number; feedback: string }>();
   // Teachers' grading (GET/PUT /grading…): other students' work, seeded by setTeacher(true).
@@ -444,6 +448,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     setTeacher(on: boolean) {
       teacher = on;
     },
+    /** Every request waits this long (ms) before Task Mentor answers. */
+    setLatency(ms: number) {
+      latency = ms;
+    },
     /** No TMCode assignments or quiz practicals at all (the empty Assignments view). */
     clearAssignments() {
       assignments.splice(0, assignments.length);
@@ -488,7 +496,11 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    request: (req) => route(req) as Promise<TmResponse<never>>,
+    // `latency`: a slow network, to see that loading shows at once (setLatency).
+    request: async (req) => {
+      if (latency) await new Promise((r) => setTimeout(r, latency));
+      return route(req) as Promise<TmResponse<never>>;
+    },
     async scan() {
       const files = (await scan()).sort((a, b) => a.path.localeCompare(b.path));
       return { files, truncated: null, total_bytes: files.reduce((n, f) => n + f.size, 0) };

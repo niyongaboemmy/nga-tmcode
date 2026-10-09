@@ -295,3 +295,66 @@ test("with nothing assigned, the view says what will appear and how (students an
   await expect(empty).toContainText("choose TMCode as the way students hand it in");
   await expect(page.getByTestId("assignments-create")).toBeVisible();
 });
+
+test("a brief written in Task Mentor's rich editor reads in the theme's colours, with its images", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  await row(page, 52).click();
+  const brief = page.getByTestId("assignment-page").locator(".tm-rich").first();
+  await expect(brief).toContainText("Model a small library");
+  // The black, serif, white-background look the rich editor baked in is gone: the theme decides.
+  const html = await brief.innerHTML();
+  expect(html).not.toMatch(/color|background|font-family|Times/i);
+  const colours = await brief.evaluate((el) => {
+    const page = getComputedStyle(el.closest(".tm-assignment-page")!);
+    return { text: getComputedStyle(el.querySelector("p")!).color, page: page.color, h2: getComputedStyle(el.querySelector("h2")!).textAlign };
+  });
+  expect(colours.text).toBe(colours.page);
+  expect(colours.h2).toBe("center"); // structure is kept
+  // An image the app can load is shown; one from another site becomes a link.
+  await expect(brief.locator("img")).toHaveCount(1);
+  await expect(brief.locator("img")).toHaveJSProperty("complete", true);
+  await expect(brief.locator("a.tm-ext-image")).toHaveText("Open image (images.example.org)");
+});
+
+test("the assignment open in this window is highlighted, and the one whose brief is showing is selected", async ({ page }) => {
+  await fresh(page);
+  await startPractical(page);
+  await command(page, "View: Show Assignments");
+  const open = row(page, 51);
+  await expect(open).toHaveClass(/is-current/);
+  await expect(open).toContainText("Open here");
+  await expect(open).toHaveAttribute("aria-selected", "true"); // its brief is the tab in front
+  await row(page, 52).click();
+  await expect(row(page, 52)).toHaveAttribute("aria-selected", "true");
+  await expect(open).toHaveClass(/is-current/); // still the open workspace
+  await expect(row(page, 52)).not.toHaveClass(/is-current/);
+});
+
+test("loading shows the instant a request starts, on a slow network too", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  await expect(row(page, 51)).toBeVisible();
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLatency(1500)");
+  const t0 = Date.now();
+  await page.getByTestId("assignments-refresh").click();
+  // Within a frame or two of the click, not after the round trip.
+  await expect(page.getByTestId("progress-line")).toHaveClass(/is-busy/, { timeout: 400 });
+  await expect(page.getByTestId("status-busy")).toBeVisible({ timeout: 400 });
+  expect(Date.now() - t0).toBeLessThan(1200);
+  await expect(page.getByTestId("progress-line")).not.toHaveClass(/is-busy/, { timeout: 10_000 });
+  await expect(page.getByTestId("status-busy")).toHaveCount(0);
+
+  // Save: the button says "Saving…" from the click, before the folder scan and the upload.
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLatency(0)");
+  await row(page, 51).getByRole("button", { name: "Start" }).click();
+  await expect(page.getByTestId("assignment-submit")).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => (window as unknown as { __TMCODE_DEBUG__: { externalWrite(p: string, c: string): Promise<void> } }).__TMCODE_DEBUG__.externalWrite("app.js", "const items = [1];\n"));
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLatency(1500)");
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await page.getByTestId("assignment-save").click();
+  await expect(page.getByTestId("assignment-save")).toContainText("Saving…", { timeout: 400 });
+  await expect(page.getByTestId("status-busy")).toContainText("Saving to Task Mentor", { timeout: 400 });
+  await expect(page.getByTestId("assignment-save")).toContainText("Save", { timeout: 15_000 });
+  await expect(page.getByTestId("assignment-save")).not.toContainText("Saving…", { timeout: 15_000 });
+});

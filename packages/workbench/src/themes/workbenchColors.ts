@@ -24,6 +24,7 @@ const MAP: [string, string[], Defaults?][] = [
   ["--widget-border", ["widget.border", "editorWidget.border"], { dark: "#454545", light: "#C8C8C8" }],
   ["--shadow", ["widget.shadow"], { dark: "#0000005C", light: "#00000029" }],
   ["--link", ["textLink.foreground"], { dark: "#3794FF", light: "#006AB1" }],
+  ["--progress-bar", ["progressBar.background"], { dark: "#0E70C0", light: "#0E70C0" }],
 
   ["--titlebar-bg", ["titleBar.activeBackground"], { dark: "#3C3C3C", light: "#DDDDDD" }],
   ["--titlebar-fg", ["titleBar.activeForeground"], { dark: "#CCCCCC", light: "#333333" }],
