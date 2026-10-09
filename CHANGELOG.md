@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.10.0 — 2026-10-09
+
+**TMCode 0.10: assessments are simpler to manage, for students handing work in and for teachers grading it.**
+
+### For students: what your project is for, and what to do next
+- **One card for your assessment:** Projects › This Folder now shows a single card with:
+  - the assignment or quiz the project is for, and when it's due;
+  - a progress line, **In progress → Submitted → Graded**;
+  - the one thing to do next: **Match**, **Submit**, **Withdraw to make changes**, or your grade.
+- **Your grade in TMCode:** a graded assignment shows its score and your teacher's feedback right in the card.
+- **Connecting is faster:** **Connect to Task Mentor** asks for the project's name, then which assessment it's for. The old one-choice step and the template list are gone.
+- **One list of assessments:** search by title or subject.
+  - Assessments are grouped by subject, soonest due first.
+  - A quiz's TMCode practicals are listed directly; there's no more subject → kind → item → question.
+  - "No assessment (a personal project)" always stays last, so Enter never picks it by accident.
+  - Your current assessment is marked when you change it.
+- **The same words everywhere:** Projects and Assignments both say *In progress / Submitted / Graded*, with the same colours.
+- **Tidier panel:**
+  - Saving is one row ("Saved online", Save, Get Latest).
+  - Project names have their own line in the list.
+  - Filter chips no longer wrap.
+- **Fewer pop-up messages:** connecting and matching show one message, and opening a project no longer reports "Updated N files".
+
+### For teachers: grading without scrolling
+- **The form fits beside the code:** with a student's project open, the student list folds into a bar: *‹ Ben Learner · 1 of 2 · 2 to grade ›*. The scores, feedback and Save & Next fit on screen. Click the bar for the whole list.
+- **Their files, one click away:** "Their project is open in the editor (read-only)", with the submitted files listed to open.
+- **Full marks:** fills every criterion at once; lower what was missed. **Clear** empties the scores.
+- **Save says what's missing:** "Score 1 more criterion to save", instead of a greyed-out button.
+- **A finish line:** after the last submission, "All handed-in work is graded", with **Back to My Folder**.
+- **Each practical says what's waiting:** "2 to grade", "All 3 graded", "No submissions yet".
+- **Grade from the assignment page:** an assignment's page has **Grade Submissions**, which opens TMCode's grading tab.
+
+### All changes
+
+- Simpler assessments for students and teachers
+
 ## 0.9.0 — 2026-10-09
 
 **TMCode 0.9: your project's own tests in the Testing view, and debugging for Java, Kotlin, C#, PHP, Ruby and Swift.**
