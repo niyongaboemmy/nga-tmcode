@@ -41,13 +41,11 @@ import {
   useWorkbench,
   workbench,
 } from "../state/store";
+import { terminalAllowed as allowsTerminal } from "@tmcode/protocol";
 
 const hasWorkspace = () => !!useWorkbench.getState().workspace;
 const hasActiveFile = () => !!activeFilePath();
-const terminalAllowed = () => {
-  const { policy } = useWorkbench.getState();
-  return policy.terminal !== "off";
-};
+const terminalAllowed = () => allowsTerminal(useWorkbench.getState().policy);
 
 let registered = false;
 

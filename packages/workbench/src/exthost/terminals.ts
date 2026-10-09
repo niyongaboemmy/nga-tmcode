@@ -1,5 +1,6 @@
 import type { OwnedTerminal } from "../parts/panel/TerminalView";
 import { useWorkbench } from "../state/store";
+import { terminalAllowed } from "@tmcode/protocol";
 
 /**
  * Terminals that extensions create (window.createTerminal): each is a named
@@ -18,7 +19,7 @@ const entries = new Map<string, Entry>();
 export function terminalOp(host: string, notify: (method: string, params: unknown[]) => void, op: string, id: number, arg: unknown) {
   const key = `${host}:${id}`;
   if (op === "create") {
-    if (useWorkbench.getState().policy.terminal === "off") {
+    if (!terminalAllowed(useWorkbench.getState().policy)) {
       notify("$terminalEvent", [id, "exit", undefined]);
       return;
     }

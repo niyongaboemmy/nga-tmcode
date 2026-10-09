@@ -7,7 +7,8 @@ import { getPlatform, log, notify, openFile, refreshExplorer, revealView, setPol
 import { PRACTICE_POLICY } from "@tmcode/protocol";
 import { ApiError, TmApi, isAllowedApi } from "./api";
 import { ServerClock, formatRemaining } from "./clock";
-import { initialExamState, useExam, type ExamTaskState } from "./state";
+import { initialExamState, useExam, type ExamTaskState, type LockReason } from "./state";
+import { resetCopies } from "./pasteGuard";
 
 /**
  * One exam attempt (plan §5.1, §13): launch → package → task folders →
@@ -31,8 +32,10 @@ const timers: ReturnType<typeof setInterval>[] = [];
 const dirtyTasks = new Map<number, ReturnType<typeof setTimeout>>();
 let unsubscribeDocs: (() => void) | null = null;
 let unsubscribeRuns: (() => void) | null = null;
-let syncing = false;
+let syncRun: Promise<void> | null = null;
 let syncBackoff = 1000;
+/** Set when Task Mentor refused the journal for good (no point retrying). */
+let syncStopped = false;
 let warned = new Set<number>();
 
 export function examClock() {
@@ -98,7 +101,10 @@ export async function startExam(apiBase: string, ticket: string) {
     key = await journalKey(pkg.journal_nonce, grant.session_id);
     journal = await host.journal.load(grant.session_id);
     lastHmac = journal.length ? journal[journal.length - 1].hmac : "";
-    await prepareWorkspace(pkg, grant.session_id);
+    syncStopped = false;
+    resetCopies();
+    const earlier = await earlierJournals(pkg.submission_id, grant.session_id);
+    const replay = await prepareWorkspace(pkg, grant.session_id, earlier);
     set({
       phase: "active",
       quiz: pkg.quiz,
@@ -112,6 +118,8 @@ export async function startExam(apiBase: string, ticket: string) {
     focusTask(get().tasks[0]?.question_id ?? null);
     revealView("task");
     log("Exam", `Started "${pkg.quiz.title}" (submission ${pkg.submission_id}, session ${grant.session_id})`);
+    // Work from an earlier session that never reached Task Mentor goes into this session's journal.
+    for (const qid of replay) void snapshot(qid, "auto");
     void sync();
   } catch (e) {
     const msg =
@@ -126,28 +134,77 @@ export async function startExam(apiBase: string, ticket: string) {
   }
 }
 
-async function prepareWorkspace(pkg: ExamPackage, sessionId: string) {
+const SESSIONS_KEY = (submissionId: number) => `exam.sessions.${submissionId}`;
+
+/**
+ * Journals of earlier sessions of this submission on this computer (a crash,
+ * a relaunch, a second link). A new session has a new key and an empty
+ * journal, so this is the only place unsent work from before survives.
+ */
+async function earlierJournals(submissionId: number, sessionId: string): Promise<JournalEntry[]> {
+  const store = getPlatform().store;
+  const sids = ((await store.get<string[]>(SESSIONS_KEY(submissionId)).catch(() => undefined)) ?? []).filter((s) => s !== sessionId);
+  await store.set(SESSIONS_KEY(submissionId), [...sids, sessionId].slice(-10)).catch(() => {});
+  const all: JournalEntry[] = [];
+  for (const sid of sids) all.push(...(await host!.journal.load(sid).catch(() => [] as JournalEntry[])));
+  return all;
+}
+
+const label = (t: { order: number; title: string }) => `Task ${t.order} (${t.title})`;
+
+/**
+ * Lays out one folder per task and picks, per task, which copy to start from:
+ * this computer's (the task folder, or the latest snapshot of an earlier
+ * session) or Task Mentor's. Copies are compared by content hash; sequence
+ * numbers of different sessions say nothing about which is newer. Returns the
+ * tasks whose local work Task Mentor never received (to snapshot again).
+ */
+async function prepareWorkspace(pkg: ExamPackage, sessionId: string, earlier: JournalEntry[]): Promise<number[]> {
   const ws = await host!.openExamWorkspace(pkg.submission_id, pkg.quiz.title);
   await setWorkspace(ws);
   const fs = getPlatform().fs;
   const tasks: ExamTaskState[] = [];
+  const replay: number[] = [];
+  const notes: string[] = [];
   for (const t of [...pkg.tasks].sort((a, b) => a.order - b.order)) {
     const folder = `q${t.order}-${slug(t.title)}`;
-    const local = journal.filter((j) => j.question_id === t.question_id);
-    const localSeq = local.length ? local[local.length - 1].seq : 0;
+    const current = journal.filter((j) => j.question_id === t.question_id);
+    const before = earlier.filter((j) => j.question_id === t.question_id).sort((a, b) => a.client_ts.localeCompare(b.client_ts));
     const existing = await fs.readDir(folder).catch(() => null);
-    // Use the newest copy: this computer's folder, or the server's (e.g. after switching computers).
-    const serverNewer = t.resume && t.resume.snapshot_seq > localSeq;
-    const files = serverNewer ? t.resume!.files : !existing ? (t.resume?.files ?? t.files) : null;
-    if (!existing) await fs.createDir(folder).catch(() => {});
-    if (files && existing) await keepLocalCopy(folder, files);
-    if (files) {
-      for (const f of files) {
-        const parts = f.path.split("/");
-        for (let i = 1; i < parts.length; i++) await fs.createDir(`${folder}/${parts.slice(0, i).join("/")}`).catch(() => {});
-        await fs.writeFile(`${folder}/${f.path}`, f.content);
+    const onDisk = existing ? await readFolder(folder) : [];
+    const lastBefore = before.at(-1);
+    // This computer's copy: the folder (never older than its journal), else the latest earlier snapshot.
+    const local = onDisk.length ? { files: onDisk, hash: await filesHash(onDisk) } : lastBefore ? { files: lastBefore.files, hash: lastBefore.files_hash } : null;
+    const server = t.resume ? { files: t.resume.files, hash: await filesHash(t.resume.files) } : null;
+    const template = await filesHash(t.files);
+    const sent = new Set([...before, ...current].filter((j) => j.synced).map((j) => j.files_hash));
+    const known = new Set([...before, ...current].map((j) => j.files_hash));
+
+    let files: { path: string; content: string }[] | null = null;
+    if (!local) files = server?.files ?? t.files;
+    else if (!server || local.hash === server.hash) {
+      if (!onDisk.length) files = local.files;
+      if (!server && local.hash !== template && !sent.has(local.hash)) replay.push(t.question_id);
+    } else if (local.hash === template || sent.has(local.hash)) {
+      // Task Mentor already had this computer's copy, so its different copy is newer (e.g. saved on another computer).
+      files = server.files;
+      if (local.hash !== template) {
+        const dest = await setAside(folder, "this-computer", local.files);
+        notes.push(`${label(t)}: your newer work from Task Mentor was loaded. The older files from this computer are in ${dest}.`);
+      }
+    } else {
+      // This computer has work Task Mentor never received: keep it and send it now.
+      if (!onDisk.length) files = local.files;
+      replay.push(t.question_id);
+      if (known.has(server.hash) || server.hash === template) {
+        notes.push(`${label(t)}: TMCode restored work that had not reached Task Mentor before it closed. It is being sent now.`);
+      } else {
+        const dest = await setAside(folder, "task-mentor", server.files);
+        notes.push(`${label(t)}: this computer and Task Mentor had different work. TMCode kept the work on this computer and is sending it. The Task Mentor copy is in ${dest}.`);
       }
     }
+    if (!existing) await fs.createDir(folder).catch(() => {});
+    if (files) await writeFolder(folder, files, !!onDisk.length);
     const profile = pkg.profiles.find((p) => p.id === t.profile_id);
     tasks.push({
       question_id: t.question_id,
@@ -160,33 +217,55 @@ async function prepareWorkspace(pkg: ExamPackage, sessionId: string) {
       entry: `${folder}/${t.files.find((f) => f.path === profile?.entry_point)?.path ?? t.files[0]?.path ?? profile?.entry_point ?? "main"}`,
       visible_tests: t.visible_tests,
       hidden_test_count: t.hidden_test_count,
-      last_seq: Math.max(localSeq, t.resume?.snapshot_seq ?? 0),
+      last_seq: current.at(-1)?.seq ?? (server || before.some((j) => j.synced) ? 1 : 0),
     });
   }
   set({ tasks, sessionId });
   await refreshExplorer();
+  if (notes.length) notify("info", notes.join(" "));
+  return replay;
 }
 
-/**
- * Before the server's copy replaces a task folder that has different local
- * files (e.g. offline work from an earlier session on this computer), keep the
- * local files under .recovered/ so nothing is ever silently lost.
- */
-async function keepLocalCopy(folder: string, incoming: { path: string; content: string }[]) {
+async function readFolder(folder: string) {
   const fs = getPlatform().fs;
-  const changed: { path: string; content: string }[] = [];
-  for (const f of incoming) {
-    const local = await fs.readFile(`${folder}/${f.path}`).catch(() => null);
-    if (local !== null && local !== f.content) changed.push({ path: f.path, content: local });
+  const files: { path: string; content: string }[] = [];
+  const walk = async (dir: string) => {
+    for (const e of await fs.readDir(dir).catch(() => [])) {
+      if (e.kind === "dir") await walk(e.path);
+      else if (files.length < 100) {
+        const content = await fs.readFile(e.path).catch(() => null);
+        if (content !== null) files.push({ path: e.path.slice(folder.length + 1), content });
+      }
+    }
+  };
+  await walk(folder);
+  return files;
+}
+
+/** Writes a copy into a task folder; `replace` first removes files the copy doesn't have. */
+async function writeFolder(folder: string, files: { path: string; content: string }[], replace: boolean) {
+  const fs = getPlatform().fs;
+  if (replace) {
+    const keep = new Set(files.map((f) => f.path));
+    for (const f of await readFolder(folder)) if (!keep.has(f.path)) await fs.remove(`${folder}/${f.path}`).catch(() => {});
   }
-  if (!changed.length) return;
-  const dest = `.recovered/${folder}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-  for (const f of changed) {
+  for (const f of files) {
+    const parts = f.path.split("/");
+    for (let i = 1; i < parts.length; i++) await fs.createDir(`${folder}/${parts.slice(0, i).join("/")}`).catch(() => {});
+    await fs.writeFile(`${folder}/${f.path}`, f.content);
+  }
+}
+
+/** Keeps the copy that was not chosen under .recovered/ so nothing is ever silently lost. */
+async function setAside(folder: string, from: string, files: { path: string; content: string }[]) {
+  const fs = getPlatform().fs;
+  const dest = `.recovered/${folder}-${from}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  for (const f of files) {
     const parts = `${dest}/${f.path}`.split("/");
     for (let i = 1; i < parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
     await fs.writeFile(`${dest}/${f.path}`, f.content);
   }
-  notify("info", `Your newer work from Task Mentor was loaded. The previous files on this computer are kept in ${dest}.`);
+  return dest;
 }
 
 export function focusTask(questionId: number | null) {
@@ -202,20 +281,8 @@ export function focusTask(questionId: number | null) {
 
 // ───────────────────────── snapshots & sync ─────────────────────────
 
-async function readTaskFiles(t: ExamTaskState) {
-  const fs = getPlatform().fs;
-  const files: { path: string; content: string }[] = [];
-  const walk = async (dir: string) => {
-    for (const e of await fs.readDir(dir).catch(() => [])) {
-      if (e.kind === "dir") await walk(e.path);
-      else if (files.length < 100) {
-        const content = await fs.readFile(e.path).catch(() => null);
-        if (content !== null) files.push({ path: e.path.slice(t.folder.length + 1), content });
-      }
-    }
-  };
-  await walk(t.folder);
-  return files;
+function readTaskFiles(t: ExamTaskState) {
+  return readFolder(t.folder);
 }
 
 let snapshotChain: Promise<unknown> = Promise.resolve();
@@ -226,8 +293,12 @@ function updateQueued() {
   set({ sync: { ...get().sync, queued: dirtyTasks.size + inflight } });
 }
 
-/** Appends a snapshot of one task to the journal (serialised: the chain must stay in order). */
-export function snapshot(questionId: number, kind: JournalEntry["kind"]): Promise<JournalEntry | null> {
+/**
+ * Appends a snapshot of one task to the journal (serialised: the chain must
+ * stay in order). `at` stamps it with another time: the final snapshot after
+ * time is up carries the deadline, when the editor locked.
+ */
+export function snapshot(questionId: number, kind: JournalEntry["kind"], at?: number): Promise<JournalEntry | null> {
   inflight++;
   updateQueued();
   const next = snapshotChain.then(async () => {
@@ -240,7 +311,7 @@ export function snapshot(questionId: number, kind: JournalEntry["kind"]): Promis
     // Nothing changed since the last auto snapshot of this task: skip (final/run always recorded).
     if (kind === "auto" && prevForTask?.files_hash === files_hash) return null;
     const seq = (journal[journal.length - 1]?.seq ?? 0) + 1;
-    const rec = { seq, question_id: questionId, kind, client_ts: clock.iso(), files_hash };
+    const rec = { seq, question_id: questionId, kind, client_ts: at !== undefined ? new Date(at).toISOString() : clock.iso(), files_hash };
     const hmac = await chainHmac(key, lastHmac, rec);
     const entry: JournalEntry = { ...rec, files, hmac, synced: false };
     await host.journal.append(sid, entry);
@@ -258,15 +329,25 @@ export function snapshot(questionId: number, kind: JournalEntry["kind"]): Promis
   return next;
 }
 
-export async function sync() {
-  if (syncing || !api || !host) return;
-  syncing = true;
+/** Uploads unsent snapshots. Resolves when the upload in flight (if any) ends. */
+export function sync(): Promise<void> {
+  if (syncRun) return syncRun;
+  if (!api || !host || syncStopped) return Promise.resolve();
+  syncRun = runSync().finally(() => {
+    syncRun = null;
+  });
+  return syncRun;
+}
+
+const unsent = () => journal.some((j) => !j.synced);
+
+async function runSync() {
   const sid = get().sessionId!;
   try {
     for (const e of journal.filter((j) => !j.synced)) {
-      await api.snapshot({ seq: e.seq, question_id: e.question_id, kind: e.kind, client_ts: e.client_ts, files: e.files, files_hash: e.files_hash, hmac: e.hmac });
+      await api!.snapshot({ seq: e.seq, question_id: e.question_id, kind: e.kind, client_ts: e.client_ts, files: e.files, files_hash: e.files_hash, hmac: e.hmac });
       e.synced = true;
-      await host.journal.markSynced(sid, e.seq);
+      await host!.journal.markSynced(sid, e.seq);
       set({ sync: { ...get().sync, pending: journal.filter((j) => !j.synced).length, offline: false, lastSyncedAt: Date.now() } });
     }
     syncBackoff = 1000;
@@ -274,21 +355,25 @@ export async function sync() {
     if (e instanceof ApiError) {
       if (e.offline || e.status >= 500) {
         set({ sync: { ...get().sync, offline: true } });
-        setTimeout(() => void sync(), syncBackoff);
+        // The submit loop retries on its own schedule.
+        if (get().phase !== "submitting") setTimeout(() => void sync(), syncBackoff);
         syncBackoff = Math.min(syncBackoff * 2, 30_000);
       } else if (e.code === "JOURNAL_TAMPERED" || e.code === "SEQ_CONFLICT") {
+        syncStopped = true;
         set({ sync: { ...get().sync, tampered: true } });
         notify("error", "Task Mentor could not accept your saved work. Tell your teacher straight away.");
       } else if (e.code === "SESSION_SUPERSEDED" || e.code === "SESSION_REVOKED" || e.code === "SESSION_SCOPE" || e.status === 401) {
+        syncStopped = true;
         handleEnded(e.code);
       } else if (e.code === "ATTEMPT_TIME_EXPIRED") {
-        lockExam("Time is up.");
+        if (get().phase === "submitting") {
+          syncStopped = true;
+          lockExam("time_rejected");
+        } else timeUp();
       } else {
         log("Exam", `Sync failed: ${e.code} ${e.message}`, "error");
       }
     }
-  } finally {
-    syncing = false;
   }
 }
 
@@ -327,34 +412,54 @@ function tick() {
       notify("warning", `${mins} minute${mins > 1 ? "s" : ""} left. Your work is saved automatically.`);
     }
   }
-  if (left <= 0) {
-    lockExam("Time is up. Your work is being submitted.");
-    void submitExam({ auto: true });
-  }
+  if (left <= 0) timeUp();
 }
 
-function lockExam(message: string) {
+/** The deadline passed: lock the editor and submit what was there at the deadline. */
+function timeUp() {
+  if (get().timeUp || get().phase !== "active") return;
+  set({ timeUp: true });
+  useWorkbench.setState({ readOnly: true });
+  // Edits stop at the deadline; the final snapshots below record them.
+  dirtyTasks.forEach(clearTimeout);
+  dirtyTasks.clear();
+  updateQueued();
+  void submitExam({ auto: true });
+}
+
+function lockExam(reason: LockReason, detail?: string) {
   if (get().phase === "submitted") return;
-  set({ phase: "locked", message });
+  set({ phase: "locked", lock: { reason, detail }, retryAt: null });
   useWorkbench.setState({ readOnly: true });
 }
 
 function handleEnded(code: string) {
-  const message =
-    code === "SESSION_SUPERSEDED"
-      ? "This exam was opened on another computer or window. Continue there; your work up to now is saved."
-      : code === "SESSION_REVOKED"
-        ? "Your exam session was ended. Your saved work stays with Task Mentor."
-        : "This exam has ended.";
-  lockExam(message);
+  lockExam(code === "SESSION_SUPERSEDED" ? "superseded" : code === "SESSION_REVOKED" || code === "SESSION_SCOPE" ? "revoked" : "ended");
   stopTimers();
 }
 
 // ───────────────────────── submit ─────────────────────────
 
+const retryable = (e: unknown) => e instanceof ApiError && (e.offline || e.status >= 500);
+
+/** Waits `ms`, or less if the computer comes back online. */
+function waitForRetry(ms: number) {
+  set({ retryAt: Date.now() + ms });
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      window.removeEventListener("online", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    window.addEventListener("online", done);
+  });
+}
+
 export async function submitExam(opts: { auto?: boolean } = {}) {
   const { tasks, phase } = get();
   if (!api || phase === "submitting" || phase === "submitted") return;
+  if (phase === "locked" && get().lock?.reason !== "submit_failed") return;
   if (!opts.auto) {
     const choice = await showDialog({
       message: "Submit your exam?",
@@ -367,32 +472,50 @@ export async function submitExam(opts: { auto?: boolean } = {}) {
     });
     if (choice !== "submit") return;
   }
-  set({ phase: "submitting" });
+  set({ phase: "submitting", lock: null, message: null });
   useWorkbench.setState({ readOnly: true });
   await saveAll();
-  const late = get().deadline !== null && clock.now() > get().deadline!;
+  const deadline = get().deadline;
+  // After time is up the final code is what the editor held at the deadline, so it carries the deadline's time.
+  const late = deadline !== null && (get().timeUp || clock.now() > deadline);
+  const offline = get().sync.offline || (typeof navigator !== "undefined" && navigator.onLine === false);
   const finals: { question_id: number; seq: number }[] = [];
   for (const t of tasks) {
-    const e = await snapshot(t.question_id, late && get().sync.offline ? "offline_final" : "final");
+    const e = await snapshot(t.question_id, late && offline ? "offline_final" : "final", late ? Math.min(clock.now(), deadline!) : undefined);
     if (e) finals.push({ question_id: t.question_id, seq: e.seq });
   }
   // Everything must be on the server before submitting; keep trying while offline.
-  for (let attempt = 0; journal.some((j) => !j.synced); attempt++) {
+  for (let attempt = 0; ; attempt++) {
     await sync();
-    if (journal.some((j) => !j.synced)) {
-      set({ message: "Saved on this computer — waiting for a connection to submit. Do not close TMCode." });
-      await new Promise((r) => setTimeout(r, Math.min(2000 * (attempt + 1), 15_000)));
+    // A snapshot appended during an upload that was already running needs one more pass.
+    if (unsent() && !get().sync.offline) await sync();
+    // Task Mentor refused the journal or ended the session: the lock card explains why.
+    if (get().phase !== "submitting") return;
+    if (syncStopped && unsent()) {
+      lockExam("submit_failed", "Task Mentor could not accept your saved work. Tell your teacher straight away.");
+      return;
     }
-  }
-  try {
-    await api.submit(finals);
-    set({ phase: "submitted", message: null });
-    stopTimers();
-    log("Exam", "Submitted");
-    void pollResults();
-  } catch (e) {
-    set({ phase: "locked", message: e instanceof ApiError ? e.message : String(e) });
-    notify("error", `Submitting failed: ${e instanceof ApiError ? e.message : String(e)}`, [{ label: "Try again", run: () => void submitExam({ auto: true }) }]);
+    if (!unsent()) {
+      try {
+        await api.submit(finals);
+        set({ phase: "submitted", message: null, retryAt: null });
+        stopTimers();
+        log("Exam", "Submitted");
+        void pollResults();
+        return;
+      } catch (e) {
+        if (!retryable(e)) {
+          const msg = e instanceof ApiError ? e.message : String(e);
+          log("Exam", `Submitting failed: ${msg}`, "error");
+          lockExam("submit_failed", msg);
+          return;
+        }
+        set({ sync: { ...get().sync, offline: true } });
+      }
+    }
+    await waitForRetry(Math.min(2000 * (attempt + 1), 15_000));
+    if (get().phase !== "submitting") return;
+    set({ retryAt: null });
   }
 }
 
@@ -407,6 +530,8 @@ async function pollResults() {
     }
     await new Promise((res) => setTimeout(res, 3000));
   }
+  // Still grading after two minutes: stop the spinner and say where the results will appear.
+  if (api && get().phase === "submitted") set({ resultsSlow: true });
 }
 
 // ───────────────────────── wiring ─────────────────────────
