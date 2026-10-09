@@ -139,6 +139,12 @@ export function AssignmentEditor({ input }: { input: Input }) {
         </div>
         <h1>{detail.title}</h1>
         <div className="tm-assignment-facts">
+          {!teaching && (
+            <span className="tm-fact tm-fact--state" data-testid="assignment-state">
+              <Codicon name="circle-filled" className={`tm-state-dot is-${detail.read_only ? "readonly" : (my?.state ?? "not_started")}`} />
+              {detail.read_only ? "Completed — read-only" : STATE_LABEL[my?.state ?? "not_started"]}
+            </span>
+          )}
           {detail.due_date && (
             <span className={`tm-fact ${due && !detail.read_only ? `is-${due.tone}` : ""}`}>
               <Codicon name="calendar" /> Due {when(detail.due_date)}
@@ -153,12 +159,6 @@ export function AssignmentEditor({ input }: { input: Input }) {
           {detail.language && (
             <span className="tm-fact">
               <Codicon name="code" /> {detail.language}
-            </span>
-          )}
-          {!teaching && (
-            <span className="tm-fact" data-testid="assignment-state">
-              <Codicon name="circle-filled" className={`tm-state-dot is-${detail.read_only ? "readonly" : (my?.state ?? "not_started")}`} />
-              {detail.read_only ? "Completed — read-only" : STATE_LABEL[my?.state ?? "not_started"]}
             </span>
           )}
         </div>
