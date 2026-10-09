@@ -95,7 +95,7 @@ function templateItems() {
 }
 
 /** Writes a template's files into the open folder. */
-async function writeTemplate(tpl: Template) {
+export async function writeTemplate(tpl: Template) {
   const fs = getPlatform().fs;
   for (const [path, content] of Object.entries(tpl.files)) {
     const parts = path.split("/");
@@ -116,7 +116,7 @@ async function writeTemplate(tpl: Template) {
 }
 
 /** Runs the template's setup (npm install, flutter create …) in a terminal, when the user agrees. */
-async function offerSetup(tpl: Template) {
+export async function offerSetup(tpl: Template) {
   if (!tpl.setup) return;
   if (!getPlatform().terminal) {
     notify("info", `Next: run \`${tpl.setup.command}\` in a terminal (${tpl.setup.note.toLowerCase()}).`);

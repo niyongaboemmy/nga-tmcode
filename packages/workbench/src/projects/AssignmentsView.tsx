@@ -64,7 +64,13 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
       data-assignment-id={a.id}
       title={`${a.title}\n${a.course_name ?? ""}${a.due_date ? ` · due ${new Date(a.due_date).toLocaleString()}` : ""}`}
       onClick={() => showAssignment(a.id)}
-      onKeyDown={(e) => e.key === "Enter" && showAssignment(a.id)}
+      // Double-click (as on a file) or Enter: the brief, and straight into the work (Start / Open).
+      onDoubleClick={() => !teaching && !open && (!a.read_only || started) && void startAssignment(a.id)}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter") return;
+        showAssignment(a.id);
+        if (!teaching && !open && (!a.read_only || started)) void startAssignment(a.id);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, [
@@ -101,17 +107,19 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
           <Codicon name="folder-opened" /> Open here
         </span>
       )}
-      {!teaching && !a.read_only && !started && (
+      {!teaching && !open && (started || !a.read_only) && (
         <button
           type="button"
-          className="tm-button tm-button--small"
+          className={`tm-button tm-button--small ${started ? "tm-button--secondary" : ""}`}
           disabled={!!busy}
+          title={started ? "Open your project for this assignment in this window" : "Create your project (with your teacher's starter files) and open it here"}
           onClick={(e) => {
             e.stopPropagation();
             void startAssignment(a.id);
           }}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
-          {busy === "starting" ? "Starting…" : "Start"}
+          {busy === "starting" ? (started ? "Opening…" : "Starting…") : started ? "Open" : "Start"}
         </button>
       )}
     </div>
