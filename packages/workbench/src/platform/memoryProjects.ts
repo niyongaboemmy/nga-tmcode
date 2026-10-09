@@ -58,6 +58,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   ];
   let seq = 100;
   let teacher = false;
+  let latency = 0;
   // Task Mentor's project lifecycle (live since 2026-10-07); setLifecycle(false) mimics an older server.
   let lifecycle = true;
   const day = 86_400_000;
@@ -447,6 +448,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     setTeacher(on: boolean) {
       teacher = on;
     },
+    /** Every request waits this long (ms) before Task Mentor answers. */
+    setLatency(ms: number) {
+      latency = ms;
+    },
     /** No TMCode assignments or quiz practicals at all (the empty Assignments view). */
     clearAssignments() {
       assignments.splice(0, assignments.length);
@@ -491,7 +496,11 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    request: (req) => route(req) as Promise<TmResponse<never>>,
+    // `latency`: a slow network, to see that loading shows at once (setLatency).
+    request: async (req) => {
+      if (latency) await new Promise((r) => setTimeout(r, latency));
+      return route(req) as Promise<TmResponse<never>>;
+    },
     async scan() {
       const files = (await scan()).sort((a, b) => a.path.localeCompare(b.path));
       return { files, truncated: null, total_bytes: files.reduce((n, f) => n + f.size, 0) };

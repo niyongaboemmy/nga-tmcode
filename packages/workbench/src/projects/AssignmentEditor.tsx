@@ -1,3 +1,4 @@
+import { useActivity } from "../state/activity";
 import { useEffect, useMemo, useState } from "react";
 import { executeCommand } from "../commands/registry";
 import type { EditorInput } from "../state/store";
@@ -124,7 +125,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const my = detail.my;
   const started = !!my?.project_id;
   const here = isOpenWorkspaceOf(detail);
-  const saving = sync === "saving" || sync === "pulling";
+  const saving = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…")) || sync === "saving" || sync === "pulling";
 
   return (
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>
@@ -188,7 +189,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
           {started && here && !detail.read_only && projectStatus !== "submitted" && projectStatus !== "graded" && (
             <>
               <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
-                <Codicon name="cloud-upload" /> Save
+                <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
               </button>
               <button type="button" className="tm-button" disabled={saving || !!busy} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
                 <Codicon name={busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}

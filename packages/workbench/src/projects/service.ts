@@ -1,3 +1,4 @@
+import { beginActivity, track } from "../state/activity";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
@@ -77,7 +78,14 @@ export class TmError extends Error {
 export async function api<T>(method: TmRequest["method"], path: string, json?: unknown, extra: Partial<TmRequest> = {}): Promise<T> {
   const host = getPlatform().account;
   if (!host) throw new TmError(0, "UNSUPPORTED", "Task Mentor projects are available in the TMCode desktop app.");
-  const res = await host.request<Record<string, unknown>>({ method, path: `/api/tmcode${path}`, json, ...extra });
+  // Every request shows as activity at once (progress line, status bar), whoever made it.
+  const end = beginActivity("Task Mentor…");
+  let res;
+  try {
+    res = await host.request<Record<string, unknown>>({ method, path: `/api/tmcode${path}`, json, ...extra });
+  } finally {
+    end();
+  }
   if (res.status >= 200 && res.status < 300) return res.body as T;
   const body = (res.body ?? {}) as Record<string, unknown>;
   throw new TmError(res.status, String(body.error_code ?? `HTTP_${res.status}`), String(body.message ?? `Task Mentor answered ${res.status}.`), body);
@@ -327,7 +335,7 @@ export function checkSync(): Promise<void> {
 }
 
 /** Save to Task Mentor: uploads only new content, then commits a revision. */
-export async function saveToTaskMentor(opts: { message?: string; source?: "save" | "auto" | "submit"; quiet?: boolean } = {}): Promise<Revision | null> {
+async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "auto" | "submit"; quiet?: boolean } = {}): Promise<Revision | null> {
   const binding = get().binding;
   const host = getPlatform().account;
   if (!binding || !host) {
@@ -409,7 +417,7 @@ function defaultMessage(plan: SyncPlan) {
 }
 
 /** Brings Task Mentor's newer files into this folder (conflicts are kept for the user). */
-export async function pullFromTaskMentor(opts: { quiet?: boolean } = {}) {
+async function pullFromTaskMentorNow(opts: { quiet?: boolean } = {}) {
   const binding = get().binding;
   const host = getPlatform().account;
   if (!binding || !host || binding.kind !== "tm") return;
@@ -471,7 +479,7 @@ export async function resolveConflict(path: string, keep: "mine" | "theirs") {
 
 // ── Open a project (Projects view, tmcode://project deep link) ────────────
 
-export async function openProject(projectId: number, opts: { folderName?: string } = {}): Promise<boolean> {
+async function openProjectNow(projectId: number, opts: { folderName?: string } = {}): Promise<boolean> {
   if (!projectsSupported()) return false;
   if (!(await requireSignIn())) return false;
   const store = getPlatform().store;
@@ -549,7 +557,7 @@ export async function disconnectFolder() {
 }
 
 /** Takes back a submission (servers with the project lifecycle) so the project is a draft again. */
-export async function withdrawSubmission(projectId: number) {
+async function withdrawSubmissionNow(projectId: number) {
   try {
     const { project } = await api<{ project: Project }>("POST", `/projects/${projectId}/withdraw`, {});
     if (get().current?.id === projectId) {
@@ -654,7 +662,7 @@ export async function loadRemoved() {
 }
 
 /** Submits the project to a linked activity (saves first so the newest work is what's submitted). */
-export async function submitLink(projectId: number, linkId: number) {
+async function submitLinkNow(projectId: number, linkId: number) {
   const binding = get().binding;
   if (binding?.project_id === projectId && binding.kind === "tm") {
     await saveToTaskMentor({ source: "submit", quiet: true });
@@ -767,3 +775,18 @@ export function scheduleCheck(delay = 2500) {
   if (checkTimer) clearTimeout(checkTimer);
   checkTimer = setTimeout(() => void checkSync(), delay);
 }
+
+/** saveToTaskMentor, shown as activity from its first step: "Saving to Task Mentor…". */
+export const saveToTaskMentor = (...args: Parameters<typeof saveToTaskMentorNow>) => track("Saving to Task Mentor…", () => saveToTaskMentorNow(...args));
+
+/** pullFromTaskMentor, shown as activity from its first step: "Getting the latest from Task Mentor…". */
+export const pullFromTaskMentor = (...args: Parameters<typeof pullFromTaskMentorNow>) => track("Getting the latest from Task Mentor…", () => pullFromTaskMentorNow(...args));
+
+/** openProject, shown as activity from its first step: "Opening the project…". */
+export const openProject = (...args: Parameters<typeof openProjectNow>) => track("Opening the project…", () => openProjectNow(...args));
+
+/** withdrawSubmission, shown as activity from its first step: "Withdrawing the submission…". */
+export const withdrawSubmission = (...args: Parameters<typeof withdrawSubmissionNow>) => track("Withdrawing the submission…", () => withdrawSubmissionNow(...args));
+
+/** submitLink, shown as activity from its first step: "Submitting…". */
+export const submitLink = (...args: Parameters<typeof submitLinkNow>) => track("Submitting…", () => submitLinkNow(...args));

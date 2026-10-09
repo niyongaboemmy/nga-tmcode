@@ -1,3 +1,4 @@
+import { useActivity } from "../state/activity";
 import { useEffect, useState, type ReactNode } from "react";
 import { executeCommand } from "../commands/registry";
 import { openContextMenu, useWorkbench } from "../state/store";
@@ -154,7 +155,9 @@ function ThisFolder() {
       </div>
     );
   }
-  const busy = sync === "saving" || sync === "pulling" || sync === "checking";
+  // Saving starts with a scan of the folder: the button says so from the click, not after the scan.
+  const saving = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
+  const busy = saving || sync === "saving" || sync === "pulling" || sync === "checking";
   const links = Array.isArray(project?.links) ? (project!.links as Link[]) : [];
   const changes = plan ? changeCount(plan.localChanges) : 0;
   return (
@@ -200,7 +203,7 @@ function ThisFolder() {
                 data-testid="save-to-tm"
                 title={lockReason(project) ?? "Save to Task Mentor (⌘⌥U)"}
               >
-                <Codicon name="cloud-upload" /> Save
+                <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
               </button>
               <ActionButton icon="cloud-download" label="Get Latest from Task Mentor" disabled={busy} onClick={() => executeCommand("projects.pull")} />
             </span>

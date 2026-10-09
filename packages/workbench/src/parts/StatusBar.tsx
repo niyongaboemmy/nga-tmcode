@@ -1,3 +1,4 @@
+import { currentActivity, useActivity } from "../state/activity";
 import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
 import { activeFilePath, showPanel, useWorkbench } from "../state/store";
@@ -138,6 +139,18 @@ function DebugStatus() {
 }
 // ── end Run and Debug ──
 
+/** "Saving to Task Mentor…": what is in flight, shown the moment it starts. */
+function BusyItem() {
+  const label = useActivity((s) => currentActivity(s.running));
+  if (!label) return null;
+  return (
+    <span className="tm-status-item tm-status-busy" role="status" aria-live="polite" data-testid="status-busy" title={label}>
+      <Codicon name="loading" className="codicon-modifier-spin" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -164,6 +177,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
         <GitItems />
         <ProjectStatus />
         <SyncStatus />
+        <BusyItem />
         <Item title={`Errors: ${errors}, Warnings: ${warnings}`} onClick={() => showPanel("problems")}>
           <Codicon name="error" /> {errors} <Codicon name="warning" /> {warnings}
         </Item>

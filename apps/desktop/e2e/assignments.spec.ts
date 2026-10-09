@@ -330,3 +330,31 @@ test("the assignment open in this window is highlighted, and the one whose brief
   await expect(open).toHaveClass(/is-current/); // still the open workspace
   await expect(row(page, 52)).not.toHaveClass(/is-current/);
 });
+
+test("loading shows the instant a request starts, on a slow network too", async ({ page }) => {
+  await fresh(page);
+  await command(page, "View: Show Assignments");
+  await expect(row(page, 51)).toBeVisible();
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLatency(1500)");
+  const t0 = Date.now();
+  await page.getByTestId("assignments-refresh").click();
+  // Within a frame or two of the click, not after the round trip.
+  await expect(page.getByTestId("progress-line")).toHaveClass(/is-busy/, { timeout: 400 });
+  await expect(page.getByTestId("status-busy")).toBeVisible({ timeout: 400 });
+  expect(Date.now() - t0).toBeLessThan(1200);
+  await expect(page.getByTestId("progress-line")).not.toHaveClass(/is-busy/, { timeout: 10_000 });
+  await expect(page.getByTestId("status-busy")).toHaveCount(0);
+
+  // Save: the button says "Saving…" from the click, before the folder scan and the upload.
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLatency(0)");
+  await row(page, 51).getByRole("button", { name: "Start" }).click();
+  await expect(page.getByTestId("assignment-submit")).toBeVisible({ timeout: 15_000 });
+  await page.evaluate(() => (window as unknown as { __TMCODE_DEBUG__: { externalWrite(p: string, c: string): Promise<void> } }).__TMCODE_DEBUG__.externalWrite("app.js", "const items = [1];\n"));
+  await page.evaluate("window.__TMCODE_PROJECTS__.setLatency(1500)");
+  await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
+  await page.getByTestId("assignment-save").click();
+  await expect(page.getByTestId("assignment-save")).toContainText("Saving…", { timeout: 400 });
+  await expect(page.getByTestId("status-busy")).toContainText("Saving to Task Mentor", { timeout: 400 });
+  await expect(page.getByTestId("assignment-save")).toContainText("Save", { timeout: 15_000 });
+  await expect(page.getByTestId("assignment-save")).not.toContainText("Saving…", { timeout: 15_000 });
+});

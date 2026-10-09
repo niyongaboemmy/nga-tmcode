@@ -1,3 +1,4 @@
+import { track } from "../state/activity";
 import { notify, showDialog } from "../state/store";
 import { showQuickPick, type PickItem } from "../widgets/QuickPick";
 import { api, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
@@ -264,7 +265,7 @@ const slug = (s: string) =>
  * project from the question's starter files and links it (idempotent: later
  * starts open the same project).
  */
-export async function startQuizPractical(quiz: { activity_id: number; title: string; course_name?: string | null }, q: PracticalQuestion) {
+async function startQuizPracticalNow(quiz: { activity_id: number; title: string; course_name?: string | null }, q: PracticalQuestion) {
   try {
     const { project, created } = await api<{ project: Project; link_id: number; created: boolean }>("POST", `/quizzes/${quiz.activity_id}/questions/${q.question_id}/start`, {});
     const opened = await openProject(project.id, { folderName: slug(`${quiz.title}-${q.title}`) });
@@ -283,3 +284,6 @@ export async function startQuizPractical(quiz: { activity_id: number; title: str
     return false;
   }
 }
+
+/** startQuizPractical, shown as activity from its first step: "Preparing your workspace…". */
+export const startQuizPractical = (...args: Parameters<typeof startQuizPracticalNow>) => track("Preparing your workspace…", () => startQuizPracticalNow(...args));
