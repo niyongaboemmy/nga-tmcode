@@ -7697,3 +7697,26 @@ kbd,
   justify-self: start;
   margin-left: 0;
 }
+
+/* Work returned by the teacher: attention (orange), not an error. */
+.tm-chip.is-warning {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}
+.tm-assignment-banner.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.tm-assignment-banner.is-warning .codicon {
+  color: var(--warning);
+}
+.tm-assignment-returned-message {
+  display: block;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  font-style: italic;
+}
+/* Task Mentor couldn't say what the student has to do: a problem (red), with a way out. */
+.tm-assignments-error .tm-projects-hero {
+  color: var(--error);
+}

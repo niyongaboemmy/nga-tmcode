@@ -88,7 +88,8 @@ export async function api<T>(method: TmRequest["method"], path: string, json?: u
   }
   if (res.status >= 200 && res.status < 300) return res.body as T;
   const body = (res.body ?? {}) as Record<string, unknown>;
-  throw new TmError(res.status, String(body.error_code ?? `HTTP_${res.status}`), String(body.message ?? `Task Mentor answered ${res.status}.`), body);
+  // Task Mentor answers `error_code`; some newer answers (QUIZ_NOT_OPEN, MIS_SCOPE_UNAVAILABLE) say `code`.
+  throw new TmError(res.status, String(body.error_code ?? body.code ?? `HTTP_${res.status}`), String(body.message ?? `Task Mentor answered ${res.status}.`), body);
 }
 
 // ── Account ──────────────────────────────────────────────────────────────
@@ -243,7 +244,7 @@ export function lockReason(project: Project | null | undefined): string | null {
   if (project.my_role && project.my_role !== "owner" && (project.status === "submitted" || project.status === "graded")) {
     return `Reviewing ${project.owner?.name ?? "a student"}'s submission: ${project.name} (read-only).`;
   }
-  if (project.status === "submitted") return `${name} is submitted: withdraw the submission (Projects › Withdraw Submission) to keep editing.`;
+  if (project.status === "submitted") return `${name} is submitted: use Withdraw to Edit (Projects view) to keep editing.`;
   if (project.status === "graded") return `${name} is graded: this workspace is read-only.`;
   if (project.status === "removed") return `${name} was removed: restore it (Task Mentor Projects › Removed) to edit it again.`;
   return null;
@@ -349,6 +350,7 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
   }
   const locked = lockReason(get().current);
   if (locked) {
+    lastSaveError = new TmError(409, "PROJECT_LOCKED", locked);
     if (!opts.quiet) notify("info", locked);
     return null;
   }
@@ -402,12 +404,46 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
     await checkSync();
     return res.revision;
   } catch (e) {
-    set({ sync: "error", syncMessage: (e as Error).message });
-    if (!opts.quiet) notify("error", (e as Error).message);
+    lastSaveError = e;
+    set({ sync: "error", syncMessage: saveFailureMessage(e, "save") });
+    if (!opts.quiet) notify("error", saveFailureMessage(e, "save"));
     return null;
   } finally {
     progress?.close();
   }
+}
+
+/** The last save's failure: submitting says why it couldn't save first. */
+let lastSaveError: unknown = null;
+
+const isOffline = (e?: unknown) => (typeof navigator !== "undefined" && navigator.onLine === false) || (e instanceof TmError && e.status === 0);
+
+const size = (n: number) => (n < 1024 ? `${n} bytes` : n < 1_048_576 ? `${Math.round(n / 1024)} KB` : `${Math.round((n / 1_048_576) * 10) / 10} MB`);
+
+/**
+ * Why saving (before a submit) failed, in words that say what to do:
+ * offline, too large for Task Mentor's limits, locked, or conflicts.
+ */
+export function saveFailureMessage(e: unknown, doing: "save" | "submit"): string {
+  if (isOffline(e) || (!e && get().sync === "offline")) return `You're offline. Your work is safe on this computer; ${doing} when you're back online.`;
+  if (e instanceof TmError && (e.status === 413 || e.code === "QUOTA_EXCEEDED" || e.code === "FILE_TOO_LARGE")) {
+    const max = Number(e.body.max);
+    const limit =
+      e.body.limit === "files" && max
+        ? `Task Mentor keeps at most ${max} files per project`
+        : e.body.limit === "file_size" && max
+          ? `each file can be at most ${size(max)}${e.body.path ? ` (${String(e.body.path)} is bigger)` : ""}`
+          : e.body.limit === "project_size" && max
+            ? `a project can be at most ${size(max)} in all`
+            : e.message;
+    return `This project is too large to ${doing}: ${limit.replace(/\.$/, "")}. Remove big files you don't need (build output, videos, node_modules), then ${doing} again.`;
+  }
+  if (e instanceof TmError && ["PROJECT_LOCKED", "PROJECT_GRADED", "PROJECT_REMOVED", "ASSIGNMENT_READ_ONLY"].includes(e.code)) return lockReason(get().current) ?? e.message;
+  const conflicts = get().plan?.conflicts.length ?? 0;
+  if (conflicts) return `${conflicts} file${conflicts === 1 ? "" : "s"} changed both here and in Task Mentor. Resolve ${conflicts === 1 ? "it" : "them"} under Conflicts in the Task Mentor Projects view, then ${doing} again.`;
+  if (e instanceof Error && e.message) return e.message;
+  if (get().sync === "error" && get().syncMessage) return get().syncMessage!;
+  return doing === "submit" ? "Your work couldn't be saved to Task Mentor, so nothing was submitted. Try again." : "Your work couldn't be saved to Task Mentor. Try again.";
 }
 
 function defaultMessage(plan: SyncPlan) {
@@ -573,6 +609,20 @@ export async function disconnectFolder() {
 
 /** Takes back a submission (servers with the project lifecycle) so the project is a draft again. */
 async function withdrawSubmissionNow(projectId: number) {
+  // A light confirmation: nothing is lost, but the teacher stops seeing the work.
+  const links = get().current?.id === projectId ? get().current?.links : undefined;
+  const version = Array.isArray(links) ? links.find((l) => l.status === "submitted")?.revision_number : null;
+  const choice = await showDialog({
+    severity: "info",
+    message: "Withdraw your submission?",
+    detail: `Your teacher won't see ${version ? `version ${version}` : "your work"} until you submit again.`,
+    buttons: [
+      { id: "withdraw", label: "Withdraw to Edit", primary: true },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice !== "withdraw") return false;
   try {
     const { project } = await api<{ project: Project }>("POST", `/projects/${projectId}/withdraw`, {});
     if (get().current?.id === projectId) {
@@ -680,8 +730,12 @@ export async function loadRemoved() {
 async function submitLinkNow(projectId: number, linkId: number) {
   const binding = get().binding;
   if (binding?.project_id === projectId && binding.kind === "tm") {
+    const locked = lockReason(get().current);
+    if (locked) throw new Error(locked);
+    if (isOffline()) throw new Error(saveFailureMessage(null, "submit"));
+    lastSaveError = null;
     await saveToTaskMentor({ source: "submit", quiet: true });
-    if (get().sync !== "synced") throw new Error("Save your work to Task Mentor first (there are unsaved changes or conflicts).");
+    if (get().sync !== "synced") throw new Error(saveFailureMessage(lastSaveError, "submit"));
   }
   if (binding?.project_id === projectId && binding.kind === "github") {
     const st = useGit.getState().status;

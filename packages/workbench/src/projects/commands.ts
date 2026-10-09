@@ -25,6 +25,7 @@ import { CATEGORY_ORDER, TEMPLATES, templateById, type Template } from "./templa
 import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
 import { closeReview, refreshGrading, useGrading } from "../grading/service";
 import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject } from "./matching";
+import { explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { ProjectKind } from "./types";
 
 const usable = () => projectsSupported() && useWorkbench.getState().policy.mode === "practice";
@@ -66,10 +67,10 @@ export async function submitFromView(linkId: number) {
   if (!b) return;
   try {
     const res = await submitLink(b.project_id, linkId);
-    const late = (res.submission as { is_late?: boolean } | null)?.is_late;
-    notify("info", `Submitted to Task Mentor${late ? " (late)" : ""}. Your teacher sees exactly this version.`);
+    notifySubmitted(`"${b.name}"`, res.submission);
   } catch (e) {
-    notify("error", (e as Error).message);
+    const link = useProjects.getState().current?.links;
+    await explainSubmitError(e, Array.isArray(link) ? link.find((l) => l.id === linkId) : undefined);
   }
 }
 
@@ -329,7 +330,7 @@ export function registerProjectCommands() {
   });
   registerCommand({
     id: "projects.withdraw",
-    title: "Withdraw Submission",
+    title: "Withdraw to Edit",
     category: "Projects",
     enabled: () => bound() && useProjects.getState().current?.status === "submitted",
     run: () => withdrawSubmission(useProjects.getState().current!.id),
@@ -340,7 +341,7 @@ export function registerProjectCommands() {
   registerCommand({ id: "grading.closeReview", title: "Close Review (Back to My Folder)", category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
   registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
   registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });
-  registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm", run: publishAsStarter });
+  registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm" && useAssignments.getState().staff === true, run: publishAsStarter });
   // A reminder for exam safety: nothing here runs during an exam (projectsSupported checks inExam()).
   void inExam;
 }

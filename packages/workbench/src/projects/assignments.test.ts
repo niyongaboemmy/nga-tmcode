@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dueLabel, groupAssignments, parseAssignmentLink, type AssignmentSummary } from "./assignments";
+import { dueLabel, groupAssignments, handedInLate, parseAssignmentLink, returnedForChanges, type AssignmentSummary } from "./assignments";
 
 const a = (id: number, over: Partial<AssignmentSummary> = {}): AssignmentSummary => ({
   id,
@@ -49,5 +49,20 @@ describe("assignments", () => {
     expect(g.submitted.map((x) => x.id)).toEqual([3]);
     expect(g.graded.map((x) => x.id)).toEqual([4]);
     expect(g.completed.map((x) => x.id)).toEqual([5]);
+  });
+
+  it("late comes from the submission when Task Mentor sends it, else from the due date", () => {
+    expect(handedInLate(a(1, { late: true, my: { ...my("submitted"), is_late: false } }))).toBe(false);
+    expect(handedInLate(a(1, { late: false, my: { ...my("submitted"), is_late: true } }))).toBe(true);
+    expect(handedInLate(a(1, { late: true, my: { ...my("in_progress"), is_late: null } }))).toBe(false);
+    expect(handedInLate(a(1, { late: true, my: my("submitted") }))).toBe(true);
+  });
+
+  it("returned work shows only while it is back in progress", () => {
+    const back = { ...my("in_progress"), returned_at: "2026-10-09T10:00:00Z", returned_message: "Fix the list" };
+    expect(returnedForChanges(a(1, { my: back }))).toBe(true);
+    expect(returnedForChanges(a(1, { my: { ...back, state: "submitted" } }))).toBe(false);
+    expect(returnedForChanges(a(1, { my: back, read_only: true }))).toBe(false);
+    expect(returnedForChanges(a(1, { my: my("in_progress") }))).toBe(false);
   });
 });
