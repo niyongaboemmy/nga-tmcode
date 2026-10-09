@@ -154,7 +154,7 @@ export async function signOut() {
     message: "Sign out of NGA?",
     detail: "This signs you out of Central MIS and Task Mentor everywhere. Your files stay on this computer.",
     buttons: [
-      { id: "out", label: "Sign Out", primary: true },
+      { id: "out", label: "Sign Out", primary: true, destructive: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",
@@ -245,7 +245,7 @@ export function lockReason(project: Project | null | undefined): string | null {
   }
   if (project.status === "submitted") return `${name} is submitted: withdraw the submission (Projects › Withdraw Submission) to keep editing.`;
   if (project.status === "graded") return `${name} is graded: this workspace is read-only.`;
-  if (project.status === "removed") return `${name} was removed: restore it in Task Mentor to edit it again.`;
+  if (project.status === "removed") return `${name} was removed: restore it (Task Mentor Projects › Removed) to edit it again.`;
   return null;
 }
 
@@ -356,7 +356,7 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
   const plan = get().plan;
   if (!plan) return null;
   if (plan.conflicts.length) {
-    if (!opts.quiet) notify("warning", `${plan.conflicts.length} file(s) changed both here and in Task Mentor. Resolve them first (Projects › Resolve Conflicts).`);
+    if (!opts.quiet) notify("warning", `${plan.conflicts.length} file(s) changed both here and in Task Mentor. Resolve them first under Conflicts in the Task Mentor Projects view.`);
     return null;
   }
   if (changeCount(plan.remoteChanges)) {
@@ -554,7 +554,7 @@ export async function disconnectFolder() {
     message: `Disconnect this folder from "${binding.name}"?`,
     detail: "TMCode stops syncing this folder with Task Mentor. Your files stay here, and the project stays in Task Mentor (delete it there if you no longer need it).",
     buttons: [
-      { id: "disconnect", label: "Disconnect", primary: true },
+      { id: "disconnect", label: "Disconnect", primary: true, destructive: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",
@@ -635,7 +635,7 @@ export async function removeProject(project: Project) {
     message: `Remove "${project.name}"?`,
     detail: "It moves to Removed in Task Mentor: your saved versions stay on record and you can restore it. Files on this computer are not deleted.",
     buttons: [
-      { id: "remove", label: "Remove", primary: true },
+      { id: "remove", label: "Remove", primary: true, destructive: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",

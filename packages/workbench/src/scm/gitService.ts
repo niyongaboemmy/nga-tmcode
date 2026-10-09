@@ -701,7 +701,7 @@ export async function signOut() {
     message: `Sign out of GitHub (${user.login})?`,
     detail: "TMCode will forget the token stored in your system keychain. Git will fall back to your own credential helpers.",
     buttons: [
-      { id: "out", label: "Sign Out", primary: true },
+      { id: "out", label: "Sign Out", primary: true, destructive: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",

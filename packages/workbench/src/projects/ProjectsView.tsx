@@ -1,7 +1,7 @@
 import { useActivity } from "../state/activity";
 import { useEffect, useState, type ReactNode } from "react";
-import { executeCommand } from "../commands/registry";
-import { openContextMenu, useWorkbench } from "../state/store";
+import { executeCommand, formatKeybinding } from "../commands/registry";
+import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
@@ -202,7 +202,7 @@ function ThisFolder() {
                 disabled={busy || !!lockReason(project)}
                 onClick={() => executeCommand("projects.save")}
                 data-testid="save-to-tm"
-                title={lockReason(project) ?? "Save to Task Mentor (⌘⌥U)"}
+                title={lockReason(project) ?? `Save to Task Mentor (${formatKeybinding("mod+alt+u", getPlatform().os)})`}
               >
                 <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
               </button>

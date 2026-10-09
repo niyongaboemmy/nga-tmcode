@@ -123,7 +123,7 @@ export function TaskView() {
             <Codicon name="beaker" />
             <span>
               {task.visible_tests.length} example test{task.visible_tests.length === 1 ? "" : "s"} you can run
-              {task.hidden_test_count > 0 && <> · {task.hidden_test_count} hidden tests graded by Task Mentor</>}
+              {task.hidden_test_count > 0 && <> · {task.hidden_test_count} hidden test{task.hidden_test_count === 1 ? "" : "s"} graded by Task Mentor</>}
             </span>
             {task.visible_tests.length > 0 && phase === "active" && (
               <button type="button" className="tm-link-button" onClick={() => executeCommand("tmcode.runTests")}>
@@ -139,7 +139,7 @@ export function TaskView() {
 
 /** Full-window states around an exam: opening, failed to open, submitted. */
 export function ExamOverlay() {
-  const { phase, error, results, quiz, message } = useExam();
+  const { phase, error, results, quiz, message, tasks } = useExam();
   if (phase === "starting") {
     return (
       <div className="tm-exam-overlay" role="status" aria-live="polite">
@@ -197,9 +197,12 @@ export function ExamOverlay() {
                 <strong>{results.score}</strong> / {results.max_score}
               </div>
               <ul className="tm-exam-qresults">
-                {results.questions?.map((q) => (
+                {results.questions?.map((q, i) => {
+                  // Name each result as the student saw it: "1. Sum of two numbers", not the question id.
+                  const at = tasks.findIndex((t) => t.question_id === q.question_id);
+                  return (
                   <li key={q.question_id}>
-                    <span>Question {q.question_id}</span>
+                    <span>{at >= 0 ? `${at + 1}. ${tasks[at].title}` : `Task ${i + 1}`}</span>
                     <span>
                       {q.points}/{q.max_points}
                     </span>
@@ -207,7 +210,8 @@ export function ExamOverlay() {
                       {q.tests.filter((t) => t.passed).length}/{q.tests.length} tests passed
                     </span>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </>
           )}

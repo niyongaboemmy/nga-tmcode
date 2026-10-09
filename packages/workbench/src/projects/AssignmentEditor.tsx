@@ -183,7 +183,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
                   TMCode creates your own project{detail.starter ? ` with your teacher's ${detail.starter.file_count} starter file${detail.starter.file_count === 1 ? "" : "s"}` : ""} and opens it in this window, with this brief beside your code.
                   {!detail.starter && " Your teacher gave no starter files: you can begin from a template."}
                 </p>
-                <small className="tm-muted">The folder open now stays on this computer; reopen it any time from File › Open Recent.</small>
+                <small className="tm-muted">The folder open now stays on this computer; reopen it any time from Recent on the Welcome page (Help › Welcome).</small>
               </div>
               <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-start" autoFocus>
                 <Codicon name={busy === "starting" ? "loading" : "play"} className={busy === "starting" ? "codicon-modifier-spin" : ""} /> {busy === "starting" ? "Preparing your project…" : "Start Assignment"}
