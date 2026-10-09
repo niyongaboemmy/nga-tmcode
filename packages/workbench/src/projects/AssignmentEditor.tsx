@@ -98,6 +98,8 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const busy = useAssignments((s) => s.busy[id]);
   const teaching = useAssignments((s) => !!s.teaching?.some((a) => a.id === id));
   const sync = useProjects((s) => s.sync);
+  // Saving starts with a scan of the folder: "Saving…" from the click (a hook: before the early return).
+  const savingNow = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
   // Task Mentor's project lifecycle (when the server has it): a submitted workspace is locked until withdrawn.
   const projectStatus = useProjects((s) => s.current?.status);
   useProjects((s) => s.binding);
@@ -125,7 +127,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const my = detail.my;
   const started = !!my?.project_id;
   const here = isOpenWorkspaceOf(detail);
-  const saving = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…")) || sync === "saving" || sync === "pulling";
+  const saving = savingNow || sync === "saving" || sync === "pulling";
 
   return (
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>

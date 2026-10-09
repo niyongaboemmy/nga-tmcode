@@ -141,6 +141,9 @@ function ThisFolder() {
   const plan = useProjects((s) => s.plan);
   const message = useProjects((s) => s.syncMessage);
   const workspace = useWorkbench((s) => s.workspace);
+  // Saving starts with a scan of the folder: the button says so from the click, not after the scan.
+  // (A hook: before the early returns below.)
+  const saving = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
   if (!workspace) return <p className="tm-muted tm-projects-hint">Open a project below, or open a folder to connect it to Task Mentor.</p>;
   if (!binding) {
     return (
@@ -155,8 +158,6 @@ function ThisFolder() {
       </div>
     );
   }
-  // Saving starts with a scan of the folder: the button says so from the click, not after the scan.
-  const saving = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
   const busy = saving || sync === "saving" || sync === "pulling" || sync === "checking";
   const links = Array.isArray(project?.links) ? (project!.links as Link[]) : [];
   const changes = plan ? changeCount(plan.localChanges) : 0;
