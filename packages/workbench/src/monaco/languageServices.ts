@@ -2,6 +2,7 @@ import { emmetCSS, emmetHTML, emmetJSX } from "emmet-monaco-es";
 import { getPlatform, log, useWorkbench } from "../state/store";
 import { monaco } from "./setup";
 import { withFormatterId } from "./formatters";
+import { loadWorkspaceSources } from "./workspaceSources";
 
 /**
  * What VS Code users expect in a real project beyond Monaco's defaults:
@@ -158,6 +159,8 @@ export async function acquireTypes() {
   const ws = useWorkbench.getState().workspace;
   if (!ws || typesLoadedFor === ws.root) return;
   typesLoadedFor = ws.root;
+  // The project's own files and tsconfig (review V3), alongside the packages' types.
+  void loadWorkspaceSources().catch((e) => log("IntelliSense", `Could not read the project: ${String((e as Error)?.message ?? e)}`, "warn"));
   libs.splice(0).forEach((d) => d.dispose());
   const fs = getPlatform().fs;
   const pkgText = await fs.readFile("package.json").catch(() => null);

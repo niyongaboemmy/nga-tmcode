@@ -17,8 +17,8 @@ import type {
 } from "@tmcode/exthost";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { ensureDocument, pathOfUri, uriFor } from "../monaco/documents";
-import { revealInEditor } from "../monaco/reveal";
-import { getPlatform, log } from "../state/store";
+import { installNavigation } from "../monaco/navigation";
+import { log } from "../state/store";
 import { fromRange, toRange } from "./documentSync";
 import { withFormatterId } from "../monaco/formatters";
 import type { HostKind } from "./state";
@@ -58,28 +58,8 @@ function wireOnce() {
       if (ref !== null && ref !== undefined) await links.get(host)?.request("$executeCachedCommand", [ref]);
     })().catch((e) => log("Extension Host", `Code action failed: ${String((e as Error)?.message ?? e)}`, "error"));
   });
-  // "Go to Definition" into another file of the workspace opens it in TMCode's editor.
-  monaco.editor.registerEditorOpener({
-    openCodeEditor(_source, resource, selectionOrPosition) {
-      if (resource.scheme !== "tmcode") return false;
-      const p = selectionOrPosition as (Partial<monaco.IRange> & Partial<monaco.IPosition>) | undefined;
-      revealInEditor(pathOfUri(resource), p?.startLineNumber ?? p?.lineNumber, p?.startColumn ?? p?.column);
-      return true;
-    },
-  });
-  monaco.editor.registerLinkOpener({
-    open(resource) {
-      if (resource.scheme === "tmcode") {
-        revealInEditor(pathOfUri(resource));
-        return true;
-      }
-      if ((resource.scheme === "http" || resource.scheme === "https") && getPlatform().openExternal) {
-        void getPlatform().openExternal!(resource.toString(true));
-        return true;
-      }
-      return false;
-    },
-  });
+  // The editor and link openers are registered at startup (monaco/navigation.ts).
+  installNavigation();
 }
 
 /** Runs a command an extension handed over (status bar item, completion…) by its cache reference. */

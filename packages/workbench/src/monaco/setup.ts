@@ -7,6 +7,7 @@ import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 import { currentMonacoTheme, installTextmate } from "../textmate/monacoTm";
 import { isDarkThemeId } from "../themes/themeService";
 import { registerLogicLanguage } from "../logic/language";
+import { installNavigation } from "./navigation";
 
 let started = false;
 /** Labels of workers that started; the Phase 0 spike checks this on WKWebView. */
@@ -44,6 +45,8 @@ export function setupMonaco() {
   configureLanguages();
   registerLogicLanguage();
   installTextmate();
+  // Go to Definition into another file works without any extension (review V2).
+  installNavigation();
   return monaco;
 }
 
