@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.12.0 — 2026-10-10
+
+**TMCode 0.12: grade like a code reviewer.** Teachers comment on lines, see what changed and decide when grades go out. Exams check the computer first.
+
+### Grading
+- **Line comments:** click the "+" in the gutter, or right-click › Add Comment, in the student's code. Comments are listed in the grade panel and saved with the grade. Students see them once the grade is released.
+- **See what changed:** "Changes vs Starter" and "Compare with Version…" open a diff of the current file. The panel lists every file the student added, changed or deleted.
+- **Save Draft or Save & Release:** drafts stay with you; students see nothing until you release. "Release N Drafts" sends them all at once. A draft never locks the student's project.
+- **Return for changes** from TMCode, with a message. Graded work can be reopened with Allow Resubmission. (Quiz practicals can't be returned.)
+- **Your unsaved grading is kept,** even if TMCode closes. A save that fails shows Retry, and the student's row is marked "Not saved".
+- **Two teachers, one student:** if someone else graded while you were working, TMCode shows their grade and asks: Use Theirs, or Keep Mine and Save. Every grade shows who graded it and when.
+- **Keyboard:** ⌘/Ctrl+Enter Save & Next, Alt+↓/↑ next or previous student, ⌘/Ctrl+Alt+G focus the grade panel. Arrow keys move through the students; Enter opens one.
+- **Quick scores like the web,** a warning when a typed score is out of range, and a warning when the rubric doesn't add up to the activity's points.
+- **Links from Task Mentor's grading page open the same student in TMCode,** and back.
+- Screen readers: the student list, score chips, note boxes and save status are labelled and announced.
+
+### Exams
+- **Check your computer before you start:** TMCode checks the language tools each task needs, the connection to Task Mentor, the clock and the disk. If something is missing, you get a plain fix with install links for your system.
+- **Check My Computer** does the same any time: from the Help menu, the command palette or the Welcome page.
+- **No Python or Java on this computer?** The example tests run on Task Mentor instead ("Running on Task Mentor… (queued)"), with a wait time if you run them too often.
+- **Exam folders stay out of Recent.** If an exam is still in progress when TMCode starts, it says so. A submitted exam's folder is read-only.
+- **Launch problems say what to do:** Try Again, Open Task Mentor, or Update TMCode when the exam needs a newer version.
+- **Work is always saved during an exam,** and the status bar counts unsaved changes.
+- **Results name each example test** with its verdict (wrong answer, time limit, compile error…).
+
+### Signing in
+- **While you sign in in the browser:** Open the Browser Again, Copy Sign-in Link, or Cancel.
+- **If TMCode can't save your sign-in** to the Keychain or Credential Manager, it tells you, instead of signing you out silently next time.
+
+Grading drafts, line comments, versions, return and the live exam data need Task Mentor PR #61. With an older Task Mentor, grading works as before.
+
+### All changes
+
+- 0.12 release notes
+- Grading review: line comments, diffs, draft/release, return, drafts, two teachers, keys
+- Exam readiness: system check lobby, server-run fallback, launch errors, sign-in wait
+
 ## 0.11.0 — 2026-10-10
 
 **TMCode 0.11: one place for my work.** The student's Assignments view is now home, and every hand-in says exactly what it contains.
