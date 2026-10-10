@@ -90,6 +90,17 @@ export interface WindowControls {
   onMaximizedChange(cb: (maximized: boolean) => void): () => void;
 }
 
+export interface ShellHost {
+  /** Before Reload Window: the host stops what the old page started (terminals, runs, debuggers, language servers, extension host). */
+  beforeReload?(): Promise<void>;
+  /** Toggles native full screen. */
+  toggleFullScreen?(): Promise<void>;
+  /** Closes the window through the same close guard as the close button. */
+  closeWindow?(): void;
+  /** Present only where developer tools may open (debug builds). */
+  toggleDevTools?(): Promise<void>;
+}
+
 export interface NativeMenuItemState {
   /** Workbench command id (the native item's id is "cmd:<id>"). */
   id: string;
@@ -155,6 +166,8 @@ export interface Platform {
   onFileDrop?(cb: (e: FileDropEvent) => void): () => void;
   /** macOS menu bar (commands/menus.json): label, enabled state and accelerator of each "cmd:<id>" item. */
   setMenuState?(items: NativeMenuItemState[]): void;
+  /** Window commands (VS Code's Reload Window, Toggle Full Screen, Close Window, Toggle Developer Tools). */
+  shell?: ShellHost;
   // ── extensions (feat/extensions) ──
   /** VS Code extensions from Open VSX (declarative contributions only). */
   extensions?: ExtensionHost;

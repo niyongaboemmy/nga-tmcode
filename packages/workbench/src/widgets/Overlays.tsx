@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { closeContextMenu, dismissNotification, useWorkbench } from "../state/store";
 import { Codicon } from "./icons";
+import { useNotificationCenter, visibleToasts } from "../state/notificationCenter";
 
 export function ContextMenu() {
   const menu = useWorkbench((s) => s.contextMenu);
@@ -164,8 +165,12 @@ export function Dialog() {
 }
 
 export function Notifications() {
-  const list = useWorkbench((s) => s.notifications);
-  if (!list.length) return null;
+  const all = useWorkbench((s) => s.notifications);
+  const dnd = useNotificationCenter((s) => s.dnd);
+  const centreOpen = useNotificationCenter((s) => s.open);
+  const list = visibleToasts(all, dnd);
+  // The centre shows them while it is open, as VS Code's does.
+  if (!list.length || centreOpen) return null;
   return (
     <div className="tm-toasts" role="region" aria-label="Notifications" aria-live="polite">
       {list.map((n) => (

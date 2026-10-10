@@ -22,6 +22,11 @@ export interface Command {
    */
   editorOwned?: boolean;
   enabled?: () => boolean;
+  /**
+   * Key-only condition (VS Code's keybinding `when`): the key reaches this command
+   * only while it holds; the palette and menus ignore it.
+   */
+  when?: () => boolean;
   run: () => unknown;
 }
 
@@ -42,6 +47,11 @@ export function allCommands(): Command[] {
 
 export function isEnabled(cmd: Command) {
   return cmd.enabled ? cmd.enabled() : true;
+}
+
+/** Enabled, and its key's `when` holds. */
+function keyApplies(cmd: Command) {
+  return isEnabled(cmd) && (!cmd.when || cmd.when());
 }
 
 export function executeCommand(id: string) {
@@ -213,15 +223,15 @@ export class KeybindingResolver {
     if (this.pendingChord) {
       const full = `${this.pendingChord} ${c}`;
       this.clearPending();
-      const hit = bindings.find((b) => b.kb.split(" ").map((k) => canonical(k, this.os)).join(" ") === full);
-      if (hit && isEnabled(hit.cmd)) {
+      const hit = bindings.find((b) => b.kb.split(" ").map((k) => canonical(k, this.os)).join(" ") === full && keyApplies(b.cmd));
+      if (hit) {
         executeCommand(hit.cmd.id);
         return "executed";
       }
       return "chord"; // swallow the unknown second key, as VS Code does
     }
 
-    const direct = bindings.find((b) => !b.kb.includes(" ") && canonical(b.kb, this.os) === c && isEnabled(b.cmd));
+    const direct = bindings.find((b) => !b.kb.includes(" ") && canonical(b.kb, this.os) === c && keyApplies(b.cmd));
     if (direct) {
       executeCommand(direct.cmd.id);
       return "executed";

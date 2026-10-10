@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { openFileToSide } from "../../commands/vscodeCommands";
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import { revealLabel } from "../../commands/builtin";
@@ -313,6 +314,12 @@ export function ExplorerView() {
     ];
     if (entry) {
       items.push(
+        ...(entry.kind === "file"
+          ? ([
+              { kind: "separator" },
+              { kind: "item", label: "Open to the Side", keybinding: kb("explorer.openToSide"), run: () => openFileToSide(entry.path) },
+            ] as ContextMenuItem[])
+          : []),
         { kind: "separator" },
         ...(getPlatform().reveal
           ? ([{ kind: "item", label: revealLabel(), run: () => void getPlatform().reveal?.(entry.path) }] as ContextMenuItem[])

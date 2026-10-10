@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { toggleNotificationCenter, useNotificationCenter } from "../state/notificationCenter";
 import { currentActivity, useActivity } from "../state/activity";
 import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
@@ -173,6 +174,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
+  const dnd = useNotificationCenter((s) => s.dnd);
   const debugging = useDebug((s) => s.phase !== "inactive");
   const fileInfo = useActiveFileInfo();
   const screenReader = useWorkbench((s) => s.settings["editor.accessibilitySupport"] === "on");
@@ -235,8 +237,12 @@ export function StatusBar({ chord }: { chord: string | null }) {
         </Item>
         <ExtensionStatusItems side="right" />
         <UpdateItem />
-        <Item title={notifications ? `${notifications} notifications` : "No Notifications"}>
-          <Codicon name={notifications ? "bell-dot" : "bell"} />
+        <Item
+          className="tm-status-bell"
+          title={dnd ? "Do Not Disturb" : notifications ? `${notifications} notifications` : "No Notifications"}
+          onClick={toggleNotificationCenter}
+        >
+          <Codicon name={dnd ? "bell-slash" : notifications ? "bell-dot" : "bell"} />
         </Item>
       </div>
       <RunMenuHost />

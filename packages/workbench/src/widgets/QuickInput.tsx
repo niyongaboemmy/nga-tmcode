@@ -3,6 +3,7 @@ import { allCommands, executeCommand, formatKeybinding, isEnabled, keybindingFor
 import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
 import { listFiles } from "../parts/search/search";
+import { openFileToSide } from "../commands/vscodeCommands";
 import { allThemes, useThemes } from "../themes/themeService";
 import { allIconThemes, useIconTheme } from "../themes/iconThemes";
 import {
@@ -41,6 +42,8 @@ interface Item {
   indices?: number[];
   descIndices?: number[];
   run: () => void;
+  /** Ctrl/Cmd+Enter: open to the side (Quick Open files). */
+  runToSide?: () => void;
 }
 
 /** Recently run commands, kept across restarts as in VS Code. */
@@ -297,6 +300,10 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           closeQuickInput();
           openAt(r.path, parsed.line, parsed.column);
         },
+        runToSide: () => {
+          closeQuickInput();
+          openFileToSide(r.path);
+        },
       }));
     }
     if (mode === "symbols") {
@@ -535,6 +542,7 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
               else if (e.key === "ArrowUp") setIndex((i) => (n ? (i - 1 + n) % n : 0));
               else if (e.key === "PageDown") setIndex((i) => Math.min(n - 1, i + 10));
               else if (e.key === "PageUp") setIndex((i) => Math.max(0, i - 10));
+              else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && items[index]?.runToSide) items[index].runToSide!();
               else if (e.key === "Enter") accept();
               else if (e.key === "Escape") closeAndRun(() => {});
               else return;

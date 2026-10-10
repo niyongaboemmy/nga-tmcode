@@ -4,6 +4,7 @@ import { scheduleLayoutSave, useWorkbench, type EditorGroup } from "../../state/
 import { nodeKey, reconcile, type GridNode } from "../../state/layout";
 import { editorMemento } from "../../state/viewStates";
 import { EditorGroupView } from "./EditorGroupView";
+import { useMaximizedGroup } from "../../state/editorMaximize";
 
 /**
  * Editor groups in rows and columns (VS Code's grid). Each branch is one
@@ -17,6 +18,16 @@ export function EditorGrid() {
   const tree = useMemo(() => reconcile(layout, groups.map((g) => g.id)), [layout, groups]);
   const byId = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
   const single = groups.length === 1;
+  // Toggle Maximize Editor Group: only that group, until toggled back.
+  const maximized = useMaximizedGroup((s) => s.group);
+  const max = maximized != null && groups.length > 1 ? byId.get(maximized) : undefined;
+  if (max) {
+    return (
+      <div className="tm-editor-groups is-maximized" data-testid="maximized-group">
+        <EditorGroupView group={max} single={false} />
+      </div>
+    );
+  }
   // A lone group is a one-pane row, so the first Split Right doesn't remount it.
   const root: Extract<GridNode, { type: "branch" }> = tree.type === "leaf" ? { type: "branch", dir: "row", children: [tree] } : tree;
   return <Branch key={`root-${root.dir}`} node={root} byId={byId} single={single} />;

@@ -35,7 +35,9 @@ type EditorInputBase =
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
-  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict"; label?: string }
+  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict" | "saved" | "file"; label?: string }
+  /** A language's user snippets file (snippets/SnippetsEditor). */
+  | { kind: "snippets"; id: string; language: string; preview: false }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
   | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
   /** Grading one assignment / quiz practical question (grading/GradingEditor). */
@@ -442,6 +444,23 @@ export function scheduleLayoutSave(delay = 500) {
     void platform.store.set(editorsKey(st.workspace.root), serializeLayout(st.editorLayout, st.groups, st.activeGroup, editorMemento.snapshot()));
   }, delay);
 }
+/** Saves the folder's layout now (before Reload Window), and the UI state with it. */
+export async function flushLayoutSave() {
+  if (editorsTimer) clearTimeout(editorsTimer);
+  editorsTimer = null;
+  persist();
+  const st = get();
+  if (!st.workspace || !platform || restoringLayout || st.workspace.root.startsWith("memory://exam")) return;
+  await platform.store.set(editorsKey(st.workspace.root), serializeLayout(st.editorLayout, st.groups, st.activeGroup, editorMemento.snapshot())).catch(() => {});
+}
+
+/** File › Open Recent › Clear Recently Opened: every folder but the open one. */
+export function clearRecentFolders() {
+  const ws = get().workspace;
+  set({ recent: ws ? get().recent.filter((r) => r.root === ws.root) : [] });
+  persist();
+}
+
 useWorkbench.subscribe((s, prev) => {
   if (!s.workspace || (s.groups === prev.groups && s.activeGroup === prev.activeGroup && s.editorLayout === prev.editorLayout)) return;
   scheduleLayoutSave();
@@ -836,7 +855,7 @@ export function setEditorSticky(groupId: number, id: string, sticky: boolean) {
 }
 
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" | "grading" | "sqlResults" | "logic" | "api" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" | "grading" | "sqlResults" | "logic" | "api" | "snippets" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();

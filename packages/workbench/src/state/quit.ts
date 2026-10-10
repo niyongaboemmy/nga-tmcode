@@ -41,6 +41,28 @@ async function runGuards(): Promise<boolean> {
   return true;
 }
 
+/**
+ * Developer: Reload Window. The same checks as quitting, except that in an
+ * exam a reload is refused outright until every change has reached Task
+ * Mentor (there is no "Reload Anyway"). True when the page may reload now.
+ */
+export async function beforeReload(): Promise<boolean> {
+  if (inExam()) {
+    const { pending, queued } = useExam.getState().sync;
+    if (pending + queued > 0) {
+      await showDialog({
+        message: "TMCode can't reload yet.",
+        detail: "Some of your changes haven't reached Task Mentor. Wait until they are sent, then try again.",
+        severity: "warning",
+        buttons: [{ id: "ok", label: "OK", primary: true }],
+        cancelId: "ok",
+      });
+      return false;
+    }
+  }
+  return beforeQuit();
+}
+
 /** Save All / Don't Save / Cancel for unsaved files. */
 async function unsavedFiles(): Promise<boolean> {
   const dirty = Object.keys(useWorkbench.getState().dirty);

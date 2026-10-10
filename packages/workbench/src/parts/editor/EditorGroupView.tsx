@@ -8,6 +8,7 @@ import {
   moveEditor,
   moveEditorToNewGroup,
   openContextMenu,
+  openFile,
   pinEditor,
   revealView,
   select,
@@ -15,9 +16,14 @@ import {
   splitEditor,
   toggleDir,
   useWorkbench,
+  type ContextMenuItem,
   type EditorGroup,
   type EditorInput,
 } from "../../state/store";
+import { codeEditorFor } from "../../monaco/editors";
+import { documentSymbols } from "../../commands/symbols";
+import { compareWithSaved, openFileToSide, revealInExplorer, absolutePath } from "../../commands/vscodeCommands";
+import { editorIdsToTheRight, otherEditorIds, savedEditorIds } from "../../commands/editorOrder";
 import { basename, dirname } from "../../util/paths";
 import { ActionButton, Codicon, FileIcon } from "../../widgets/icons";
 import { Logo } from "../../widgets/Logo";
@@ -48,6 +54,7 @@ import { SqlResultsEditor } from "../../sql/SqlResultsEditor";
 import { LogicEditor } from "../../logic/LogicEditor";
 import { ApiTester } from "../../api/ApiTester";
 import { SettingsJsonEditor } from "./SettingsJsonEditor";
+import { SnippetsEditor } from "../../snippets/SnippetsEditor";
 import type { SplitDirection } from "../../state/layout";
 
 const EDITOR_DRAG = "application/x-tmcode-editor";
@@ -76,6 +83,9 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "historyDiff" && e.source === "taskMentor") return `${basename(e.path)} (Task Mentor) ↔ Yours`;
   if (e.kind === "historyDiff" && e.source === "grading") return `${basename(e.path)} (${e.label ?? "Version"}) ↔ Submitted`;
   if (e.kind === "historyDiff" && e.source === "git") return `${basename(e.path)} (${e.entry.slice(0, 7)}) ↔ Now`;
+  if (e.kind === "historyDiff" && e.source === "saved") return `${basename(e.path)} (Saved) ↔ Current`;
+  if (e.kind === "historyDiff" && e.source === "file") return `${basename(e.entry)} ↔ ${basename(e.path)}`;
+  if (e.kind === "snippets") return `${e.language}.json`;
   if (e.kind === "historyDiff" && e.source === "conflict") return `${basename(e.path)}: Current ↔ Incoming`;
   if (e.kind === "historyDiff") return `${basename(e.path)} (${new Date(e.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) ↔ Current`;
   if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
@@ -103,6 +113,7 @@ function iconOf(e: EditorInput) {
   if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "webview") return <WebviewTabIcon handle={e.handle} />;
   if (e.kind === "settingsJson") return <Codicon name="json" className="tm-tab-codicon" />;
+  if (e.kind === "snippets") return <Codicon name="symbol-snippet" className="tm-tab-codicon" />;
   if (e.kind === "assignment") return <Codicon name="mortar-board" className="tm-tab-codicon" />;
   if (e.kind === "grading") return <Codicon name="tasklist" className="tm-tab-codicon" />;
   if (e.kind === "sqlResults") return <Codicon name="database" className="tm-tab-codicon" />;
@@ -129,10 +140,81 @@ function descriptions(editors: EditorInput[]) {
   };
 }
 
-function Breadcrumbs({ path }: { path: string }) {
+/**
+ * The path above the editor. Click a crumb to reveal it in the Explorer;
+ * from the keyboard (Focus Breadcrumbs ⇧⌘; / Focus and Select Breadcrumbs ⇧⌘.)
+ * ←/→ move between crumbs and Enter or ↓ lists a folder's files, or the
+ * file's siblings and symbols.
+ */
+function Breadcrumbs({ path, groupId }: { path: string; groupId: number }) {
   const parts = path.split("/");
+  const nav = useRef<HTMLElement>(null);
+  const crumbs = () => [...(nav.current?.querySelectorAll<HTMLButtonElement>(".tm-crumb") ?? [])];
+
+  const openList = async (i: number, el: HTMLElement) => {
+    const dir = parts.slice(0, i).join("/");
+    const s = useWorkbench.getState();
+    const entries = [...(s.dirs[dir] ?? (await getPlatform().fs.readDir(dir).catch(() => [])))].sort((a, b) =>
+      a.kind !== b.kind ? (a.kind === "dir" ? -1 : 1) : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    );
+    const items: ContextMenuItem[] = entries.map((e) => ({
+      kind: "item",
+      label: e.kind === "dir" ? `${e.name}/` : e.name,
+      run: () => (e.kind === "dir" ? void revealInExplorer(e.path) : openFile(e.path, { pinned: true, group: groupId })),
+    }));
+    const last = i === parts.length - 1;
+    const model = last ? codeEditorFor(groupId)?.getModel() : null;
+    if (model) {
+      const symbols = await documentSymbols(model).catch(() => []);
+      if (symbols.length) {
+        items.push({ kind: "separator" });
+        for (const sym of symbols.slice(0, 100)) {
+          items.push({
+            kind: "item",
+            label: sym.container ? `${sym.container} › ${sym.name}` : sym.name,
+            run: () => {
+              const ed = codeEditorFor(groupId);
+              if (!ed) return;
+              ed.setPosition({ lineNumber: sym.selectionRange.startLineNumber, column: sym.selectionRange.startColumn });
+              ed.revealLineInCenter(sym.selectionRange.startLineNumber);
+              ed.focus();
+            },
+          });
+        }
+      }
+    }
+    if (!items.length) return;
+    const r = el.getBoundingClientRect();
+    openContextMenu(r.left, r.bottom + 2, items);
+  };
+
+  // Focus Breadcrumbs / Focus and Select Breadcrumbs (commands/vscodeCommands.ts) for this group.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ group: number; select: boolean }>).detail;
+      if (d.group !== groupId) return;
+      const all = crumbs();
+      const lastCrumb = all[all.length - 1];
+      if (!lastCrumb) return;
+      lastCrumb.focus();
+      if (d.select) void openList(all.length - 1, lastCrumb);
+    };
+    window.addEventListener("tmcode:breadcrumbs", on);
+    return () => window.removeEventListener("tmcode:breadcrumbs", on);
+  });
+
+  const onKey = (e: React.KeyboardEvent, i: number) => {
+    const all = crumbs();
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") all[Math.max(0, Math.min(all.length - 1, i + (e.key === "ArrowRight" ? 1 : -1)))]?.focus();
+    else if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") void openList(i, e.currentTarget as HTMLElement);
+    else if (e.key === "Escape") codeEditorFor(groupId)?.focus();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   return (
-    <nav className="tm-breadcrumbs" aria-label="Breadcrumbs">
+    <nav ref={nav} className="tm-breadcrumbs" aria-label="Breadcrumbs" data-testid="breadcrumbs">
       {parts.map((part, i) => {
         const sub = parts.slice(0, i + 1).join("/");
         const last = i === parts.length - 1;
@@ -141,6 +223,7 @@ function Breadcrumbs({ path }: { path: string }) {
             <button
               type="button"
               className="tm-crumb"
+              onKeyDown={(e) => onKey(e, i)}
               onClick={async () => {
                 revealView("explorer");
                 for (let j = 1; j <= i + (last ? 0 : 1); j++) await toggleDir(parts.slice(0, j).join("/"), true);
@@ -156,6 +239,12 @@ function Breadcrumbs({ path }: { path: string }) {
       })}
     </nav>
   );
+}
+
+async function copyPlain(text: string) {
+  const clip = getPlatform().clipboard;
+  if (clip) await clip.writeText(text);
+  else await navigator.clipboard?.writeText(text);
 }
 
 function Watermark() {
@@ -192,6 +281,7 @@ function Watermark() {
 export function EditorGroupView({ group, single }: { group: EditorGroup; single: boolean }) {
   const activeGroup = useWorkbench((s) => s.activeGroup);
   const dirty = useWorkbench((s) => s.dirty);
+  const breadcrumbs = useWorkbench((s) => s.settings["breadcrumbs.enabled"]);
   // Webview panel titles change from the extension.
   useWebviews((s) => s.entries);
   const os = getPlatform().os;
@@ -209,11 +299,10 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
 
   const tabMenu = (e: MouseEvent, input: EditorInput) => {
     e.preventDefault();
-    const idx = group.editors.indexOf(input);
-    // As in VS Code, pinned tabs survive Close Others and Close to the Right.
-    const others = group.editors.filter((x) => x !== input && !x.sticky).map((x) => x.id);
-    const right = group.editors.slice(idx + 1).filter((x) => !x.sticky).map((x) => x.id);
-    const saved = group.editors.filter((x) => !(x.kind === "file" && dirty[x.path])).map((x) => x.id);
+    // As in VS Code, pinned tabs survive Close Others and Close to the Right (commands/editorOrder.ts).
+    const others = otherEditorIds(group.editors, input.id);
+    const right = editorIdsToTheRight(group.editors, input.id);
+    const saved = savedEditorIds(group.editors.map((x) => ({ ...x, dirty: x.kind === "file" && !!dirty[x.path] })));
     openContextMenu(e.clientX, e.clientY, [
       { kind: "item", label: "Close", keybinding: formatKeybinding("mod+w", os), run: () => void closeEditors(group.id, [input.id]) },
       { kind: "item", label: "Close Others", disabled: !others.length, run: () => void closeEditors(group.id, others) },
@@ -223,17 +312,12 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
       { kind: "separator" },
       ...(input.kind === "file"
         ? ([
-            { kind: "item", label: "Copy Relative Path", run: () => void navigator.clipboard?.writeText(input.path) },
-            {
-              kind: "item",
-              label: "Reveal in Explorer View",
-              run: async () => {
-                revealView("explorer");
-                const parts = input.path.split("/");
-                for (let j = 1; j < parts.length; j++) await toggleDir(parts.slice(0, j).join("/"), true);
-                select(input.path);
-              },
-            },
+            { kind: "item", label: "Copy Path", run: () => void copyPlain(absolutePath(input.path)) },
+            { kind: "item", label: "Copy Relative Path", run: () => void copyPlain(input.path) },
+            { kind: "item", label: "Reveal in Explorer View", run: () => void revealInExplorer(input.path) },
+            { kind: "separator" },
+            { kind: "item", label: "Open to the Side", run: () => openFileToSide(input.path) },
+            ...(dirty[input.path] ? ([{ kind: "item", label: "Compare with Saved", run: () => compareWithSaved(input.path) }] as const) : []),
             { kind: "separator" },
           ] as const)
         : []),
@@ -443,7 +527,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
           </div>
         </div>
       )}
-      {active?.kind === "file" && !active.path.startsWith("tmcode-untitled:") && <Breadcrumbs path={active.path} />}
+      {breadcrumbs && active?.kind === "file" && !active.path.startsWith("tmcode-untitled:") && <Breadcrumbs path={active.path} groupId={group.id} />}
       <div
         className="tm-editor-content"
         onDragOver={(e) => {
@@ -470,6 +554,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "browser" && <BrowserEditor key={active.id} input={active} />}
         {active?.kind === "settings" && <SettingsEditor />}
         {active?.kind === "settingsJson" && <SettingsJsonEditor />}
+        {active?.kind === "snippets" && <SnippetsEditor key={active.id} input={active} />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
         {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
