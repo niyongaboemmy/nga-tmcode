@@ -5,6 +5,7 @@ import { createMemoryAccountHost } from "./memoryProjects";
 import { createSimulatedDebugHost } from "../debug/fakeAdapter";
 import { createSimulatedProc } from "./memoryProc";
 import { createSimulatedTerminal } from "./memoryTerminal";
+import { createFakeLanguageServers, fakeLanguageServersEnabled } from "./memoryLanguageServer";
 import type { DirEntry, ExamHost, FileEncoding, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform, Runner } from "./types";
 
 /**
@@ -466,6 +467,8 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
       : {}),
     // Dev server / e2e: a simulated Python debugger so Run and Debug can be exercised without processes.
     ...(import.meta.env?.DEV ? { debug: createSimulatedDebugHost((p) => fs.readFile(p)) } : {}),
+    // e2e: a Pyright stand-in, only when a test asks for it (window.__TMCODE_FAKE_LSP__).
+    ...(import.meta.env?.DEV && fakeLanguageServersEnabled() ? { languageServers: createFakeLanguageServers(fs) } : {}),
     exam,
     extensions: createMemoryExtensionHost(),
     http: createMemoryHttp(),

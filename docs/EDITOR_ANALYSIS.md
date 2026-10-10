@@ -69,6 +69,8 @@ Every feature below is checked against both jobs. A feature that helps job 2 mus
 ### 5.1 Language servers (high value)
 Spawn LSP servers from Rust (pyright, jdtls, clangd, gopls, rust-analyzer), detected the same way as toolchains. Bridge them to Monaco with `monaco-languageclient` over a Tauri channel. Policy can switch them off in exams.
 
+Started: Pyright is built in (downloaded on request, `src-tauri/src/lsp.rs` + `workbench/src/lsp/`), and the TypeScript service knows the whole project. JDT LS is planned. See [LANGUAGE_SERVERS.md](LANGUAGE_SERVERS.md).
+
 ### 5.2 Full extension host (large)
 Move the workbench onto `@codingame/monaco-vscode-api`, the VS Code services running in the browser. Run extensions' `browser` entry points in a Web Worker extension host. That gives real VS Code extensions (ESLint, GitLens-lite, Live Share-style) without Node. Estimated 4–6 weeks. It requires reworking the editor parts we wrote by hand.
 
