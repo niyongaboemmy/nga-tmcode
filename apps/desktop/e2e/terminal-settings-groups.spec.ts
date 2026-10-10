@@ -146,13 +146,14 @@ test("settings.json: valid edits apply as you type; problems are marked", async 
 test("[python] settings apply to Python files only", async ({ page }) => {
   await boot(page);
   await openPinned(page, "main.py");
-  await expect(groups(page).first().locator(".monaco-editor .line-numbers").first()).toBeVisible();
+  // The gutter's numbers: Monaco also puts "line-numbers" on a zero-size text-area cover.
+  await expect(groups(page).first().locator(".monaco-editor .margin-view-overlays .line-numbers").first()).toBeVisible();
   await palette(page, "Open User Settings (JSON)");
   await replaceSettingsText(page, '{ "[python]": { "editor.lineNumbers": "off", "editor.tabSize": 7 } }');
   await expect(page.getByTestId("settings-json").locator(".squiggly-error")).toHaveCount(0);
   await tab(page, "main.py").click();
   const editor = groups(page).first().locator(".tm-editor-slot .monaco-editor");
-  await expect(editor.locator(".line-numbers")).toHaveCount(0);
+  await expect(editor.locator(".margin-view-overlays .line-numbers")).toHaveCount(0);
   // Tab at the start of line 1 inserts the Python scope's 7 spaces.
   const first = editor.locator(".view-line").first();
   await first.click({ position: { x: 1, y: 5 } });
@@ -160,7 +161,7 @@ test("[python] settings apply to Python files only", async ({ page }) => {
   await expect(first).toHaveText(/^ {7}"""Grade/);
   // Another language keeps its line numbers.
   await openPinned(page, "README.md");
-  await expect(editor.locator(".line-numbers").first()).toBeVisible();
+  await expect(editor.locator(".margin-view-overlays .line-numbers").first()).toBeVisible();
 });
 
 test("merge conflict CodeLens: Accept Incoming / Current / Both", async ({ page }) => {
