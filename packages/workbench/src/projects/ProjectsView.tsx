@@ -11,6 +11,7 @@ import { loadRemoved, lockReason, openProject, projectsSupported, refreshProject
 import { showAssignment, useAssignments } from "./assignments";
 import type { Link, Project } from "./types";
 import { openInTaskMentor } from "./commands";
+import { SignInWaiting } from "./SignInWaiting";
 import { dueText, TYPE_LABEL } from "./matching";
 
 // One label table for the Projects view, the brief and the status bar.
@@ -398,6 +399,7 @@ export function ProjectsView() {
         <button type="button" className="tm-button tm-button--block" disabled={busy} onClick={() => void signIn()} data-testid="projects-signin-button">
           <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} /> {busy ? "Continue in your browser…" : "Sign in with NGA"}
         </button>
+        <SignInWaiting />
         <p className="tm-muted">One sign-in for Central MIS and Task Mentor. Google sign-in works too.</p>
         {account?.error && <p className="tm-error-text">{account.error}</p>}
       </div>

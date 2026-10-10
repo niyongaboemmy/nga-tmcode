@@ -67,6 +67,7 @@ fn main() {
             "webview_dispose",
             "auth_sign_in",
             "auth_cancel",
+            "auth_reopen_browser",
             "auth_status",
             "auth_sign_out",
             "tm_api",

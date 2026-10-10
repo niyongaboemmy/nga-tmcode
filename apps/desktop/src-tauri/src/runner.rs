@@ -245,7 +245,7 @@ pub fn missing_tool_message(tool: &str) -> String {
         "rustc" => "Rust (rustc, from rustup.rs)",
         other => other,
     };
-    format!("TMCode could not find {what} on this computer. Install it (or ask your teacher for the TMCode toolchain pack), then choose \"Refresh Toolchains\".")
+    format!("TMCode could not find {what} on this computer. Install it (Help › Check My Computer has the links), then choose \"Refresh Toolchains\".")
 }
 
 pub(crate) fn display_command(program: &Path, args: &[String], root: &Path) -> String {

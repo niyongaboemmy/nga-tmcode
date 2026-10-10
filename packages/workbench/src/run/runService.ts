@@ -1,5 +1,6 @@
 import { profileById, profileForPath } from "@tmcode/profiles";
 import type { Profile } from "@tmcode/protocol";
+import { executeCommand } from "../commands/registry";
 import { ensureDocument, saveAll } from "../monaco/documents";
 import { monaco } from "../monaco/setup";
 import type { RunEvent, RunHandle, RunRequest } from "../platform/types";
@@ -253,8 +254,16 @@ export async function runFile(path: string, opts: RunOptions = {}) {
     const message = String((e as Error)?.message ?? e);
     emit({ type: "error", message });
     setRunState({ status: "idle" });
-    notify("error", message, message.includes("could not find")
-      ? [{ label: "Refresh Toolchains", run: () => void refreshToolchains() }]
+    const missing = message.includes("could not find");
+    // In an exam the example tests still run on Task Mentor; outside one, Check My Computer has the install links.
+    const exam = useWorkbench.getState().tests.source === "exam";
+    notify("error", message, missing
+      ? [
+          exam
+            ? { label: "Run Tests on Task Mentor", run: () => void executeCommand("tmcode.runTests") }
+            : { label: "Check My Computer", run: () => void executeCommand("tmcode.checkMyComputer") },
+          { label: "Refresh Toolchains", run: () => void refreshToolchains() },
+        ]
       : undefined);
   }
 }
@@ -292,7 +301,8 @@ export async function refreshToolchains() {
   const list = await runner.detect(true);
   emit({ type: "info", text: `Toolchains: ${list.map((t) => `${t.tool} → ${t.version}`).join(", ") || "none found"}` });
   log("Toolchains", list.map((t) => `${t.tool}: ${t.path} (${t.version})`).join("; ") || "none found");
-  notify("info", list.length ? `Found ${list.length} toolchain${list.length > 1 ? "s" : ""}: ${list.map((t) => t.tool).join(", ")}.` : "No compilers or interpreters were found.");
+  if (list.length) notify("info", `Found ${list.length} toolchain${list.length > 1 ? "s" : ""}: ${list.map((t) => t.tool).join(", ")}.`);
+  else notify("warning", "TMCode found no compilers or interpreters. Python, Java and C compilers are installed separately.", [{ label: "Check My Computer", run: () => void executeCommand("tmcode.checkMyComputer") }]);
   return list;
 }
 

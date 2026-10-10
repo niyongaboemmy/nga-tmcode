@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ExamPackage, VisibleTest } from "@tmcode/protocol";
 import type { Results } from "./api";
+import type { CheckItem } from "./readiness";
 
 export interface ExamTaskState {
   question_id: number;
@@ -26,6 +27,14 @@ export type LockReason = "superseded" | "revoked" | "ended" | "submit_failed" | 
 export interface ExamState {
   phase: ExamPhase;
   error: string | null;
+  /** The launch error's code (TICKET_USED, OFFLINE, APP_TOO_OLD…) and its extra fields, for the error card. */
+  errorCode: string | null;
+  errorData: Record<string, unknown>;
+  /**
+   * The system check while the exam opens (review E1): null before it runs.
+   * `waiting`: problems were found and the lobby waits for Start the Exam.
+   */
+  readiness: { items: CheckItem[]; waiting: boolean; endsAt: number | null } | null;
   quiz: ExamPackage["quiz"] | null;
   submissionId: number | null;
   sessionId: string | null;
@@ -49,6 +58,9 @@ export interface ExamState {
 export const initialExamState: ExamState = {
   phase: "idle",
   error: null,
+  errorCode: null,
+  errorData: {},
+  readiness: null,
   quiz: null,
   submissionId: null,
   sessionId: null,

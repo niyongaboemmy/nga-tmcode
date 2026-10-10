@@ -139,7 +139,7 @@ test("time up locks the editor and submits automatically", async ({ page }) => {
 
 test("refuses exam links that point at an unknown server", async ({ page }) => {
   await page.goto(`/?launch=${encodeURIComponent("tmcode://launch?t=abc&api=https%3A%2F%2Fevil.example.com")}`);
-  await expect(page.locator(".tm-exam-card h2")).toHaveText("The exam could not be opened");
+  await expect(page.locator(".tm-exam-card h2")).toHaveText("This link isn't from Task Mentor");
   await expect(page.locator(".tm-exam-card")).toContainText("unknown server");
 });
 

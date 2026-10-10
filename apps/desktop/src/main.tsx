@@ -17,6 +17,7 @@ import {
   openGradingLink,
   selfCheckWorkers,
   startExam,
+  checkExamInProgress,
   setWorkspace,
   startedWorkers,
   watchCspViolations,
@@ -82,6 +83,9 @@ async function boot() {
     const link = parseLaunchLink(launch);
     if (link) void startExam(link.api, link.ticket);
   }
+  // "You have an exam in progress" (an exam on this computer neither submitted nor ended); a launch link that
+  // started the app wins, so wait for it first. Also locks an exam folder that is open outside an exam.
+  setTimeout(() => void checkExamInProgress().catch(() => {}), 1500);
   const projectLink = params.get("project");
   if (platform.kind === "web" && projectLink) {
     const link = parseProjectLink(projectLink);

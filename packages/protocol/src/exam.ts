@@ -48,5 +48,7 @@ export const ExamPackageSchema = z.object({
   toolchains: z.array(z.string()),
   tasks: z.array(ExamTaskSchema),
   live: z.object({ url: z.string(), ticket: z.string() }).nullable(),
+  /** Oldest TMCode that can take this exam ("0.12.0"); older apps say "Update TMCode". */
+  min_app_version: z.string().optional(),
 });
 export type ExamPackage = z.infer<typeof ExamPackageSchema>;

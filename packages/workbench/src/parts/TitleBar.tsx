@@ -76,6 +76,7 @@ const MENUS: { label: string; items: MenuSpec }[] = [
       "workbench.action.openWelcome",
       "workbench.action.showCommands",
       "workbench.action.keybindingsReference",
+      "tmcode.checkMyComputer",
       "-",
       "update.checkForUpdates",
       "update.restartToUpdate",

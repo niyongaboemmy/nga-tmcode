@@ -4,6 +4,7 @@ import { getPlatform, openRecent, revealView, useWorkbench } from "../../state/s
 import { useAssignments } from "../../projects/assignments";
 import { openTaskMentorPage } from "../../projects/commands";
 import { projectsSupported, signIn, useProjects } from "../../projects/service";
+import { SignInWaiting } from "../../projects/SignInWaiting";
 import { todoOf, todoSummary } from "../../projects/studentHome";
 import { Codicon } from "../../widgets/icons";
 import { Logo } from "../../widgets/Logo";
@@ -37,6 +38,7 @@ function AssignmentsCard() {
             <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} /> {busy ? "Continue in your browser…" : "Sign in with NGA"}
           </button>
         </div>
+        <SignInWaiting compact />
       </>
     );
   } else {
@@ -128,6 +130,17 @@ export function WelcomePage() {
                 </div>
                 <Codicon name="link-external" className="tm-welcome-card-go" />
               </button>
+              {mode === "practice" && (
+                <button type="button" className="tm-welcome-card is-action" data-testid="welcome-check-computer" onClick={() => executeCommand("tmcode.checkMyComputer")}>
+                  <Codicon name="tools" className="tm-welcome-card-icon" />
+                  <div>
+                    <h3>Check my setup</h3>
+                    <p>Python, a Java JDK and C compilers are installed separately. See what this computer has, with install links, before your next exam.</p>
+                    <span className="tm-welcome-card-link">Check My Computer</span>
+                  </div>
+                  <Codicon name="arrow-right" className="tm-welcome-card-go" />
+                </button>
+              )}
               <div className="tm-welcome-card" data-testid="welcome-practice-card">
                 <Codicon name="beaker" className="tm-welcome-card-icon" />
                 <div>
