@@ -99,6 +99,7 @@ export async function api<T>(method: TmRequest["method"], path: string, json?: u
 // ── Account ──────────────────────────────────────────────────────────────
 
 let wired = false;
+let keychainWarned = false;
 export function wireProjects() {
   const host = (() => {
     try {
@@ -118,6 +119,15 @@ export function wireProjects() {
       void bindWorkspace();
     }
     if (!account.signed_in && was) set({ mine: null, shared: null });
+    // The keychain refused the session (review F2): say it once, or the next start silently signs out.
+    if (account.signed_in && account.keychain_error && !keychainWarned) {
+      keychainWarned = true;
+      const where = getPlatform().os === "mac" ? "the Keychain" : getPlatform().os === "windows" ? "Windows Credential Manager" : "the system keyring";
+      notify(
+        "warning",
+        `TMCode couldn't save your sign-in to ${where}, so you'll need to sign in again next time.${getPlatform().os === "mac" ? ' If macOS asks about "TMCode Account", choose Always Allow.' : ""}`,
+      );
+    }
   });
   void host.status(true).then((account) => {
     set({ account });

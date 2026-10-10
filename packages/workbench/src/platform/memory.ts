@@ -5,7 +5,7 @@ import { createMemoryAccountHost } from "./memoryProjects";
 import { createSimulatedDebugHost } from "../debug/fakeAdapter";
 import { createSimulatedProc } from "./memoryProc";
 import { createSimulatedTerminal } from "./memoryTerminal";
-import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform } from "./types";
+import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform, Runner } from "./types";
 
 /**
  * An in-memory file system. Used by the browser build (dev server, Playwright,
@@ -360,6 +360,27 @@ function mockFolderSeed(root: string): Record<string, string> {
   }
 }
 
+/**
+ * Dev server / e2e: localStorage "tmcode:mock-no-tools" makes this computer
+ * have no language tools (the exam system check, server runs, Check My Computer).
+ */
+function noToolsForE2e(runner: Runner): Runner {
+  if (!import.meta.env?.DEV) return runner;
+  const none = () => {
+    try {
+      return !!localStorage.getItem("tmcode:mock-no-tools");
+    } catch {
+      return false;
+    }
+  };
+  return {
+    ...runner,
+    detect: (refresh) => (none() ? Promise.resolve([]) : runner.detect(refresh)),
+    start: (req, onEvent) =>
+      none() ? Promise.reject(new Error("TMCode could not find Node.js on this computer. Install it, then choose \"Refresh Toolchains\".")) : runner.start(req, onEvent),
+  };
+}
+
 export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT): Platform {
   const practice = new MemoryFileSystem(seed);
   const fs = new SwitchableFileSystem(practice);
@@ -415,7 +436,7 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     },
     fs,
     store: new LocalStorageStore("tmcode:"),
-    runner: createJsWorkerRunner(fs),
+    runner: noToolsForE2e(createJsWorkerRunner(fs)),
     // Dev server / e2e only (`?terminal=sim`): a pretend shell for the Run hub's dev-server flow.
     ...(import.meta.env?.DEV && typeof location !== "undefined" && new URLSearchParams(location.search).get("terminal") === "sim"
       ? { terminal: createSimulatedTerminal(fs) }

@@ -199,11 +199,16 @@ export function revertDocument(path: string): Promise<void> {
     .catch(() => setDirty(path, false));
 }
 
+/** Exams always auto-save soon after typing, whatever the setting (review E9): unsaved buffers never reach Task Mentor. */
+const EXAM_AUTOSAVE_MS = 1000;
+
 function scheduleAutoSave() {
-  const { settings } = useWorkbench.getState();
-  if (settings["files.autoSave"] !== "afterDelay") return;
+  const { settings, policy } = useWorkbench.getState();
+  const exam = policy.mode !== "practice";
+  if (!exam && settings["files.autoSave"] !== "afterDelay") return;
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
-  autoSaveTimer = setTimeout(() => void saveAll(), settings["files.autoSaveDelay"]);
+  const delay = exam ? Math.min(settings["files.autoSaveDelay"] || EXAM_AUTOSAVE_MS, EXAM_AUTOSAVE_MS) : settings["files.autoSaveDelay"];
+  autoSaveTimer = setTimeout(() => void saveAll(), delay);
 }
 
 /** Auto save "onFocusChange": called when the editor loses focus or the window blurs. */

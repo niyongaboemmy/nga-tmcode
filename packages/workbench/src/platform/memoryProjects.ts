@@ -46,7 +46,18 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   const listeners = new Set<(s: AccountStatus) => void>();
   // Why the session ended (expireSession): the account shows it until the next sign-in.
   let accountError: string | null = null;
-  const status = (): AccountStatus => ({ signed_in: signedIn, user: signedIn ? user : null, tm_api: API, phase, error: signedIn ? null : accountError });
+  // e2e: localStorage "tmcode:mock-signin-wait" keeps the browser sign-in waiting; "tmcode:mock-keychain-fail" fails the keychain save.
+  const SIGNIN_URL = "http://localhost:5173/desktop/signin?redirect_uri=http%3A%2F%2F127.0.0.1%3A1%2Fsignin&state=mock&challenge=mock";
+  let keychainError: string | null = null;
+  const status = (): AccountStatus => ({
+    signed_in: signedIn,
+    user: signedIn ? user : null,
+    tm_api: API,
+    phase,
+    error: signedIn ? null : accountError,
+    signin_url: phase === "waiting" ? SIGNIN_URL : null,
+    keychain_error: signedIn ? keychainError : null,
+  });
   const emit = () => listeners.forEach((l) => l(status()));
 
   const projects: Record<string, unknown>[] = [];
@@ -618,9 +629,12 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     async signIn() {
       phase = "waiting";
       emit();
+      if (localStorage.getItem("tmcode:mock-signin-wait")) return;
       setTimeout(() => {
+        if (phase !== "waiting") return;
         signedIn = true;
         accountError = null;
+        keychainError = localStorage.getItem("tmcode:mock-keychain-fail") ? "The user name or passphrase you entered is not correct." : null;
         phase = "idle";
         localStorage.setItem("tmcode:mock-account", "signed-in");
         emit();
@@ -629,6 +643,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     async cancel() {
       phase = "idle";
       emit();
+    },
+    async reopenBrowser() {
+      if (phase !== "waiting") throw new Error("No sign-in is waiting. Choose Sign in with NGA.");
+      localStorage.setItem("tmcode:mock-signin-opened", String(Number(localStorage.getItem("tmcode:mock-signin-opened") ?? "0") + 1));
     },
     async signOut() {
       signedIn = false;

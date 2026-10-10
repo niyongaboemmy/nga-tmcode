@@ -1,6 +1,7 @@
 import { executeCommand } from "../../commands/registry";
 import { getPlatform, openFile, useWorkbench, type TestItem } from "../../state/store";
-import { TESTS_FILE, openTestDiff, runTests } from "../../run/testService";
+import { useEffect, useState } from "react";
+import { TESTS_FILE, openTestDiff, runTests, useServerRun } from "../../run/testService";
 import { useFrameworkTests } from "../../testing/service";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { FrameworkTests } from "./FrameworkTests";
@@ -21,6 +22,34 @@ const SAMPLE = `{
   ]
 }
 `;
+
+/** Exams: the example tests run on Task Mentor when this computer can't run them (review E2). */
+function ServerRunBanner() {
+  const { status, retryAt, remote, error } = useServerRun();
+  const [, tick] = useState(0);
+  const waiting = !!retryAt && retryAt > Date.now();
+  useEffect(() => {
+    if (!waiting) return;
+    const id = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [waiting]);
+  if (!remote && !waiting) return null;
+  const secs = retryAt ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)) : 0;
+  return (
+    <div className={`tm-serverrun ${waiting || error ? "is-warning" : ""}`} role="status" aria-live="polite" data-testid="server-run-status">
+      <Codicon name={status === "queued" ? "loading" : waiting ? "watch" : "cloud"} className={status === "queued" ? "codicon-modifier-spin" : ""} />
+      <span>
+        {status === "queued"
+          ? "Running on Task Mentor… (queued)"
+          : waiting
+            ? `Task Mentor allows 10 runs a minute. Run again in ${secs} s.`
+            : error
+              ? error
+              : "This computer can't run these tests, so they run on Task Mentor."}
+      </span>
+    </div>
+  );
+}
 
 export function TestingView() {
   const tests = useWorkbench((s) => s.tests);
@@ -92,6 +121,7 @@ export function TestingView() {
           <ActionButton icon="refresh" label="Reload Tests" onClick={() => executeCommand("tmcode.reloadTests")} />
         </div>
       </div>
+      <ServerRunBanner />
       {done > 0 && (
         <div className="tm-test-summary" role="status">
           <div className="tm-test-bar" aria-hidden>

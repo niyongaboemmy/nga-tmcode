@@ -20,6 +20,11 @@ function reset() {
     released: true,
     debugger: false, // policy.debugger: Run and Debug allowed in the exam
     policy: {}, // overrides of the exam policy (e.g. { terminal: "restricted" })
+    serverRunLimit: 10, // server-run: runs per minute before 429 RATE_LIMITED (PROTOCOL.md §3)
+    serverRuns: [], // timestamps of server runs
+    minAppVersion: null, // package.min_app_version
+    badPackage: false, // a package this client can't parse (a newer format)
+    clockSkewMs: 0, // server_time = now + skew (a computer with a wrong clock)
   };
 }
 reset();
@@ -78,10 +83,27 @@ function send(res, status, body) {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Expose-Headers": "Date, Retry-After",
   });
   res.end(body === undefined ? "" : JSON.stringify(body));
 }
-const err = (res, status, error_code, message) => send(res, status, { error_code, message: message ?? error_code });
+const err = (res, status, error_code, message, extra = {}) => send(res, status, { error_code, message: message ?? error_code, ...extra });
+
+/** Runs one JavaScript program like tm-judge would, with a verdict. */
+async function judge(code, test) {
+  const { execFileSync } = await import("node:child_process");
+  const t0 = Date.now();
+  try {
+    // A clean environment: the test runner's NODE_OPTIONS/FORCE_COLOR would change the output.
+    const env = { PATH: process.env.PATH, NO_COLOR: "1" };
+    const out = execFileSync(process.execPath, ["-e", code], { input: test.input, timeout: 5000, env, stdio: ["pipe", "pipe", "pipe"] }).toString();
+    const passed = out.trimEnd() === test.expected_output.trimEnd();
+    return { stdout: out, stderr: "", passed, verdict: passed ? "accepted" : "wrong-answer", time_ms: Date.now() - t0 };
+  } catch (e) {
+    const timedOut = e.code === "ETIMEDOUT" || e.signal === "SIGTERM";
+    return { stdout: String(e.stdout ?? ""), stderr: String(e.stderr ?? e.message).slice(0, 2000), passed: false, verdict: timedOut ? "time-limit" : "runtime-error", time_ms: Date.now() - t0 };
+  }
+}
 
 async function body(req) {
   let s = "";
@@ -123,6 +145,11 @@ createServer(async (req, res) => {
     }
 
     // ── protocol v1 ──
+    // No auth (cached 5 min on Task Mentor); TMCode's system check uses it for "reachable" and the clock (Date header).
+    if (p === "/api/tmcode/profiles" && req.method === "GET") {
+      res.setHeader("Date", new Date(Date.now() + state.clockSkewMs).toUTCString());
+      return send(res, 200, { profiles: [PROFILE] });
+    }
     if (p === "/api/tmcode/sessions" && req.method === "POST") {
       const b = await body(req);
       const t = state.tickets.get(b.ticket);
@@ -142,7 +169,11 @@ createServer(async (req, res) => {
       if (!s) return;
       const action = m[2];
       // The network is down: only the session start (already done) got through.
-      if (state.offline && ["snapshots", "heartbeat", "submit", "telemetry", "results"].includes(action)) return req.destroy();
+      if (state.offline && ["snapshots", "heartbeat", "submit", "telemetry", "results", "server-run"].includes(action)) return req.destroy();
+      if (action === "package" && req.method === "GET" && state.badPackage) {
+        // A newer package format: tasks renamed, as an outdated TMCode would see it.
+        return send(res, 200, { submission_id: 9001, quiz: { id: 77, title: "Practical 1", type: "Exam" }, format: 2, items: [] });
+      }
       if (action === "package" && req.method === "GET") {
         // Latest synced snapshot of the question across all of this submission's sessions.
         const latest = (qid) =>
@@ -155,7 +186,7 @@ createServer(async (req, res) => {
           submission_id: 9001,
           quiz: { id: 77, title: "Practical 1 — JavaScript basics", type: "Exam" },
           deadline: new Date(state.deadlineMs).toISOString(),
-          server_time: new Date().toISOString(),
+          server_time: new Date(Date.now() + state.clockSkewMs).toISOString(),
           policy: { mode: "monitored", intelligence: "basic", paste: "internal_only", terminal: "off", internet_in_preview: false, require_seb: false, allow_offline_grace_minutes: 10, locked_settings: [], ...(state.debugger ? { debugger: true } : {}), ...state.policy },
           journal_nonce: s.nonce,
           profiles: [PROFILE],
@@ -165,6 +196,7 @@ createServer(async (req, res) => {
             return { ...t, hidden_test_count: hidden.length, resume: l ? { snapshot_seq: l.seq, files: l.files } : null };
           }),
           live: null,
+          ...(state.minAppVersion ? { min_app_version: state.minAppVersion } : {}),
         });
       }
       if (action === "snapshots" && req.method === "POST") {
@@ -185,6 +217,25 @@ createServer(async (req, res) => {
         return send(res, 200, { accepted_seq: b.seq, server_ts: rec.server_ts });
       }
       if (action === "telemetry") return send(res, 200, { ok: true });
+      if (action === "server-run" && req.method === "POST") {
+        const b = await body(req);
+        if (s.status !== "active") return err(res, 409, "SESSION_SUPERSEDED");
+        const task = TASKS.find((t) => t.question_id === b.question_id);
+        if (!task) return err(res, 400, "QUESTION_NOT_IN_EXAM");
+        if (!Array.isArray(b.files) || b.files.length > 300) return err(res, 400, "VALIDATION_ERROR");
+        const now = Date.now();
+        state.serverRuns = state.serverRuns.filter((t) => now - t < 60_000);
+        if (state.serverRuns.length >= state.serverRunLimit) {
+          const retry = Math.max(1, Math.ceil((state.serverRuns[0] + 60_000 - now) / 1000));
+          res.setHeader("Retry-After", String(retry));
+          return err(res, 429, "RATE_LIMITED", "Too many server runs — wait a minute and try again.", { retry_after_s: retry });
+        }
+        state.serverRuns.push(now);
+        const code = b.files.find((f) => f.path === "main.js")?.content ?? "";
+        const tests = [];
+        for (const t of task.visible_tests) tests.push({ id: t.id, ...(await judge(code, t)) });
+        return send(res, 200, { tests });
+      }
       if (action === "heartbeat") {
         return send(res, 200, { server_time: new Date().toISOString(), deadline: new Date(state.deadlineMs).toISOString(), status: s.status, paused: state.paused, message: state.message });
       }
@@ -199,24 +250,18 @@ createServer(async (req, res) => {
         if (!state.submitted) return err(res, 409, "NOT_SUBMITTED");
         if (!state.released) return send(res, 200, { status: "hidden" });
         // "Grade" with node: run every test (visible + hidden) on the final snapshot.
-        const { execFileSync } = await import("node:child_process");
-        const questions = state.submitted.final.map(({ question_id, seq }) => {
+        const questions = [];
+        for (const { question_id, seq } of state.submitted.final) {
           const snap = s.snapshots.find((x) => x.seq === seq);
           const task = TASKS.find((t) => t.question_id === question_id);
           const code = snap.files.find((f) => f.path === "main.js")?.content ?? "";
-          const tests = [...task.visible_tests.map((t) => ({ ...t, hidden: false })), ...task.hidden.map((t) => ({ ...t, hidden: true }))].map((t) => {
-            let out = "";
-            try {
-              // A clean environment: the test runner's NODE_OPTIONS/FORCE_COLOR would change the output.
-              const env = { PATH: process.env.PATH, NO_COLOR: "1" };
-              out = execFileSync(process.execPath, ["-e", code], { input: t.input, timeout: 5000, env }).toString();
-            } catch (e) {
-              console.error(`[mock-tm] grading ${t.id} failed: ${String(e.stderr ?? e.message).slice(0, 300)}`);
-            }
-            return { id: t.id, name: t.name, hidden: t.hidden, passed: out.trimEnd() === t.expected_output.trimEnd(), points: t.points };
-          });
-          return { question_id, points: tests.filter((t) => t.passed).reduce((n, t) => n + t.points, 0), max_points: task.points, tests: tests.map(({ points, ...t }) => t) };
-        });
+          const tests = [];
+          for (const t of [...task.visible_tests.map((t) => ({ ...t, hidden: false })), ...task.hidden.map((t) => ({ ...t, hidden: true }))]) {
+            const r = await judge(code, t);
+            tests.push({ id: t.id, name: t.name, hidden: t.hidden, passed: r.passed, verdict: r.verdict, points: t.points });
+          }
+          questions.push({ question_id, points: tests.filter((t) => t.passed).reduce((n, t) => n + t.points, 0), max_points: task.points, tests: tests.map(({ points, ...t }) => t) });
+        }
         return send(res, 200, { status: "released", score: questions.reduce((n, q) => n + q.points, 0), max_score: TASKS.reduce((n, t) => n + t.points, 0), questions });
       }
     }

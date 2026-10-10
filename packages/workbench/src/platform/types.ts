@@ -495,6 +495,10 @@ export interface AccountStatus {
   tm_api: string;
   phase: "idle" | "waiting" | "completing";
   error: string | null;
+  /** While waiting: the browser sign-in page (Open the Browser Again, Copy Sign-in Link). */
+  signin_url?: string | null;
+  /** Signed in, but the session couldn't be saved to the system keychain (signed out at the next start). */
+  keychain_error?: string | null;
 }
 
 export interface TmRequest {
@@ -544,6 +548,8 @@ export interface AccountHost {
   /** Opens the browser; the result arrives through onChange. */
   signIn(): Promise<void>;
   cancel(): Promise<void>;
+  /** Opens the waiting sign-in page in the browser again. */
+  reopenBrowser?(): Promise<void>;
   signOut(): Promise<void>;
   onChange(cb: (s: AccountStatus) => void): () => void;
   /** Authenticated Task Mentor request (/api/tmcode/… only). */

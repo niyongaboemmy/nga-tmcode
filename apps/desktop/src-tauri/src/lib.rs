@@ -278,6 +278,7 @@ pub fn run() {
             webview::webview_dispose,
             account::auth_sign_in,
             account::auth_cancel,
+            account::auth_reopen_browser,
             account::auth_status,
             account::auth_sign_out,
             account::tm_api,

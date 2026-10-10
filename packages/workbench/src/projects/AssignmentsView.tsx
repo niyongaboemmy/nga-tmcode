@@ -10,6 +10,7 @@ import { openAssignmentInTaskMentor, openTaskMentorPage } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
 import { ThisFolder } from "./ProjectsView";
 import { useRowNav } from "./rowNav";
+import { SignInWaiting } from "./SignInWaiting";
 import { isAssessmentWorkspace, opensLabel, practicalStateOf, useSessionEnded, type PracticalState } from "./studentHome";
 
 function Section({ title, count, children, defaultOpen = true, actions, testId }: { title: string; count?: number; children: ReactNode; defaultOpen?: boolean; actions?: ReactNode; testId?: string }) {
@@ -348,6 +349,7 @@ export function AssignmentsView() {
 
   if (!projectsSupported()) return <div className="tm-view-empty">Assignments are available in the TMCode desktop app, outside exams.</div>;
   if (!account?.signed_in) {
+    const signInBusy = account?.phase === "waiting" || account?.phase === "completing";
     return (
       <div className="tm-projects-view" data-testid="assignments-signed-out">
         {ended && <SessionEndedBanner />}
@@ -355,9 +357,10 @@ export function AssignmentsView() {
           <Codicon name="mortar-board" className="tm-projects-hero" />
           <h3>Practicals and case studies</h3>
           <p>Sign in with your NGA account to see the coding assignments of your subjects, start them with your teacher's starter files, and submit from here.</p>
-          <button type="button" className="tm-button tm-button--block" onClick={() => void signIn()}>
-            <Codicon name="account" /> Sign in with NGA
+          <button type="button" className="tm-button tm-button--block" disabled={signInBusy} onClick={() => void signIn()}>
+            <Codicon name={signInBusy ? "loading" : "account"} className={signInBusy ? "codicon-modifier-spin" : ""} /> {signInBusy ? "Continue in your browser…" : "Sign in with NGA"}
           </button>
+          <SignInWaiting />
         </div>
       </div>
     );

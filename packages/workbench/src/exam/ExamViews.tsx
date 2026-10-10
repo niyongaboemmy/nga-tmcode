@@ -3,10 +3,15 @@ import { executeCommand } from "../commands/registry";
 import { Codicon } from "../widgets/icons";
 import { Logo } from "../widgets/Logo";
 import { renderBrief } from "../widgets/markdown";
-import { examClock, focusTask, stopExam, submitExam } from "./session";
+import { answerLobby, examClock, focusTask, openExamTaskMentor, retryLaunch, stopExam, submitExam } from "./session";
 import { formatRemaining } from "./clock";
 import { useExam, type LockReason } from "./state";
-import { useWorkbench } from "../state/store";
+import { getCommand } from "../commands/registry";
+import { getPlatform, useWorkbench } from "../state/store";
+import { shortTitle, verdictLabel } from "./api";
+import { launchErrorCopy, type LaunchAction } from "./launchErrors";
+import { problemCount } from "./readiness";
+import { CheckMyComputerOverlay, Checklist } from "./ReadinessViews";
 
 /** Re-renders every second while mounted (countdowns). */
 function useNow(active: boolean) {
@@ -59,15 +64,19 @@ export function ExamTitle() {
 export function SyncStatus() {
   const sync = useExam((s) => s.sync);
   const phase = useExam((s) => s.phase);
+  // Buffers not yet written to disk are not saved anywhere: "All work saved" must not hide them (E9).
+  const unsaved = useWorkbench((s) => Object.keys(s.dirty).length);
   if (phase === "idle" || phase === "error" || phase === "starting") return null;
   const label = sync.tampered
     ? "Saving failed. Tell your teacher."
     : sync.offline
-      ? `Offline: ${sync.pending} change${sync.pending === 1 ? "" : "s"} saved on this computer`
-      : sync.pending || sync.queued
-        ? "Saving to Task Mentor…"
-        : "All work saved";
-  const busy = sync.pending > 0 || sync.queued > 0;
+      ? `Offline: ${sync.pending} change${sync.pending === 1 ? "" : "s"} saved on this computer${unsaved ? `, ${unsaved} unsaved` : ""}`
+      : unsaved && phase === "active"
+        ? `${unsaved} unsaved change${unsaved === 1 ? "" : "s"}`
+        : sync.pending || sync.queued
+          ? "Saving to Task Mentor…"
+          : "All work saved";
+  const busy = sync.pending > 0 || sync.queued > 0 || (unsaved > 0 && phase === "active");
   const icon = sync.tampered ? "error" : sync.offline ? "cloud-offline" : busy ? "sync" : "cloud";
   return (
     <span className={`tm-status-item tm-sync ${sync.offline || sync.tampered ? "is-warning" : ""}`} title={label} data-testid="exam-sync">
@@ -114,7 +123,9 @@ export function TaskView() {
             onClick={() => focusTask(t.question_id)}
           >
             <span className="tm-taskview-num">{t.order}</span>
-            <span className="tm-taskview-name">{t.title}</span>
+            <span className="tm-taskview-name" title={t.title}>
+              {shortTitle(t.title)}
+            </span>
             <span className="tm-taskview-pts">{t.points} pts</span>
             {t.last_seq > 0 && <Codicon name="check" className="tm-taskview-saved" title="Saved" />}
           </button>
@@ -143,29 +154,74 @@ export function TaskView() {
 
 /** Full-window states around an exam: opening, failed to open, submitted. */
 export function ExamOverlay() {
-  const { phase, error, results, quiz, tasks, lock, resultsSlow } = useExam();
+  const { phase, error, errorCode, errorData, results, quiz, tasks, lock, resultsSlow, readiness } = useExam();
+  if (phase === "idle") return <CheckMyComputerOverlay />;
   if (phase === "starting") {
+    // The system check (E1) runs while the exam opens; problems stop here until Start the Exam.
+    const waiting = !!readiness?.waiting;
+    const problems = readiness ? problemCount(readiness.items) : 0;
     return (
-      <div className="tm-exam-overlay" role="status" aria-live="polite">
-        <div className="tm-exam-card">
+      <div className="tm-exam-overlay" role="status" aria-live="polite" data-testid="exam-lobby">
+        <div className={`tm-exam-card ${readiness?.items.length ? "tm-readiness-card" : ""}`}>
           <Logo size={56} />
-          <h2>Opening your exam…</h2>
-          <p className="tm-muted">Downloading your tasks from Task Mentor.</p>
-          <div className="tm-progress" />
+          <h2>{waiting ? "Check your computer before you start" : "Opening your exam…"}</h2>
+          <p className="tm-muted">
+            {waiting
+              ? `${problems} thing${problems > 1 ? "s" : ""} need${problems > 1 ? "" : "s"} attention. You can fix ${problems > 1 ? "them" : "it"} and check again, or start now.`
+              : readiness
+                ? "Checking this computer…"
+                : "Downloading your tasks from Task Mentor."}
+          </p>
+          {!!readiness?.items.length && <Checklist items={readiness.items} />}
+          {waiting ? (
+            <>
+              {readiness?.endsAt && <p className="tm-muted">Task Mentor sets the time: this exam ends at {at(readiness.endsAt)}.</p>}
+              <div className="tm-readiness-actions">
+                <button type="button" className="tm-button" onClick={() => answerLobby(true)} data-testid="lobby-start">
+                  Start the Exam
+                </button>
+                <button type="button" className="tm-button tm-button--secondary" onClick={() => answerLobby(false)} data-testid="lobby-check-again">
+                  <Codicon name="refresh" /> Check Again
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="tm-progress" />
+          )}
         </div>
       </div>
     );
   }
   if (phase === "error") {
+    const copy = launchErrorCopy(errorCode, error ?? "", errorData);
+    const detail = typeof errorData.detail === "string" ? errorData.detail : null;
+    const canUpdate = !!getCommand("update.checkForUpdates")?.enabled?.();
+    const act: Record<LaunchAction, { label: string; run: () => void; testid: string }> = {
+      retry: { label: "Try Again", run: retryLaunch, testid: "launch-retry" },
+      taskmentor: { label: "Open Task Mentor", run: openExamTaskMentor, testid: "launch-taskmentor" },
+      update: {
+        label: "Update TMCode",
+        run: () => (canUpdate ? void executeCommand("update.checkForUpdates") : openUpdatePage()),
+        testid: "launch-update",
+      },
+    };
     return (
-      <div className="tm-exam-overlay" role="alert">
+      <div className="tm-exam-overlay" role="alert" data-testid="exam-launch-error" data-code={errorCode ?? ""}>
         <div className="tm-exam-card">
           <Codicon name="error" className="tm-exam-card-icon is-error" />
-          <h2>The exam could not be opened</h2>
-          <p>{error}</p>
-          <button type="button" className="tm-button" onClick={() => stopExam()}>
-            Close
-          </button>
+          <h2>{copy.title}</h2>
+          <p>{copy.body}</p>
+          {detail && <p className="tm-muted tm-exam-error-detail">{detail}</p>}
+          <div className="tm-readiness-actions">
+            {copy.actions.map((a, i) => (
+              <button key={a} type="button" className={`tm-button ${i ? "tm-button--secondary" : ""}`} onClick={act[a].run} data-testid={act[a].testid}>
+                {act[a].label}
+              </button>
+            ))}
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => stopExam()}>
+              Close
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -201,13 +257,14 @@ export function ExamOverlay() {
                   const at = tasks.findIndex((t) => t.question_id === q.question_id);
                   return (
                   <li key={q.question_id}>
-                    <span>{at >= 0 ? `${at + 1}. ${tasks[at].title}` : `Task ${i + 1}`}</span>
+                    <span title={at >= 0 ? tasks[at].title : undefined}>{at >= 0 ? `${at + 1}. ${shortTitle(tasks[at].title, 48)}` : `Task ${i + 1}`}</span>
                     <span>
                       {q.points}/{q.max_points}
                     </span>
                     <span className="tm-muted">
                       {q.tests.filter((t) => t.passed).length}/{q.tests.length} tests passed
                     </span>
+                    <VisibleTestResults tests={q.tests} />
                   </li>
                   );
                 })}
@@ -225,6 +282,42 @@ export function ExamOverlay() {
 }
 
 const at = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/** Task Mentor's TMCode download page (when the in-app updater isn't available). */
+function openUpdatePage() {
+  const url = "https://taskmentor.amashuri.com/tmcode";
+  const p = getPlatform();
+  if (p.openExternal) void p.openExternal(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+type ResultTest = { id: string; name?: string; hidden: boolean; passed: boolean; verdict?: string };
+
+/** The example tests by name with a verdict (E11); hidden tests stay a count. */
+function VisibleTestResults({ tests }: { tests: ResultTest[] }) {
+  const visible = tests.filter((t) => !t.hidden);
+  const hidden = tests.filter((t) => t.hidden);
+  if (!visible.length) return null;
+  return (
+    <ul className="tm-exam-tresults" data-testid="exam-visible-results">
+      {visible.map((t, i) => (
+        <li key={t.id} className={t.passed ? "is-passed" : "is-failed"}>
+          <Codicon name={t.passed ? "pass-filled" : "error"} />
+          <span>{t.name || `Example ${i + 1}`}</span>
+          <span className="tm-muted">{t.passed ? "Passed" : (verdictLabel(t.verdict) ?? "Failed")}</span>
+        </li>
+      ))}
+      {hidden.length > 0 && (
+        <li className="tm-muted">
+          <Codicon name="lock" />
+          <span>
+            Hidden tests: {hidden.filter((t) => t.passed).length}/{hidden.length} passed
+          </span>
+        </li>
+      )}
+    </ul>
+  );
+}
 
 /** One card while the final code goes to Task Mentor, including when time is up offline. */
 function SubmittingCard() {

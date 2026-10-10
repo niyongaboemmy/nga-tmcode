@@ -10,6 +10,7 @@ import { codeEditorFor, runEditorAction } from "../monaco/editors";
 import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
 import { loadTests, runTests } from "../run/testService";
 import { submitExam } from "../exam/session";
+import { checkMyComputer } from "../exam/readiness";
 // ── Run and Debug ──
 import { registerDebugCommands } from "../debug/commands";
 import { runWithoutDebugging } from "../debug/debugService";
@@ -283,6 +284,8 @@ export function registerBuiltinCommands() {
   // ── Exams ──
   registerCommand({ id: "tmcode.submitExam", title: "Submit Exam", category: "Exam", enabled: inExam, run: () => submitExam() });
   registerCommand({ id: "workbench.view.task", title: "Show Task", category: "Exam", enabled: inExam, run: () => revealView("task") });
+  // Python, a JDK, a C compiler… found? Task Mentor reachable, clock, disk (review F3). Same checks as the exam lobby.
+  registerCommand({ id: "tmcode.checkMyComputer", title: "Check My Computer", category: "Help", enabled: () => !inExam(), run: () => void checkMyComputer() });
 
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });

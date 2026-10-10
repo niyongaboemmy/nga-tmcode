@@ -1,4 +1,6 @@
+import { create } from "zustand";
 import { profileForPath } from "@tmcode/profiles";
+import type { Profile } from "@tmcode/protocol";
 import { outputsMatch } from "@tmcode/protocol";
 import { saveAll } from "../monaco/documents";
 import { getPlatform, log, notify, openEditorInput, setTests, updateTest, useWorkbench, type TestItem } from "../state/store";
@@ -49,10 +51,47 @@ export function setVisibleTests(entry: string, tests: Omit<TestItem, "status">[]
   setTests({ entry, source: "exam", items: tests.map((t) => ({ ...t, status: "idle" })) });
 }
 
+// ───────────── example tests on Task Mentor (exams, review E2) ─────────────
+
+export interface ServerRunState {
+  /** "queued": sent to Task Mentor, waiting for the results. */
+  status: "idle" | "queued";
+  /** Task Mentor's rate limit: no new run before this time. */
+  retryAt: number | null;
+  error: string | null;
+  lastRunAt: number | null;
+  /** This computer can't run the tests (tool missing), so they run on Task Mentor. */
+  remote: boolean;
+}
+
+export const useServerRun = create<ServerRunState>()(() => ({ status: "idle", retryAt: null, error: null, lastRunAt: null, remote: false }));
+
+/** Set by the exam session: runs the visible tests on Task Mentor; false if it can't (not in an exam). */
+let serverRunner: ((ids?: string[]) => Promise<boolean>) | null = null;
+export function setServerRunner(fn: typeof serverRunner) {
+  serverRunner = fn;
+}
+
+/** Tools the profile needs that this computer doesn't have (runner.detect, cached). */
+async function missingTools(profile: Profile): Promise<string[]> {
+  const runner = getPlatform().runner;
+  if (!runner || !profile.local) return [];
+  const need = [...new Set([...profile.local.build.map((s) => s.tool), profile.local.run.tool].filter((t) => t !== "exe"))];
+  const found = new Set((await runner.detect().catch(() => [])).map((t) => t.tool));
+  return need.filter((t) => !found.has(t));
+}
+
 export async function runTests(ids?: string[]) {
   const { tests } = useWorkbench.getState();
   if (!tests.entry || tests.running) return;
   const profile = profileForPath(tests.entry);
+  // Exam tasks whose language can't run here run on Task Mentor instead.
+  const remote = tests.source === "exam" && !!serverRunner && (!profile?.local || !getPlatform().runner || (await missingTools(profile)).length > 0);
+  useServerRun.setState({ remote });
+  if (remote) {
+    await saveAll();
+    if (await serverRunner!(ids)) return;
+  }
   if (!profile?.local) {
     notify("warning", `There is no way to run '${tests.entry}' locally.`);
     return;
