@@ -22,6 +22,7 @@ import type {
   RunEvent,
   StoredExtension,
   TerminalSession,
+  TerminalProfile,
   Toolchain,
   UpdateInfo,
   UpdateProgress,
@@ -157,16 +158,18 @@ export async function createTauriPlatform(): Promise<Platform> {
       trash: (path) => invoke("ws_trash", { path }),
     },
     terminal: {
-      async spawn({ cols, rows, cwd, onData, onExit }): Promise<TerminalSession> {
+      async spawn({ cols, rows, cwd, profile, onData, onExit }): Promise<TerminalSession> {
         const channel = new Channel<PtyEvent>();
         channel.onmessage = (e) => (e.type === "data" ? onData(e.data) : onExit(e.code));
-        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, onEvent: channel });
+        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, onEvent: channel });
         return {
           write: (data) => void invoke("pty_write", { id, data }).catch(() => {}),
           resize: (c, r) => void invoke("pty_resize", { id, cols: c, rows: r }).catch(() => {}),
           kill: () => void invoke("pty_kill", { id }).catch(() => {}),
+          busy: () => invoke<boolean>("pty_busy", { id }).catch(() => false),
         };
       },
+      profiles: () => invoke<TerminalProfile[]>("pty_profiles"),
     },
     runner: {
       interactive: true,
@@ -286,6 +289,9 @@ function createTauriGit(): GitHost {
     info: (refresh = false) => invoke("git_info", { refresh }),
     status: () => invoke("git_status"),
     show: (path, rev) => invoke("git_show", { path, rev }),
+    showAt: (path, commit) => invoke("git_show", { path, rev: commit }),
+    fileLog: (path, limit) => invoke("git_file_log", { path, limit }),
+    stageContent: (path, content) => invoke("git_stage_content", { path, content }),
     stage: (paths) => invoke("git_stage", { paths }),
     unstage: (paths) => invoke("git_unstage", { paths }),
     discard: (tracked, untracked) => invoke("git_discard", { tracked, untracked }),

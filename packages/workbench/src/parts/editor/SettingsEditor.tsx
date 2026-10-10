@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
-import { DEFAULT_SETTINGS, SETTING_SECTIONS, type SettingDef, type Settings } from "../../state/settings";
-import { updateSetting, useWorkbench } from "../../state/store";
-import { Codicon } from "../../widgets/icons";
+import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_SETTINGS, SETTING_SECTIONS, type SettingDef, type SettingKey, type Settings } from "../../state/settings";
+import { openFile, openSpecialEditor, updateSetting, useWorkbench } from "../../state/store";
+import { ActionButton, Codicon } from "../../widgets/icons";
+import { loadTerminalProfiles, useTerminalProfiles } from "../../terminal/profiles";
+import { WORKSPACE_SETTINGS_FILE } from "../../state/settingsJson";
 import { allThemes, useThemes } from "../../themes/themeService";
 import { allIconThemes, useIconTheme } from "../../themes/iconThemes";
 import { ExtensionSettingsSection } from "../../exthost/ui";
@@ -10,8 +12,13 @@ import { ExtensionSettingsSection } from "../../exthost/ui";
 function useOptions(def: Extract<SettingDef, { type: "enum" }>) {
   useThemes((s) => s.version);
   useIconTheme((s) => s.version);
+  const profiles = useTerminalProfiles((s) => s.profiles);
+  useEffect(() => {
+    if (def.dynamicOptions === "terminalProfiles") void loadTerminalProfiles();
+  }, [def.dynamicOptions]);
   if (def.dynamicOptions === "colorThemes") return allThemes().map((t) => ({ value: t.id, label: t.label }));
   if (def.dynamicOptions === "iconThemes") return allIconThemes().map((t) => ({ value: t.id, label: t.label }));
+  if (def.dynamicOptions === "terminalProfiles") return [...def.options, ...profiles.map((p) => ({ value: p.id, label: `${p.name}${p.is_default ? " (system)" : ""}` }))];
   return def.options;
 }
 
@@ -80,19 +87,34 @@ function Control({ def, value, locked }: { def: SettingDef; value: unknown; lock
   }
 }
 
+/** Language scopes that set a key, e.g. ["python"] for "[python]": { "editor.tabSize": 4 }. */
+function scopesOf(key: SettingKey, langs: Record<string, Partial<Settings>>) {
+  return Object.entries(langs)
+    .filter(([, v]) => key in v)
+    .map(([l]) => l);
+}
+
 export function SettingsEditor() {
-  const settings = useWorkbench((s) => s.settings);
+  const settings = useWorkbench((s) => s.userSettings);
+  const languages = useWorkbench((s) => s.languageSettings);
+  const overlay = useWorkbench((s) => s.workspaceSettings);
   const locked = useWorkbench((s) => s.policy.locked_settings);
   const [query, setQuery] = useState("");
   const [onlyModified, setOnlyModified] = useState(false);
+  const [tab, setTab] = useState<"user" | "workspace">("user");
+  const workspaceTab = tab === "workspace" && !!overlay;
+  const inWorkspace = (key: SettingKey) => !!overlay && (key in overlay.values || Object.values(overlay.languages).some((l) => key in l));
 
   const sections = useMemo(
     () =>
       SETTING_SECTIONS.map((s) => ({
         ...s,
-        settings: s.settings.filter((d) => matches(d, query) && (!onlyModified || settings[d.key] !== DEFAULT_SETTINGS[d.key])),
+        settings: s.settings.filter(
+          (d) => matches(d, query) && (workspaceTab ? inWorkspace(d.key) : !onlyModified || settings[d.key] !== DEFAULT_SETTINGS[d.key]),
+        ),
       })).filter((s) => s.settings.length),
-    [query, onlyModified, settings],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [query, onlyModified, settings, workspaceTab, overlay],
   );
   const count = sections.reduce((n, s) => n + s.settings.length, 0);
 
@@ -114,11 +136,44 @@ export function SettingsEditor() {
             <Codicon name="filter" />
           </button>
         </div>
-        <div className="tm-settings-tabs" role="tablist">
-          <span role="tab" aria-selected className="tm-settings-tab is-active">
+        <div className="tm-settings-tabs" role="tablist" aria-label="Settings scope">
+          <button type="button" role="tab" aria-selected={!workspaceTab} className={`tm-settings-tab ${!workspaceTab ? "is-active" : ""}`} onClick={() => setTab("user")}>
             User
+          </button>
+          {overlay && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={workspaceTab}
+              className={`tm-settings-tab ${workspaceTab ? "is-active" : ""}`}
+              title={`From this folder's ${WORKSPACE_SETTINGS_FILE} (read-only)`}
+              onClick={() => setTab("workspace")}
+            >
+              Workspace
+            </button>
+          )}
+          <span className="tm-settings-tabs-actions">
+            <ActionButton icon="go-to-file" label="Open Settings (JSON)" onClick={() => openSpecialEditor("settingsJson")} />
           </span>
         </div>
+        {workspaceTab && overlay && (
+          <div className="tm-settings-workspace-note" role="note">
+            <Codicon name="lock" /> Set by this folder's{" "}
+            <button type="button" className="tm-link-button" onClick={() => openFile(WORKSPACE_SETTINGS_FILE, { pinned: true })}>
+              {WORKSPACE_SETTINGS_FILE}
+            </button>
+            . They override your own while this folder is open.
+            {overlay.ignored.length > 0 && (
+              <ul className="tm-settings-ignored">
+                {overlay.ignored.map((i) => (
+                  <li key={i.key}>
+                    <code>{i.key}</code>: not used. {i.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
       <div className="tm-settings-body">
         <nav className="tm-settings-toc" aria-label="Settings sections">
@@ -132,32 +187,45 @@ export function SettingsEditor() {
           ))}
         </nav>
         <div className="tm-settings-list tm-scroll">
-          {sections.length === 0 && !query && !onlyModified && <p className="tm-muted">No settings found.</p>}
+          {sections.length === 0 && !query && !onlyModified && <p className="tm-muted">{workspaceTab ? "This folder doesn't change any setting TMCode has." : "No settings found."}</p>}
           {sections.map((s) => (
             <section key={s.title} id={`settings-${s.title}`} className="tm-settings-section">
               <h3>{s.title}</h3>
               {s.settings.map((def) => {
-                const value = settings[def.key];
-                const modified = value !== DEFAULT_SETTINGS[def.key];
-                const isLocked = locked.includes(def.key);
+                const wsValue = overlay?.values[def.key];
+                const value = workspaceTab ? (wsValue ?? settings[def.key]) : settings[def.key];
+                const modified = !workspaceTab && value !== DEFAULT_SETTINGS[def.key];
+                const isLocked = workspaceTab || locked.includes(def.key);
+                const scopes = scopesOf(def.key, workspaceTab ? (overlay?.languages ?? {}) : languages);
                 return (
-                  <div key={def.key} className={`tm-setting ${modified ? "is-modified" : ""}`}>
+                  <div key={def.key} className={`tm-setting ${modified ? "is-modified" : ""}`} data-setting={def.key}>
                     <div className="tm-setting-title">
                       <span className="tm-setting-category">{s.title}: </span>
                       <strong>{def.label}</strong>
                       {modified && <span className="tm-setting-modified">Modified</span>}
-                      {isLocked && (
+                      {!workspaceTab && inWorkspace(def.key) && (
+                        <button type="button" className="tm-setting-badge" title="This folder's settings change it: see the Workspace tab" onClick={() => setTab("workspace")}>
+                          Workspace
+                        </button>
+                      )}
+                      {scopes.map((l) => (
+                        <span key={l} className="tm-setting-badge" title={`Also set for ${l} files in settings.json`}>
+                          [{l}]
+                        </span>
+                      ))}
+                      {locked.includes(def.key) && (
                         <span className="tm-setting-locked" title="Locked by your teacher for this session">
                           <Codicon name="lock" /> Locked by teacher
                         </span>
                       )}
-                      {modified && !isLocked && (
+                      {modified && !isLocked && !workspaceTab && (
                         <button type="button" className="tm-link-button" onClick={() => updateSetting(def.key, DEFAULT_SETTINGS[def.key] as never)}>
                           Reset
                         </button>
                       )}
                     </div>
                     {def.type !== "boolean" && <div className="tm-setting-description">{def.description}</div>}
+                    {workspaceTab && wsValue === undefined && <div className="tm-setting-description">Set only for some languages: {scopes.map((l) => `[${l}]`).join(", ")}.</div>}
                     <div className="tm-setting-control">
                       <Control def={def} value={value} locked={isLocked} />
                     </div>
@@ -167,7 +235,7 @@ export function SettingsEditor() {
             </section>
           ))}
           {/* ── extension host (feat/exthost): settings contributed by extensions ── */}
-          <ExtensionSettingsSection query={query} onlyModified={onlyModified} />
+          {!workspaceTab && <ExtensionSettingsSection query={query} onlyModified={onlyModified} />}
         </div>
       </div>
     </div>

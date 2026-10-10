@@ -33,6 +33,19 @@ export interface TerminalSession {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
+  /** A program other than the shell is running in it (npm run dev, python…); absent where unknown. */
+  busy?(): Promise<boolean>;
+}
+
+/** A shell found on this computer (pty.rs `detect_profiles`). */
+export interface TerminalProfile {
+  /** "zsh", "bash", "fish", "powershell", "pwsh", "cmd", "gitbash", "wsl", or the $SHELL's name. */
+  id: string;
+  /** Shown on the terminal tab and in the ⌄ menu: "zsh", "PowerShell", "Git Bash"… */
+  name: string;
+  path: string;
+  /** The system's shell ($SHELL, or PowerShell on Windows). */
+  is_default: boolean;
 }
 
 export interface TerminalSpawnOptions {
@@ -40,6 +53,8 @@ export interface TerminalSpawnOptions {
   rows: number;
   /** Workspace-relative working directory (default: the workspace root). */
   cwd?: string;
+  /** A profile id from `profiles()`; absent = the system's shell. */
+  profile?: string;
   onData(data: string): void;
   onExit(code: number | null): void;
 }
@@ -84,7 +99,7 @@ export interface Platform {
   setTitle?(title: string): void;
   fs: FileSystem;
   /** Absent where a shell is impossible (web) or forbidden by policy. */
-  terminal?: { spawn(opts: TerminalSpawnOptions): Promise<TerminalSession> };
+  terminal?: { spawn(opts: TerminalSpawnOptions): Promise<TerminalSession>; profiles?(): Promise<TerminalProfile[]> };
   /** Absent in the browser, where the page has no window chrome to drive. */
   window?: WindowControls;
   store: KeyValueStore;
@@ -445,6 +460,12 @@ export interface GitHost {
   status(): Promise<GitStatus | null>;
   /** A file at HEAD or in the index; null when it doesn't exist there. */
   show(path: string, rev: "HEAD" | "index"): Promise<string | null>;
+  /** A file as it was in a commit (full or short hash); null when it didn't exist there. */
+  showAt?(path: string, commit: string): Promise<string | null>;
+  /** The commits that changed a file, newest first (the Timeline). */
+  fileLog?(path: string, limit: number): Promise<GitCommit[]>;
+  /** Puts this text in the index as the file's staged content (Stage Change for one hunk). */
+  stageContent?(path: string, content: string): Promise<void>;
   stage(paths: string[]): Promise<void>;
   unstage(paths: string[]): Promise<void>;
   /** Tracked files return to their index version; untracked ones are deleted. */

@@ -8305,3 +8305,185 @@ kbd,
 .tm-signin-wait.is-compact .tm-signin-wait-actions {
   justify-content: flex-start;
 }
+
+/* ───── V15–V17, V12: editor grid, pinned tabs, settings.json, split terminals, merge conflicts ───── */
+/* Drop a tab on an editor's edge to split (VS Code's drop overlay). */
+.tm-editor-drop {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--focus-border) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--focus-border) 60%, transparent);
+  transition: inset 80ms ease-out;
+}
+.tm-editor-drop.is-center {
+  inset: 0;
+}
+.tm-editor-drop.is-left {
+  inset: 0 50% 0 0;
+}
+.tm-editor-drop.is-right {
+  inset: 0 0 0 50%;
+}
+.tm-editor-drop.is-up {
+  inset: 0 0 50% 0;
+}
+.tm-editor-drop.is-down {
+  inset: 50% 0 0 0;
+}
+/* Pinned tabs: the pin always shows, as in VS Code. */
+.tm-tab.is-pinned .tm-tab-close {
+  opacity: 1;
+}
+.tm-tab.is-pinned .tm-tab-close-x {
+  font-size: 13px;
+}
+.tm-tab:focus-visible {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+/* Settings: User / Workspace tabs, the JSON button and the folder's overrides. */
+button.tm-settings-tab {
+  border-width: 0 0 1px;
+  border-style: solid;
+  border-color: transparent;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.tm-settings-tab.is-active {
+  border-bottom-color: var(--panel-active-border);
+}
+.tm-settings-tabs-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+.tm-setting-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  background: color-mix(in srgb, var(--badge-bg) 22%, transparent);
+  color: var(--foreground);
+  cursor: default;
+}
+button.tm-setting-badge {
+  cursor: pointer;
+}
+.tm-settings-workspace-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-settings-ignored {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.tm-settings-json {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tm-settings-json-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--description);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.tm-settings-json-bar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+.tm-settings-json .tm-monaco-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+/* Split terminals side by side; the active pane is outlined when there are several. */
+.tm-terminal-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.tm-terminal-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+}
+.tm-terminal-pane + .tm-terminal-pane {
+  border-left: 1px solid var(--border);
+}
+.tm-terminal-pane.is-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--focus-border) 45%, transparent);
+}
+.tm-terminal-list {
+  width: 190px;
+}
+.tm-terminal-tree {
+  width: 10px;
+  color: var(--description);
+  font-family: monospace;
+}
+.tm-terminal-rename {
+  flex: 1;
+  height: 20px;
+  margin: 0 4px;
+  font-size: 12px;
+}
+.tm-terminal-rename-float {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 3;
+  width: 200px;
+  display: flex;
+}
+/* Merge conflicts: current (green) and incoming (blue), as VS Code colours them. */
+.monaco-editor .tm-merge-current-header {
+  background: rgba(64, 200, 174, 0.5);
+}
+.monaco-editor .tm-merge-current {
+  background: rgba(64, 200, 174, 0.2);
+}
+.monaco-editor .tm-merge-incoming-header {
+  background: rgba(64, 166, 255, 0.5);
+}
+.monaco-editor .tm-merge-incoming {
+  background: rgba(64, 166, 255, 0.2);
+}
+.monaco-editor .tm-merge-base {
+  background: rgba(150, 150, 150, 0.15);
+}
+/* Diff editor title actions (Stage / Revert / Previous / Next / Inline). */
+.tm-diff-actions .tm-action {
+  font-size: 14px;
+}
+/* Git commits in the Timeline: laid out like Local History rows. */
+.tm-timeline-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px 0 20px;
+  cursor: pointer;
+}
+.tm-timeline-commit .tm-timeline-dot {
+  color: var(--description);
+}
+/* ───── end V15–V17, V12 ───── */
