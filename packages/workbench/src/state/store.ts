@@ -440,9 +440,16 @@ let editorsTimer: ReturnType<typeof setTimeout> | null = null;
 /** While a folder opens, its saved layout must not be overwritten by the empty one. */
 let restoringLayout = false;
 /** Saves the folder's layout soon (also called when pane sizes or cursors change). */
+let editorsDue = 0;
 export function scheduleLayoutSave(delay = 500) {
   // Throttled, not debounced: cursor moves and sash drags must not keep postponing the save.
-  if (editorsTimer) return;
+  // A sooner request (a tab opened while a slow view-state save waits) brings the save forward.
+  const due = Date.now() + delay;
+  if (editorsTimer) {
+    if (due >= editorsDue) return;
+    clearTimeout(editorsTimer);
+  }
+  editorsDue = due;
   editorsTimer = setTimeout(() => {
     editorsTimer = null;
     const st = get();
@@ -471,6 +478,13 @@ useWorkbench.subscribe((s, prev) => {
   if (!s.workspace || (s.groups === prev.groups && s.activeGroup === prev.activeGroup && s.editorLayout === prev.editorLayout)) return;
   scheduleLayoutSave();
 });
+
+// A reload or quit that doesn't go through Reload Window still keeps the last tabs (VS Code saves state on shutdown).
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    if (editorsTimer) void flushLayoutSave();
+  });
+}
 
 // The open* functions return false when nothing was opened: the picker was
 // closed, the path failed, or the student kept the current folder (Cancel on

@@ -13,12 +13,14 @@ const shot = async (page: Page, name: string, browserName: string) => {
 };
 
 async function fresh(page: Page, query = "", settings: Record<string, unknown> = {}) {
-  await page.goto(`/${query}`);
-  await page.evaluate((s) => {
+  // Seed storage before any app code runs (once per test), so a save from a still-starting page can't overwrite it.
+  await page.addInitScript((s) => {
+    if (sessionStorage.getItem("tmcode:e2e-seeded")) return;
+    sessionStorage.setItem("tmcode:e2e-seeded", "1");
     localStorage.clear();
     if (Object.keys(s).length) localStorage.setItem("tmcode:ui", JSON.stringify({ settings: s }));
   }, settings);
-  await page.reload();
+  await page.goto(`/${query}`);
   await expect(page.locator(".tm-explorer")).toBeVisible();
   await expect(page.locator(".tm-statusbar")).toBeVisible();
 }
