@@ -17,17 +17,33 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
     setupMonaco();
     let disposed = false;
     const original = monaco.editor.createModel("", languageForPath(input.path));
+    const grading = input.source === "grading";
+    let ownModified: monaco.editor.ITextModel | null = null;
     const diff = monaco.editor.createDiffEditor(host.current!, {
       ...editorOptions(useWorkbench.getState().settings, os),
       originalEditable: false,
+      // Grading compares two versions of a student's work: nothing to edit.
+      readOnly: grading,
       renderSideBySide: true,
       useInlineViewWhenSpaceIsLimited: true,
       renderSideBySideInlineBreakpoint: 700,
       ignoreTrimWhitespace: false,
-      ariaLabel: input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : `${input.path} (Local History) ↔ current`,
+      ariaLabel: input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : grading ? `${input.path}: ${input.label ?? "version"} ↔ submitted` : `${input.path} (Local History) ↔ current`,
     });
     void (async () => {
       try {
+        if (grading) {
+          // Left: that version of the student's work; right: the submitted file (or nothing, when it was deleted).
+          const { leftText } = await import("../grading/diff");
+          original.setValue(await leftText(input.entry, input.path));
+          const exists = await getPlatform()
+            .fs.readFile(input.path)
+            .then(() => true)
+            .catch(() => false);
+          const modified = exists ? await ensureDocument(input.path) : (ownModified = monaco.editor.createModel("", languageForPath(input.path)));
+          if (!disposed) diff.setModel({ original, modified });
+          return;
+        }
         // A conflict's Compare: Task Mentor's copy (left) against this folder's file (right).
         original.setValue(input.source === "taskMentor" ? await getPlatform().fs.readFile(input.entry) : await readHistory(input.path, input.entry));
         const modified = await ensureDocument(input.path);
@@ -41,6 +57,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
       diff.setModel(null);
       diff.dispose();
       original.dispose();
+      ownModified?.dispose();
     };
   }, [input.path, input.entry, os]);
 
@@ -52,7 +69,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
       if (group) await closeEditors(group.id, [input.id]);
     });
   return (
-    <div className={`tm-code-editor tm-git-diff ${compare ? "tm-history-compare" : ""}`} data-testid="history-diff">
+    <div className={`tm-code-editor tm-git-diff ${compare || input.source === "grading" ? "tm-history-compare" : ""}`} data-testid="history-diff">
       {compare && (
         <div className="tm-compare-bar" data-testid="conflict-compare">
           <span className="tm-compare-side">Task Mentor's copy</span>
@@ -66,6 +83,13 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
               Take Task Mentor's
             </button>
           </span>
+        </div>
+      )}
+      {input.source === "grading" && (
+        <div className="tm-compare-bar" data-testid="grading-diff">
+          <span className="tm-compare-side">{input.label ?? "Version"}</span>
+          <span className="codicon codicon-arrow-right" aria-hidden />
+          <span className="tm-compare-side">Submitted</span>
         </div>
       )}
       <div ref={host} className="tm-monaco-host monaco-component" />

@@ -7882,3 +7882,274 @@ kbd,
   top: 30px;
   overflow: hidden;
 }
+
+/* ── Grading review (G1–G14): drafts, conflicts, diffs, line comments ── */
+/* A draft grade the student doesn't see yet: attention (orange). */
+.tm-chip.is-draft {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}
+.tm-grade-unsaved {
+  display: inline-flex;
+  flex: none;
+}
+.tm-grade-unsaved.is-error .codicon {
+  color: var(--error);
+}
+.tm-grade-panel:focus {
+  outline: none;
+}
+.tm-grade-by {
+  margin: -2px 0 6px;
+  color: var(--description);
+  font-size: 11px;
+  text-align: right;
+}
+.tm-grade-warn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  color: var(--warning);
+  font-size: 11px;
+}
+.tm-grade-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  color: var(--error);
+  font-size: 12px;
+}
+.tm-grade-save-error,
+.tm-grade-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  font-size: 12px;
+}
+.tm-grade-save-error > .codicon {
+  color: var(--error);
+}
+.tm-grade-save-error > span {
+  flex: 1;
+  min-width: 0;
+}
+.tm-grade-conflict {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.tm-grade-conflict > .codicon {
+  color: var(--warning);
+}
+.tm-grade-conflict > span:first-of-type {
+  flex: 1;
+  min-width: 160px;
+}
+.tm-grade-conflict-actions {
+  display: flex;
+  gap: 6px;
+}
+.tm-grade-return {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+.tm-grade-return label {
+  font-weight: 600;
+}
+.tm-grade-return textarea {
+  width: 100%;
+  resize: vertical;
+}
+.tm-grade-return p {
+  margin: 0;
+}
+.tm-grade-return-buttons {
+  display: flex;
+  gap: 6px;
+}
+.tm-grade-changes,
+.tm-grade-comments {
+  font-size: 12px;
+}
+.tm-grade-changes-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+.tm-grade-changes h3,
+.tm-grade-comments h3 {
+  margin: 0 0 4px;
+}
+.tm-grade-changes-actions {
+  margin-left: auto;
+}
+.tm-grade-changes-note {
+  margin: 2px 0;
+  font-size: 12px;
+}
+.tm-grade-change-list,
+.tm-grade-comment-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tm-grade-change,
+.tm-grade-comment-link {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-grade-change:hover,
+.tm-grade-comment-link:hover {
+  background: var(--list-hover-bg, color-mix(in srgb, var(--foreground) 8%, transparent));
+}
+.tm-grade-change:focus-visible,
+.tm-grade-comment-link:focus-visible {
+  outline: 1px solid var(--focus-border, var(--accent));
+  outline-offset: -1px;
+}
+.tm-grade-change-letter {
+  flex: none;
+  width: 12px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.tm-grade-change-letter.is-added {
+  color: var(--success);
+}
+.tm-grade-change-letter.is-modified {
+  color: var(--warning);
+}
+.tm-grade-change-letter.is-deleted {
+  color: var(--error);
+}
+.tm-grade-change-path,
+.tm-grade-comment-where {
+  flex: none;
+  font-family: var(--font-mono);
+}
+.tm-grade-comment-where {
+  color: var(--link);
+}
+.tm-grade-comment-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--description);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-grade-shortcuts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  font-size: 12px;
+}
+.tm-grade-shortcuts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tm-grade-shortcuts dd {
+  margin: 0;
+}
+.tm-grade-shortcuts kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 11px;
+}
+/* Line comments in the review folder: Monaco view zones under their line. */
+.tm-review-comment-zone {
+  box-sizing: border-box;
+  padding: 4px 16px 4px 4px;
+  font-family: var(--font-ui, system-ui, sans-serif);
+}
+.tm-review-comment {
+  box-sizing: border-box;
+  max-width: 640px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius);
+  background: var(--sidebar-bg, var(--editor-bg));
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.tm-review-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tm-review-comment-head > .codicon {
+  color: var(--info);
+}
+.tm-review-comment-actions {
+  display: flex;
+  margin-left: auto;
+}
+.tm-review-comment-body {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tm-review-comment.is-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tm-review-comment-label {
+  color: var(--description);
+}
+.tm-review-comment textarea {
+  width: 100%;
+  resize: vertical;
+}
+.tm-review-comment-buttons {
+  display: flex;
+  gap: 6px;
+}
+.monaco-editor .tm-review-comment-mark,
+.monaco-editor .tm-review-comment-add {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 16px !important;
+  margin-left: 2px;
+  font-size: 13px;
+}
+.monaco-editor .tm-review-comment-mark {
+  color: var(--info);
+}
+.monaco-editor .tm-review-comment-add {
+  border-radius: 3px;
+  background: var(--button-bg, var(--accent));
+  color: var(--button-fg, #fff);
+  cursor: pointer;
+}
