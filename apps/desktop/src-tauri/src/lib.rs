@@ -2,6 +2,7 @@
 mod menus;
 pub mod askpass;
 mod debug;
+mod lsp;
 mod netcoredbg;
 mod phpdebug;
 mod account;
@@ -201,6 +202,7 @@ pub fn run() {
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
         .manage(debug::Debuggers::default())
+        .manage(lsp::LanguageServers::default())
         .manage(proc::Procs::default())
         .manage(preview::Preview::default())
         .manage(watcher::Watcher::default())
@@ -251,6 +253,12 @@ pub fn run() {
             debug::debug_stop,
             debug::debug_run_in_terminal,
             debug::debug_policy,
+            lsp::lsp_probe,
+            lsp::lsp_install,
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_stop,
+            lsp::lsp_policy,
             preview::preview_publish,
             api::api_request,
             proc::proc_run,
@@ -351,6 +359,7 @@ pub fn run() {
             handle.state::<pty::Terminals>().kill_all();
             handle.state::<runner::Runs>().kill_all();
             handle.state::<debug::Debuggers>().kill_all();
+            handle.state::<lsp::LanguageServers>().kill_all();
             handle.state::<exthost::ExtHosts>().kill_all();
         }
     });

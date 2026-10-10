@@ -351,6 +351,8 @@ export function wireDocuments() {
   monaco.editor.onDidChangeMarkers(() => recomputeProblems());
 
   window.addEventListener("blur", saveOnFocusChange);
+  // Built-in language servers (Pyright) start when a file of their language opens.
+  void import("../lsp/servers").then((m) => m.wireLanguageServers()).catch(() => {});
   log("Workbench", "Editor services ready");
 }
 

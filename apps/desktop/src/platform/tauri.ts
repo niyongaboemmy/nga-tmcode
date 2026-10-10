@@ -17,6 +17,9 @@ import type {
   GitHost,
   GitTask,
   JournalEntry,
+  LanguageServerEvent,
+  LanguageServerHost,
+  LanguageServerProbe,
   Platform,
   ProcEvent,
   RunEvent,
@@ -64,6 +67,29 @@ function createDebugHost(): DebugHost {
         kill: () => void invoke("run_kill", { id }).catch(() => {}),
       };
     },
+  };
+}
+
+/** Built-in language servers over the Rust LSP bridge (src-tauri/src/lsp.rs). */
+function createLanguageServerHost(): LanguageServerHost {
+  return {
+    probe: (server) => invoke<LanguageServerProbe>("lsp_probe", { server }),
+    async install(server, onEvent) {
+      const channel = new Channel<DebugInstallEvent>();
+      channel.onmessage = onEvent;
+      await invoke("lsp_install", { server, onEvent: channel });
+    },
+    async start(server, onEvent) {
+      const channel = new Channel<LanguageServerEvent>();
+      channel.onmessage = onEvent;
+      const id = await invoke<number>("lsp_start", { server, onEvent: channel });
+      return {
+        id,
+        send: (message) => void invoke("lsp_send", { id, message }).catch(() => {}),
+        stop: () => void invoke("lsp_stop", { id }).catch(() => {}),
+      };
+    },
+    setExamPolicy: (allowed) => void invoke("lsp_policy", { allowed }).catch(() => {}),
   };
 }
 
@@ -197,6 +223,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       toolchains: async () => (await invoke<Toolchain[]>("toolchains_detect", { refresh: false })).map((t) => ({ tool: t.tool, version: t.version })),
     },
     debug: createDebugHost(),
+    languageServers: createLanguageServerHost(),
     http: {
       request: (req) => invoke("api_request", { req: { ...req, body: req.body ?? null } }),
     },

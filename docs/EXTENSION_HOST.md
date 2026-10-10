@@ -137,7 +137,7 @@ Further behaviour:
 - **`documentSync.ts`** forwards Monaco model events incrementally, using Monaco's own change events, plus saves, dirty state, language changes, visible and active editors, selections and visible ranges.
 - **`languageBridge.ts`** turns host providers into `monaco.languages.register*Provider` registrations. They are disposed with the extension's Disposable, or when the host stops.
 
-  It also registers an editor opener, so "Go to Definition" into another workspace file opens it, and a link opener.
+  The editor opener (so "Go to Definition" into another workspace file opens it) and the link opener are registered at startup by `monaco/navigation.ts`, with or without extensions (see LANGUAGE_SERVERS.md).
 
   Commands attached to completions, code actions and code lenses run through a command cache: the host keeps the live arguments and the workbench gets a reference.
 - **`contributions.ts`** applies `contributes.commands`, `keybindings` and `menus`. See "UI" below.

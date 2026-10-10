@@ -112,6 +112,42 @@ export interface Platform {
   account?: AccountHost;
   /** Run and Debug (Debug Adapter Protocol); absent where nothing can be debugged. */
   debug?: DebugHost;
+  /** Built-in language servers (Pyright); absent where none can run. */
+  languageServers?: LanguageServerHost;
+}
+
+// ───────────── built-in language servers (review V4) ─────────────
+
+export type LanguageServerId = "pyright" | "jdtls";
+
+export interface LanguageServerProbe {
+  available: boolean;
+  /** What would make it available: a server to download. */
+  install: LanguageServerId | null;
+  detail: string | null;
+  message: string | null;
+  /** The Python TMCode runs, for the server's import resolution. */
+  python: string | null;
+}
+
+/** From the server: one LSP message as JSON text, its stderr, or its exit. */
+export type LanguageServerEvent = { type: "message"; message: string } | { type: "stderr"; data: string } | { type: "exit"; code: number | null };
+
+export interface LanguageServerConnection {
+  id: number;
+  /** Sends one LSP message (JSON text). */
+  send(message: string): void;
+  stop(): void;
+}
+
+export interface LanguageServerHost {
+  probe(server: LanguageServerId): Promise<LanguageServerProbe>;
+  /** Downloads the server once (pinned version and checksum); refused in exams. */
+  install(server: LanguageServerId, onEvent: (e: DebugInstallEvent) => void): Promise<void>;
+  /** Starts the server in the open folder. */
+  start(server: LanguageServerId, onEvent: (e: LanguageServerEvent) => void): Promise<LanguageServerConnection>;
+  /** Whether the exam's policy allows editor intelligence (the host refuses servers in exam folders otherwise). */
+  setExamPolicy?(allowed: boolean): void;
 }
 
 // ───────────── extensions ─────────────

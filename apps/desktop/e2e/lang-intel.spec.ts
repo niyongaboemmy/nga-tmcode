@@ -9,6 +9,8 @@ const externalWrite = (page: Page, path: string, content: string) =>
 const mac = process.platform === "darwin";
 const mod = mac ? "Meta" : "Control";
 const editorText = (page: Page) => page.locator(".monaco-editor .view-lines").first();
+/** Monaco picks its keys by the user agent (Playwright's Chrome device claims Windows), TMCode by the real OS. */
+const editorMod = async (page: Page) => ((await page.evaluate(() => navigator.userAgent.includes("Macintosh"))) ? "Meta" : "Control");
 
 const HELPER = `/** Says hello. */\nexport function greet(name: string): string {\n  return "Hello, " + name;\n}\n\nexport const VERSION = 2;\n`;
 const MAIN = `import { greet, VERSION } from "./lib/helper";\n\nconst label: string = VERSION;\nconsole.log(label);\n${"\n".repeat(3)}greet("Ada");`;
@@ -26,7 +28,7 @@ async function openProject(page: Page) {
   await expect(editorText(page)).toContainText("greet");
   await editorText(page).click();
   // The last line starts with the call: put the cursor on `greet`.
-  await page.keyboard.press(`${mod}+End`);
+  await page.keyboard.press((await editorMod(page)) === "Meta" ? "Meta+ArrowDown" : "Control+End");
   await page.keyboard.press("Home");
 }
 
@@ -47,7 +49,7 @@ test("F12 opens the definition in another file; Go Back returns", async ({ page 
   await page.keyboard.press(`${mod}+Shift+M`);
   await expect(page.locator(".tm-problems")).toContainText("is not assignable", { timeout: 20_000 });
   await editorText(page).click();
-  await page.keyboard.press(`${mod}+End`);
+  await page.keyboard.press((await editorMod(page)) === "Meta" ? "Meta+ArrowDown" : "Control+End");
   await page.keyboard.press("Home");
   await page.keyboard.press("F12");
   await expect(page.locator(".tm-tab.is-active")).toContainText("helper.ts", { timeout: 10_000 });
@@ -65,7 +67,7 @@ test("Rename Symbol changes and saves unopened files too", async ({ page }) => {
   await page.keyboard.press(`${mod}+Shift+M`);
   await expect(page.locator(".tm-problems")).toContainText("is not assignable", { timeout: 20_000 });
   await editorText(page).click();
-  await page.keyboard.press(`${mod}+End`);
+  await page.keyboard.press((await editorMod(page)) === "Meta" ? "Meta+ArrowDown" : "Control+End");
   await page.keyboard.press("Home");
   await page.keyboard.press("F2");
   const input = page.locator(".rename-box input");
@@ -80,4 +82,29 @@ test("Rename Symbol changes and saves unopened files too", async ({ page }) => {
   await page.locator('.tm-explorer [data-path="intel/lib"]').click();
   await page.locator('.tm-explorer [data-path="intel/lib/helper.ts"]').dblclick();
   await expect(editorText(page)).toContainText("export function welcome(name: string)");
+});
+
+test("Python: the Pyright download offer, then its errors and F12 into another file", async ({ page }) => {
+  // A Pyright stand-in speaking real LSP (platform/memoryLanguageServer.ts).
+  await page.addInitScript(() => ((window as unknown as { __TMCODE_FAKE_LSP__: boolean }).__TMCODE_FAKE_LSP__ = true));
+  await page.goto("/");
+  await expect(page.locator(".tm-explorer")).toBeVisible();
+  await externalWrite(page, "pyintel/helpers.py", "def shout(text):\n    return text.upper()\n");
+  await externalWrite(page, "pyintel/app.py", "from helpers import shout\n\nprint(shout('hi'))\nundefined_thing\n");
+  await page.locator('.tm-explorer [data-path="pyintel"]').click();
+  await page.locator('.tm-explorer [data-path="pyintel/app.py"]').dblclick();
+  await expect(page.getByText("needs Pyright, about 6 MB")).toBeVisible();
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  await expect(page.getByText("Pyright is ready.")).toBeVisible();
+  await page.keyboard.press(`${mod}+Shift+M`);
+  await expect(page.locator(".tm-problems")).toContainText('"undefined_thing" is not defined', { timeout: 10_000 });
+  await editorText(page).click();
+  await page.keyboard.press((await editorMod(page)) === "Meta" ? "Meta+ArrowUp" : "Control+Home");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("F12");
+  await expect(page.locator(".tm-tab.is-active")).toContainText("helpers.py", { timeout: 10_000 });
+  await expect(editorText(page)).toContainText("return text.upper()");
 });
