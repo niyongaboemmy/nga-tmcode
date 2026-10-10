@@ -147,7 +147,7 @@ test("a completed assignment is read-only: no editing, saving or submitting", as
   await expect(page.locator(".monaco-editor-overlaymessage")).toContainText("is completed: this workspace is read-only");
 
   // Save to Task Mentor is disabled in the Projects view.
-  await page.locator('.tm-activity[aria-label^="Task Mentor Projects"]').click();
+  await page.locator('.tm-activity[aria-label^="All My Projects"]').click();
   await expect(page.getByTestId("save-to-tm")).toBeDisabled();
   await command(page, "View: Show Assignments");
   await page.locator(".tm-pane-title", { hasText: "Completed (Read-only)" }).click();
@@ -157,7 +157,7 @@ test("a completed assignment is read-only: no editing, saving or submitting", as
 test("disconnect stops syncing; live status sharing is locked on for open assignments", async ({ page }) => {
   await fresh(page);
   await startPractical(page);
-  await page.locator('.tm-activity[aria-label^="Task Mentor Projects"]').click();
+  await page.locator('.tm-activity[aria-label^="All My Projects"]').click();
   const share = page.getByTestId("share-presence");
   await expect(share).toBeChecked();
   await expect(share).toBeDisabled();
@@ -265,9 +265,11 @@ test("a quiz's TMCode practical starts from the Assignments view, then is submit
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
   await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
 
-  // Starting again opens the same workspace.
+  // The row says so; opening it again opens the same workspace.
   await command(page, "View: Show Assignments");
-  await page.getByTestId("quiz-practical-row").getByRole("button", { name: "Start" }).click();
+  await expect(page.getByTestId("quiz-practical-state")).toHaveText("Submitted", { timeout: 10_000 });
+  await expect(page.getByTestId("quiz-practical-row")).toContainText("Open here");
+  await page.getByTestId("quiz-practical-row").click();
   await expect(page.locator(".tm-toast", { hasText: "Opened your work" })).toBeVisible({ timeout: 15_000 });
   const state = await mock(page, (m) => m.state() as unknown as { links: { question_id: number | null }[] });
   expect(state.links.filter((l) => l.question_id === 501)).toHaveLength(1);

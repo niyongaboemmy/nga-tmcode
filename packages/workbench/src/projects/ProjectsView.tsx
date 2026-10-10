@@ -1,5 +1,6 @@
 import { useActivity } from "../state/activity";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRowNav } from "./rowNav";
 import { executeCommand, formatKeybinding } from "../commands/registry";
 import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
@@ -91,11 +92,16 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
     <div
       className={`tm-list-row tm-project-row ${current ? "is-current" : ""}`}
       role="button"
-      tabIndex={0}
+      tabIndex={-1}
+      data-row-nav
       data-testid="project-row"
       title={`${p.name}${p.description ? ` — ${p.description}` : ""}\n${p.kind === "github" ? `GitHub: ${p.repo_full_name ?? p.repo_url}` : "Saved in Task Mentor"}`}
       onClick={() => void openProject(p.id)}
-      onKeyDown={(e) => e.key === "Enter" && void openProject(p.id)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        void openProject(p.id);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, [
@@ -134,7 +140,7 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
   );
 }
 
-function ThisFolder() {
+export function ThisFolder() {
   const binding = useProjects((s) => s.binding);
   const project = useProjects((s) => s.current);
   const sync = useProjects((s) => s.sync);
@@ -409,6 +415,8 @@ export function ProjectsView() {
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "submitted" | "graded">("all");
   const removed = useProjects((s) => s.removed);
+  const root = useRef<HTMLDivElement>(null);
+  const nav = useRowNav(root);
 
   useEffect(() => {
     if (account?.signed_in && mine === null) void refreshProjects();
@@ -450,7 +458,7 @@ export function ProjectsView() {
     );
 
   return (
-    <div className="tm-projects-view" data-testid="projects-view">
+    <div className="tm-projects-view" data-testid="projects-view" ref={root} onKeyDown={nav.onKeyDown} onFocus={nav.onFocus}>
       <Section title="This Folder">
         <ThisFolder />
       </Section>

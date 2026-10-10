@@ -7,8 +7,10 @@ import { useUpdate } from "../update/updateService";
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { changeCount } from "../scm/model";
 import { debugAllowed } from "../debug/debugService";
-import { useProjects, signIn, signOut, refreshProjects } from "../projects/service";
+import { useProjects, signIn, refreshProjects } from "../projects/service";
 import { useAssignments } from "../projects/assignments";
+import { signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
+import { useEffect } from "react";
 import { useGrading, progressOf } from "../grading/service";
 import type { AccountStatus } from "../platform/types";
 // ── extension view containers (exthost/views) ──
@@ -16,7 +18,8 @@ import { useViews, type ViewContainer } from "../exthost/views/model";
 import { useWebviews } from "../exthost/views/webviews";
 import { ExtIcon } from "../exthost/views/ExtIcon";
 
-const TASK_VIEW = { id: "task" as ViewId, icon: "mortar-board", label: "Task", command: "workbench.view.task" };
+// The exam task: a checklist (Assignments has the mortar board).
+const TASK_VIEW = { id: "task" as ViewId, icon: "checklist", label: "Task", command: "workbench.view.task" };
 const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
   { id: "explorer", icon: "files", label: "Explorer", command: "workbench.view.explorer" },
   { id: "search", icon: "search", label: "Search", command: "workbench.view.search" },
@@ -29,6 +32,8 @@ const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
 // ── extensions (feat/extensions): hidden during exams ──
 // ── Task Mentor projects: practice mode with an NGA account host ──
 const PROJECTS_VIEW = { id: "projects" as ViewId, icon: "folder-library", label: "Task Mentor Projects", command: "workbench.view.projects" };
+// Students: Assignments is home; every project is the secondary "All My Projects" list after it.
+const MY_PROJECTS_VIEW = { ...PROJECTS_VIEW, label: "All My Projects" };
 const ASSIGNMENTS_VIEW = { id: "assignments" as ViewId, icon: "mortar-board", label: "Assignments", command: "workbench.view.assignments" };
 const GRADING_VIEW = { id: "grading" as ViewId, icon: "tasklist", label: "Grading", command: "workbench.view.grading" };
 const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
@@ -55,7 +60,11 @@ export function ActivityBar() {
   const toGrade = useGrading((s) => Object.values(s.rosters).reduce((n, r) => n + (progressOf(r)?.toGrade ?? 0), 0));
   // Assignments to start or finish (not submitted, not completed).
   const todo = useAssignments((s) => (s.student ?? []).filter((a) => !a.read_only && (!a.my || a.my.state === "not_started" || a.my.state === "in_progress")).length);
-  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW, ...(grader ? [GRADING_VIEW] : [])] : []), EXTENSIONS_VIEW] : VIEWS;
+  // Teachers keep Projects, Assignments, Grading; students get Assignments first.
+  const staff = useAssignments((s) => s.staff === true);
+  useEffect(() => wireStudentHome(), []);
+  const accountViews = staff || grader ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW, ...(grader ? [GRADING_VIEW] : [])] : [ASSIGNMENTS_VIEW, MY_PROJECTS_VIEW];
+  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? accountViews : []), EXTENSIONS_VIEW] : VIEWS;
   const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
   // Extensions never run in exams, so their containers only exist in practice mode.
   const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
@@ -182,10 +191,11 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
             ? [
                 { kind: "item", label: `${user.name ?? user.email}${user.role ? ` · ${user.role}` : ""}`, disabled: true, run: () => {} },
                 { kind: "separator" },
-                { kind: "item", label: "Task Mentor Projects", run: () => executeCommand("workbench.view.projects") },
+                { kind: "item", label: "Assignments", run: () => executeCommand("workbench.view.assignments") },
+                { kind: "item", label: useAssignments.getState().staff ? "Task Mentor Projects" : "All My Projects", run: () => executeCommand("workbench.view.projects") },
                 { kind: "item", label: "Refresh Projects", run: () => void refreshProjects() },
                 { kind: "separator" },
-                { kind: "item", label: "Sign Out", run: () => void signOut() },
+                { kind: "item", label: "Sign Out", run: () => void signOutOnPurpose() },
               ]
             : [
                 busy

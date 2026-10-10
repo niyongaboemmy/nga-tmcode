@@ -32,7 +32,7 @@ test("signing in with NGA shows the projects", async ({ page }) => {
   await page.mouse.move(700, 400);
   await expect(page.getByTestId("account-button")).toHaveAttribute("title", /Ada Student/);
   await page.getByTestId("account-button").click();
-  await page.getByText("Task Mentor Projects", { exact: true }).click();
+  await page.getByText("All My Projects", { exact: true }).click();
   await expect(page.getByTestId("projects-view")).toBeVisible();
   await expect(page.getByTestId("projects-view")).toContainText("No projects yet");
 });

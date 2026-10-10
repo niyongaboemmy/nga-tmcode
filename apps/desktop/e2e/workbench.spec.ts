@@ -30,6 +30,12 @@ test("welcome page when no folder is open", async ({ page }) => {
   await expect(page.locator(".tm-welcome h1")).toHaveText("TMCode");
   await expect(page.getByRole("button", { name: "Open Folder" }).first()).toBeVisible();
   await expect(page.locator(".tm-status-mode")).toContainText("Practice");
+  // The main job first: "Your assignments", with sign-in; the other cards are actions too.
+  const cards = page.locator(".tm-welcome-col").nth(1).locator(".tm-welcome-card");
+  await expect(cards.first()).toContainText("Your assignments");
+  await expect(cards.first().getByRole("button", { name: "Sign in with NGA" })).toBeVisible();
+  await expect(page.getByTestId("welcome-exam-card")).toHaveClass(/is-action/);
+  await expect(page.getByTestId("welcome-practice-card").getByRole("button", { name: "New Project from Template..." })).toBeVisible();
 });
 
 test("single click opens a preview tab, double click pins it", async ({ page }) => {

@@ -7720,3 +7720,86 @@ kbd,
 .tm-assignments-error .tm-projects-hero {
   color: var(--error);
 }
+
+/* ── 0.11 "One place for my work": the student's home (Assignments) ── */
+
+/* Row actions are quiet, as VS Code's list actions: shown on hover, keyboard focus or selection.
+   The single most urgent to-do keeps its solid Start. (Opacity, so the button keeps its place.) */
+.tm-assignment-row .tm-row-action {
+  opacity: 0;
+  transition: opacity var(--dur-fast, 120ms);
+}
+.tm-assignment-row:hover .tm-row-action,
+.tm-assignment-row:focus-within .tm-row-action,
+.tm-assignment-row.is-viewing .tm-row-action,
+.tm-assignment-row.is-urgent .tm-row-action,
+.tm-assignment-row .tm-row-action:focus-visible {
+  opacity: 1;
+}
+/* Keyboard focus on a row: the list focus outline. */
+.tm-assignment-row:focus-visible,
+.tm-project-row:focus-visible {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-assignment-row[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* Completed rows: the grade, then a lock (neutral grey). */
+.tm-chip--locked {
+  gap: 3px;
+}
+.tm-chip--locked .codicon {
+  font-size: 10px !important;
+}
+
+/* The NGA session ended: attention (orange), sticky at the top of the view. */
+.tm-session-banner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 14%, var(--sidebar-bg));
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tm-session-banner > .codicon {
+  flex: none;
+  color: var(--warning);
+}
+.tm-session-banner > span {
+  flex: 1;
+  min-width: 0;
+}
+.tm-session-banner > .tm-button {
+  flex: none;
+}
+
+/* Welcome: "Your assignments" first, with its actions; the practice card's actions. */
+.tm-welcome-card.is-primary {
+  border-color: color-mix(in srgb, var(--focus-border) 45%, var(--widget-border));
+}
+.tm-welcome-card > div {
+  flex: 1;
+  min-width: 0;
+}
+.tm-welcome-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.tm-welcome-card-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--link);
+}

@@ -1,18 +1,21 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { openContextMenu, useWorkbench } from "../state/store";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { notify, openContextMenu, revealView, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, returnedForChanges, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
-import { projectsSupported, signIn, useProjects } from "./service";
+import { projectsSupported, refreshProjects, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
 import type { LinkableActivity, PracticalQuestion } from "./types";
 import { openAssignmentInTaskMentor, openTaskMentorPage } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
+import { ThisFolder } from "./ProjectsView";
+import { useRowNav } from "./rowNav";
+import { isAssessmentWorkspace, opensLabel, practicalStateOf, useSessionEnded, type PracticalState } from "./studentHome";
 
-function Section({ title, count, children, defaultOpen = true, actions }: { title: string; count?: number; children: ReactNode; defaultOpen?: boolean; actions?: ReactNode }) {
+function Section({ title, count, children, defaultOpen = true, actions, testId }: { title: string; count?: number; children: ReactNode; defaultOpen?: boolean; actions?: ReactNode; testId?: string }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className={`tm-pane tm-projects-section ${open ? "is-open" : "is-collapsed"}`} aria-label={title}>
+    <section className={`tm-pane tm-projects-section ${open ? "is-open" : "is-collapsed"}`} aria-label={title} data-testid={testId}>
       <div className="tm-pane-header" role="button" tabIndex={0} aria-expanded={open} onClick={() => setOpen(!open)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setOpen(!open)}>
         <Codicon name={open ? "chevron-down" : "chevron-right"} />
         <span className="tm-pane-title">{title}</span>
@@ -30,8 +33,24 @@ function Section({ title, count, children, defaultOpen = true, actions }: { titl
 
 export const STATE_LABEL = { not_started: "Not started", in_progress: "In progress", submitted: "Submitted", graded: "Graded" } as const;
 
+const gradeText = (grade: number | null | undefined, max: number | null | undefined) => `${grade ?? "–"}/${max ?? "–"}`;
+
 function StateChip({ a }: { a: AssignmentSummary }) {
-  if (a.read_only) return <span className="tm-chip">Read-only</span>;
+  if (a.read_only) {
+    // Completed: the grade first (when there is one), then the lock.
+    return (
+      <>
+        {a.my?.state === "graded" && (
+          <span className="tm-chip is-success" data-testid="assignment-grade-chip">
+            {gradeText(a.my.grade, a.my.max_points ?? a.points)}
+          </span>
+        )}
+        <span className="tm-chip tm-chip--locked" data-testid="assignment-locked-chip" title="Completed: you can open your work, but not change or submit it">
+          <Codicon name="lock" /> Read-only
+        </span>
+      </>
+    );
+  }
   const s = a.my?.state ?? "not_started";
   // Handed in after the due date (the submission's own flag, not "the due date has passed").
   const late = (s === "submitted" || s === "graded") && handedInLate(a) && (
@@ -42,7 +61,9 @@ function StateChip({ a }: { a: AssignmentSummary }) {
   if (s === "graded")
     return (
       <>
-        <span className="tm-chip is-success">{a.my?.grade ?? "–"}/{a.my?.max_points ?? a.points ?? "–"}</span>
+        <span className="tm-chip is-success" data-testid="assignment-grade-chip">
+          {gradeText(a.my?.grade, a.my?.max_points ?? a.points)}
+        </span>
         {late}
       </>
     );
@@ -65,36 +86,50 @@ function StateChip({ a }: { a: AssignmentSummary }) {
   return null;
 }
 
-function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boolean }) {
+/** The front tab of a group (on screen) is this assignment's brief: selected, as the Explorer shows the open file. */
+const useViewingBrief = (id: number) =>
+  useWorkbench((s) =>
+    s.groups.some((g) => {
+      const e = g.editors.find((x) => x.id === g.activeId);
+      return e?.kind === "assignment" && e.assignmentId === id;
+    }),
+  );
+
+function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching?: boolean; urgent?: boolean }) {
   const busy = useAssignments((s) => s.busy[a.id]);
   useProjects((s) => s.binding);
   const due = dueLabel(a.due_date);
   const open = !teaching && isOpenWorkspaceOf(a);
-  // Its brief is the front tab of a group (on screen): selected, as the Explorer shows the open file.
-  const viewing = useWorkbench((s) =>
-    s.groups.some((g) => {
-      const e = g.editors.find((x) => x.id === g.activeId);
-      return e?.kind === "assignment" && e.assignmentId === a.id;
-    }),
-  );
+  const viewing = useViewingBrief(a.id);
   const started = !!a.my?.project_id;
+  const canWork = !teaching && !open && (!a.read_only || started);
   return (
     <div
-      className={`tm-list-row tm-assignment-row ${open ? "is-current" : ""} ${viewing ? "is-viewing" : ""}`}
+      className={`tm-list-row tm-assignment-row ${open ? "is-current" : ""} ${viewing ? "is-viewing" : ""} ${urgent ? "is-urgent" : ""}`}
       aria-current={open ? "true" : undefined}
       aria-selected={viewing}
       role="button"
-      tabIndex={0}
+      tabIndex={-1}
+      data-row-nav
       data-testid="assignment-row"
       data-assignment-id={a.id}
       title={`${a.title}\n${a.course_name ?? ""}${a.due_date ? ` · due ${new Date(a.due_date).toLocaleString()}` : ""}`}
       onClick={() => showAssignment(a.id)}
       // Double-click (as on a file) or Enter: the brief, and straight into the work (Start / Open).
-      onDoubleClick={() => !teaching && !open && (!a.read_only || started) && void startAssignment(a.id)}
+      onDoubleClick={() => canWork && void startAssignment(a.id)}
       onKeyDown={(e) => {
+        // Keys on the row's own button are the button's.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === " ") {
+          // Space: the brief only (as Space previews a file in the Explorer).
+          e.preventDefault();
+          showAssignment(a.id);
+          return;
+        }
         if (e.key !== "Enter") return;
+        e.preventDefault();
         showAssignment(a.id);
-        if (!teaching && !open && (!a.read_only || started)) void startAssignment(a.id);
+        if (canWork) void startAssignment(a.id);
       }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -132,11 +167,14 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
           <Codicon name="folder-opened" /> Open here
         </span>
       )}
-      {!teaching && !open && (started || !a.read_only) && (
+      {canWork && (
+        // Quiet in the list (shown on hover, focus or selection), as VS Code's row actions; the most urgent to-do keeps a solid Start.
         <button
           type="button"
-          className={`tm-button tm-button--small ${started ? "tm-button--secondary" : ""}`}
+          className={`tm-button tm-button--small tm-row-action ${urgent ? "" : "tm-button--secondary"}`}
           disabled={!!busy}
+          tabIndex={-1}
+          data-testid="assignment-row-action"
           title={started ? "Open your project for this assignment in this window" : "Create your project (with your teacher's starter files) and open it here"}
           onClick={(e) => {
             e.stopPropagation();
@@ -151,12 +189,25 @@ function AssignmentRow({ a, teaching }: { a: AssignmentSummary; teaching?: boole
   );
 }
 
+const PRACTICAL_CHIP: Record<PracticalState, string> = { not_started: "", in_progress: "is-draft", submitted: "is-submitted", graded: "is-graded" };
+
 /** A TMCode practical question of a quiz: Start creates (or reopens) the student's workspace from its starter files. */
 function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQuestion }) {
   const [busy, setBusy] = useState(false);
-  const due = dueLabel(quiz.due_date ?? null);
+  const mine = useProjects((s) => s.mine);
+  const binding = useProjects((s) => s.binding);
+  const current = useProjects((s) => s.current);
+  const found = practicalStateOf(quiz.activity_id, q.question_id, mine, binding ? current : null);
+  // The payload's word wins when Task Mentor sends one.
+  const state: PracticalState = q.state ?? found.state;
+  const here = !!binding && !!found.project && binding.project_id === found.project.id;
+  const due = state === "submitted" || state === "graded" ? null : dueLabel(quiz.due_date ?? null);
+  const opensAt = quiz.start_date ? Date.parse(quiz.start_date) : NaN;
+  const notYet = Number.isFinite(opensAt) && opensAt > Date.now();
+  const opens = notYet ? `Opens ${opensLabel(opensAt)}` : null;
   const start = async () => {
     if (busy) return;
+    if (notYet) return notify("info", `"${quiz.title}" opens ${opensLabel(opensAt)}. Its practical starts then.`);
     setBusy(true);
     try {
       await startQuizPractical(quiz, q);
@@ -164,17 +215,22 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
       setBusy(false);
     }
   };
+  const label = state === "graded" ? (q.grade != null ? `${q.grade}/${q.points}` : "Graded") : STATE_LABEL[state];
   return (
     // Its task is in the quiz (there is no brief tab): the row opens the workspace, as a project row does.
     <div
-      className="tm-list-row tm-assignment-row"
+      className={`tm-list-row tm-assignment-row ${here ? "is-current" : ""}`}
       data-testid="quiz-practical-row"
+      data-state={state}
       role="button"
-      tabIndex={0}
+      tabIndex={-1}
+      data-row-nav
       aria-busy={busy || undefined}
-      title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}\nOpen its workspace (keep the quiz open in Task Mentor)`}
+      aria-disabled={notYet || undefined}
+      title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}\n${opens ?? "Open its workspace (keep the quiz open in Task Mentor)"}`}
       onClick={() => void start()}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           void start();
@@ -185,23 +241,46 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
       <span className="tm-assignment-text">
         <span className="tm-project-name">{q.title}</span>
         <span className="tm-assignment-sub">
+          <span className={`tm-chip tm-status-chip ${state === "graded" ? "is-success" : PRACTICAL_CHIP[state]}`} data-testid="quiz-practical-state">
+            {label}
+          </span>
           <span className="tm-assignment-course">
             {quiz.title} · {q.points} pt{q.points === 1 ? "" : "s"}
           </span>
-          {due && <span className={`tm-due is-${due.tone}`}>{due.text}</span>}
+          {opens ? (
+            <span className="tm-due is-ok" data-testid="quiz-practical-opens">
+              {opens}
+            </span>
+          ) : (
+            due && <span className={`tm-due is-${due.tone}`}>{due.text}</span>
+          )}
+          {!opens && quiz.attempt_open !== undefined && (state === "not_started" || state === "in_progress") && (
+            <span className={`tm-chip ${quiz.attempt_open ? "is-info" : "is-warning"}`} data-testid="quiz-practical-attempt" title={quiz.attempt_open ? "Your quiz attempt is open: you can submit" : "Open the quiz in Task Mentor before you submit"}>
+              {quiz.attempt_open ? "Quiz open in Task Mentor" : "Quiz not open in Task Mentor"}
+            </span>
+          )}
         </span>
       </span>
-      <button
-        type="button"
-        className="tm-button tm-button--small"
-        disabled={busy}
-        onClick={(e) => {
-          e.stopPropagation();
-          void start();
-        }}
-      >
-        {busy ? "Opening…" : "Start"}
-      </button>
+      {here && (
+        <span className="tm-open-here" title="Your work for this practical is the folder open in this window">
+          <Codicon name="folder-opened" /> Open here
+        </span>
+      )}
+      {!here && (
+        <button
+          type="button"
+          className="tm-button tm-button--small tm-button--secondary tm-row-action"
+          disabled={busy || notYet}
+          tabIndex={-1}
+          title={opens ? `${opens}: it can't be started yet` : state === "not_started" ? "Create your workspace from the starter files" : "Open your work for this practical"}
+          onClick={(e) => {
+            e.stopPropagation();
+            void start();
+          }}
+        >
+          {busy ? "Opening…" : state === "not_started" ? "Start" : "Open"}
+        </button>
+      )}
     </div>
   );
 }
@@ -211,7 +290,20 @@ const checkedAgo = (t: number) => {
   return s < 45 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
-/** The Assignments view: TMCode practicals and case studies from Task Mentor. */
+/** Sticky at the top: the NGA session ended (expired, or signed out elsewhere). */
+function SessionEndedBanner() {
+  return (
+    <div className="tm-session-banner" role="alert" data-testid="session-ended-banner">
+      <Codicon name="warning" />
+      <span>Your NGA session ended. Sign in to keep saving.</span>
+      <button type="button" className="tm-button tm-button--small" onClick={() => void signIn()} data-testid="session-ended-signin">
+        Sign In
+      </button>
+    </div>
+  );
+}
+
+/** The Assignments view: TMCode practicals and case studies from Task Mentor. The student's home. */
 export function AssignmentsView() {
   const account = useProjects((s) => s.account);
   const student = useAssignments((s) => s.student);
@@ -222,13 +314,23 @@ export function AssignmentsView() {
   const errorKind = useAssignments((s) => s.errorKind);
   const staff = useAssignments((s) => s.staff);
   const checkedAt = useAssignments((s) => s.checkedAt);
+  const binding = useProjects((s) => s.binding);
+  const current = useProjects((s) => s.current);
+  const mine = useProjects((s) => s.mine);
+  const ended = useSessionEnded();
   const workspace = useWorkbench((s) => s.workspace);
   const [filter, setFilter] = useState("");
+  const root = useRef<HTMLDivElement>(null);
+  const nav = useRowNav(root);
 
   // Opening the view shows what Task Mentor has now (a teacher may have just published one).
   useEffect(() => {
     if (account?.signed_in) void refreshIfStale(student === null ? 0 : 15_000);
   }, [account?.signed_in]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Quiz practical rows read their state from the student's projects.
+  useEffect(() => {
+    if (account?.signed_in && mine === null && (quizPracticals?.length ?? 0) > 0) void refreshProjects();
+  }, [account?.signed_in, mine, quizPracticals]);
   // Due countdowns stay current while the view is open.
   const [, tick] = useState(0);
   useEffect(() => {
@@ -240,28 +342,41 @@ export function AssignmentsView() {
   if (!projectsSupported()) return <div className="tm-view-empty">Assignments are available in the TMCode desktop app, outside exams.</div>;
   if (!account?.signed_in) {
     return (
-      <div className="tm-view-empty tm-projects-signin" data-testid="assignments-signin">
-        <Codicon name="mortar-board" className="tm-projects-hero" />
-        <h3>Practicals and case studies</h3>
-        <p>Sign in with your NGA account to see the coding assignments of your subjects, start them with your teacher's starter files, and submit from here.</p>
-        <button type="button" className="tm-button tm-button--block" onClick={() => void signIn()}>
-          <Codicon name="account" /> Sign in with NGA
-        </button>
+      <div className="tm-projects-view" data-testid="assignments-signed-out">
+        {ended && <SessionEndedBanner />}
+        <div className="tm-view-empty tm-projects-signin" data-testid="assignments-signin">
+          <Codicon name="mortar-board" className="tm-projects-hero" />
+          <h3>Practicals and case studies</h3>
+          <p>Sign in with your NGA account to see the coding assignments of your subjects, start them with your teacher's starter files, and submit from here.</p>
+          <button type="button" className="tm-button tm-button--block" onClick={() => void signIn()}>
+            <Codicon name="account" /> Sign in with NGA
+          </button>
+        </div>
       </div>
     );
   }
   const match = (a: AssignmentSummary) => !filter || `${a.title} ${a.course_name ?? ""} ${a.language ?? ""}`.toLowerCase().includes(filter.toLowerCase());
   const groups = groupAssignments((student ?? []).filter(match));
+  // The one to do first: soonest due, not started yet. Its Start stays solid and visible.
+  const urgentId = groups.todo.find((a) => !a.my?.project_id && !a.read_only)?.id ?? null;
   const rows = (list: AssignmentSummary[], empty: string, t?: boolean) =>
-    list.length === 0 ? <p className="tm-muted tm-projects-hint">{empty}</p> : list.map((a) => <AssignmentRow key={a.id} a={a} teaching={t} />);
+    list.length === 0 ? <p className="tm-muted tm-projects-hint">{empty}</p> : list.map((a) => <AssignmentRow key={a.id} a={a} teaching={t} urgent={!t && a.id === urgentId} />);
   const teach = (teaching ?? []).filter(match);
   const quizzes = (quizPracticals ?? []).filter((q) => !filter || `${q.title} ${q.course_name ?? ""} ${(q.practical_questions ?? []).map((p) => p.title).join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
   const practicalCount = quizzes.reduce((n, q) => n + (q.practical_questions?.length ?? 0), 0);
   // A failed check is never "nothing to do": Task Mentor just couldn't say.
   const nothing = !error && student !== null && student.length === 0 && teach.length === 0 && practicalCount === 0;
+  // Students: the open assignment workspace (sync, Save, status, Submit) sits on top. One place for the work.
+  const thisFolder = staff !== true && isAssessmentWorkspace(current, !!binding);
 
   return (
-    <div className="tm-projects-view" data-testid="assignments-view">
+    <div className="tm-projects-view" data-testid="assignments-view" ref={root} onKeyDown={nav.onKeyDown} onFocus={nav.onFocus}>
+      {ended && <SessionEndedBanner />}
+      {thisFolder && (
+        <Section title="This Folder" testId="assignments-this-folder">
+          <ThisFolder />
+        </Section>
+      )}
       <div className="tm-assignments-toolbar">
         <div className="tm-input-box tm-assignments-filter">
           <input className="tm-input" placeholder="Filter assignments" aria-label="Filter assignments" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -368,3 +483,6 @@ export function AssignmentsView() {
     </div>
   );
 }
+
+/** "Show All My Projects" (the Assignments "…" menu). */
+export const showAllMyProjects = () => revealView("projects");

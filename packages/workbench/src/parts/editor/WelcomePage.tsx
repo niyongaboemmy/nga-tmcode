@@ -1,5 +1,10 @@
 import { executeCommand, formatKeybinding } from "../../commands/registry";
-import { getPlatform, openRecent, useWorkbench } from "../../state/store";
+import type { ReactNode } from "react";
+import { getPlatform, openRecent, revealView, useWorkbench } from "../../state/store";
+import { useAssignments } from "../../projects/assignments";
+import { openTaskMentorPage } from "../../projects/commands";
+import { projectsSupported, signIn, useProjects } from "../../projects/service";
+import { todoOf, todoSummary } from "../../projects/studentHome";
 import { Codicon } from "../../widgets/icons";
 import { Logo } from "../../widgets/Logo";
 
@@ -11,6 +16,55 @@ function StartLink({ icon, label, command, kb }: { icon: string; label: string; 
       <span>{label}</span>
       {kb && <span className="tm-welcome-kb">{formatKeybinding(kb, os)}</span>}
     </button>
+  );
+}
+
+/** "Your assignments": sign in, or what is to do and when the next is due. */
+function AssignmentsCard() {
+  const account = useProjects((s) => s.account);
+  const student = useAssignments((s) => s.student);
+  const staff = useAssignments((s) => s.staff === true);
+  const busy = account?.phase === "waiting" || account?.phase === "completing";
+  const { count } = todoOf(student);
+  const open = () => revealView("assignments");
+  let body: ReactNode;
+  if (!account?.signed_in) {
+    body = (
+      <>
+        <p>Sign in to see the work your teachers set, start it with their starter files, and hand it in from here.</p>
+        <div className="tm-welcome-card-actions">
+          <button type="button" className="tm-button tm-button--small" disabled={busy} onClick={() => void signIn()} data-testid="welcome-signin">
+            <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} /> {busy ? "Continue in your browser…" : "Sign in with NGA"}
+          </button>
+        </div>
+      </>
+    );
+  } else {
+    const summary =
+      student === null
+        ? "Checking Task Mentor…"
+        : staff
+          ? "Your subjects' TMCode assignments, with each student's progress."
+          : todoSummary(student);
+    body = (
+      <>
+        <p data-testid="welcome-assignments-summary">{summary}</p>
+        <div className="tm-welcome-card-actions">
+          <button type="button" className={`tm-button tm-button--small ${count === 0 ? "tm-button--secondary" : ""}`} onClick={open} data-testid="welcome-open-assignments">
+            Open Assignments
+          </button>
+        </div>
+      </>
+    );
+  }
+  return (
+    <div className="tm-welcome-card is-primary" data-testid="welcome-assignments-card">
+      <Codicon name="mortar-board" className="tm-welcome-card-icon" />
+      <div>
+        <h3>Your assignments</h3>
+        {body}
+      </div>
+    </div>
   );
 }
 
@@ -55,21 +109,38 @@ export function WelcomePage() {
           <div className="tm-welcome-col">
             <section>
               <h2>Get started</h2>
-              <div className="tm-welcome-card">
-                <Codicon name="mortar-board" className="tm-welcome-card-icon" />
+              {mode === "practice" && projectsSupported() && <AssignmentsCard />}
+              <button
+                type="button"
+                className="tm-welcome-card is-action"
+                data-testid="welcome-exam-card"
+                title="Open your quizzes in Task Mentor"
+                onClick={() => mode === "practice" && openTaskMentorPage("/quizzes")}
+              >
+                <Codicon name="checklist" className="tm-welcome-card-icon" />
                 <div>
                   <h3>Taking a test or exam</h3>
                   <p>
-                    Open the quiz in Task Mentor and choose <strong>Open in TMCode</strong>. Your task, starter files and timer appear here, and
-                    your work is saved automatically — even offline.
+                    Open the quiz in Task Mentor and choose <strong>Open in TMCode</strong>. Your task, starter files and timer appear here, and your work is saved automatically, even
+                    offline.
                   </p>
+                  <span className="tm-welcome-card-link">Open my quizzes in Task Mentor</span>
                 </div>
-              </div>
-              <div className="tm-welcome-card">
+                <Codicon name="link-external" className="tm-welcome-card-go" />
+              </button>
+              <div className="tm-welcome-card" data-testid="welcome-practice-card">
                 <Codicon name="beaker" className="tm-welcome-card-icon" />
                 <div>
                   <h3>Practising on your own</h3>
                   <p>Open any folder to write and run code with the full editor. Practice mode has no restrictions.</p>
+                  <div className="tm-welcome-card-actions">
+                    <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("workbench.action.files.openFolder")}>
+                      Open Folder...
+                    </button>
+                    <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => executeCommand("workbench.action.newProjectFromTemplate")}>
+                      New Project from Template...
+                    </button>
+                  </div>
                 </div>
               </div>
               <button type="button" className="tm-welcome-card is-action" onClick={() => executeCommand("workbench.action.keybindingsReference")}>

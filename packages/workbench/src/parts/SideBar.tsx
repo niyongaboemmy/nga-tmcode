@@ -12,7 +12,8 @@ import { ScmTitleActions, ScmView } from "../scm/ScmView";
 import { ExtensionsView, ExtensionsTitleActions } from "./extensions/ExtensionsView";
 import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
-import { AssignmentsView } from "../projects/AssignmentsView";
+import { AssignmentsView, showAllMyProjects } from "../projects/AssignmentsView";
+import { signOutOnPurpose } from "../projects/studentHome";
 import { useAssignments } from "../projects/assignments";
 import { GradingView } from "../grading/GradingView";
 import { TimelinePane } from "../history/TimelinePane";
@@ -35,7 +36,8 @@ function moreActions(view: ViewId): ContextMenuItem[] {
       { kind: "item", label: "Open Project in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
       { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
       { kind: "separator" },
-      { kind: "item", label: "Sign Out of NGA", run: () => executeCommand("projects.signOut") },
+      { kind: "item", label: "Show Assignments", run: () => executeCommand("workbench.view.assignments") },
+      { kind: "item", label: "Sign Out of NGA", run: () => void signOutOnPurpose() },
     ];
   }
   if (view === "grading") {
@@ -49,6 +51,8 @@ function moreActions(view: ViewId): ContextMenuItem[] {
   if (view === "assignments") {
     return [
       { kind: "item", label: "Refresh", run: () => executeCommand("assignments.refresh") },
+      // Projects are secondary for students: every project (for an assignment or not) is one click away.
+      { kind: "item", label: useAssignments.getState().staff ? "Show Task Mentor Projects" : "Show All My Projects", run: showAllMyProjects },
       // A teacher action: students never see it.
       ...(useAssignments.getState().staff ? [{ kind: "item" as const, label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") }] : []),
       { kind: "separator" },
@@ -91,7 +95,9 @@ function WithExtViews({ container, children }: { container: string; children: Re
 export function SideBar() {
   const view = useWorkbench((s) => s.activeView);
   const extTitle = useViews((s) => s.containers.find((c) => c.key === view)?.title);
-  const title = view.startsWith("ext:") ? (extTitle ?? "") : TITLES[view as keyof typeof TITLES];
+  // Students: Projects is the secondary "All My Projects" list (Assignments is their home).
+  const staff = useAssignments((s) => s.staff === true);
+  const title = view.startsWith("ext:") ? (extTitle ?? "") : view === "projects" && !staff ? "All My Projects" : TITLES[view as keyof typeof TITLES];
   return (
     <aside className="tm-sidebar" aria-label={title}>
       <header className="tm-sidebar-title">

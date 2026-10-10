@@ -104,6 +104,8 @@ export async function refreshAssignments() {
   // What did load is kept (and what didn't keeps its last answer): the error says the lists may be incomplete.
   const s = get();
   const studentList = student.status === "fulfilled" ? student.value.assignments : s.student;
+  // Compared with the previous snapshot (s.student): new work and new grades are announced.
+  if (student.status === "fulfilled") announceChanges(s.student, student.value.assignments);
   const teachingList = teaching.status === "fulfilled" ? teaching.value.assignments : s.teaching;
   if (teaching.status === "rejected") staff = s.staff;
   // Open assignment pages follow the list (state, grade, completed → read-only).
@@ -124,10 +126,37 @@ export async function refreshAssignments() {
   });
 }
 
+/** The scope error when Task Mentor refuses the session (the view shows the session-ended banner). */
+export const SIGN_IN_EXPIRED = "Your sign-in has expired.";
+
+/**
+ * What changed for the student since the last check (S9): new assignments and
+ * new grades, as info toasts with a way to the brief. Never on the first load.
+ */
+const announced = new Set<string>();
+export function announceChanges(before: AssignmentSummary[] | null, after: AssignmentSummary[]) {
+  if (!before) return;
+  const old = new Map(before.map((a) => [a.id, a]));
+  // Two checks that overlap compare with the same snapshot: each change is told once.
+  const once = (key: string) => !announced.has(key) && !!announced.add(key);
+  for (const a of after) {
+    const was = old.get(a.id);
+    if (!was) {
+      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id) }]);
+      continue;
+    }
+    if (a.my?.state === "graded" && was.my?.state !== "graded" && once(`graded:${a.id}:${a.my.submitted_at ?? ""}:${a.my.grade ?? ""}`)) {
+      const max = a.my.max_points ?? a.points;
+      const score = a.my.grade != null ? `: ${a.my.grade}${max != null ? `/${max}` : ""}` : "";
+      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id) }]);
+    }
+  }
+}
+
 /** Why Task Mentor couldn't say what the student has to do. */
 function scopeErrorDetail(e: unknown) {
   if (e instanceof TmError && e.code === "MIS_SCOPE_UNAVAILABLE") return "Central MIS, which knows your subjects, can't be reached right now.";
-  if (e instanceof TmError && e.status === 401) return "Your sign-in has expired.";
+  if (e instanceof TmError && e.status === 401) return SIGN_IN_EXPIRED;
   if (e instanceof TmError && e.status === 0) return "Task Mentor can't be reached. Check your internet connection.";
   return (e as Error)?.message || "Task Mentor didn't answer.";
 }
