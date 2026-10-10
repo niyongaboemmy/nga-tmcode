@@ -10,6 +10,8 @@ import { editorMemento } from "../../state/viewStates";
 import type { OsKind } from "../../platform/types";
 import { attachDebugEditor } from "../../debug/editorContrib";
 import { guardEditorHelp, guardEditorPaste, intelligenceOptions } from "../../exam/editorPolicy";
+import { smartEditorOptions } from "../../monaco/smartOptions";
+import type { Intelligence } from "@tmcode/protocol";
 
 const KEY_CODES: Record<string, number> = {
   "`": monaco.KeyCode.Backquote,
@@ -61,7 +63,7 @@ export function editorOptions(settings: Settings, os: OsKind): monaco.editor.ISt
     renderWhitespace: settings["editor.renderWhitespace"],
     cursorBlinking: settings["editor.cursorBlinking"],
     bracketPairColorization: { enabled: settings["editor.bracketPairColorization.enabled"] },
-    guides: { bracketPairs: "active", indentation: true },
+    guides: { bracketPairs: settings["editor.guides.bracketPairs"] === "active" ? "active" : settings["editor.guides.bracketPairs"] === "true", indentation: settings["editor.guides.indentation"] },
     stickyScroll: { enabled: settings["editor.stickyScroll.enabled"] },
     smoothScrolling: !reduce,
     cursorSmoothCaretAnimation: reduce ? "off" : "on",
@@ -74,6 +76,12 @@ export function editorOptions(settings: Settings, os: OsKind): monaco.editor.ISt
     "semanticHighlighting.enabled": true,
     accessibilitySupport: settings["editor.accessibilitySupport"] ?? "auto",
   };
+}
+
+/** A code editor's options: the user's settings, then what the exam's intelligence level allows (it wins). */
+function codeEditorOptions(settings: Settings, level: Intelligence, os: OsKind) {
+  const help = intelligenceOptions(level);
+  return { ...editorOptions(settings, os), ...help, ...smartEditorOptions(settings, level, help) };
 }
 
 /**
@@ -108,8 +116,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   useEffect(() => {
     setupMonaco();
     const ed = monaco.editor.create(host.current!, {
-      ...editorOptions(useWorkbench.getState().settings, os),
-      ...intelligenceOptions(useWorkbench.getState().policy.intelligence),
+      ...codeEditorOptions(useWorkbench.getState().settings, useWorkbench.getState().policy.intelligence, os),
       model: null,
       theme: monacoThemeFor(),
       ariaLabel: "Editor content",
@@ -143,6 +150,8 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
         });
       }),
       ed.onDidFocusEditorText(() => focusGroup(groupId)),
+      // Language detection (untitled) or Change Language Mode: `[language]` settings follow.
+      ed.onDidChangeModelLanguage((e) => setLanguage(e.newLanguage)),
       ed.onDidBlurEditorText(() => saveOnFocusChange()),
       attachDebugEditor(ed),
       { dispose: guardEditorPaste(ed) },
@@ -211,8 +220,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   useEffect(() => {
     const ed = editorRef.current;
     ed?.updateOptions({
-      ...editorOptions(settings, os),
-      ...intelligenceOptions(intelligence),
+      ...codeEditorOptions(settings, intelligence, os),
       readOnly,
       readOnlyMessage: { value: readOnlyReason ?? "Time is up. Your code can no longer be changed." },
     });
@@ -220,8 +228,12 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     // Indentation set for this language or by the folder wins over what Monaco guessed from the file.
     const model = ed?.getModel();
     if (model && language) {
+      // editor.detectIndentation off: the settings always win over the file's own indentation.
       const explicit = (k: "editor.tabSize" | "editor.insertSpaces") =>
-        k in (languageSettings[language] ?? {}) || k in (workspaceSettings?.values ?? {}) || k in (workspaceSettings?.languages[language] ?? {});
+        !settings["editor.detectIndentation"] ||
+        k in (languageSettings[language] ?? {}) ||
+        k in (workspaceSettings?.values ?? {}) ||
+        k in (workspaceSettings?.languages[language] ?? {});
       const opts: monaco.editor.ITextModelUpdateOptions = {};
       if (explicit("editor.tabSize")) {
         opts.tabSize = settings["editor.tabSize"];

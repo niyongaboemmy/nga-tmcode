@@ -8714,3 +8714,26 @@ button.tm-setting-badge {
   color: var(--description);
 }
 /* ───── end V15–V17, V12 ───── */
+
+/* ───── file icons everywhere + smart editor (feat/icons-smart) ───── */
+.tm-status-detected {
+  opacity: 0.75;
+}
+.tm-timeline-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tm-grade-change {
+  align-items: center;
+}
+.tm-grade-change .tm-themed-icon,
+.tm-grade-change .tm-file-icon,
+.tm-projects-conflicts .tm-themed-icon {
+  flex: none;
+}
+.tm-themed-icon.codicon {
+  font-size: 16px;
+  color: var(--description);
+}
+/* ───── end feat/icons-smart ───── */

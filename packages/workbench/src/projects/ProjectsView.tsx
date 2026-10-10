@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRowNav } from "./rowNav";
 import { executeCommand, formatKeybinding } from "../commands/registry";
 import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
-import { ActionButton, Codicon } from "../widgets/icons";
+import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
 import { SYNC_ICON, SYNC_LABEL, SYNC_TIP } from "./syncLabels";
@@ -187,6 +187,7 @@ export function ThisFolder() {
               {plan.conflicts.map((path) => (
                 <div key={path} className="tm-list-row">
                   <Codicon name="warning" />
+                  <FileIcon path={path} />
                   <span className="tm-project-name">{path}</span>
                   <ActionButton icon="diff" label="Compare with Task Mentor's" onClick={() => void compareConflict(path)} />
                   <ActionButton icon="check" label="Keep Mine" onClick={() => void resolveConflict(path, "mine")} />

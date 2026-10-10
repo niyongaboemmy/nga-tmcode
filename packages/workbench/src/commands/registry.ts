@@ -21,6 +21,8 @@ export interface Command {
    * the workbench resolver never dispatches them; user overrides become Monaco rules.
    */
   editorOwned?: boolean;
+  /** Other words the palette finds this command by ("reload", "close all"); see commands/aliases.ts. */
+  aliases?: string[];
   enabled?: () => boolean;
   run: () => unknown;
 }

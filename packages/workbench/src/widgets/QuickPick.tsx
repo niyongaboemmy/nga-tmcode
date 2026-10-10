@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
 import { closeQuickInput } from "../state/store";
 import { fuzzyMatch, highlightRuns } from "../util/fuzzy";
-import { Codicon } from "./icons";
+import { Codicon, FileIcon } from "./icons";
 
 /**
  * VS Code's `showQuickPick` / `showInputBox` for features (git branches,
@@ -17,6 +17,8 @@ export interface PickItem {
   detail?: string;
   /** Codicon name. */
   icon?: string;
+  /** A file: shown with its file icon theme icon (instead of `icon`). */
+  resourcePath?: string;
   /** Group label shown on the right of the first item of a group, with a separator line. */
   separator?: string;
   /** Shown whatever the filter. */
@@ -230,7 +232,7 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
             onClick={() => (many ? toggle(it) : finish(it))}
           >
             {many && <Codicon name={checked.has(it.id) ? "pass-filled" : "circle-large-outline"} className="tm-qp-check" />}
-            {it.icon ? <Codicon name={it.icon} /> : null}
+            {it.resourcePath ? <FileIcon path={it.resourcePath} /> : it.icon ? <Codicon name={it.icon} /> : null}
             <span className="tm-qp-text">
               <span className="tm-qp-line">
                 <span className="tm-qi-label">

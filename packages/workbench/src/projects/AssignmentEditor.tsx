@@ -5,7 +5,7 @@ import type { EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
 import { taskMentorHtml } from "../widgets/richHtml";
-import { Codicon } from "../widgets/icons";
+import { Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { api, autoSaveMode, compareConflict, useProjects } from "./service";
 import { changeCount } from "./plan";
@@ -436,7 +436,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
             {detail.attachments.map((f) => (
               <li key={f.url}>
                 <a href={f.url}>
-                  <Codicon name="file" /> {f.name}
+                  <FileIcon path={f.name} size={14} /> {f.name}
                 </a>
               </li>
             ))}

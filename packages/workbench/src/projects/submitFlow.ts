@@ -85,6 +85,7 @@ export async function showNotIncluded(m: Manifest) {
       label: s.dir ? `${s.path}/` : s.path,
       description: `${SKIP_REASON[s.reason] ?? s.reason}${s.size ? ` · ${formatBytes(s.size)}` : ""}`,
       icon: s.dir ? "folder" : "file",
+      resourcePath: s.dir ? undefined : s.path,
     })),
   });
 }
