@@ -216,6 +216,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,
+            menus::menu_update,
             take_pending_open,
             workspace::ws_open,
             workspace::ws_reopen,

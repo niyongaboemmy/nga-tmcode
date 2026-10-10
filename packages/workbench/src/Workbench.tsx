@@ -5,7 +5,7 @@ import "allotment/dist/style.css";
 import "@vscode/codicons/dist/codicon.css";
 import "./styles/theme.css";
 import "./styles/workbench.css";
-import { registerBuiltinCommands } from "./commands/builtin";
+import { registerBuiltinCommands, wirePaletteAndMenus } from "./commands/builtin";
 import { registerDeveloperCommands } from "./commands/developer";
 import { registerProjectCommands } from "./projects/commands";
 import { wireProjects } from "./projects/service";
@@ -116,6 +116,7 @@ export function Workbench() {
     registerExtHostCommands();
     initExtensionHost();
     startAutoUpdates();
+    wirePaletteAndMenus();
     // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
     let projectTimer: ReturnType<typeof setTimeout> | undefined;
     const unwatch = platform.watch?.((paths) => {

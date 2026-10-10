@@ -237,6 +237,8 @@ export async function createTauriPlatform(): Promise<Platform> {
       set: (key, value) => store.set(key, value),
     },
     setNativeTheme: (theme) => void invoke("set_native_theme", { theme }).catch(() => {}),
+    // The macOS menu bar only (menus.rs); elsewhere the workbench draws its own menus.
+    ...(info.os === "mac" ? { setMenuState: (items: import("@tmcode/workbench").NativeMenuItemState[]) => void invoke("menu_update", { items }).catch(() => {}) } : {}),
     // ── extensions (feat/extensions): Open VSX only, unpacked under <app data>/extensions ──
     extensions: {
       fetch: (url, as) => invoke<string>("ext_fetch", { url, encoding: as }),

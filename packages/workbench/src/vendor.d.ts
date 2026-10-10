@@ -39,3 +39,11 @@ declare module "monaco-editor/platform/extensions/common/extensions.js" {
 declare module "monaco-editor/editor/common/services/languageFeatures.js" {
   export const ILanguageFeaturesService: unknown;
 }
+
+// Monaco internals used by the keybindings and editor-action listing (commands/keybindings.ts).
+declare module "monaco-editor/platform/keybinding/common/keybinding.js" {
+  export const IKeybindingService: unknown;
+}
+declare module "monaco-editor/editor/browser/editorExtensions.js" {
+  export const EditorExtensionsRegistry: { getEditorActions(): { id: string; label: string; alias?: string }[] };
+}

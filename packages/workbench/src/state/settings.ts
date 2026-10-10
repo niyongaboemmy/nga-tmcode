@@ -47,6 +47,8 @@ export interface Settings {
   "livePreview.followActiveFile": boolean;
   /** Dev servers open in the built-in browser beside the editor once they print their address. */
   "run.openBrowserOnStart": boolean;
+  /** User keybindings: command id → key ("mod+shift+k"; "" removes the key). Edited in Keyboard Shortcuts. */
+  "keybindings.user": Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -74,6 +76,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "livePreview.updateOn": "onType",
   "livePreview.followActiveFile": false,
   "run.openBrowserOnStart": true,
+  "keybindings.user": {},
 };
 
 export type SettingKey = keyof Settings;

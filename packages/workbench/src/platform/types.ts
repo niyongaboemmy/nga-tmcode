@@ -52,6 +52,15 @@ export interface WindowControls {
   onMaximizedChange(cb: (maximized: boolean) => void): () => void;
 }
 
+export interface NativeMenuItemState {
+  /** Workbench command id (the native item's id is "cmd:<id>"). */
+  id: string;
+  text: string;
+  enabled: boolean;
+  /** Tauri accelerator ("CmdOrCtrl+Shift+P"), or null for none. */
+  accel: string | null;
+}
+
 export interface KeyValueStore {
   get<T>(key: string): Promise<T | undefined>;
   set<T>(key: string, value: T): Promise<void>;
@@ -102,6 +111,8 @@ export interface Platform {
   webviews?: WebviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
   setNativeTheme?(theme: "dark" | "light"): void;
+  /** macOS menu bar (commands/menus.json): label, enabled state and accelerator of each "cmd:<id>" item. */
+  setMenuState?(items: NativeMenuItemState[]): void;
   // ── extensions (feat/extensions) ──
   /** VS Code extensions from Open VSX (declarative contributions only). */
   extensions?: ExtensionHost;

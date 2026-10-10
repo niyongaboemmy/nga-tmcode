@@ -349,7 +349,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
           </div>
         </div>
       )}
-      {active?.kind === "file" && <Breadcrumbs path={active.path} />}
+      {active?.kind === "file" && !active.path.startsWith("tmcode-untitled:") && <Breadcrumbs path={active.path} />}
       <div className="tm-editor-content">
         {/* Keep Monaco mounted while switching between files of this group. */}
         {group.editors.some((e) => e.kind === "file" && !isMediaFile(e.path)) && (

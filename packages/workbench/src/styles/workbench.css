@@ -8305,3 +8305,80 @@ kbd,
 .tm-signin-wait.is-compact .tm-signin-wait-actions {
   justify-content: flex-start;
 }
+
+/* ───────────────────────── keyboard shortcuts editor (V9) ───────────────────────── */
+.tm-shortcuts-row {
+  grid-template-columns: minmax(220px, 2fr) minmax(130px, 1fr) 70px minmax(180px, 2fr);
+}
+.tm-shortcuts-row:not(.is-head) {
+  cursor: default;
+}
+.tm-shortcuts-row:focus-visible {
+  outline: 1px solid var(--focus-border, #007fd4);
+  outline-offset: -1px;
+}
+.tm-shortcuts-row.is-user > :nth-child(3) {
+  color: var(--foreground);
+}
+.tm-shortcuts-cmd {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.tm-shortcuts-actions {
+  display: inline-flex;
+  flex: none;
+  width: 44px;
+  visibility: hidden;
+}
+.tm-shortcuts-row:hover .tm-shortcuts-actions,
+.tm-shortcuts-row:focus-within .tm-shortcuts-actions,
+.tm-shortcuts-row.is-user .tm-shortcuts-actions {
+  visibility: visible;
+}
+.tm-shortcuts-actions .tm-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tm-shortcuts-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.tm-key-recorder {
+  padding: 18px 20px 0;
+}
+.tm-key-recorder p {
+  margin: 0 0 10px;
+}
+.tm-key-recorder-title {
+  font-weight: 600;
+}
+.tm-key-recorder-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 4px 8px;
+  margin-bottom: 10px;
+  cursor: text;
+}
+.tm-key-recorder-box kbd {
+  margin: 0;
+}
+.tm-key-recorder-conflict {
+  color: var(--warning-fg, #cca700);
+}
+.tm-key-recorder .tm-dialog-buttons {
+  padding: 8px 0 18px;
+}
+.tm-qi-detail {
+  flex: none;
+}
+.tm-root[data-size="xs"] .tm-shortcuts-row {
+  grid-template-columns: 1fr auto;
+}
+.tm-root[data-size="xs"] .tm-shortcuts-row > :nth-child(3),
+.tm-root[data-size="xs"] .tm-shortcuts-row > :nth-child(4) {
+  display: none;
+}

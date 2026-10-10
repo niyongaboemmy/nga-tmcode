@@ -20,6 +20,7 @@
     "clipboard-manager:allow-write-text",
     "allow-app-info",
     "allow-set-native-theme",
+    "allow-menu-update",
     "allow-ws-open",
     "allow-ws-reopen",
     "allow-ws-read-dir",
