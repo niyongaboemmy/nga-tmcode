@@ -1,8 +1,8 @@
 import { track } from "../state/activity";
 import { notify, showDialog } from "../state/store";
 import { showQuickPick, type PickItem } from "../widgets/QuickPick";
-import { api, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
-import { explainSubmitError, notifySubmitted, submitConfirmDetail } from "./submitFlow";
+import { api, offerSaveBeforeSwitch, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
+import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { Link, LinkableActivity, PracticalQuestion, Project } from "./types";
 
 /**
@@ -230,17 +230,9 @@ export async function submitProject() {
   const target = links.find((l) => l.activity_type === "assignment") ?? links[0];
   const title = target.activity?.title ?? TYPE_LABEL[target.activity_type].one;
   const due = target.activity?.due_date;
-  const choice = await showDialog({
-    severity: "info",
-    message: `Submit "${current.name}" for "${title}"?`,
-    detail: submitConfirmDetail({ late: !!due && Date.parse(due) < Date.now(), quizPractical: target.activity_type === "quiz" && !!target.question_id }),
-    buttons: [
-      { id: "submit", label: "Save and Submit", primary: true },
-      { id: "cancel", label: "Cancel" },
-    ],
-    cancelId: "cancel",
-  });
-  if (choice !== "submit") return;
+  // The confirmation says what is handed in (files, size) and what stays here.
+  const ok = await confirmSubmit({ message: `Submit "${current.name}" for "${title}"?`, late: !!due && Date.parse(due) < Date.now(), quizPractical: target.activity_type === "quiz" && !!target.question_id });
+  if (!ok) return;
   try {
     const res = await submitLink(current.id, target.id);
     notifySubmitted(`"${current.name}" for "${title}"`, res.submission);
@@ -265,6 +257,9 @@ const slug = (s: string) =>
  * starts open the same project).
  */
 async function startQuizPracticalNow(quiz: { activity_id: number; title: string; course_name?: string | null }, q: PracticalQuestion) {
+  // Another workspace with work not in Task Mentor yet: offer to save it first (unless it is this practical's own).
+  const here = currentLinks().some((l) => l.activity_type === "quiz" && l.activity_id === quiz.activity_id && l.question_id === q.question_id);
+  if (!here && !(await offerSaveBeforeSwitch(q.title))) return false;
   try {
     const { project, created } = await api<{ project: Project; link_id: number; created: boolean }>("POST", `/quizzes/${quiz.activity_id}/questions/${q.question_id}/start`, {});
     const opened = await openProject(project.id, { folderName: slug(`${quiz.title}-${q.title}`) });

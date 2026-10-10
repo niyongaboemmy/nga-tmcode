@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { editorOptions } from "../parts/editor/CodeEditor";
 import { ensureDocument, languageForPath } from "../monaco/documents";
 import { monaco, setupMonaco } from "../monaco/setup";
-import { getPlatform, useWorkbench, type EditorInput } from "../state/store";
+import { closeEditors, getPlatform, useWorkbench, type EditorInput } from "../state/store";
 import { readHistory } from "./localHistory";
 
 type Input = Extract<EditorInput, { kind: "historyDiff" }>;
@@ -24,11 +24,12 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
       useInlineViewWhenSpaceIsLimited: true,
       renderSideBySideInlineBreakpoint: 700,
       ignoreTrimWhitespace: false,
-      ariaLabel: `${input.path} (Local History) ↔ current`,
+      ariaLabel: input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : `${input.path} (Local History) ↔ current`,
     });
     void (async () => {
       try {
-        original.setValue(await readHistory(input.path, input.entry));
+        // A conflict's Compare: Task Mentor's copy (left) against this folder's file (right).
+        original.setValue(input.source === "taskMentor" ? await getPlatform().fs.readFile(input.entry) : await readHistory(input.path, input.entry));
         const modified = await ensureDocument(input.path);
         if (!disposed) diff.setModel({ original, modified });
       } catch (e) {
@@ -43,8 +44,30 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
     };
   }, [input.path, input.entry, os]);
 
+  const compare = input.source === "taskMentor";
+  const resolve = (keep: "mine" | "theirs") =>
+    void import("../projects/service").then(async (m) => {
+      await m.resolveConflict(input.path, keep);
+      const group = useWorkbench.getState().groups.find((g) => g.editors.some((e) => e.id === input.id));
+      if (group) await closeEditors(group.id, [input.id]);
+    });
   return (
-    <div className="tm-code-editor tm-git-diff" data-testid="history-diff">
+    <div className={`tm-code-editor tm-git-diff ${compare ? "tm-history-compare" : ""}`} data-testid="history-diff">
+      {compare && (
+        <div className="tm-compare-bar" data-testid="conflict-compare">
+          <span className="tm-compare-side">Task Mentor's copy</span>
+          <span className="codicon codicon-arrow-both" aria-hidden />
+          <span className="tm-compare-side">Yours (this folder)</span>
+          <span className="tm-compare-actions">
+            <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => resolve("mine")}>
+              Keep Mine
+            </button>
+            <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => resolve("theirs")}>
+              Take Task Mentor's
+            </button>
+          </span>
+        </div>
+      )}
       <div ref={host} className="tm-monaco-host monaco-component" />
       {error && (
         <div className="tm-editor-error" role="alert">

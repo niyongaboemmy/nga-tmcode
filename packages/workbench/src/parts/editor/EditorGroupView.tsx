@@ -52,6 +52,7 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "testDiff") return `Test: ${useWorkbench.getState().tests.items.find((t) => t.id === e.testId)?.name ?? e.testId}`;
   if (e.kind === "browser") return e.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
   if (e.kind === "markdown" || e.kind === "image") return `Preview ${basename(e.path)}`;
+  if (e.kind === "historyDiff" && e.source === "taskMentor") return `${basename(e.path)} (Task Mentor) ↔ Yours`;
   if (e.kind === "historyDiff") return `${basename(e.path)} (${new Date(e.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) ↔ Current`;
   if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
   if (e.kind === "settings") return "Settings";
@@ -68,7 +69,7 @@ function titleOf(e: EditorInput): string {
 
 function iconOf(e: EditorInput) {
   if (e.kind === "file" || e.kind === "gitDiff") return <FileIcon path={e.path} />;
-  if (e.kind === "historyDiff") return <Codicon name="history" className="tm-tab-codicon" />;
+  if (e.kind === "historyDiff") return <Codicon name={e.source === "taskMentor" ? "diff" : "history"} className="tm-tab-codicon" />;
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "testDiff") return <Codicon name="diff" className="tm-tab-codicon" />;

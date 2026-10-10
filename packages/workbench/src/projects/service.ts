@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
 import { useGit } from "../scm/gitService";
-import { activeFilePath, confirmLeaveWorkspace, getPlatform, log, notify, notifyProgress, openPathFromOs, openRecent, showDialog, useWorkbench } from "../state/store";
+import { activeFilePath, confirmLeaveWorkspace, getPlatform, log, notify, notifyProgress, openEditorInput, openPathFromOs, openRecent, revealView, showDialog, useWorkbench } from "../state/store";
 import { applyExternalChanges } from "../monaco/external";
 import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
 import type { Binding, Link, Project, ProjectKind, Revision, SyncState } from "./types";
@@ -32,6 +32,10 @@ export interface ProjectsState {
   sync: SyncState;
   syncMessage: string | null;
   lastSyncAt: number | null;
+  /** When Task Mentor's newest version was saved (from the last check), for "Saved online · 2 min ago". */
+  headAt?: number | null;
+  /** Automatic saves that failed in a row (a toast says why after two). */
+  autoSaveFailures?: number;
 }
 
 export const useProjects = create<ProjectsState>(() => ({
@@ -265,7 +269,7 @@ function applyReadOnly(project: Project | null) {
 export async function bindWorkspace() {
   const binding = await readBinding();
   if (!binding) applyReadOnly(null);
-  set({ binding, current: null, plan: null, sync: binding ? "checking" : "unbound", syncMessage: null });
+  set({ binding, current: null, plan: null, sync: binding ? "checking" : "unbound", syncMessage: null, lastSyncAt: null, headAt: null, autoSaveFailures: 0 });
   if (!binding || !signedIn()) {
     if (binding) set({ sync: "offline", syncMessage: "Sign in to sync this project." });
     return;
@@ -323,8 +327,9 @@ export function checkSync(): Promise<void> {
         return;
       }
       const [scan, remote] = await Promise.all([host.scan(), headManifest(binding.project_id)]);
-      const plan = planSync(binding.base, scan.files, remote.files);
-      set({ plan, sync: stateOf(plan), syncMessage: scan.truncated });
+      // Left-out files (too large, ignored) are never planned as deletions.
+      const plan = planSync(binding.base, scan.files, remote.files, scan.skipped);
+      set({ plan, sync: stateOf(plan), syncMessage: scan.truncated, headAt: remote.head ? Date.parse(remote.head.created_at) || null : null });
     } catch (e) {
       const offline = !(e instanceof TmError) || e.status === 0;
       set({ sync: offline ? "offline" : "error", syncMessage: (e as Error).message });
@@ -358,11 +363,11 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
   const plan = get().plan;
   if (!plan) return null;
   if (plan.conflicts.length) {
-    if (!opts.quiet) notify("warning", `${plan.conflicts.length} file(s) changed both here and in Task Mentor. Resolve them first under Conflicts in the Task Mentor Projects view.`);
+    if (!opts.quiet) notifyConflicts(plan.conflicts);
     return null;
   }
   if (changeCount(plan.remoteChanges)) {
-    await pullFromTaskMentor({ quiet: true });
+    await pullFromTaskMentor({ quiet: true, announce: true });
     if (get().sync === "conflict") return null;
   }
   const current = get().plan ?? plan;
@@ -392,15 +397,15 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
     } catch (e) {
       if (e instanceof TmError && e.code === "REVISION_CONFLICT") {
         // Someone saved in between (another computer): bring it down, then the user saves again.
-        await pullFromTaskMentor({ quiet: true });
+        await pullFromTaskMentor({ quiet: true, announce: true });
         throw new Error("Task Mentor had newer changes. They were brought into this folder; check them and save again.");
       }
       throw e;
     }
     await writeBinding({ ...get().binding!, base_revision_id: res.revision.id, base: files });
     set({ lastSyncAt: Date.now() });
-    log("Projects", `Saved revision ${res.revision.number} of ${binding.name} (${missing.length} new file(s) uploaded)`);
-    if (!opts.quiet) notify("info", res.unchanged ? "Everything is already saved to Task Mentor." : `Saved to Task Mentor (revision ${res.revision.number}).`);
+    log("Projects", `Saved version ${res.revision.number} of ${binding.name} (${missing.length} new file(s) uploaded)`);
+    if (!opts.quiet) notify("info", res.unchanged ? "Everything is already saved to Task Mentor." : `Saved to Task Mentor (version ${res.revision.number}).`);
     await checkSync();
     return res.revision;
   } catch (e) {
@@ -452,8 +457,34 @@ function defaultMessage(plan: SyncPlan) {
   return parts.length ? `Saved from TMCode: ${parts.join(", ")}` : "Saved from TMCode";
 }
 
-/** Brings Task Mentor's newer files into this folder (conflicts are kept for the user). */
-async function pullFromTaskMentorNow(opts: { quiet?: boolean } = {}) {
+/**
+ * "Got 3 changes from Task Mentor: a.js, b.css (deleted)": what a pull changed in
+ * this folder, by name (deleted files say so), at most `max` names.
+ */
+export function pulledSummary(written: string[], deleted: string[], max = 4) {
+  const n = written.length + deleted.length;
+  const names = [...written.map((p) => p.split("/").pop()!), ...deleted.map((p) => `${p.split("/").pop()!} (deleted)`)];
+  const list = names.length > max ? `${names.slice(0, max).join(", ")} and ${names.length - max} more` : names.join(", ");
+  return `Got ${n} change${n === 1 ? "" : "s"} from Task Mentor: ${list}.`;
+}
+
+/** Before Task Mentor's files replace or delete the ones here: a copy of each in Local History (Timeline). */
+async function snapshotBeforePull(paths: string[]) {
+  const { snapshotBeforeDelete } = await import("../history/localHistory");
+  for (const path of paths) {
+    const exists = await getPlatform()
+      .fs.readFile(path)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) await snapshotBeforeDelete(path);
+  }
+}
+
+/**
+ * Brings Task Mentor's newer files into this folder (conflicts are kept for the user).
+ * `announce`: a quiet pull (inside Save) still says which files changed.
+ */
+async function pullFromTaskMentorNow(opts: { quiet?: boolean; announce?: boolean } = {}) {
   const binding = get().binding;
   const host = getPlatform().account;
   if (!binding || !host || binding.kind !== "tm") return;
@@ -466,9 +497,11 @@ async function pullFromTaskMentorNow(opts: { quiet?: boolean } = {}) {
       return;
     }
     const scan = await host.scan();
-    const plan = planSync(binding.base, scan.files, remote.files);
+    const plan = planSync(binding.base, scan.files, remote.files, scan.skipped);
     const R = new Map(remote.files.map((f) => [f.path, f]));
     const toWrite = [...plan.remoteChanges.added, ...plan.remoteChanges.modified];
+    // The student's own copies first: whatever Task Mentor's version replaces can be restored from the Timeline.
+    await snapshotBeforePull([...plan.remoteChanges.modified, ...plan.remoteChanges.deleted]);
     let done = 0;
     for (const path of toWrite) {
       const f = R.get(path)!;
@@ -484,7 +517,12 @@ async function pullFromTaskMentorNow(opts: { quiet?: boolean } = {}) {
     const base = remote.files.filter((f) => !plan.conflicts.includes(f.path)).concat(plan.conflicts.flatMap((p) => (oldBase.get(p) ? [oldBase.get(p)!] : [])));
     await writeBinding({ ...binding, base_revision_id: remote.head.id, base });
     set({ lastSyncAt: Date.now() });
-    if (!opts.quiet) notify("info", toWrite.length + plan.remoteChanges.deleted.length ? `Updated ${toWrite.length + plan.remoteChanges.deleted.length} file(s) from Task Mentor.` : "This folder already has Task Mentor's latest files.");
+    const changed = toWrite.length + plan.remoteChanges.deleted.length;
+    if (changed && (!opts.quiet || opts.announce)) {
+      // Replaced and deleted files were kept in Local History first (the Timeline restores them).
+      notify("info", pulledSummary(toWrite, plan.remoteChanges.deleted));
+      log("Projects", `${pulledSummary(toWrite, plan.remoteChanges.deleted, 50)} Earlier copies are in Local History (Timeline).`);
+    } else if (!opts.quiet) notify("info", "This folder already has Task Mentor's latest files.");
   } catch (e) {
     if (!opts.quiet) notify("error", (e as Error).message);
   } finally {
@@ -501,6 +539,7 @@ export async function resolveConflict(path: string, keep: "mine" | "theirs") {
   const remote = await headManifest(binding.project_id);
   const theirs = remote.files?.find((f) => f.path === path) ?? null;
   if (keep === "theirs") {
+    await snapshotBeforePull([path]);
     if (theirs) {
       const res = await api<{ base64: string }>("GET", `/projects/${binding.project_id}/blobs/${theirs.sha256}`, undefined, { response: "base64" });
       await host.writeBlob(path, theirs.sha256, res.base64);
@@ -511,6 +550,103 @@ export async function resolveConflict(path: string, keep: "mine" | "theirs") {
   const base = (binding.base ?? []).filter((f) => f.path !== path).concat(theirs ? [theirs] : []);
   await writeBinding({ ...binding, base });
   await checkSync();
+}
+
+/** Where Compare keeps Task Mentor's copy of a conflicting file (.tmcode is never synced). */
+export const compareCopyPath = (path: string) => `.tmcode/compare/${encodeURIComponent(path)}`;
+
+/** A Task Mentor blob (gzip + base64 from the desktop API, plain base64 from the memory one) as text. */
+async function blobText(base64: string): Promise<string> {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b && typeof DecompressionStream !== "undefined") {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Response(stream).text();
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Conflicts › Compare: Task Mentor's copy (left, read-only) against this
+ * folder's (right, editable), in the Local History diff editor. Keep Mine /
+ * Take Task Mentor's still decide.
+ */
+export async function compareConflict(path?: string) {
+  const binding = get().binding;
+  if (!binding || binding.kind !== "tm") return;
+  let target = path;
+  if (!target) {
+    const conflicts = get().plan?.conflicts ?? [];
+    if (!conflicts.length) return notify("info", "There are no conflicts to compare.");
+    if (conflicts.length === 1) target = conflicts[0];
+    else {
+      const { showQuickPick } = await import("../widgets/QuickPick");
+      const pick = await showQuickPick({ placeholder: "Compare which file with Task Mentor's copy?", items: conflicts.map((p) => ({ id: p, label: p.split("/").pop()!, description: p, icon: "diff" })) });
+      if (!pick) return;
+      target = pick.id;
+    }
+  }
+  try {
+    const remote = await headManifest(binding.project_id);
+    const theirs = remote.files?.find((f) => f.path === target) ?? null;
+    let text = "";
+    if (theirs) {
+      const res = await api<{ base64: string }>("GET", `/projects/${binding.project_id}/blobs/${theirs.sha256}`, undefined, { response: "base64" });
+      text = await blobText(res.base64);
+    }
+    const fs = getPlatform().fs;
+    await fs.createDir(".tmcode").catch(() => {});
+    await fs.createDir(".tmcode/compare").catch(() => {});
+    const copy = compareCopyPath(target);
+    await fs.writeFile(copy, text).catch(async () => {
+      await fs.createFile(copy);
+      await fs.writeFile(copy, text);
+    });
+    // Deleted in Task Mentor: its side is empty.
+    openEditorInput({ kind: "historyDiff", id: `tmcompare:${target}`, path: target, entry: copy, time: Date.now(), preview: false, source: "taskMentor" });
+  } catch (e) {
+    notify("error", `Could not get Task Mentor's copy of ${target}: ${(e as Error).message}`);
+  }
+}
+
+/** Conflicts block saving: say so, with a way to compare (and the view where Keep Mine / Take Task Mentor's live). */
+export function notifyConflicts(conflicts: string[]) {
+  const n = conflicts.length;
+  notify("warning", `${n} file${n === 1 ? "" : "s"} changed both here and in Task Mentor. Compare, then keep yours or take Task Mentor's under Conflicts in the Task Mentor Projects view.`, [
+    { label: n === 1 ? "Compare" : "Compare…", run: () => void compareConflict(n === 1 ? conflicts[0] : undefined) },
+    { label: "Show Conflicts", run: () => revealView("projects") },
+  ]);
+}
+
+/**
+ * Before another assignment's folder replaces this one: offer to save this
+ * one to Task Mentor first. false: the student cancelled.
+ */
+export async function offerSaveBeforeSwitch(nextName: string, nextProjectId?: number | null): Promise<boolean> {
+  const binding = get().binding;
+  if (!binding || binding.kind !== "tm" || !signedIn() || (nextProjectId && binding.project_id === nextProjectId)) return true;
+  if (lockReason(get().current)) return true;
+  await recheck();
+  const plan = get().plan;
+  if (!plan || !changeCount(plan.localChanges)) return true;
+  const name = get().current?.assignment?.title ?? binding.name;
+  const choice = await showDialog({
+    severity: "info",
+    message: `Save "${name}" to Task Mentor before opening "${nextName}"?`,
+    detail: `${changeCount(plan.localChanges)} change${changeCount(plan.localChanges) === 1 ? " is" : "s are"} only on this computer. Your files stay here either way.`,
+    buttons: [
+      { id: "save", label: "Save and Open", primary: true },
+      { id: "open", label: "Open Without Saving" },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice === "cancel") return false;
+  if (choice === "save") {
+    lastSaveError = null;
+    await saveToTaskMentor();
+    if (lastSaveError || get().sync === "conflict") return false;
+  }
+  return true;
 }
 
 // ── Open a project (Projects view, tmcode://project deep link) ────────────
@@ -822,22 +958,73 @@ function startHeartbeats() {
   let lastDirty = 0;
   useWorkbench.subscribe((s) => {
     const n = Object.keys(s.dirty).length;
-    if (n < lastDirty && s.settings["projects.autoSave"] === "onSave") scheduleAutoSave(4000);
+    if (n < lastDirty) {
+      const mode = autoSaveMode();
+      if (mode === "onSave") scheduleAutoSave(4000);
+      else if (mode === "assignment") scheduleAutoSave(ASSIGNMENT_AUTO_SAVE_MS);
+    }
     if (n !== lastDirty) scheduleCheck();
     lastDirty = n;
   });
   setInterval(() => {
     if (useWorkbench.getState().settings["projects.autoSave"] === "interval") scheduleAutoSave(0);
   }, 5 * 60_000);
+  // Leaving the window: a pending automatic save goes now (assignment work is online before the laptop closes).
+  window.addEventListener("blur", () => {
+    const mode = autoSaveMode();
+    if (mode === "off" || !get().binding || get().binding?.kind !== "tm") return;
+    // Pending, not saved yet, or the last automatic save failed (a second try, so the cause is said once).
+    if (autoTimer || ["local-changes", "both", "error"].includes(get().sync)) scheduleAutoSave(0);
+  });
   window.addEventListener("beforeunload", () => void sendPresence(false));
+}
+
+/** Assignment workspaces save to Task Mentor this long after the last file save (projects.autoSave "assignments"). */
+export const ASSIGNMENT_AUTO_SAVE_MS = 30_000;
+
+/** An assignment's or a quiz practical's workspace (not a personal project). */
+export function isAssignmentWorkspace(project: Project | null | undefined = get().current) {
+  if (!project) return false;
+  if (project.assignment) return true;
+  const links = Array.isArray(project.links) ? project.links : project.links?.items ?? [];
+  return links.some((l) => l.activity_type === "quiz" && !!l.question_id);
+}
+
+/**
+ * How the open folder saves to Task Mentor by itself: "assignments" (the
+ * default) saves assignment and quiz-practical workspaces after file saves and
+ * on leaving the window; personal projects only with "onSave" / "interval".
+ */
+export function autoSaveMode(): "off" | "onSave" | "interval" | "assignment" {
+  const setting = useWorkbench.getState().settings["projects.autoSave"] ?? "assignments";
+  if (setting === "assignments") return isAssignmentWorkspace() ? "assignment" : "off";
+  return setting;
 }
 
 let autoTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleAutoSave(delay: number) {
   if (autoTimer) clearTimeout(autoTimer);
   autoTimer = setTimeout(() => {
-    if (get().binding?.kind === "tm" && signedIn() && !inExam()) void saveToTaskMentor({ source: "auto", quiet: true });
+    autoTimer = null;
+    void autoSaveNow();
   }, delay);
+}
+
+/** One automatic save; two failures in a row (offline, too large, conflicts) are said once, with the cause. */
+async function autoSaveNow() {
+  if (get().binding?.kind !== "tm" || !signedIn() || inExam() || lockReason(get().current)) return;
+  lastSaveError = null;
+  const rev = await saveToTaskMentor({ source: "auto", quiet: true });
+  const failed = !rev && (lastSaveError !== null || get().sync === "conflict" || get().sync === "error");
+  if (!failed) {
+    if (rev || get().sync === "synced") set({ autoSaveFailures: 0 });
+    return;
+  }
+  const failures = (get().autoSaveFailures ?? 0) + 1;
+  set({ autoSaveFailures: failures });
+  if (failures !== 2) return;
+  if (get().sync === "conflict") return notifyConflicts(get().plan?.conflicts ?? []);
+  notify("warning", `Automatic saving to Task Mentor isn't working: ${saveFailureMessage(lastSaveError, "save")}`, [{ label: "Save to Task Mentor", run: () => void saveToTaskMentor() }]);
 }
 
 let checkTimer: ReturnType<typeof setTimeout> | null = null;

@@ -1,5 +1,5 @@
 import { useActivity } from "../state/activity";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { executeCommand } from "../commands/registry";
 import type { EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
@@ -7,8 +7,11 @@ import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
 import { taskMentorHtml } from "../widgets/richHtml";
 import { Codicon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
-import { api, useProjects } from "./service";
-import { dueLabel, handedInLate, isOpenWorkspaceOf, loadAssignment, returnedForChanges, startAssignment, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
+import { api, autoSaveMode, compareConflict, useProjects } from "./service";
+import { changeCount } from "./plan";
+import { normalizeRubric, rubricResults, rubricTotal, type RubricResult } from "./rubric";
+import { SYNC_ICON, SYNC_TIP, SYNC_TONE, syncLineText } from "./syncLabels";
+import { acceptsSubmissions, dueLabel, handedInLate, isOpenWorkspaceOf, latePolicyText, loadAssignment, returnedForChanges, startAssignment, STUDENT_STATUS_LABEL, studentStatus, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
 import { STATE_LABEL } from "./AssignmentsView";
 import { openAssignmentInTaskMentor } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
@@ -80,7 +83,7 @@ function Workspaces({ id }: { id: number }) {
             </td>
             <td>
               {STATE_LABEL[w.state] ?? w.state}
-              {w.revision_number ? ` · r${w.revision_number}` : ""}
+              {w.revision_number ? ` · version ${w.revision_number}` : ""}
             </td>
             <td>{when(w.submitted_at ?? w.last_activity_at)}</td>
             <td>{w.grade ?? "–"}</td>
@@ -88,6 +91,71 @@ function Workspaces({ id }: { id: number }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** "How it's graded": criteria and points; after grading, the score and note per criterion. */
+function RubricTable({ results, graded }: { results: RubricResult[]; graded?: boolean }) {
+  const total = rubricTotal(results);
+  const scored = graded && results.some((r) => r.score !== null);
+  const notes = graded && results.some((r) => r.comment);
+  return (
+    <table className="tm-assignment-table tm-rubric-table" data-testid={graded ? "assignment-rubric-scores" : "assignment-rubric-table"}>
+      <thead>
+        <tr>
+          <th>Criterion</th>
+          {scored ? <th className="tm-rubric-points">Score</th> : <th className="tm-rubric-points">Points</th>}
+          {notes && <th>Teacher's note</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {results.map((r, i) => (
+          <tr key={i}>
+            <td>
+              <b>{r.name}</b>
+              {r.description && !graded && <div className="tm-muted">{r.description}</div>}
+            </td>
+            <td className="tm-rubric-points">{scored ? `${r.score ?? "–"} / ${r.max}` : r.max || "–"}</td>
+            {notes && <td className="tm-rubric-note">{r.comment || <span className="tm-muted">–</span>}</td>}
+          </tr>
+        ))}
+      </tbody>
+      {total > 0 && (
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td className="tm-rubric-points">{scored ? `${results.reduce((n, r) => n + (r.score ?? 0), 0)} / ${total}` : total}</td>
+            {notes && <td />}
+          </tr>
+        </tfoot>
+      )}
+    </table>
+  );
+}
+
+/** The brief's working card says where the work is: "Saved online · 2 min ago", "Not saved yet · 3 changes"… (the Projects view's words). */
+function BriefSyncLine() {
+  const live = useProjects((s) => s.sync);
+  // The quick re-check after each edit keeps the last answer on screen (no "Checking…" flicker).
+  const stable = useRef(live);
+  if (live !== "checking" || stable.current === "unbound") stable.current = live;
+  const sync = live === "checking" ? stable.current : live;
+  const plan = useProjects((s) => s.plan);
+  const savedAt = useProjects((s) => s.lastSyncAt ?? s.headAt ?? null);
+  const message = useProjects((s) => s.syncMessage);
+  const changes = plan ? changeCount(plan.localChanges) : 0;
+  const busy = sync === "saving" || sync === "pulling";
+  const text = syncLineText(sync, { changes, savedAt });
+  return (
+    <p className={`tm-brief-sync is-${SYNC_TONE[sync]}`} data-testid="assignment-sync" data-state={sync} title={sync === "error" && message ? message : SYNC_TIP[sync]}>
+      <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
+      <span>{text}</span>
+      {sync === "conflict" && (
+        <button type="button" className="tm-link-button" onClick={() => void compareConflict()}>
+          Compare
+        </button>
+      )}
+    </p>
   );
 }
 
@@ -128,9 +196,16 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const started = !!my?.project_id;
   const here = isOpenWorkspaceOf(detail);
   const saving = savingNow || sync === "saving" || sync === "pulling";
+  const autoSaving = here && autoSaveMode() !== "off";
+  const criteria = normalizeRubric(detail.rubric);
+  const graded = !teaching && my?.state === "graded" ? rubricResults(criteria, my) : null;
   // Handed in: the countdown is over (and "late" is about the submission, below).
   const handedIn = my?.state === "submitted" || my?.state === "graded";
   const returned = !teaching && returnedForChanges(detail);
+  // Shared words with Task Mentor: Not started · In progress · Submitted · Returned · Graded · Closed.
+  const status = studentStatus(detail);
+  const open = acceptsSubmissions(detail);
+  const overdue = !teaching && open && !handedIn && due?.tone === "late";
 
   return (
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>
@@ -143,15 +218,16 @@ export function AssignmentEditor({ input }: { input: Input }) {
         <h1>{detail.title}</h1>
         <div className="tm-assignment-facts">
           {!teaching && (
-            <span className="tm-fact tm-fact--state" data-testid="assignment-state">
-              <Codicon name="circle-filled" className={`tm-state-dot is-${detail.read_only ? "readonly" : (my?.state ?? "not_started")}`} />
-              {detail.read_only ? "Completed — read-only" : STATE_LABEL[my?.state ?? "not_started"]}
+            <span className="tm-fact tm-fact--state" data-testid="assignment-state" data-status={status}>
+              <Codicon name="circle-filled" className={`tm-state-dot is-${detail.read_only || status === "closed" ? "readonly" : (my?.state ?? "not_started")}`} />
+              {STUDENT_STATUS_LABEL[status]}
+              {detail.read_only && status === "closed" ? " — read-only" : ""}
             </span>
           )}
           {detail.due_date && (
-            <span className={`tm-fact ${due && !detail.read_only && !handedIn ? `is-${due.tone}` : ""}`} data-testid="assignment-due">
+            <span className={`tm-fact ${due && open && !handedIn ? `is-${due.tone}` : ""}`} data-testid="assignment-due" title={due?.tone === "late" && open && !handedIn ? latePolicyText(detail) : undefined}>
               <Codicon name="calendar" /> Due {when(detail.due_date)}
-              {due && !detail.read_only && !handedIn && <b> · {due.text}</b>}
+              {due && open && !handedIn && <b> · {due.text}</b>}
             </span>
           )}
           {detail.points != null && (
@@ -236,15 +312,29 @@ export function AssignmentEditor({ input }: { input: Input }) {
                 <h2>
                   <Codicon name="edit" /> You're working on it in this window
                 </h2>
-                <p>{returned ? "Make the changes your teacher asked for, save, then submit again." : "Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded."}</p>
+                <p>
+                  {!open
+                    ? "Your teacher closed this assignment: it no longer takes submissions. Your work is still saved to Task Mentor."
+                    : returned
+                      ? "Make the changes your teacher asked for, then submit again."
+                      : autoSaving
+                        ? "Your work saves to Task Mentor by itself as you go. Submit hands in your saved work; you can withdraw it until it's graded."
+                        : "Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded."}
+                </p>
+                {overdue && (
+                  <p className="tm-brief-late" data-testid="assignment-late-policy">
+                    <Codicon name="warning" /> {latePolicyText(detail)}
+                  </p>
+                )}
+                <BriefSyncLine />
               </div>
               <div className="tm-next-step-actions">
-                <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save">
-                  <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save"}
+                <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
+                  <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
                 </button>
-                <button type="button" className="tm-button" disabled={saving || !!busy} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
-                  <Codicon name={busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}
-                  {busy === "submitting" ? "Submitting…" : my?.state === "submitted" || my?.state === "graded" ? "Submit Again" : "Submit"}
+                <button type="button" className="tm-button" disabled={saving || !!busy || !open} onClick={() => void submitAssignment(id)} data-testid="assignment-submit" title={open ? undefined : "Closed: your teacher no longer takes submissions"}>
+                  <Codicon name={!open ? "lock" : busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}
+                  {!open ? "Closed" : busy === "submitting" ? "Submitting…" : my?.state === "submitted" || my?.state === "graded" ? "Submit Again" : "Submit"}
                 </button>
               </div>
             </>
@@ -271,7 +361,8 @@ export function AssignmentEditor({ input }: { input: Input }) {
                 <b>{my.grade ?? "–"}</b>
                 <span>/ {my.max_points ?? detail.points ?? "–"}</span>
               </div>
-              {my.feedback && <p className="tm-assignment-feedback">{my.feedback}</p>}
+              {graded?.feedback && <p className="tm-assignment-feedback">{graded.feedback}</p>}
+              {graded?.results && <RubricTable results={graded.results} graded />}
             </>
           ) : null}
           {my.submitted_at && (
@@ -350,6 +441,12 @@ export function AssignmentEditor({ input }: { input: Input }) {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+      {criteria.length > 0 && !graded?.results && (
+        <section className="tm-assignment-section" data-testid="assignment-rubric">
+          <h2>How it's graded</h2>
+          <RubricTable results={criteria.map((c) => ({ ...c, score: null, comment: "" }))} />
         </section>
       )}
       {!brief && !instructions && <p className="tm-muted">No brief was written for this assignment. Open it in Task Mentor for any details.</p>}

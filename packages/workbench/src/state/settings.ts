@@ -32,8 +32,12 @@ export interface Settings {
   "workbench.reduceMotion": boolean;
   /** "default": check at start and every 6 hours; "manual": only from the command; "none": never. */
   "update.mode": "default" | "manual" | "none";
-  /** Task Mentor projects: save automatically ("off", after each file save, or every 5 minutes). */
-  "projects.autoSave": "off" | "onSave" | "interval";
+  /**
+   * Task Mentor projects: save automatically. "assignments" (default): assignment and
+   * quiz-practical workspaces 30 s after the last file save and on leaving the window,
+   * personal projects never; "onSave"/"interval": every project; "off": never.
+   */
+  "projects.autoSave": "off" | "assignments" | "onSave" | "interval";
   /** Share live status (open file, unsaved files, sync) with Task Mentor while a project is open. */
   "projects.presence": boolean;
   // ── Run hub ──
@@ -65,7 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.fontSize": 13,
   "workbench.reduceMotion": false,
   "update.mode": "default",
-  "projects.autoSave": "off",
+  "projects.autoSave": "assignments",
   "projects.presence": true,
   "livePreview.updateOn": "onType",
   "livePreview.followActiveFile": false,
@@ -225,6 +229,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Save Task Mentor projects automatically. GitHub projects always use git push.",
         type: "enum",
         options: [
+          { value: "assignments", label: "assignments (assignment work 30 s after each file save and when you leave the window; personal projects yourself)" },
           { value: "off", label: "off (Save to Task Mentor yourself)" },
           { value: "onSave", label: "onSave (after each file save)" },
           { value: "interval", label: "interval (every 5 minutes)" },

@@ -4,6 +4,7 @@ import { confirmLeaveWorkspace, getPlatform, notify, openFile, openPathFromOs, o
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import {
   checkSync,
+  compareConflict,
   connectFolder,
   createProject,
   disconnectFolder,
@@ -292,6 +293,15 @@ export function registerProjectCommands() {
   registerCommand({ id: "projects.connectFolder", title: "Connect This Folder to Task Mentor…", category: "Projects", enabled: () => usable() && !!useWorkbench.getState().workspace, run: connect });
   registerCommand({ id: "projects.save", title: "Save to Task Mentor", category: "Projects", keybinding: "mod+alt+u", enabled: bound, run: () => saveToTaskMentor() });
   registerCommand({ id: "projects.pull", title: "Get Latest from Task Mentor", category: "Projects", enabled: bound, run: () => pullFromTaskMentor() });
+  // Conflicts › Compare: Task Mentor's copy against this folder's (picks a conflict when there are several;
+  // the Projects view's per-file button calls compareConflict(path) directly).
+  registerCommand({
+    id: "projects.compareConflict",
+    title: "Compare Conflict with Task Mentor's Copy…",
+    category: "Projects",
+    enabled: () => bound() && (useProjects.getState().plan?.conflicts.length ?? 0) > 0,
+    run: () => compareConflict(),
+  });
   registerCommand({ id: "projects.refresh", title: "Refresh Projects", category: "Projects", enabled: () => usable() && signedIn(), run: async () => (await refreshProjects(), await checkSync()) });
   registerCommand({ id: "projects.linkActivity", title: "Change Assessment…", category: "Projects", enabled: bound, run: changeAssessment });
   registerCommand({

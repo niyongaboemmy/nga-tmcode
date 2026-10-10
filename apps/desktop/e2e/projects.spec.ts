@@ -45,7 +45,8 @@ test("connect the folder, save, edit, save again, then get changes from another 
   await page.keyboard.press("Enter");
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "No assessment" }).click();
   await expect(page.getByTestId("sync-state")).toContainText("Saved online", { timeout: 15_000 });
-  await expect(page.getByTestId("project-status")).toHaveText("Task Mentor");
+  // The status bar uses the Projects view's words.
+  await expect(page.getByTestId("project-status")).toHaveText("Saved online");
   const first = await mock(page, (m) => m.state().revisions);
   expect(first).toHaveLength(1);
   expect(first[0].files).toContain("main.py");
@@ -54,9 +55,12 @@ test("connect the folder, save, edit, save again, then get changes from another 
   // Edit a file: the badge counts it, Save to Task Mentor uploads it.
   await externalWrite(page, "main.py", 'print("edited")\n');
   await command(page, "Projects: Refresh Projects");
-  await expect(page.getByTestId("project-status")).toHaveText("1 to save", { timeout: 10_000 });
+  await expect(page.getByTestId("project-status")).toHaveText("Not saved yet", { timeout: 10_000 });
   await page.getByTestId("save-to-tm").click();
   await expect(page.getByTestId("sync-state")).toContainText("Saved online");
+  await expect(page.getByTestId("project-status")).toHaveText("Saved online");
+  // "version N" everywhere (not "revision").
+  await expect(page.locator(".tm-toast", { hasText: "Saved to Task Mentor (version 2)" })).toBeVisible();
   expect(await mock(page, (m) => m.state().revisions.length)).toBe(2);
 
   // Another computer saves: Get Latest brings it in.
@@ -64,8 +68,11 @@ test("connect the folder, save, edit, save again, then get changes from another 
   await page.evaluate(`window.__TMCODE_PROJECTS__.remoteSave(${id}, { "notes/todo.md": "# Todo\\n" })`);
   await command(page, "Projects: Refresh Projects");
   await expect(page.getByTestId("sync-state")).toContainText("Newer version online");
+  await expect(page.getByTestId("project-status")).toHaveText("Newer version online");
   await command(page, "Projects: Get Latest from Task Mentor");
   await expect(page.getByTestId("sync-state")).toContainText("Saved online");
+  // What came down, by name.
+  await expect(page.locator(".tm-toast", { hasText: "Got 1 change from Task Mentor: todo.md." })).toBeVisible();
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="notes"]')).toBeVisible();
 });

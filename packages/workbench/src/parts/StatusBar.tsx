@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { currentActivity, useActivity } from "../state/activity";
 import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
@@ -8,7 +9,8 @@ import { showReleaseNotes, useUpdate } from "../update/updateService";
 // ── Task Mentor projects ──
 import { useProjects } from "../projects/service";
 import { changeCount as planChanges } from "../projects/plan";
-import { SYNC_ICON } from "../projects/ProjectsView";
+import { SYNC_ICON, SYNC_LABEL, SYNC_TIP, SYNC_TONE } from "../projects/syncLabels";
+import type { SyncState } from "../projects/types";
 // ── git ──
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { branchLabel } from "../scm/model";
@@ -109,26 +111,27 @@ function ProjectStatus() {
   const binding = useProjects((s) => s.binding);
   const sync = useProjects((s) => s.sync);
   const plan = useProjects((s) => s.plan);
+  const message = useProjects((s) => s.syncMessage);
+  // A quick re-check after each edit doesn't flash "Checking…": the last answer stays until the new one.
+  const shown = useRef<SyncState>("synced");
+  if (sync !== "checking" || shown.current === "unbound") shown.current = sync;
   if (!binding || binding.kind !== "tm") return null;
   const n = plan ? planChanges(plan.localChanges) : 0;
-  const busy = sync === "saving" || sync === "pulling" || sync === "checking";
-  const label = sync === "synced" ? "Task Mentor" : sync === "local-changes" || sync === "both" ? `${n} to save` : sync === "remote-changes" ? "Updates" : sync === "conflict" ? "Conflicts" : sync === "offline" ? "Offline" : busy ? (sync === "saving" ? "Saving…" : sync === "pulling" ? "Updating…" : "Task Mentor") : "Task Mentor";
-  const title =
-    sync === "synced"
-      ? `${binding.name}: everything is saved to Task Mentor`
-      : sync === "local-changes" || sync === "both"
-        ? `${binding.name}: ${n} change(s) not saved to Task Mentor — click to save`
-        : sync === "remote-changes"
-          ? `${binding.name}: newer changes in Task Mentor — click to get them`
-          : `${binding.name}: ${sync}`;
+  const state = sync === "checking" ? shown.current : sync;
+  const busy = sync === "saving" || sync === "pulling";
+  // The same words as the Projects view's sync line (projects/syncLabels.ts).
+  const label = SYNC_LABEL[state];
+  const tip = `${binding.name}: ${SYNC_TIP[state]}${(state === "local-changes" || state === "both") && n ? ` (${n} change${n === 1 ? "" : "s"})` : ""}${state === "error" && message ? ` — ${message}` : ""}`;
   return (
     <Item
-      className={`tm-status-project is-${sync}`}
-      title={title}
-      onClick={() => executeCommand(sync === "remote-changes" ? "projects.pull" : sync === "conflict" || sync === "offline" || sync === "error" ? "workbench.view.projects" : "projects.save")}
+      className={`tm-status-project is-${state} tm-tone-${SYNC_TONE[state]}`}
+      title={tip}
+      onClick={() => executeCommand(state === "remote-changes" ? "projects.pull" : state === "conflict" || state === "offline" || state === "error" ? "workbench.view.projects" : "projects.save")}
     >
-      <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
-      <span data-testid="project-status">{label}</span>
+      <Codicon name={SYNC_ICON[state]} className={busy ? "codicon-modifier-spin" : ""} />
+      <span data-testid="project-status" data-state={state}>
+        {label}
+      </span>
     </Item>
   );
 }
