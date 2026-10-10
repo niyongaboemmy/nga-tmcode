@@ -13,6 +13,8 @@ import {
   openProjectLink,
   parseAssignmentLink,
   openAssignmentLink,
+  parseGradingLink,
+  openGradingLink,
   selfCheckWorkers,
   startExam,
   setWorkspace,
@@ -90,6 +92,11 @@ async function boot() {
     const link = parseAssignmentLink(assignmentLink);
     if (link) setTimeout(() => void openAssignmentLink(link), 500);
   }
+  const gradingLink = params.get("grading");
+  if (platform.kind === "web" && gradingLink) {
+    const link = parseGradingLink(gradingLink);
+    if (link) setTimeout(() => void openGradingLink(link), 500);
+  }
   if (inTauri) {
     // macOS menu bar items run the same workbench commands as keys and the palette.
     const { listen } = await import("@tauri-apps/api/event");
@@ -118,6 +125,9 @@ async function boot() {
       // tmcode://assignment?id=…&api=… (a student's "Open in TMCode" on a TMCode practical).
       const assignment = urls?.map(parseAssignmentLink).find(Boolean);
       if (assignment) return void openAssignmentLink(assignment);
+      // tmcode://grading?type=…&id=…&question=…&student=…&api=… (a teacher's "Open in TMCode" on Task Mentor's grading page).
+      const grading = urls?.map(parseGradingLink).find(Boolean);
+      if (grading) return void openGradingLink(grading);
       const link = urls?.map(parseLaunchLink).find(Boolean);
       if (link) void startExam(link.api, link.ticket);
     };

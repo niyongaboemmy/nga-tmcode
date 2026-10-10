@@ -11,7 +11,9 @@ import type { AccountHost, AccountStatus, FileSystem, ScannedFile, SkippedFile, 
  * `returnForChanges(assignmentId, message)`, `setDueDate(assignmentId, iso)`,
  * `failAssignments(code | null)`, `setQuota(maxProjectBytes | null)`,
  * `setLegacyGradeComments(on)`, `gradeOf(type, id, questionId, studentId)`,
- * `setScanLimit(maxFileBytes)`; `grade(id, grade, feedback, rubricScores?)`.
+ * `setScanLimit(maxFileBytes)`; `grade(id, grade, feedback, rubricScores?)`; grading review:
+ * `simulateOtherTeacherGrade(type, id, questionId, studentId, grade)`, `setGradingReview(on)`,
+ * `failGradeSaves(status | null)`, `returnedProjects()`.
  *
  * Assignments follow docs/ASSIGNMENTS_PLAN.md: practical 51 has starter files,
  * case study 52 has none.
@@ -63,7 +65,14 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     { type: "quiz", id: 78, title: "Web Quiz 3", course_id: 3, course_name: "Web Development", due_date: new Date(Date.now() + 86400000).toISOString(), practical_questions: [{ question_id: 501, title: "Build a navbar", points: 10 }] },
   ];
   let seq = 100;
-  let teacher = false;
+  // setTeacher(true, { persist: true }) survives a reload (deep links opened at startup).
+  let teacher = (() => {
+    try {
+      return localStorage.getItem("tmcode:mock-teacher") === "1";
+    } catch {
+      return false;
+    }
+  })();
   let latency = 0;
   // Task Mentor's project lifecycle (live since 2026-10-07); setLifecycle(false) mimics an older server.
   let lifecycle = true;
@@ -84,37 +93,76 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   // Teachers' grading (GET/PUT /grading…): other students' work, seeded by setTeacher(true).
   let gradingList = true;
   const people = new Map<number, string>([[21, "Ben Learner"], [22, "Chloe Coder"], [23, "Dan Doer"]]);
-  const studentGrades = new Map<string, { score: number; rubric_scores: { index: number; score: number; comment?: string | null }[] | null; feedback: string; graded_at: string }>();
+  type StoredGrade = {
+    score: number;
+    rubric_scores: { index: number; score: number; comment?: string | null }[] | null;
+    feedback: string;
+    graded_at: string;
+    // Task Mentor ≥ 0.12 (grading review): line comments, draft grades, who graded, a version per save.
+    annotations: { path: string; line: number; text: string }[];
+    released: boolean;
+    graded_by: { id: number; name: string };
+    version: string;
+    /** What the student sees meanwhile (a draft over a released grade keeps the released score). */
+    released_score: number | null;
+  };
+  const studentGrades = new Map<string, StoredGrade>();
+  let gradeVersion = 0;
+  // false: a Task Mentor before draft grades / line comments / versions (setGradingReview(false)).
+  let gradingReview = true;
+  // PUT /grading… fails with this status (failGradeSaves), to see Retry.
+  let failGradeSave: number | null = null;
   let gradingSeeded = false;
   let legacyComments = false;
   // Is the student's quiz attempt open? (Task Mentor records a practical answer only then.)
   let quizOpen = true;
   // Teachers' "Return for changes", per assignment: when, and their message.
   const returned = new Map<number, { at: string; message: string | null }>();
+  // Projects a teacher returned from TMCode's grading (POST /projects/:id/return): the message.
+  const returnedProjects = new Map<number, { at: string; message: string | null }>();
   // GET /assignments and /activities/linkable fail with this (Central MIS down: MIS_SCOPE_UNAVAILABLE).
   let failScope: string | null = null;
   let maxProjectBytes: number | null = null;
   async function seedGrading() {
     if (gradingSeeded) return;
     gradingSeeded = true;
-    const work = async (sid: number, files: Record<string, string>, link: { type: string; id: number; question_id?: number }, submit: boolean) => {
+    // Version 1 is the starter (as starting a practical saves it), then `earlier` saves, then the work.
+    const work = async (sid: number, files: Record<string, string>, link: { type: string; id: number; question_id?: number }, submit: boolean, earlier: Record<string, string>[] = []) => {
       const id = ++seq;
       projects.push({ id, name: `${people.get(sid)}'s work`, slug: `w${id}`, description: null, language: "javascript", kind: "tm", visibility: "course", repo_url: null, repo_full_name: null, default_branch: null, size_bytes: 0, file_count: 0, git: null, archived_at: null, last_activity_at: now(), created_at: now(), updated_at: now(), owner: { id: sid, name: people.get(sid)!, avatar_url: null }, my_role: "teacher", assignment_id: link.type === "assignment" ? link.id : null, share_presence: true, status: submit ? "submitted" : "draft", hidden: true });
-      const list: ScannedFile[] = [];
-      for (const [path, text] of Object.entries(files)) {
-        const sha = await sha256(text);
-        blobs.set(sha, text);
-        list.push({ path, sha256: sha, size: text.length });
+      const starter = link.type === "assignment" && link.id === 51 ? starterFiles : { "index.html": "<nav><!-- TODO --></nav>\n" };
+      let rev = null as Rev | null;
+      for (const [n, set] of [starter, ...earlier, files].entries()) {
+        const list: ScannedFile[] = [];
+        for (const [path, text] of Object.entries(set)) {
+          const sha = await sha256(text);
+          blobs.set(sha, text);
+          list.push({ path, sha256: sha, size: text.length });
+        }
+        rev = { id: ++seq, project_id: id, number: n + 1, parent_id: rev?.id ?? null, author_id: sid, message: n === 0 ? "Starter files" : "Work", files: list, source: "save", created_at: new Date(Date.now() - (10 - n) * 3_600_000).toISOString() };
+        revisions.push(rev);
       }
-      const rev: Rev = { id: ++seq, project_id: id, number: 2, parent_id: null, author_id: sid, message: "Work", files: list, source: "save", created_at: now() };
-      revisions.push(rev);
-      links.push({ id: ++seq, project_id: id, activity_type: link.type, activity_id: link.id, question_id: link.question_id ?? null, status: submit ? "submitted" : "linked", revision_id: submit ? rev.id : null, revision_number: submit ? rev.number : null, git_commit: null, submitted_at: submit ? new Date(Date.now() - sid * 60_000).toISOString() : null, linked_by: sid, created_at: now() });
+      links.push({ id: ++seq, project_id: id, activity_type: link.type, activity_id: link.id, question_id: link.question_id ?? null, status: submit ? "submitted" : "linked", revision_id: submit ? rev!.id : null, revision_number: submit ? rev!.number : null, git_commit: null, submitted_at: submit ? new Date(Date.now() - sid * 60_000).toISOString() : null, linked_by: sid, created_at: now() });
     };
-    await work(21, { "index.html": "<h1>Ben's list</h1>\n<script src=\"app.js\"></script>\n", "app.js": "const items = [];\n" }, { type: "assignment", id: 51 }, true);
+    // Ben saved once before submitting: version 2 (an earlier try), version 3 (submitted).
+    await work(21, { "index.html": "<h1>Ben's list</h1>\n<script src=\"app.js\"></script>\n", "app.js": "const items = [];\n" }, { type: "assignment", id: 51 }, true, [{ "index.html": "<h1>Ben's list</h1>\n", "app.js": "// TODO: add items\nlet x;\n" }]);
     await work(22, { "index.html": "<h1>Chloe's list</h1>\n", "app.js": "// todo\n", "README.md": "# Chloe\n" }, { type: "assignment", id: 51 }, true);
     await work(23, { "index.html": "<h1>Dan</h1>\n" }, { type: "assignment", id: 51 }, false);
     await work(21, { "index.html": "<nav>Ben's navbar</nav>\n" }, { type: "quiz", id: 78, question_id: 501 }, true);
   }
+  // A roster row's grade; older servers have no line comments, drafts, graded_by or version (setGradingReview(false)).
+  const gradeOut = (g: StoredGrade) => ({
+    score: g.score,
+    // Older servers keep the notes only inside the feedback (setLegacyGradeComments).
+    rubric_scores: legacyComments ? (g.rubric_scores ?? []).map(({ index, score }) => ({ index, score })) : g.rubric_scores,
+    feedback: g.feedback,
+    graded_at: g.graded_at,
+    ref_id: 1,
+    ...(gradingReview ? { annotations: g.annotations, released: g.released, status: g.released ? "released" : "draft", graded_by: g.graded_by, released_score: g.released ? g.score : g.released_score, version: g.version } : {}),
+  });
+  // Task Mentor 0.12: a handed-in student with no grade yet still has a grade object (for its version).
+  const ungradedOut = (sid: number) => ({ score: null, rubric_scores: null, feedback: null, graded_at: null, ref_id: 1, annotations: [], released: false, status: "ungraded", graded_by: null, released_score: null, version: `none:${sid}` });
+  const gradeKey = (type: string, id: number, qid: number | null, sid: number) => `${type}:${id}:${type === "quiz" ? qid : ""}:${sid}`;
   function roster(type: string, id: number, qid: number | null) {
     const a = type === "assignment" ? assignments.find((x) => x.id === id) : null;
     const quiz = type === "quiz" ? activities.find((x) => x.type === "quiz" && x.id === id) : null;
@@ -128,24 +176,27 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       const proj = projects.find((x) => x.id === l.project_id)!;
       const sid = (proj.owner as { id: number }).id;
       const g = studentGrades.get(`${type}:${id}:${type === "quiz" ? q!.question_id : ""}:${sid}`);
-      const state = g ? "graded" : l.status === "submitted" ? "submitted" : "in_progress";
+      // A draft isn't graded yet (the student still waits); older servers have no drafts.
+      const state = g && g.released ? "graded" : l.status === "submitted" || g ? "submitted" : "in_progress";
       return {
         student: { id: sid, name: people.get(sid) ?? user.name, avatar_url: null },
         state,
         project: { id: proj.id, name: proj.name, status: proj.status ?? "draft", kind: "tm", language: proj.language ?? null, repo_url: null },
         link: { id: l.id, status: l.status, submitted_at: l.submitted_at, revision_id: l.revision_id, revision_number: l.revision_number, git_commit: null },
         // Older servers keep the notes only inside the feedback (setLegacyGradeComments).
-        grade: g ? { score: g.score, rubric_scores: legacyComments ? (g.rubric_scores ?? []).map(({ index, score }) => ({ index, score })) : g.rubric_scores, feedback: g.feedback, graded_at: g.graded_at, ref_id: 1 } : null,
+        grade: g ? gradeOut(g) : gradingReview && l.status === "submitted" ? ungradedOut(sid) : null,
         submitted_at: l.submitted_at,
         late: false,
+        // The versions the student saved (numbers), the first being the starter files.
+        ...(gradingReview ? { starter_revision: 1, revisions: revisions.filter((r) => r.project_id === proj.id).sort((x, y) => x.number - y.number).map((r) => ({ revision: r.number, at: r.created_at, id: r.id })) } : {}),
       };
     });
     rows.push({ student: { id: 24, name: "Eve Absent", avatar_url: null }, state: "not_started", project: null, link: null, grade: null, submitted_at: null, late: false } as never);
     const order: Record<string, number> = { submitted: 0, in_progress: 1, graded: 2, not_started: 3 };
     rows.sort((x, y) => order[x.state] - order[y.state] || x.student.name.localeCompare(y.student.name));
     return {
-      activity: { type, id, title: a ? a.title : quiz!.title, course_id: 3, due_date: a ? a.due_date : quiz!.due_date, max_points: max, rubric, question: q ? { id: q.question_id, text: `<p>${q.title}</p>`, instructions: "" } : null, questions: type === "quiz" ? questions : [], can_grade: true },
-      counts: { total: rows.length, to_grade: rows.filter((r) => r.state === "submitted").length, graded: rows.filter((r) => r.state === "graded").length },
+      activity: { type, id, title: a ? a.title : quiz!.title, course_id: 3, due_date: a ? a.due_date : quiz!.due_date, max_points: max, rubric, question: q ? { id: q.question_id, text: `<p>${q.title}</p>`, instructions: "" } : null, questions: type === "quiz" ? questions : [], can_grade: true, ...(gradingReview ? { can_return: type === "assignment" } : {}) },
+      counts: { total: rows.length, to_grade: rows.filter((r) => r.state === "submitted").length, graded: rows.filter((r) => r.state === "graded").length, ...(gradingReview ? { drafts: rows.filter((r) => (r.grade as { status?: string } | null)?.status === "draft").length } : {}) },
       rows,
     };
   }
@@ -313,14 +364,69 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       }
       const total = r.activity.rubric.length ? scores.reduce((n, x) => n + x.score, 0) : Number(body.score ?? 0);
       const sid = Number(m[3]);
+      const gk = gradeKey(m[1], Number(m[2]), r.activity.question?.id ?? null, sid);
+      if (failGradeSave) return err(failGradeSave, "SERVER_ERROR", "Task Mentor had a problem saving the grade.");
+      // Two teachers: a save based on an older version is refused with the grade as it is now.
+      const current = studentGrades.get(gk);
+      if (gradingReview && typeof body.if_version === "string" && (current?.version ?? `none:${sid}`) !== body.if_version) {
+        return { status: 409, body: { code: "GRADE_CHANGED", message: "Someone else saved this grade.", grade: current ? gradeOut(current) : ungradedOut(sid) } };
+      }
+      const release = !gradingReview || body.release !== false;
+      const row0 = r.rows.find((x) => x.student.id === sid);
+      // A draft needs a hand-in (assignments): only a release can grade work that wasn't submitted.
+      if (!release && m[1] === "assignment" && row0?.link?.status !== "submitted" && !current) {
+        return { status: 409, body: { code: "DRAFT_NEEDS_SUBMISSION", message: "This student has no submission to keep a draft for." } };
+      }
       // Like Task Mentor: the notes per criterion also go into the feedback the student reads.
       const notes = scores.filter((x) => x.comment?.trim()).map((x) => `• ${r.activity.rubric[x.index]?.criteria ?? `Criterion ${x.index + 1}`}: ${x.comment!.trim()}`);
       const feedback = [String(body.feedback ?? "").trim(), notes.length ? `Criteria notes:\n${notes.join("\n")}` : ""].filter(Boolean).join("\n\n");
-      studentGrades.set(`${m[1]}:${m[2]}:${m[1] === "quiz" ? r.activity.question!.id : ""}:${sid}`, { score: total, rubric_scores: scores.map((x) => ({ index: x.index, score: x.score, comment: x.comment?.trim() || null })), feedback, graded_at: now() });
-      const row = r.rows.find((x) => x.student.id === sid);
-      const proj = row?.project ? projects.find((x) => x.id === row.project!.id) : null;
-      if (proj) proj.status = "graded";
-      return { status: 200, body: { ok: true, score: total, max_points: r.activity.max_points } };
+      // Omitted annotations keep the saved ones.
+      const annotations = !gradingReview ? [] : Array.isArray(body.annotations) ? (body.annotations as { path: string; line: number; text: string }[]).map((x) => ({ path: x.path, line: x.line, text: x.text })) : (current?.annotations ?? []);
+      const releasedScore = current ? (current.released ? current.score : current.released_score) : null;
+      const saved: StoredGrade = { score: total, rubric_scores: scores.map((x) => ({ index: x.index, score: x.score, comment: x.comment?.trim() || null })), feedback, graded_at: now(), annotations, released: release, graded_by: { id: user.id, name: "Mr Teacher" }, version: `v${++gradeVersion}`, released_score: releasedScore };
+      studentGrades.set(gk, saved);
+      const proj = row0?.project ? projects.find((x) => x.id === row0.project!.id) : null;
+      // Releasing a grade for work still being edited makes the student's project read-only.
+      const locks = release && !!proj && proj.status === "draft";
+      if (proj && release) proj.status = "graded";
+      if (!gradingReview) return { status: 200, body: { ok: true, score: total, max_points: r.activity.max_points } };
+      return { status: 200, body: { ok: true, score: total, max_points: r.activity.max_points, released: release, locks_student: locks, grade: gradeOut(saved), version: saved.version } };
+    }
+    // Release every draft of an activity (Task Mentor 0.12).
+    if ((m = p.match(/^\/grading\/(assignment|quiz)\/(\d+)\/release$/)) && req.method === "POST") {
+      if (!gradingReview) return err(404, "NOT_FOUND", "No route");
+      const r = roster(m[1], Number(m[2]), (body.question_id as number | null) ?? null);
+      if (!r) return err(404, "NOT_FOUND", "Activity not found.");
+      const ids: number[] = [];
+      for (const row of r.rows) {
+        const g = studentGrades.get(gradeKey(m[1], Number(m[2]), r.activity.question?.id ?? null, row.student.id));
+        if (!g || g.released) continue;
+        Object.assign(g, { released: true, released_score: g.score, version: `v${++gradeVersion}` });
+        const proj = row.project ? projects.find((x) => x.id === row.project!.id) : null;
+        if (proj) proj.status = "graded";
+        ids.push(row.student.id);
+      }
+      return { status: 200, body: { released: ids.length, student_ids: ids, skipped: [], locked_students: [] } };
+    }
+    if ((m = p.match(/^\/projects\/(\d+)\/revisions$/)) && req.method === "GET") {
+      const pid = Number(m[1]);
+      return { status: 200, body: { head_revision_id: head(pid)?.id ?? null, revisions: revisions.filter((r) => r.project_id === pid).sort((a, b) => b.number - a.number).map(revOut) } };
+    }
+    // Return for changes (teacher): assignments only; quiz practicals answer RETURN_NOT_SUPPORTED.
+    if ((m = p.match(/^\/projects\/(\d+)\/return$/)) && req.method === "POST") {
+      const proj = projects.find((x) => x.id === Number(m![1]));
+      if (!proj) return err(404, "PROJECT_NOT_FOUND", "Project not found.");
+      const ls = links.filter((l) => l.project_id === proj.id);
+      if (ls.some((l) => l.activity_type === "quiz")) return { status: 409, body: { code: "RETURN_NOT_SUPPORTED", message: "Quiz practicals can't be returned for changes." } };
+      if (proj.status === "graded") {
+        if (body.allow_resubmission !== true) return err(409, "PROJECT_GRADED", "This project has been graded; it can't be reopened.", { allow_resubmission: true });
+        // Allow resubmission: the grade is taken back.
+        for (const l of ls) for (const k of [...studentGrades.keys()]) if (k.startsWith(`${l.activity_type}:${l.activity_id}:`) && k.endsWith(`:${(proj.owner as { id: number }).id}`)) studentGrades.delete(k);
+      } else if (proj.status !== "submitted") return err(409, "NOT_SUBMITTED", "This project isn't submitted.");
+      proj.status = "draft";
+      for (const l of ls) if (l.status === "submitted") l.status = "linked";
+      returnedProjects.set(proj.id as number, { at: now(), message: (body.message as string | null) ?? null });
+      return { status: 200, body: { status: "draft", project: projectOut(proj) } };
     }
     if ((m = p.match(/^\/projects\/(\d+)\/revisions\/(\d+)\/manifest$/))) {
       const rev = revisions.find((r) => r.id === Number(m![2]) && r.project_id === Number(m![1]));
@@ -524,8 +630,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       const proj = projects.find((x) => x.id === projectId);
       if (proj) proj.status = status;
     },
-    setTeacher(on: boolean) {
+    setTeacher(on: boolean, opts: { persist?: boolean } = {}) {
       teacher = on;
+      if (opts.persist) localStorage.setItem("tmcode:mock-teacher", on ? "1" : "0");
     },
     /** Every request waits this long (ms) before Task Mentor answers. */
     setLatency(ms: number) {
@@ -587,6 +694,32 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     /** What Task Mentor stored for a student's grade. */
     gradeOf(type: string, id: number, questionId: number | null, studentId: number) {
       return studentGrades.get(`${type}:${id}:${type === "quiz" ? questionId : ""}:${studentId}`) ?? null;
+    },
+    /** Another teacher saves this student's grade (a new version: TMCode's next save from an older one gets 409 GRADE_CHANGED). */
+    simulateOtherTeacherGrade(type: string, id: number, questionId: number | null, studentId: number, grade: { score: number; rubric_scores?: { index: number; score: number; comment?: string | null }[] | null; feedback?: string; name?: string; released?: boolean }) {
+      studentGrades.set(gradeKey(type, id, questionId, studentId), {
+        score: grade.score,
+        rubric_scores: grade.rubric_scores ?? null,
+        feedback: grade.feedback ?? "",
+        graded_at: now(),
+        annotations: [],
+        released: grade.released ?? true,
+        graded_by: { id: 99, name: grade.name ?? "Ms Other" },
+        version: `v${++gradeVersion}`,
+        released_score: null,
+      });
+    },
+    /** false: a Task Mentor before draft grades, line comments, graded_by and versions (it ignores release / if_version). */
+    setGradingReview(on: boolean) {
+      gradingReview = on;
+    },
+    /** Grade saves fail with this HTTP status (null: they work again). */
+    failGradeSaves(status: number | null) {
+      failGradeSave = status;
+    },
+    /** Projects returned for changes from grading: who owns each, and the teacher's message. */
+    returnedProjects() {
+      return [...returnedProjects.entries()].map(([id, r]) => ({ project_id: id, owner: (projects.find((x) => x.id === id)?.owner as { name: string } | undefined)?.name ?? null, ...r }));
     },
     assignments: () => assignments,
     /** A teacher publishes a new TMCode assignment (fields over a practical's defaults). */

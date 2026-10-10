@@ -10,7 +10,7 @@ import { closeReview, openGrading, progressOf, refreshGrading, useGrading, type 
 export function ProgressBar({ graded, toGrade, inProgress, total, compact }: { graded: number; toGrade: number; inProgress: number; total: number; compact?: boolean }) {
   const pct = (n: number) => `${total ? (n / total) * 100 : 0}%`;
   return (
-    <div className={`tm-grade-progress ${compact ? "is-compact" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={graded} aria-label={`${graded} of ${total} graded`}>
+    <div className={`tm-grade-progress ${compact ? "is-compact" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={Math.max(1, graded + toGrade)} aria-valuenow={graded} aria-label={`${graded} of ${graded + toGrade} submissions graded`}>
       <span className="is-graded" style={{ width: pct(graded) }} />
       <span className="is-to-grade" style={{ width: pct(toGrade) }} />
       <span className="is-in-progress" style={{ width: pct(inProgress) }} />
@@ -47,7 +47,7 @@ function ActivityRow({ a }: { a: Gradable }) {
       tabIndex={0}
       data-testid="grading-activity"
       data-key={a.key}
-      title={`${a.question_title ? `${a.title} › ${a.question_title}` : a.title}${a.course_name ? `\n${a.course_name}` : ""}${p ? `\n${p.graded} graded · ${p.toGrade} to grade · ${p.inProgress} still working` : ""}`}
+      title={`${a.question_title ? `${a.title} › ${a.question_title}` : a.title}${a.course_name ? `\n${a.course_name}` : ""}${p ? `\n${p.graded} graded · ${p.toGrade} to grade · ${p.inProgress} still working\n${p.pct}% of submissions graded` : ""}`}
       onClick={() => openGrading(a.key)}
       onKeyDown={(e) => e.key === "Enter" && openGrading(a.key)}
     >
