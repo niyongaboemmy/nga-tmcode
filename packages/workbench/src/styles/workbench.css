@@ -8714,3 +8714,99 @@ button.tm-setting-badge {
   color: var(--description);
 }
 /* ───── end V15–V17, V12 ───── */
+
+/* ───── VS Code default commands (commands/vscodeCommands.ts) ───── */
+/* View › Appearance: hidden activity / status bar, side bar on the right. */
+.tm-root[data-activitybar="hidden"] .tm-activitybar,
+.tm-root[data-statusbar="hidden"] .tm-statusbar {
+  display: none;
+}
+.tm-root[data-statusbar="hidden"] .tm-toasts,
+.tm-root[data-statusbar="hidden"] .tm-notification-center {
+  bottom: 10px;
+}
+.tm-root[data-sidebar="right"] .tm-main {
+  flex-direction: row-reverse;
+}
+.tm-root[data-sidebar="right"] .tm-activitybar {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+/* Toggle Maximize Editor Group. */
+.tm-editor-groups.is-maximized {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.tm-editor-groups.is-maximized > .tm-editor-group {
+  flex: 1;
+  min-width: 0;
+}
+/* Breadcrumbs from the keyboard (Focus Breadcrumbs). */
+.tm-crumb:focus-visible {
+  outline: 1px solid var(--focus-border, #0078d4);
+  outline-offset: -1px;
+}
+/* Notifications centre (status bar bell, Show Notifications). */
+.tm-notification-center {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--statusbar-h) + 10px);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  width: min(450px, calc(100vw - 24px));
+  max-height: min(60vh, 520px);
+  border: 1px solid var(--widget-border);
+  border-radius: 8px;
+  background: var(--widget-bg);
+  box-shadow: 0 6px 20px var(--shadow);
+  outline: none;
+  overflow: hidden;
+}
+.tm-nc-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--widget-border);
+}
+.tm-nc-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tm-nc-list {
+  overflow-y: auto;
+  min-height: 0;
+}
+.tm-nc-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--widget-border);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-nc-item:last-child {
+  border-bottom: 0;
+}
+.tm-nc-item.is-closed .tm-nc-message {
+  color: var(--description);
+}
+.tm-nc-message {
+  overflow-wrap: anywhere;
+}
+.tm-nc-time {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-action.is-checked {
+  background: var(--toolbar-active-bg, rgba(128, 128, 128, 0.25));
+}
+/* ───── end VS Code default commands ───── */

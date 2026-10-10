@@ -129,6 +129,8 @@ export async function createTauriPlatform(): Promise<Platform> {
     dev_selftest_extensions?: boolean;
     dev_launch: string | null;
     open_path: string | null;
+    /** Debug builds: developer tools may open (Toggle Developer Tools). */
+    devtools?: boolean;
   }>("app_info");
   devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, selftestExthost: !!info.dev_selftest_exthost, selftestExtensions: !!info.dev_selftest_extensions, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
@@ -166,6 +168,14 @@ export async function createTauriPlatform(): Promise<Platform> {
       };
     },
     setTitle: (title) => void win.setTitle(title).catch(() => {}),
+    // Reload Window, Toggle Full Screen, Close Window, Toggle Developer Tools (lib.rs).
+    shell: {
+      beforeReload: () => invoke("webview_reloading"),
+      toggleFullScreen: () => invoke("toggle_fullscreen"),
+      // The close button's path: onCloseRequested runs the quit guard (main.tsx).
+      closeWindow: () => void win.close(),
+      ...(info.devtools ? { toggleDevTools: () => invoke<void>("toggle_devtools") } : {}),
+    },
     updater: {
       check: () => invoke<UpdateInfo | null>("update_check"),
       async install(onProgress) {

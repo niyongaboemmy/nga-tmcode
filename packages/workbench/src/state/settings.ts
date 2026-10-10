@@ -66,6 +66,15 @@ export interface Settings {
   "window.zoomLevel": number;
   /** User keybindings: command id → key ("mod+shift+k"; "" removes the key). Edited in Keyboard Shortcuts. */
   "keybindings.user": Record<string, string>;
+  // ── layout toggles (View › Appearance) ──
+  /** Activity bar shown (Toggle Activity Bar Visibility). */
+  "workbench.activityBar.visible": boolean;
+  /** Status bar shown (Toggle Status Bar Visibility). */
+  "workbench.statusBar.visible": boolean;
+  /** Breadcrumbs above the editor (Toggle Breadcrumbs). */
+  "breadcrumbs.enabled": boolean;
+  /** Primary side bar on the left or the right (Toggle Primary Side Bar Position). */
+  "workbench.sideBar.location": "left" | "right";
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -102,6 +111,10 @@ export const DEFAULT_SETTINGS: Settings = {
   "editor.accessibilitySupport": "auto",
   "window.zoomLevel": 0,
   "keybindings.user": {},
+  "workbench.activityBar.visible": true,
+  "workbench.statusBar.visible": true,
+  "breadcrumbs.enabled": true,
+  "workbench.sideBar.location": "left",
 };
 
 export type SettingKey = keyof Settings;

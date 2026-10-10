@@ -20,6 +20,11 @@ let snippets = new Map<string, Snippet[]>();
 const snippetProviders = new Set<string>();
 let seq = 0;
 
+/** Snippets that enabled extensions give a language (Insert Snippet). */
+export function extensionSnippetsFor(language: string): Snippet[] {
+  return [...(snippets.get(language) ?? []), ...(snippets.get("*") ?? []).filter((s) => !s.scope || s.scope.includes(language))];
+}
+
 function registerSnippetProvider(language: string) {
   if (snippetProviders.has(language)) return;
   snippetProviders.add(language);

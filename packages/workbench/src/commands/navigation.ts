@@ -36,6 +36,12 @@ export function recentFiles() {
   return recent;
 }
 
+/** Clear Recently Opened: the open folder's recent files too. */
+export function clearRecentFiles() {
+  recent = [];
+  if (recentRoot) saveRecentFiles(recentRoot, []);
+}
+
 /** A group's open editors, most recently used first. */
 export function editorsByMru(groupId: number): EditorInput[] {
   const g = useWorkbench.getState().groups.find((x) => x.id === groupId);

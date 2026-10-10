@@ -75,6 +75,8 @@ struct AppInfo {
     dev_launch: Option<String>,
     /// A folder or file given on the command line (`tmcode ~/project`).
     open_path: Option<String>,
+    /// Debug builds only: Toggle Developer Tools works (`toggle_devtools`).
+    devtools: bool,
 }
 
 /// The first argument that is a path (not a flag, not a tmcode:// link), made absolute.
@@ -109,8 +111,77 @@ fn app_info() -> AppInfo {
         dev_selftest_extensions: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("extensions"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
+        devtools: cfg!(debug_assertions),
     }
 }
+
+/// Everything the workbench page started that a new page can't talk to any more:
+/// terminals, runs, debuggers, language servers, the extension host, one-shot
+/// commands and published webview pages. Called before Reload Window and when a
+/// reloaded page starts loading (a native reload, Vite's full reload).
+fn stop_page_processes<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    app.state::<pty::Terminals>().kill_all();
+    app.state::<runner::Runs>().kill_all();
+    app.state::<debug::Debuggers>().kill_all();
+    app.state::<lsp::LanguageServers>().kill_all();
+    app.state::<exthost::ExtHosts>().kill_all();
+    app.state::<proc::Procs>().kill_all();
+    app.state::<webview::Webviews>().clear();
+}
+
+/// Developer: Reload Window — the workbench is about to reload itself.
+#[tauri::command]
+fn webview_reloading(app: tauri::AppHandle) {
+    log::info!("workbench reloading: stopping its processes");
+    stop_page_processes(&app);
+}
+
+/// View: Toggle Full Screen.
+#[tauri::command]
+fn toggle_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app.get_window(WINDOW).ok_or("The window is not open.")?;
+    let on = window.is_fullscreen().map_err(|e| e.to_string())?;
+    window.set_fullscreen(!on).map_err(|e| e.to_string())
+}
+
+/// Developer: Toggle Developer Tools — debug builds only (release builds have no devtools feature).
+#[tauri::command]
+fn toggle_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        let wb = app.get_webview(WORKBENCH).ok_or("The workbench is not open.")?;
+        if wb.is_devtools_open() {
+            wb.close_devtools();
+        } else {
+            wb.open_devtools();
+        }
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err("Developer tools are not available in this build.".into())
+    }
+}
+
+/// WebView2 acts on browser keys itself when the page doesn't stop them: F5 / Ctrl+R
+/// reload (losing unsaved work), Ctrl+P prints, Ctrl+F opens a find bar, F7 offers caret
+/// browsing, Alt+Left goes back. TMCode has its own commands for those keys, so turn the
+/// browser's off (editing keys such as Ctrl+C / Ctrl+V are not affected).
+#[cfg(windows)]
+fn disable_browser_keys<R: tauri::Runtime>(webview: &tauri::Webview<R>) {
+    let _ = webview.with_webview(|pw| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+        use windows_core::Interface;
+        let Ok(core) = pw.controller().CoreWebView2() else { return };
+        let Ok(settings) = core.Settings() else { return };
+        if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
+            let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false);
+        }
+    });
+}
+
+static PAGE_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Native window appearance follows the workbench theme, so resizing and the
 /// macOS title-bar overlay never flash the wrong colour.
@@ -163,11 +234,21 @@ fn build_main_window(app: &mut App) -> tauri::Result<()> {
     let builder = builder.decorations(false).shadow(true);
     let window = builder.build()?;
     let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
-    let wb = window.add_child(
-        WebviewBuilder::new(WORKBENCH, WebviewUrl::App("index.html".into())),
-        LogicalPosition::new(0.0, 0.0),
-        size,
-    )?;
+    let builder = WebviewBuilder::new(WORKBENCH, WebviewUrl::App("index.html".into())).on_page_load(|webview, payload| {
+        if payload.event() != tauri::webview::PageLoadEvent::Started {
+            return;
+        }
+        #[cfg(windows)]
+        disable_browser_keys(&webview);
+        // A second load is a reload: the old page's processes have nobody to talk to.
+        if PAGE_LOADED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            log::info!("workbench page reloaded: stopping the old page's processes");
+            stop_page_processes(webview.app_handle());
+        }
+    });
+    let wb = window.add_child(builder, LogicalPosition::new(0.0, 0.0), size)?;
+    #[cfg(windows)]
+    disable_browser_keys(&wb);
     wb.set_auto_resize(true)?;
     Ok(())
 }
@@ -249,6 +330,9 @@ pub fn run() {
             workspace::ws_reopen_with_encoding,
             workspace::ws_set_encoding,
             set_zoom,
+            webview_reloading,
+            toggle_fullscreen,
+            toggle_devtools,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
@@ -379,6 +463,7 @@ pub fn run() {
             handle.state::<debug::Debuggers>().kill_all();
             handle.state::<lsp::LanguageServers>().kill_all();
             handle.state::<exthost::ExtHosts>().kill_all();
+            handle.state::<proc::Procs>().kill_all();
         }
     });
 }
