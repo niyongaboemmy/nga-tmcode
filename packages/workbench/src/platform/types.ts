@@ -520,10 +520,23 @@ export interface ScannedFile {
   size: number;
 }
 
+/** Left out of a save/hand-in, and why (projects.rs `SkippedFile`). */
+export interface SkippedFile {
+  path: string;
+  reason: "folder" | "ignored" | "too-large" | "file-limit" | "size-limit" | "long-path" | "link" | "unreadable";
+  /** A whole folder (nothing under it is listed). */
+  dir: boolean;
+  size: number | null;
+}
+
 export interface ProjectScan {
   files: ScannedFile[];
   truncated: string | null;
   total_bytes: number;
+  /** What was left out (older desktop builds don't say). At most 1000 listed. */
+  skipped?: SkippedFile[];
+  /** All left-out entries, listed or not. */
+  skipped_count?: number;
 }
 
 export interface AccountHost {

@@ -7802,4 +7802,79 @@ kbd,
   margin-top: 6px;
   font-size: 12px;
   color: var(--link);
+/* ── 0.11 submit clarity: the brief's sync line, rubric, conflict compare ── */
+/* Where the work is, in the Projects view's words: green saved, orange attention, red problem, blue working. */
+.tm-brief-sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-brief-sync.is-success .codicon {
+  color: var(--success);
+}
+.tm-brief-sync.is-attention .codicon {
+  color: var(--warning);
+}
+.tm-brief-sync.is-error {
+  color: var(--error);
+}
+.tm-brief-sync.is-info .codicon {
+  color: var(--info);
+}
+/* Past the due date: late work is still accepted, marked late (orange: attention). */
+.tm-brief-late {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.tm-brief-late .codicon {
+  color: var(--warning);
+}
+.tm-rubric-table td {
+  vertical-align: top;
+}
+.tm-rubric-table .tm-rubric-points {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+.tm-rubric-table .tm-rubric-note {
+  white-space: pre-wrap;
+}
+.tm-rubric-table tfoot td {
+  font-weight: 600;
+  border-top: 1px solid var(--border);
+}
+.tm-rubric-table td .tm-muted {
+  margin-top: 2px;
+  font-size: 12px;
+}
+/* Conflicts › Compare: Task Mentor's copy (left) against this folder's (right). */
+.tm-history-compare .tm-compare-bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--editor-bg, var(--bg));
+}
+.tm-history-compare .tm-compare-side {
+  color: var(--description);
+}
+.tm-history-compare .tm-compare-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.tm-history-compare .tm-monaco-host {
+  top: 30px;
 }

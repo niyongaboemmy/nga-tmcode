@@ -55,3 +55,40 @@ describe("sync planner", () => {
     expect(sameManifest(null, m({}))).toBe(false);
   });
 });
+
+describe("left-out files (too large, over the caps, ignored)", () => {
+  it("a file that grew past the size limit is not a deletion: its saved copy stays", () => {
+    const base = m({ "a.js": "1", "data.csv": "2" });
+    const p = planSync(base, m({ "a.js": "1" }), base, [{ path: "data.csv" }]);
+    expect(changeCount(p.localChanges)).toBe(0);
+    expect(p.next.map((e) => e.path)).toEqual(["a.js", "data.csv"]);
+    expect(p.next.find((e) => e.path === "data.csv")?.sha256).toBe("2");
+  });
+
+  it("without the skipped list the same scan reads as a deletion (the old bug)", () => {
+    const base = m({ "a.js": "1", "data.csv": "2" });
+    expect(planSync(base, m({ "a.js": "1" }), base).localChanges.deleted).toEqual(["data.csv"]);
+  });
+
+  it("a whole left-out folder keeps every saved file under it", () => {
+    const base = m({ "a.js": "1", "coverage/x.info": "2", "coverage/y/z": "3", "coverage2.txt": "4" });
+    const p = planSync(base, m({ "a.js": "1" }), base, [{ path: "coverage", dir: true }]);
+    expect(p.localChanges.deleted).toEqual(["coverage2.txt"]);
+  });
+
+  it("changed in Task Mentor while too big here: a conflict, never overwritten", () => {
+    const base = m({ "data.csv": "2" });
+    const p = planSync(base, m({}), m({ "data.csv": "9" }), [{ path: "data.csv" }]);
+    expect(p.conflicts).toEqual(["data.csv"]);
+    expect(changeCount(p.remoteChanges)).toBe(0);
+    const gone = planSync(base, m({}), m({}), [{ path: "data.csv" }]);
+    expect(gone.conflicts).toEqual(["data.csv"]);
+    expect(gone.remoteChanges.deleted).toEqual([]);
+  });
+
+  it("first sync: a left-out file Task Mentor has agrees, one it lacks is just not uploaded", () => {
+    const p = planSync(null, m({ "a.js": "1" }), m({ "a.js": "1", "big.bin": "7" }), [{ path: "big.bin" }, { path: "other.bin" }]);
+    expect(changeCount(p.localChanges) + changeCount(p.remoteChanges) + p.conflicts.length).toBe(0);
+    expect(p.next.map((e) => e.path)).toEqual(["a.js", "big.bin"]);
+  });
+});

@@ -30,12 +30,52 @@ pub struct ScannedFile {
     pub size: u64,
 }
 
+/// Something in the folder that is not handed in, and why (the submit dialog lists them).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct SkippedFile {
+    pub path: String,
+    /// "folder" (build output, dependencies), "ignored" (.gitignore/.tmignore), "too-large",
+    /// "file-limit", "size-limit", "long-path", "link", "unreadable".
+    pub reason: &'static str,
+    /// A whole folder was left out (nothing under it is listed).
+    pub dir: bool,
+    pub size: Option<u64>,
+}
+
 #[derive(Serialize, Debug)]
 pub struct Scan {
     pub files: Vec<ScannedFile>,
     /// Limits that stopped the scan early (the UI explains them).
     pub truncated: Option<String>,
     pub total_bytes: u64,
+    /// What was left out (at most MAX_SKIPPED listed): a left-out file is never taken for a deleted one.
+    pub skipped: Vec<SkippedFile>,
+    /// All left-out entries, listed or not.
+    pub skipped_count: usize,
+}
+
+/// The "not included" list stops here (the count goes on).
+pub const MAX_SKIPPED: usize = 1000;
+/// TMCode's own and the OS's files: never the student's work, never listed as left out.
+const NOT_WORK: &[&str] = &[".git", ".tmcode", ".DS_Store"];
+
+fn rel_of(root: &Path, p: &Path) -> Option<String> {
+    p.strip_prefix(root).ok().map(|r| r.to_string_lossy().replace('\\', "/"))
+}
+
+#[derive(Default)]
+struct Skips {
+    list: Vec<SkippedFile>,
+    count: usize,
+}
+
+impl Skips {
+    fn push(&mut self, path: String, reason: &'static str, dir: bool, size: Option<u64>) {
+        self.count += 1;
+        if self.list.len() < MAX_SKIPPED {
+            self.list.push(SkippedFile { path, reason, dir, size });
+        }
+    }
 }
 
 fn hash_file(path: &Path) -> std::io::Result<(String, u64)> {
@@ -54,47 +94,134 @@ fn hash_file(path: &Path) -> std::io::Result<(String, u64)> {
     Ok((format!("{:x}", hasher.finalize()), size))
 }
 
-/// Walks `root` honouring .gitignore/.tmignore and ALWAYS_IGNORED.
+/// Walks `root` honouring .gitignore/.tmignore and ALWAYS_IGNORED, and lists what it left out
+/// (the planner keeps a left-out file's saved copy instead of recording it as deleted).
 pub fn scan(root: &Path, max_files: usize, max_file_bytes: u64, max_total_bytes: u64) -> Scan {
+    use std::collections::HashSet;
+    use std::sync::{Arc, Mutex};
     let mut files = Vec::new();
-    let mut truncated = None;
+    let mut truncated: Option<String> = None;
     let mut total = 0u64;
-    let walker = ignore::WalkBuilder::new(root)
-        .hidden(false)
-        .git_ignore(true)
-        .git_global(false)
-        .git_exclude(true)
-        .require_git(false)
-        .add_custom_ignore_filename(".tmignore")
-        .filter_entry(|e| !ALWAYS_IGNORED.contains(&e.file_name().to_string_lossy().as_ref()))
-        .build();
-    for entry in walker.flatten() {
-        if !entry.file_type().is_some_and(|t| t.is_file()) {
-            continue;
+    let skips = Arc::new(Mutex::new(Skips::default()));
+    // Every file and folder the first walk saw: the second walk finds what .gitignore hid.
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut size_full = false;
+    {
+        let skips_f = skips.clone();
+        let root_f = root.to_path_buf();
+        let walker = ignore::WalkBuilder::new(root)
+            .hidden(false)
+            .git_ignore(true)
+            .git_global(false)
+            .git_exclude(true)
+            .require_git(false)
+            .add_custom_ignore_filename(".tmignore")
+            .sort_by_file_name(|a, b| a.cmp(b))
+            .filter_entry(move |e| {
+                let name = e.file_name().to_string_lossy();
+                if !ALWAYS_IGNORED.contains(&name.as_ref()) {
+                    return true;
+                }
+                if !NOT_WORK.contains(&name.as_ref()) {
+                    if let Some(rel) = rel_of(&root_f, e.path()) {
+                        skips_f.lock().unwrap().push(rel, "folder", e.file_type().is_some_and(|t| t.is_dir()), None);
+                    }
+                }
+                false
+            })
+            .build();
+        for entry in walker.flatten() {
+            let Some(rel) = rel_of(root, entry.path()) else { continue };
+            if rel.is_empty() {
+                continue;
+            }
+            let ft = entry.file_type();
+            seen.insert(rel.clone());
+            if ft.is_some_and(|t| t.is_dir()) {
+                continue;
+            }
+            let skip = |reason: &'static str, size: Option<u64>| skips.lock().unwrap().push(rel.clone(), reason, false, size);
+            if !ft.is_some_and(|t| t.is_file()) {
+                skip("link", None);
+                continue;
+            }
+            if rel.len() > 260 {
+                skip("long-path", None);
+                continue;
+            }
+            let Ok(len) = entry.metadata().map(|m| m.len()) else {
+                skip("unreadable", None);
+                continue;
+            };
+            if len > max_file_bytes {
+                truncated.get_or_insert(format!("{rel} is larger than {} MB and was left out", max_file_bytes / 1_048_576));
+                skip("too-large", Some(len));
+                continue;
+            }
+            if files.len() >= max_files {
+                truncated = Some(format!("More than {max_files} files: the rest were left out"));
+                skip("file-limit", Some(len));
+                continue;
+            }
+            if size_full || total + len > max_total_bytes {
+                size_full = true;
+                truncated = Some(format!("The project is larger than {} MB: the rest was left out", max_total_bytes / 1_048_576));
+                skip("size-limit", Some(len));
+                continue;
+            }
+            let Ok((sha256, size)) = hash_file(entry.path()) else {
+                skip("unreadable", Some(len));
+                continue;
+            };
+            // Grew past the limit between the size check and the read.
+            if size > max_file_bytes {
+                skip("too-large", Some(size));
+                continue;
+            }
+            total += size;
+            files.push(ScannedFile { path: rel, sha256, size });
         }
-        let Ok(rel) = entry.path().strip_prefix(root) else { continue };
-        let rel = rel.to_string_lossy().replace('\\', "/");
-        if rel.len() > 260 {
-            continue;
+    }
+    // Second walk, without ignore rules: whatever the first one never saw was hidden by .gitignore/.tmignore.
+    {
+        let seen = Arc::new(seen);
+        let seen_f = seen.clone();
+        let skips_f = skips.clone();
+        let root_f = root.to_path_buf();
+        let walker = ignore::WalkBuilder::new(root)
+            .standard_filters(false)
+            .sort_by_file_name(|a, b| a.cmp(b))
+            .filter_entry(move |e| {
+                if e.depth() == 0 {
+                    return true;
+                }
+                // Listed by the first walk already (or not work at all).
+                if ALWAYS_IGNORED.contains(&e.file_name().to_string_lossy().as_ref()) {
+                    return false;
+                }
+                let Some(rel) = rel_of(&root_f, e.path()) else { return false };
+                if e.file_type().is_some_and(|t| t.is_dir()) && !seen_f.contains(&rel) {
+                    skips_f.lock().unwrap().push(rel, "ignored", true, None);
+                    return false;
+                }
+                true
+            })
+            .build();
+        for entry in walker.flatten() {
+            if entry.depth() == 0 || entry.file_type().is_some_and(|t| t.is_dir()) {
+                continue;
+            }
+            let Some(rel) = rel_of(root, entry.path()) else { continue };
+            if !seen.contains(&rel) {
+                let size = entry.metadata().ok().map(|m| m.len());
+                skips.lock().unwrap().push(rel, "ignored", false, size);
+            }
         }
-        let Ok((sha256, size)) = hash_file(entry.path()) else { continue };
-        if size > max_file_bytes {
-            truncated.get_or_insert(format!("{rel} is larger than {} MB and was left out", max_file_bytes / 1_048_576));
-            continue;
-        }
-        if files.len() >= max_files {
-            truncated = Some(format!("More than {max_files} files: the rest were left out"));
-            break;
-        }
-        if total + size > max_total_bytes {
-            truncated = Some(format!("The project is larger than {} MB: the rest was left out", max_total_bytes / 1_048_576));
-            break;
-        }
-        total += size;
-        files.push(ScannedFile { path: rel, sha256, size });
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
-    Scan { files, truncated, total_bytes: total }
+    let Skips { mut list, count } = std::mem::take(&mut *skips.lock().unwrap());
+    list.sort_by(|a, b| a.path.cmp(&b.path));
+    Scan { files, truncated, total_bytes: total, skipped: list, skipped_count: count }
 }
 
 #[tauri::command]
@@ -228,6 +355,68 @@ mod tests {
         let s = scan(dir.path(), 100, 1000, 1_000_000);
         assert!(!s.files.iter().any(|f| f.path == "big.bin"));
         assert!(s.truncated.unwrap().contains("big.bin"));
+    }
+
+    fn skipped(s: &Scan) -> Vec<(String, &'static str, bool)> {
+        s.skipped.iter().map(|f| (f.path.clone(), f.reason, f.dir)).collect()
+    }
+
+    #[test]
+    fn scan_lists_what_it_leaves_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("main.js"), "x").unwrap();
+        fs::create_dir_all(root.join("node_modules/a/b")).unwrap();
+        fs::write(root.join("node_modules/a/b/i.js"), "x").unwrap();
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".git/HEAD"), "ref").unwrap();
+        fs::create_dir_all(root.join(".tmcode")).unwrap();
+        fs::write(root.join(".tmcode/project.json"), "{}").unwrap();
+        fs::create_dir_all(root.join("coverage")).unwrap();
+        fs::write(root.join("coverage/lcov.info"), "x").unwrap();
+        fs::write(root.join(".gitignore"), "*.log\ncoverage/\n").unwrap();
+        fs::write(root.join("debug.log"), "noise").unwrap();
+        fs::write(root.join("video.mp4"), vec![0u8; 2000]).unwrap();
+        let s = scan(root, 100, 1000, 1_000_000);
+        let paths: Vec<_> = s.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, vec![".gitignore", "main.js"]);
+        assert_eq!(
+            skipped(&s),
+            vec![
+                ("coverage".into(), "ignored", true),
+                ("debug.log".into(), "ignored", false),
+                ("node_modules".into(), "folder", true),
+                ("video.mp4".into(), "too-large", false),
+            ]
+        );
+        assert_eq!(s.skipped_count, 4);
+        assert_eq!(s.skipped.iter().find(|f| f.path == "video.mp4").unwrap().size, Some(2000));
+    }
+
+    #[test]
+    fn a_file_that_grows_past_the_limit_is_listed_as_left_out_not_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("data.csv"), "a,b\n").unwrap();
+        let before = scan(dir.path(), 100, 1000, 1_000_000);
+        assert_eq!(before.files.len(), 1);
+        fs::write(dir.path().join("data.csv"), vec![b'x'; 5000]).unwrap();
+        let after = scan(dir.path(), 100, 1000, 1_000_000);
+        assert!(after.files.is_empty());
+        assert_eq!(skipped(&after), vec![("data.csv".into(), "too-large", false)]);
+    }
+
+    #[test]
+    fn files_past_the_caps_are_listed_too() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            fs::write(dir.path().join(format!("f{i}.txt")), "12345").unwrap();
+        }
+        let s = scan(dir.path(), 3, 1000, 1_000_000);
+        assert_eq!(s.files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), vec!["f0.txt", "f1.txt", "f2.txt"]);
+        assert_eq!(skipped(&s), vec![("f3.txt".into(), "file-limit", false), ("f4.txt".into(), "file-limit", false)]);
+        let s = scan(dir.path(), 100, 1000, 12);
+        assert_eq!(s.files.len(), 2);
+        assert_eq!(s.skipped.iter().filter(|f| f.reason == "size-limit").count(), 3);
     }
 
     #[test]

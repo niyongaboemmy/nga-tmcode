@@ -1,10 +1,10 @@
 import { track } from "../state/activity";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
+import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
-import { api, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
-import { explainSubmitError, notifySubmitted, submitConfirmDetail } from "./submitFlow";
+import { api, offerSaveBeforeSwitch, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
+import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { LinkableActivity, Project } from "./types";
 
 /**
@@ -41,15 +41,31 @@ export interface AssignmentSummary {
     /** The teacher returned the work for changes: when, and their message. */
     returned_at?: string | null;
     returned_message?: string | null;
+    /** Per-criterion scores and notes (index into `rubric`), once graded and released; older Task Mentors don't send it. */
+    rubric_scores?: { index: number; score: number; comment: string | null }[] | null;
   } | null;
   teaching?: { students: number; started: number; submitted: number; graded: number };
+  /** false once the teacher closes the assignment (newer Task Mentor; older ones don't send it). */
+  accepts_submissions?: boolean;
+  /** "until_closed": late work is accepted (and marked late) until the teacher closes it. */
+  late_policy?: string;
+  /** A last moment for late work; null: until the teacher closes the assignment. */
+  accepts_late_until?: string | null;
+}
+
+/** One rubric criterion as Task Mentor sends it (`[]`: no rubric). */
+export interface RubricItem {
+  criteria: string;
+  description: string | null;
+  max_score: number;
 }
 
 export interface AssignmentDetail extends AssignmentSummary {
   description_html: string | null;
   instructions: string | null;
   attachments: { name: string; url: string }[];
-  rubric: unknown;
+  /** Older servers may send null or loose shapes: read it with rubric.ts normalizeRubric. */
+  rubric: RubricItem[] | null;
   starter: { project_id: number; revision_id: number | null; file_count: number; size_bytes: number } | null;
 }
 
@@ -231,6 +247,9 @@ function setBusy(id: number, b: "starting" | "submitting" | undefined) {
 /** Start (first time: Task Mentor copies the starter files into the student's own project) or continue. */
 async function startAssignmentNow(id: number) {
   if (inExam()) return notify("info", "Finish your exam first.");
+  // Another assignment's folder with work not in Task Mentor yet: offer to save it first.
+  const known = get().details[id] ?? [...(get().student ?? [])].find((x) => x.id === id);
+  if (!(await offerSaveBeforeSwitch(known?.title ?? "this assignment", known?.my?.project_id))) return;
   setBusy(id, "starting");
   try {
     const { project, created } = await api<{ project: Project; created: boolean }>("POST", `/assignments/${id}/start`, {});
@@ -334,21 +353,13 @@ export async function submitAssignment(id: number) {
   const a = get().details[id] ?? [...(get().student ?? [])].find((x) => x.id === id);
   if (!a?.my?.project_id || !a.my.link_id) return notify("info", "Start the assignment first.");
   if (a.read_only) return notify("info", "This assignment is completed: it can no longer be submitted.");
+  if (!acceptsSubmissions(a)) return notify("info", "This assignment is closed: your teacher no longer takes submissions.");
   if (!isOpenWorkspaceOf(a)) {
     notify("info", "Open your workspace for this assignment first (Continue), so the newest work is what you submit.");
     return;
   }
-  const choice = await showDialog({
-    severity: "info",
-    message: `Submit "${a.title}"?`,
-    detail: submitConfirmDetail({ late: !!a.due_date && Date.parse(a.due_date) < Date.now() }),
-    buttons: [
-      { id: "submit", label: "Save and Submit", primary: true },
-      { id: "cancel", label: "Cancel" },
-    ],
-    cancelId: "cancel",
-  });
-  if (choice !== "submit") return;
+  // The confirmation says what is handed in (files, size) and what stays here.
+  if (!(await confirmSubmit({ message: `Submit "${a.title}"?`, late: !!a.due_date && Date.parse(a.due_date) < Date.now() }))) return;
   setBusy(id, "submitting");
   try {
     // submitLink saves first, and refuses while there are unsaved changes or conflicts.
@@ -438,6 +449,43 @@ export function dueLabel(due: string | null, now = Date.now()): { text: string; 
 export function handedInLate(a: AssignmentSummary): boolean {
   const v = a.my?.is_late;
   return v === undefined ? a.late : !!v;
+}
+
+/** One status vocabulary across Task Mentor and TMCode (student-facing). */
+export type StudentStatus = "not_started" | "in_progress" | "submitted" | "returned" | "graded" | "closed";
+export const STUDENT_STATUS_LABEL: Record<StudentStatus, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  submitted: "Submitted",
+  returned: "Returned",
+  graded: "Graded",
+  closed: "Closed",
+};
+
+/** Task Mentor still takes submissions (false once the teacher closes it; older servers: open unless completed). */
+export function acceptsSubmissions(a: AssignmentSummary): boolean {
+  if (a.read_only) return false;
+  return a.accepts_submissions !== false;
+}
+
+/** The student's status in the shared words: Not started · In progress · Submitted · Returned · Graded · Closed. */
+export function studentStatus(a: AssignmentSummary): StudentStatus {
+  const s = a.my?.state ?? "not_started";
+  if (s === "graded") return "graded";
+  if (s === "submitted") return "submitted";
+  if (!acceptsSubmissions(a)) return "closed";
+  if (returnedForChanges(a)) return "returned";
+  return s;
+}
+
+/**
+ * Past the due date: what happens to late work. Task Mentor's `late_policy`
+ * "until_closed" with `accepts_late_until` null (and older servers, which say
+ * nothing): accepted until the teacher closes the assignment, marked late.
+ */
+export function latePolicyText(a: AssignmentSummary): string {
+  if (a.accepts_late_until) return `Late work is accepted until ${new Date(a.accepts_late_until).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}; it will be marked late.`;
+  return "Late work is accepted until your teacher closes the assignment; it will be marked late.";
 }
 
 /** The teacher returned the work for changes, and it isn't handed in again yet. */
