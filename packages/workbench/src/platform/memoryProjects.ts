@@ -1,4 +1,4 @@
-import type { AccountHost, AccountStatus, FileSystem, ScannedFile, TmRequest, TmResponse } from "./types";
+import type { AccountHost, AccountStatus, FileSystem, ScannedFile, SkippedFile, TmRequest, TmResponse } from "./types";
 
 /**
  * Dev server / e2e only: an NGA account and a Task Mentor projects API in
@@ -10,7 +10,8 @@ import type { AccountHost, AccountStatus, FileSystem, ScannedFile, TmRequest, Tm
  * `grade(assignmentId, grade, feedback)`, `setTeacher(on)`, `setQuizOpen(on)`,
  * `returnForChanges(assignmentId, message)`, `setDueDate(assignmentId, iso)`,
  * `failAssignments(code | null)`, `setQuota(maxProjectBytes | null)`,
- * `setLegacyGradeComments(on)`, `gradeOf(type, id, questionId, studentId)`.
+ * `setLegacyGradeComments(on)`, `gradeOf(type, id, questionId, studentId)`,
+ * `setScanLimit(maxFileBytes)`; `grade(id, grade, feedback, rubricScores?)`.
  *
  * Assignments follow docs/ASSIGNMENTS_PLAN.md: practical 51 has starter files,
  * case study 52 has none.
@@ -43,7 +44,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   let signedIn = localStorage.getItem("tmcode:mock-account") === "signed-in";
   let phase: AccountStatus["phase"] = "idle";
   const listeners = new Set<(s: AccountStatus) => void>();
-  const status = (): AccountStatus => ({ signed_in: signedIn, user: signedIn ? user : null, tm_api: API, phase, error: null });
+  // Why the session ended (expireSession): the account shows it until the next sign-in.
+  let accountError: string | null = null;
+  const status = (): AccountStatus => ({ signed_in: signedIn, user: signedIn ? user : null, tm_api: API, phase, error: signedIn ? null : accountError });
   const emit = () => listeners.forEach((l) => l(status()));
 
   const projects: Record<string, unknown>[] = [];
@@ -72,7 +75,12 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
         '<h2 style="color: rgb(0, 0, 0); font-family: \'Times New Roman\'; text-align: center">Model a small library</h2><p style="color: black; background-color: #ffffff; font-size: 12pt; font-family: \'Times New Roman\'">Design the <strong>books</strong>, <strong>members</strong> and <strong>loans</strong> tables.</p><p><img src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22240%22 height=%2290%22%3E%3Crect width=%22240%22 height=%2290%22 rx=%2210%22 fill=%22%233b82f6%22/%3E%3Ctext x=%2220%22 y=%2255%22 font-size=%2228%22 fill=%22white%22%3EER diagram%3C/text%3E%3C/svg%3E" alt="ER diagram"></p><p><img src="https://images.example.org/library.png"></p>',
       instructions: null, attachments: [], rubric: null, starter_project_id: null },
   ];
-  const grades = new Map<number, { grade: number; feedback: string }>();
+  const grades = new Map<number, { grade: number; feedback: string; rubric_scores?: { index: number; score: number; comment: string | null }[] | null }>();
+  // Files bigger than this are left out of the scan (projects.rs: 10 MB); setScanLimit lowers it for e2e.
+  let maxScanFileBytes = 10 * 1_048_576;
+  // An older Task Mentor without rubric_scores / accepts_submissions (setOldServer), and closed assignments (closeAssignment).
+  let oldServer = false;
+  const closed = new Set<number>();
   // Teachers' grading (GET/PUT /grading…): other students' work, seeded by setTeacher(true).
   let gradingList = true;
   const people = new Map<number, string>([[21, "Ben Learner"], [22, "Chloe Coder"], [23, "Dan Doer"]]);
@@ -196,12 +204,16 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
               grade: g?.grade ?? null,
               max_points: g ? a.points : null,
               feedback: g?.feedback ?? null,
+              // Per-criterion scores and notes once graded, else null (Task Mentor 0.11; older ones omit it).
+              ...(oldServer ? {} : { rubric_scores: g?.rubric_scores ?? null }),
               // Whether the hand-in itself was late (Task Mentor's submissions.is_late), null before one.
               is_late: link?.submitted_at ? !!link.is_late : null,
               returned_at: returned.get(a.id as number)?.at ?? null,
               returned_message: returned.get(a.id as number)?.message ?? null,
             }
           : null,
+      // Task Mentor 0.11: closing stops submissions; late work is accepted (marked late) until then.
+      ...(oldServer ? {} : { accepts_submissions: a.status !== "completed" && !closed.has(a.id as number), late_policy: "until_closed", accepts_late_until: null }),
       ...(scope === "teaching" ? { teaching: { students: 24, started: ws ? 1 : 0, submitted: link?.status === "submitted" ? 1 : 0, graded: g ? 1 : 0 } } : {}),
     };
   };
@@ -389,6 +401,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       if (!link) return err(404, "NOT_FOUND", "No link");
       const owner = projects.find((x) => x.id === Number(m![1]));
       if (owner && assignmentOfProject(owner)?.status === "completed") return err(409, "ASSIGNMENT_COMPLETED", "This assignment is completed: it can no longer be submitted.");
+      if (owner && closed.has(assignmentOfProject(owner)?.id as number)) return err(409, "ASSIGNMENT_CLOSED", "This assignment is closed: it no longer takes submissions.");
       // Like Task Mentor (2026-10-10): a practical answer needs the student's quiz attempt open.
       if (link.activity_type === "quiz" && !quizOpen) return { status: 409, body: { code: "QUIZ_NOT_OPEN", message: "Open the quiz in Task Mentor first." } };
       const h = head(Number(m[1]));
@@ -445,16 +458,43 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     return err(404, "NOT_FOUND", `No mock route for ${req.method} ${p}`);
   }
 
-  async function scan(dir = "", out: ScannedFile[] = []): Promise<ScannedFile[]> {
+  /** `.gitignore` lines of the root, simply: `name`, `*.ext`, `dir/` (enough for e2e). */
+  async function ignoreRules(): Promise<((name: string, dir: boolean) => boolean)> {
+    const text = await fs.readFile(".gitignore").catch(() => "");
+    const rules = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#") && !l.startsWith("!"))
+      .map((l) => {
+        const dirOnly = l.endsWith("/");
+        const glob = l.replace(/\/+$/, "").replace(/^\//, "");
+        const re = new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*").replace(/\?/g, ".")}$`);
+        return { re, dirOnly };
+      });
+    return (name, dir) => rules.some((r) => (!r.dirOnly || dir) && r.re.test(name));
+  }
+
+  const NOT_WORK = new Set([".git", ".tmcode", ".DS_Store"]);
+  async function scan(dir = "", out: ScannedFile[] = [], skipped: SkippedFile[] = [], ignored?: (name: string, dir: boolean) => boolean): Promise<{ files: ScannedFile[]; skipped: SkippedFile[] }> {
+    const isIgnored = ignored ?? (await ignoreRules());
     for (const e of await fs.readDir(dir)) {
-      if (IGNORED.has(e.name)) continue;
-      if (e.kind === "dir") await scan(e.path, out);
+      if (IGNORED.has(e.name)) {
+        if (!NOT_WORK.has(e.name)) skipped.push({ path: e.path, reason: "folder", dir: e.kind === "dir", size: null });
+        continue;
+      }
+      if (isIgnored(e.name, e.kind === "dir")) {
+        skipped.push({ path: e.path, reason: "ignored", dir: e.kind === "dir", size: null });
+        continue;
+      }
+      if (e.kind === "dir") await scan(e.path, out, skipped, isIgnored);
       else {
         const text = await fs.readFile(e.path);
-        out.push({ path: e.path, sha256: await sha256(text), size: new TextEncoder().encode(text).length });
+        const size = new TextEncoder().encode(text).length;
+        if (size > maxScanFileBytes) skipped.push({ path: e.path, reason: "too-large", dir: false, size });
+        else out.push({ path: e.path, sha256: await sha256(text), size });
       }
     }
-    return out;
+    return { files: out, skipped };
   }
 
   (window as unknown as { __TMCODE_PROJECTS__: unknown }).__TMCODE_PROJECTS__ = {
@@ -473,8 +513,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       const a = assignments.find((x) => x.id === id);
       if (a) a.status = status;
     },
-    grade(id: number, grade: number, feedback: string) {
-      grades.set(id, { grade, feedback });
+    /** `rubricScores`: per-criterion scores + notes as a newer Task Mentor sends them (omit: an older one). */
+    grade(id: number, grade: number, feedback: string, rubricScores?: { index: number; score: number; comment?: string | null }[] | null) {
+      grades.set(id, { grade, feedback, rubric_scores: rubricScores === undefined ? undefined : rubricScores && rubricScores.map((s) => ({ index: s.index, score: s.score, comment: s.comment ?? null })) });
       const ws = workspaceOf(id);
       if (ws && lifecycle) ws.status = "graded";
     },
@@ -526,6 +567,19 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     setQuota(bytes: number | null) {
       maxProjectBytes = bytes;
     },
+    /** true: a Task Mentor before 0.11 (no rubric_scores, accepts_submissions, late_policy). */
+    setOldServer(on: boolean) {
+      oldServer = on;
+    },
+    /** The teacher closes (or reopens) an assignment: accepts_submissions false, submits refused. */
+    closeAssignment(id: number, on = true) {
+      if (on) closed.add(id);
+      else closed.delete(id);
+    },
+    /** Files bigger than this many bytes are left out of saves (default 10 MB, as the desktop app). */
+    setScanLimit(bytes: number) {
+      maxScanFileBytes = bytes;
+    },
     /** true: an older Task Mentor that keeps criterion notes only inside the feedback text. */
     setLegacyGradeComments(on: boolean) {
       legacyComments = on;
@@ -535,6 +589,24 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       return studentGrades.get(`${type}:${id}:${type === "quiz" ? questionId : ""}:${studentId}`) ?? null;
     },
     assignments: () => assignments,
+    /** A teacher publishes a new TMCode assignment (fields over a practical's defaults). */
+    addAssignment(fields: Record<string, unknown>) {
+      assignments.push({ id: ++seq, title: "New practical", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 5 * day).toISOString(), points: 10, language: "javascript", description_html: "<p>New work</p>", instructions: null, attachments: [], rubric: null, starter_project_id: null, ...fields });
+    },
+    /** A quiz's practical fields: start_date / attempt_open on the quiz, state / grade on its questions. */
+    setQuizPractical(quizId: number, quiz: Record<string, unknown>, questions: Record<number, Record<string, unknown>> = {}) {
+      const a = activities.find((x) => x.type === "quiz" && x.id === quizId) as Record<string, unknown> | undefined;
+      if (!a) return;
+      Object.assign(a, quiz);
+      for (const q of (a.practical_questions as Record<string, unknown>[] | undefined) ?? []) Object.assign(q, questions[q.question_id as number] ?? {});
+    },
+    /** The NGA session ends here (expired, or signed out elsewhere): signed out, with the reason. */
+    expireSession(reason = "Your NGA session ended.") {
+      signedIn = false;
+      accountError = reason;
+      localStorage.removeItem("tmcode:mock-account");
+      emit();
+    },
     // The student's view of the data: the teacher's starter project is not theirs.
     state: () => ({ projects: projects.filter((x) => !x.hidden), revisions: revisions.filter((r) => !projects.find((x) => x.id === r.project_id)?.hidden).map((r) => ({ id: r.id, number: r.number, project_id: r.project_id, files: r.files.map((f) => f.path) })), links }),
   };
@@ -548,6 +620,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       emit();
       setTimeout(() => {
         signedIn = true;
+        accountError = null;
         phase = "idle";
         localStorage.setItem("tmcode:mock-account", "signed-in");
         emit();
@@ -572,8 +645,11 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       return route(req) as Promise<TmResponse<never>>;
     },
     async scan() {
-      const files = (await scan()).sort((a, b) => a.path.localeCompare(b.path));
-      return { files, truncated: null, total_bytes: files.reduce((n, f) => n + f.size, 0) };
+      const res = await scan();
+      const files = res.files.sort((a, b) => a.path.localeCompare(b.path));
+      const skipped = res.skipped.sort((a, b) => a.path.localeCompare(b.path));
+      const big = skipped.find((s) => s.reason === "too-large");
+      return { files, truncated: big ? `${big.path} is larger than the limit and was left out` : null, total_bytes: files.reduce((n, f) => n + f.size, 0), skipped, skipped_count: skipped.length };
     },
     async readBlob(path) {
       const text = await fs.readFile(path);

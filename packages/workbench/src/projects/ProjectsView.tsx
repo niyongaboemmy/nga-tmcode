@@ -1,57 +1,20 @@
 import { useActivity } from "../state/activity";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRowNav } from "./rowNav";
 import { executeCommand, formatKeybinding } from "../commands/registry";
 import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
-import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, setSharePresence, signIn, useProjects } from "./service";
+import { SYNC_ICON, SYNC_LABEL, SYNC_TIP } from "./syncLabels";
+import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, compareConflict, setSharePresence, signIn, useProjects } from "./service";
 import { showAssignment, useAssignments } from "./assignments";
-import type { Link, Project, SyncState } from "./types";
+import type { Link, Project } from "./types";
 import { openInTaskMentor } from "./commands";
 import { dueText, TYPE_LABEL } from "./matching";
 
-/** Short: the sync row shares the side bar's width with Save. The tooltip says it in full. */
-const SYNC_LABEL: Record<SyncState, string> = {
-  unbound: "Not connected",
-  checking: "Checking…",
-  synced: "Saved online",
-  "local-changes": "Not saved yet",
-  "remote-changes": "Newer version online",
-  both: "Changed here and online",
-  conflict: "Conflicts to resolve",
-  saving: "Saving…",
-  pulling: "Getting the latest…",
-  offline: "Offline",
-  error: "Sync problem",
-};
-const SYNC_TIP: Record<SyncState, string> = {
-  unbound: "This folder is not a Task Mentor project",
-  checking: "Comparing this folder with Task Mentor",
-  synced: "Everything here is saved to Task Mentor",
-  "local-changes": "Changes in this folder are not saved to Task Mentor yet: Save",
-  "remote-changes": "Task Mentor has newer changes: Get Latest",
-  both: "Changes here and in Task Mentor: Save and Get Latest",
-  conflict: "The same files changed here and in Task Mentor",
-  saving: "Saving to Task Mentor",
-  pulling: "Getting the latest from Task Mentor",
-  offline: "Task Mentor can't be reached",
-  error: "Sync problem",
-};
-
-export const SYNC_ICON: Record<SyncState, string> = {
-  unbound: "circle-slash",
-  checking: "sync",
-  synced: "cloud",
-  "local-changes": "cloud-upload",
-  "remote-changes": "cloud-download",
-  both: "arrow-swap",
-  conflict: "warning",
-  saving: "sync",
-  pulling: "sync",
-  offline: "debug-disconnect",
-  error: "error",
-};
+// One label table for the Projects view, the brief and the status bar.
+export { SYNC_ICON } from "./syncLabels";
 
 function Section({ title, actions, children, defaultOpen = true, onOpen }: { title: string; actions?: ReactNode; children: ReactNode; defaultOpen?: boolean; onOpen?: () => void }) {
   const [open, setOpenState] = useState(defaultOpen);
@@ -91,11 +54,16 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
     <div
       className={`tm-list-row tm-project-row ${current ? "is-current" : ""}`}
       role="button"
-      tabIndex={0}
+      tabIndex={-1}
+      data-row-nav
       data-testid="project-row"
       title={`${p.name}${p.description ? ` — ${p.description}` : ""}\n${p.kind === "github" ? `GitHub: ${p.repo_full_name ?? p.repo_url}` : "Saved in Task Mentor"}`}
       onClick={() => void openProject(p.id)}
-      onKeyDown={(e) => e.key === "Enter" && void openProject(p.id)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        void openProject(p.id);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, [
@@ -134,7 +102,7 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
   );
 }
 
-function ThisFolder() {
+export function ThisFolder() {
   const binding = useProjects((s) => s.binding);
   const project = useProjects((s) => s.current);
   const sync = useProjects((s) => s.sync);
@@ -219,6 +187,7 @@ function ThisFolder() {
                 <div key={path} className="tm-list-row">
                   <Codicon name="warning" />
                   <span className="tm-project-name">{path}</span>
+                  <ActionButton icon="diff" label="Compare with Task Mentor's" onClick={() => void compareConflict(path)} />
                   <ActionButton icon="check" label="Keep Mine" onClick={() => void resolveConflict(path, "mine")} />
                   <ActionButton icon="cloud-download" label="Take Task Mentor's" onClick={() => void resolveConflict(path, "theirs")} />
                 </div>
@@ -409,6 +378,8 @@ export function ProjectsView() {
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "submitted" | "graded">("all");
   const removed = useProjects((s) => s.removed);
+  const root = useRef<HTMLDivElement>(null);
+  const nav = useRowNav(root);
 
   useEffect(() => {
     if (account?.signed_in && mine === null) void refreshProjects();
@@ -450,7 +421,7 @@ export function ProjectsView() {
     );
 
   return (
-    <div className="tm-projects-view" data-testid="projects-view">
+    <div className="tm-projects-view" data-testid="projects-view" ref={root} onKeyDown={nav.onKeyDown} onFocus={nav.onFocus}>
       <Section title="This Folder">
         <ThisFolder />
       </Section>
