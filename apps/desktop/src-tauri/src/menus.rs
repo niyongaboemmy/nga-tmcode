@@ -1,88 +1,59 @@
 //! The macOS menu bar (Windows draws its menu inside the workbench title bar).
 //!
-//! Custom items carry a workbench command id ("cmd:<id>"); choosing one emits
-//! a `menu` event to the workbench, which runs the same command as the
-//! keybinding or command palette would. Clipboard items stay native so
-//! WKWebView keeps system copy/paste semantics (the exam paste guard hooks the
-//! resulting DOM paste event, not the menu).
+//! Built from the same spec as the in-app menus (packages/workbench/src/commands/menus.json),
+//! so the two can't drift. Custom items carry a workbench command id ("cmd:<id>"); choosing
+//! one emits a `menu` event to the workbench, which runs the same command as the keybinding
+//! or command palette would. Once the workbench is up it sends each item's label, enabled
+//! state and accelerator (`menu_update`), so disabled commands are greyed out here too and
+//! user keybindings show. Clipboard items stay native so WKWebView keeps system copy/paste
+//! semantics (the exam paste guard hooks the resulting DOM paste event, not the menu).
 
-use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use serde::Deserialize;
+use tauri::menu::{AboutMetadata, Menu, MenuBuilder, MenuItemBuilder, MenuItemKind, PredefinedMenuItem, Submenu, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, EventTarget, Runtime};
 
 use crate::WORKBENCH;
 
-/// (label, command id, accelerator). Accelerators mirror the workbench keybindings.
-type Item = (&'static str, &'static str, Option<&'static str>);
+const SPEC: &str = include_str!("../../../../packages/workbench/src/commands/menus.json");
 
-const FILE: &[Item] = &[
-    ("New File...", "explorer.newFile", Some("CmdOrCtrl+Alt+N")),
-    ("New Folder...", "explorer.newFolder", None),
-    ("New Project from Template...", "workbench.action.newProjectFromTemplate", None),
-    ("-", "", None),
-    ("Open Folder...", "workbench.action.files.openFolder", Some("CmdOrCtrl+O")),
-    ("-", "", None),
-    ("Save", "workbench.action.files.save", Some("CmdOrCtrl+S")),
-    ("Save All", "workbench.action.files.saveAll", Some("CmdOrCtrl+Alt+S")),
-    ("-", "", None),
-    ("Close Editor", "workbench.action.closeActiveEditor", Some("CmdOrCtrl+W")),
-    ("Close Folder", "workbench.action.closeFolder", None),
-];
-
-const VIEW: &[Item] = &[
-    ("Command Palette...", "workbench.action.showCommands", Some("CmdOrCtrl+Shift+P")),
-    ("-", "", None),
-    ("Explorer", "workbench.view.explorer", Some("CmdOrCtrl+Shift+E")),
-    ("Search", "workbench.view.search", Some("CmdOrCtrl+Shift+F")),
-    ("-", "", None),
-    ("Problems", "workbench.actions.view.problems", Some("CmdOrCtrl+Shift+M")),
-    ("Output", "workbench.action.output.toggleOutput", Some("CmdOrCtrl+Shift+U")),
-    ("Terminal", "workbench.action.terminal.toggleTerminal", None),
-    ("-", "", None),
-    ("Toggle Primary Side Bar", "workbench.action.toggleSidebarVisibility", Some("CmdOrCtrl+B")),
-    ("Toggle Panel", "workbench.action.togglePanel", Some("CmdOrCtrl+J")),
-    ("Split Editor", "workbench.action.splitEditor", Some("CmdOrCtrl+\\")),
-    ("-", "", None),
-    ("Word Wrap", "editor.action.toggleWordWrap", Some("Alt+Z")),
-    ("Minimap", "editor.action.toggleMinimap", None),
-    ("Zoom In", "workbench.action.zoomIn", Some("CmdOrCtrl+=")),
-    ("Zoom Out", "workbench.action.zoomOut", Some("CmdOrCtrl+-")),
-    ("Reset Zoom", "workbench.action.zoomReset", Some("CmdOrCtrl+0")),
-];
-
-const GO: &[Item] = &[
-    ("Go to File...", "workbench.action.quickOpen", Some("CmdOrCtrl+P")),
-    ("Go to Line/Column...", "workbench.action.gotoLine", Some("Ctrl+G")),
-    ("Go to Definition", "editor.action.revealDefinition", None),
-];
-
-const TERMINAL: &[Item] = &[("New Terminal", "workbench.action.terminal.new", None)];
-
-const HELP: &[Item] = &[
-    ("Welcome", "workbench.action.openWelcome", None),
-    ("Show All Commands", "workbench.action.showCommands", None),
-    ("Keyboard Shortcuts Reference", "workbench.action.keybindingsReference", None),
-    ("Check My Computer", "tmcode.checkMyComputer", None),
-];
-
-fn submenu<R: Runtime>(app: &AppHandle<R>, title: &str, items: &[Item]) -> tauri::Result<tauri::menu::Submenu<R>> {
-    let mut b = SubmenuBuilder::new(app, title);
-    for (label, id, accel) in items {
-        if *label == "-" {
-            b = b.separator();
-            continue;
-        }
-        let mut item = MenuItemBuilder::with_id(format!("cmd:{id}"), *label);
-        if let Some(a) = accel {
-            item = item.accelerator(*a);
-        }
-        b = b.item(&item.build(app)?);
-    }
-    b.build()
+#[derive(Deserialize)]
+struct Spec {
+    menus: Vec<MenuSpec>,
 }
 
-pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let app_menu = SubmenuBuilder::new(app, "TMCode")
-        .item(&PredefinedMenuItem::about(
+#[derive(Deserialize)]
+struct MenuSpec {
+    label: String,
+    #[serde(default)]
+    native: Option<String>,
+    items: Vec<ItemSpec>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ItemSpec {
+    /// "-" (separator) or a bare command id.
+    Plain(String),
+    Command {
+        command: String,
+        label: String,
+        #[serde(default)]
+        accel: Option<String>,
+        #[serde(default)]
+        native: Option<String>,
+    },
+    Role {
+        role: String,
+    },
+}
+
+fn spec() -> Spec {
+    serde_json::from_str(SPEC).expect("menus.json is valid (checked by `cargo test`)")
+}
+
+fn role_item<R: Runtime>(app: &AppHandle<R>, role: &str) -> tauri::Result<Option<PredefinedMenuItem<R>>> {
+    Ok(Some(match role {
+        "about" => PredefinedMenuItem::about(
             app,
             Some("About TMCode"),
             Some(AboutMetadata {
@@ -91,61 +62,142 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 copyright: Some("© 2026 New Generation Academy".into()),
                 ..Default::default()
             }),
-        )?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("cmd:workbench.action.openSettings", "Settings...").accelerator("CmdOrCtrl+,").build(app)?)
-        .separator()
-        .item(&PredefinedMenuItem::hide(app, None)?)
-        .item(&PredefinedMenuItem::hide_others(app, None)?)
-        .item(&PredefinedMenuItem::show_all(app, None)?)
-        .separator()
-        // Not the predefined Quit (it ends the app at once): the workbench asks about unsaved
-        // files and unsent exam changes first, then closes the window.
-        .item(&MenuItemBuilder::with_id("cmd:workbench.action.quit", "Quit TMCode").accelerator("CmdOrCtrl+Q").build(app)?)
-        .build()?;
+        )?,
+        "hide" => PredefinedMenuItem::hide(app, None)?,
+        "hideOthers" => PredefinedMenuItem::hide_others(app, None)?,
+        "showAll" => PredefinedMenuItem::show_all(app, None)?,
+        "cut" => PredefinedMenuItem::cut(app, None)?,
+        "copy" => PredefinedMenuItem::copy(app, None)?,
+        "paste" => PredefinedMenuItem::paste(app, None)?,
+        "minimize" => PredefinedMenuItem::minimize(app, None)?,
+        "maximize" => PredefinedMenuItem::maximize(app, None)?,
+        "fullscreen" => PredefinedMenuItem::fullscreen(app, None)?,
+        _ => return Ok(None),
+    }))
+}
 
-    // Undo/redo go to Monaco's own stacks (as in VS Code); clipboard stays native.
-    let edit = SubmenuBuilder::new(app, "Edit")
-        .item(&MenuItemBuilder::with_id("cmd:undo", "Undo").accelerator("CmdOrCtrl+Z").build(app)?)
-        .item(&MenuItemBuilder::with_id("cmd:redo", "Redo").accelerator("CmdOrCtrl+Shift+Z").build(app)?)
-        .separator()
-        .item(&PredefinedMenuItem::cut(app, None)?)
-        .item(&PredefinedMenuItem::copy(app, None)?)
-        .item(&PredefinedMenuItem::paste(app, None)?)
-        // Not the predefined selectAll: (it only selects inside a plain text field): the workbench
-        // selects all in whatever has focus — editor, terminal, input or list.
-        .item(&MenuItemBuilder::with_id("cmd:workbench.action.selectAllInFocus", "Select All").accelerator("CmdOrCtrl+A").build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("cmd:actions.find", "Find").accelerator("CmdOrCtrl+F").build(app)?)
-        .item(&MenuItemBuilder::with_id("cmd:editor.action.startFindReplaceAction", "Replace").accelerator("CmdOrCtrl+Alt+F").build(app)?)
-        .item(&MenuItemBuilder::with_id("cmd:workbench.view.search", "Find in Files").build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("cmd:editor.action.commentLine", "Toggle Line Comment").accelerator("CmdOrCtrl+/").build(app)?)
-        .item(&MenuItemBuilder::with_id("cmd:editor.action.formatDocument", "Format Document").accelerator("Shift+Alt+F").build(app)?)
-        .build()?;
+fn submenu<R: Runtime>(app: &AppHandle<R>, menu: &MenuSpec) -> tauri::Result<Submenu<R>> {
+    let mut b = SubmenuBuilder::new(app, &menu.label);
+    for item in &menu.items {
+        match item {
+            ItemSpec::Plain(s) if s == "-" => b = b.separator(),
+            // A bare id: the workbench sends its label at start-up.
+            ItemSpec::Plain(id) => b = b.item(&MenuItemBuilder::with_id(format!("cmd:{id}"), id).build(app)?),
+            ItemSpec::Command { command, label, accel, native } => {
+                if native.as_deref() == Some("never") {
+                    continue;
+                }
+                let mut it = MenuItemBuilder::with_id(format!("cmd:{command}"), label);
+                if let Some(a) = accel.as_deref().filter(|a| !a.is_empty()) {
+                    it = it.accelerator(a);
+                }
+                b = b.item(&it.build(app)?);
+            }
+            ItemSpec::Role { role } => {
+                if let Some(r) = role_item(app, role)? {
+                    b = b.item(&r);
+                }
+            }
+        }
+    }
+    b.build()
+}
 
-    let window = SubmenuBuilder::new(app, "Window")
-        .item(&PredefinedMenuItem::minimize(app, None)?)
-        .item(&PredefinedMenuItem::maximize(app, None)?)
-        .separator()
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
-        .build()?;
-
-    MenuBuilder::new(app)
-        .item(&app_menu)
-        .item(&submenu(app, "File", FILE)?)
-        .item(&edit)
-        .item(&submenu(app, "View", VIEW)?)
-        .item(&submenu(app, "Go", GO)?)
-        .item(&submenu(app, "Terminal", TERMINAL)?)
-        .item(&window)
-        .item(&submenu(app, "Help", HELP)?)
-        .build()
+pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let mut menu = MenuBuilder::new(app);
+    for m in spec().menus.iter().filter(|m| m.native.as_deref() != Some("never")) {
+        menu = menu.item(&submenu(app, m)?);
+    }
+    menu.build()
 }
 
 /// Forwards "cmd:<id>" menu clicks to the workbench.
 pub fn on_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     if let Some(command) = id.strip_prefix("cmd:") {
         let _ = app.emit_to(EventTarget::webview(WORKBENCH), "menu", command.to_string());
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ItemState {
+    id: String,
+    text: String,
+    enabled: bool,
+    accel: Option<String>,
+}
+
+fn apply<R: Runtime>(items: &[MenuItemKind<R>], states: &std::collections::HashMap<String, ItemState>) {
+    for item in items {
+        match item {
+            MenuItemKind::Submenu(sub) => {
+                if let Ok(children) = sub.items() {
+                    apply(&children, states);
+                }
+            }
+            MenuItemKind::MenuItem(mi) => {
+                let id = mi.id().as_ref();
+                let Some(command) = id.strip_prefix("cmd:") else { continue };
+                let Some(state) = states.get(command) else { continue };
+                let _ = mi.set_text(&state.text);
+                let _ = mi.set_enabled(state.enabled);
+                let _ = mi.set_accelerator(state.accel.as_deref().filter(|a| !a.is_empty()));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The workbench's view of each command item: label, enabled state, accelerator (macOS only).
+#[tauri::command]
+pub fn menu_update<R: Runtime>(app: AppHandle<R>, items: Vec<ItemState>) {
+    let states: std::collections::HashMap<String, ItemState> = items.into_iter().map(|s| (s.id.clone(), s)).collect();
+    // Menu changes must happen on the main thread.
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(menu) = handle.menu() {
+            if let Ok(top) = menu.items() {
+                apply(&top, &states);
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spec_parses_and_items_are_well_formed() {
+        let s = spec();
+        let labels: Vec<&str> = s.menus.iter().map(|m| m.label.as_str()).collect();
+        for want in ["TMCode", "File", "Edit", "Selection", "View", "Go", "Run", "Terminal", "Window", "Help"] {
+            assert!(labels.contains(&want), "missing menu {want}");
+        }
+        for m in &s.menus {
+            for it in &m.items {
+                match it {
+                    ItemSpec::Plain(p) => assert!(!p.is_empty()),
+                    ItemSpec::Command { command, label, .. } => {
+                        assert!(!command.is_empty() && !label.is_empty(), "{} has an empty item", m.label);
+                    }
+                    ItemSpec::Role { role } => {
+                        assert!(
+                            ["about", "hide", "hideOthers", "showAll", "cut", "copy", "paste", "minimize", "maximize", "fullscreen"].contains(&role.as_str()),
+                            "unknown role {role}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quit_keeps_its_accelerator() {
+        let s = spec();
+        let quit = s.menus.iter().flat_map(|m| m.items.iter()).find_map(|it| match it {
+            ItemSpec::Command { command, accel, .. } if command == "workbench.action.quit" => accel.clone(),
+            _ => None,
+        });
+        assert_eq!(quit.as_deref(), Some("CmdOrCtrl+Q"));
     }
 }

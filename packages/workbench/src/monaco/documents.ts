@@ -17,6 +17,7 @@ import {
 import { basename, extname, isWithin, rebase } from "../util/paths";
 import { setIconLanguageResolver } from "../themes/iconThemes";
 import { recordSave, snapshotBeforeDelete } from "../history/localHistory";
+import { isUntitled, untitledName, UNTITLED_SCHEME } from "../util/untitled";
 
 /**
  * One Monaco text model per open file. The workbench store only knows paths
@@ -37,11 +38,16 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const SCHEME = "tmcode";
 export function uriFor(path: string) {
+  if (isUntitled(path)) return monaco.Uri.from({ scheme: UNTITLED_SCHEME, path: untitledName(path) });
   return monaco.Uri.from({ scheme: SCHEME, path: `/${path}` });
 }
 export function pathOfUri(uri: monaco.Uri) {
+  if (uri.scheme === UNTITLED_SCHEME) return `${UNTITLED_SCHEME}:${uri.path.replace(/^\//, "")}`;
   return uri.path.replace(/^\//, "");
 }
+
+/** Untitled buffers have no file: Save asks for a path (commands/untitled.ts sets this). */
+export const untitledSave: { run: (path: string) => Promise<void> } = { run: async () => {} };
 
 const EXTRA_LANGS: Record<string, string> = { jsx: "javascript", tsx: "typescript", mjs: "javascript", cjs: "javascript", h: "c", hpp: "cpp" };
 
@@ -85,8 +91,7 @@ export function ensureDocument(path: string): Promise<monaco.editor.ITextModel> 
   const inflight = pending.get(path);
   if (inflight) return inflight;
   const gen = generation;
-  const p = getPlatform()
-    .fs.readFile(path)
+  const p = (isUntitled(path) ? Promise.resolve("") : getPlatform().fs.readFile(path))
     .then((content): monaco.editor.ITextModel | Promise<monaco.editor.ITextModel> => {
       // Read from the folder that was open before: read it again from the new one.
       if (gen !== generation) return ensureDocument(path);
@@ -141,6 +146,7 @@ function createTrackedModel(path: string, content: string) {
 export const willSaveParticipants: ((path: string, model: monaco.editor.ITextModel) => Promise<void>)[] = [];
 
 export async function saveDocument(path: string) {
+  if (isUntitled(path)) return untitledSave.run(path);
   const doc = docs.get(path);
   if (!doc) return;
   for (const participant of willSaveParticipants) {
@@ -172,7 +178,8 @@ export async function saveDocument(path: string) {
 }
 
 export async function saveAll() {
-  const dirty = Object.keys(useWorkbench.getState().dirty);
+  // Untitled buffers wait for an explicit Save (auto save would keep asking for a path).
+  const dirty = Object.keys(useWorkbench.getState().dirty).filter((p) => !isUntitled(p));
   for (const p of dirty) await saveDocument(p).catch(() => {});
 }
 

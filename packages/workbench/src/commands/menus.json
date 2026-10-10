@@ -1,0 +1,178 @@
+{
+  "$comment": "The one menu spec for the in-app title-bar menus (parts/TitleBar.tsx) and the macOS menu bar (apps/desktop/src-tauri/src/menus.rs reads this file at build time). Items: \"-\" = separator; a string = a command id; {command, label?, keyFrom?, accel?, native?} where label overrides the command title, keyFrom shows another command's key, accel fixes the native accelerator (\"\" = none) and native: \"only\" | \"never\"; {role} = a native-only system item. Menus with native: \"only\" exist only on macOS.",
+  "menus": [
+    {
+      "label": "TMCode",
+      "native": "only",
+      "items": [
+        { "role": "about" },
+        "-",
+        { "command": "workbench.action.openSettings", "label": "Settings..." },
+        { "command": "workbench.action.keybindingsReference", "label": "Keyboard Shortcuts" },
+        "-",
+        { "role": "hide" },
+        { "role": "hideOthers" },
+        { "role": "showAll" },
+        "-",
+        { "command": "workbench.action.quit", "label": "Quit TMCode", "accel": "CmdOrCtrl+Q" }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        { "command": "workbench.action.files.newUntitledFile", "label": "New Text File" },
+        { "command": "explorer.newFile", "label": "New File..." },
+        { "command": "explorer.newFolder", "label": "New Folder..." },
+        { "command": "workbench.action.newProjectFromTemplate", "label": "New Project from Template..." },
+        "-",
+        { "command": "workbench.action.files.openFile", "label": "Open File..." },
+        { "command": "workbench.action.files.openFolder", "label": "Open Folder..." },
+        { "command": "workbench.action.reopenClosedEditor", "label": "Reopen Closed Editor" },
+        "-",
+        { "command": "workbench.action.files.save", "label": "Save" },
+        { "command": "workbench.action.files.saveAs", "label": "Save As..." },
+        { "command": "workbench.action.files.saveAll", "label": "Save All" },
+        { "command": "workbench.action.files.revert", "label": "Revert File" },
+        "-",
+        { "command": "workbench.action.openSettings", "label": "Settings", "native": "never" },
+        { "command": "workbench.action.keybindingsReference", "label": "Keyboard Shortcuts", "native": "never" },
+        { "command": "workbench.action.selectTheme", "label": "Color Theme" },
+        "-",
+        { "command": "workbench.action.closeActiveEditor", "label": "Close Editor" },
+        { "command": "workbench.action.closeFolder", "label": "Close Folder" }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        { "command": "undo", "label": "Undo" },
+        { "command": "redo", "label": "Redo" },
+        "-",
+        { "role": "cut" },
+        { "role": "copy" },
+        { "role": "paste" },
+        { "command": "workbench.action.selectAllInFocus", "label": "Select All", "native": "only", "accel": "CmdOrCtrl+A" },
+        "-",
+        { "command": "actions.find", "label": "Find" },
+        { "command": "editor.action.startFindReplaceAction", "label": "Replace" },
+        { "command": "workbench.view.search", "label": "Find in Files" },
+        "-",
+        { "command": "editor.action.commentLine", "label": "Toggle Line Comment" },
+        { "command": "editor.action.formatDocument", "label": "Format Document" }
+      ]
+    },
+    {
+      "label": "Selection",
+      "items": [
+        { "command": "editor.action.selectAll", "label": "Select All", "accel": "" },
+        { "command": "editor.action.smartSelect.expand", "label": "Expand Selection" },
+        { "command": "editor.action.smartSelect.shrink", "label": "Shrink Selection" },
+        "-",
+        { "command": "editor.action.copyLinesUpAction", "label": "Copy Line Up" },
+        { "command": "editor.action.copyLinesDownAction", "label": "Copy Line Down" },
+        { "command": "editor.action.moveLinesUpAction", "label": "Move Line Up" },
+        { "command": "editor.action.moveLinesDownAction", "label": "Move Line Down" },
+        "-",
+        { "command": "editor.action.insertCursorAbove", "label": "Add Cursor Above" },
+        { "command": "editor.action.insertCursorBelow", "label": "Add Cursor Below" },
+        { "command": "editor.action.addSelectionToNextFindMatch", "label": "Add Next Occurrence" },
+        { "command": "editor.action.selectHighlights", "label": "Select All Occurrences" }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        { "command": "workbench.action.showCommands", "label": "Command Palette..." },
+        "-",
+        { "command": "workbench.view.explorer", "label": "Explorer" },
+        { "command": "workbench.view.search", "label": "Search" },
+        "-",
+        { "command": "workbench.actions.view.problems", "label": "Problems" },
+        { "command": "workbench.action.output.toggleOutput", "label": "Output" },
+        { "command": "workbench.action.terminal.toggleTerminal", "label": "Terminal" },
+        "-",
+        { "command": "workbench.action.toggleSidebarVisibility", "label": "Toggle Primary Side Bar Visibility" },
+        { "command": "workbench.action.togglePanel", "label": "Toggle Panel" },
+        { "command": "workbench.action.splitEditor", "label": "Split Editor" },
+        { "command": "workbench.action.toggleZenMode", "label": "Zen Mode" },
+        "-",
+        { "command": "editor.action.toggleWordWrap", "label": "Word Wrap" },
+        { "command": "editor.action.toggleMinimap", "label": "Minimap" },
+        "-",
+        { "command": "workbench.action.zoomIn", "label": "Zoom In" },
+        { "command": "workbench.action.zoomOut", "label": "Zoom Out" },
+        { "command": "workbench.action.zoomReset", "label": "Reset Zoom" },
+        { "command": "editor.action.fontZoomIn", "label": "Editor Font Bigger" },
+        { "command": "editor.action.fontZoomOut", "label": "Editor Font Smaller" }
+      ]
+    },
+    {
+      "label": "Go",
+      "items": [
+        { "command": "workbench.action.navigateBack", "label": "Back" },
+        { "command": "workbench.action.navigateForward", "label": "Forward" },
+        "-",
+        { "command": "workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup", "label": "Switch Editor..." },
+        { "command": "workbench.action.focusFirstEditorGroup", "label": "First Editor Group" },
+        { "command": "workbench.action.focusSecondEditorGroup", "label": "Second Editor Group" },
+        { "command": "workbench.action.focusThirdEditorGroup", "label": "Third Editor Group" },
+        "-",
+        { "command": "workbench.action.quickOpen", "label": "Go to File..." },
+        { "command": "workbench.action.gotoSymbol", "label": "Go to Symbol in Editor..." },
+        { "command": "workbench.action.showAllSymbols", "label": "Go to Symbol in Workspace..." },
+        "-",
+        { "command": "editor.action.revealDefinition", "label": "Go to Definition" },
+        { "command": "workbench.action.gotoLine", "label": "Go to Line/Column..." },
+        "-",
+        { "command": "editor.action.marker.nextInFiles", "label": "Next Problem" },
+        { "command": "editor.action.marker.prevInFiles", "label": "Previous Problem" }
+      ]
+    },
+    {
+      "label": "Run",
+      "items": [
+        { "command": "workbench.action.debug.start", "label": "Start Debugging", "keyFrom": "tmcode.f5" },
+        { "command": "workbench.action.debug.run", "label": "Run Without Debugging", "keyFrom": "tmcode.runNoDebug" },
+        { "command": "tmcode.stopAny", "label": "Stop", "keyFrom": "workbench.action.debug.stop" },
+        { "command": "tmcode.restartAny", "label": "Restart", "keyFrom": "workbench.action.debug.restart" },
+        "-",
+        { "command": "tmcode.runProject", "label": "Run Project" },
+        { "command": "tmcode.runTests", "label": "Run Tests" },
+        "-",
+        { "command": "editor.debug.action.toggleBreakpoint", "label": "Toggle Breakpoint" }
+      ]
+    },
+    {
+      "label": "Terminal",
+      "items": [
+        { "command": "workbench.action.terminal.new", "label": "New Terminal" },
+        { "command": "workbench.action.terminal.toggleTerminal", "label": "Toggle Terminal" },
+        "-",
+        { "command": "workbench.action.tasks.runTask", "label": "Run Task..." },
+        { "command": "workbench.action.terminal.runRecentCommand", "label": "Run Recent Command..." },
+        { "command": "workbench.action.terminal.focusFind", "label": "Find in Terminal" },
+        "-",
+        { "command": "simpleBrowser.show", "label": "Simple Browser: Show" }
+      ]
+    },
+    {
+      "label": "Window",
+      "native": "only",
+      "items": [{ "role": "minimize" }, { "role": "maximize" }, "-", { "role": "fullscreen" }]
+    },
+    {
+      "label": "Help",
+      "items": [
+        { "command": "workbench.action.openWelcome", "label": "Welcome" },
+        { "command": "workbench.action.showCommands", "label": "Show All Commands" },
+        { "command": "workbench.action.keybindingsReference", "label": "Keyboard Shortcuts" },
+        { "command": "tmcode.checkMyComputer", "label": "Check My Computer" },
+        "-",
+        { "command": "update.checkForUpdates", "label": "Check for Updates...", "native": "never" },
+        { "command": "update.restartToUpdate", "label": "Install Update and Restart", "native": "never" },
+        "-",
+        { "command": "workbench.action.showAbout", "label": "About", "native": "never" }
+      ]
+    }
+  ]
+}

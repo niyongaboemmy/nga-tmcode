@@ -5,6 +5,11 @@ const executeCommandEnabled = (id: string) => {
   return !!c && isEnabled(c);
 };
 import { registerExtensionCommands } from "../extensions/commands";
+import { registerEditorCommands } from "./editorCommands";
+import { registerUntitledCommands } from "./untitled";
+import { registerNavigationCommands } from "./navigation";
+import { registerMenuCommands, wireNativeMenus } from "./menus";
+import { wireKeybindings } from "./keybindings";
 import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
 import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
@@ -202,16 +207,14 @@ export function registerBuiltinCommands() {
   const editorAction = (id: string, title: string, action: string, keybinding?: string, category = "Editor") =>
     registerCommand({ id, title, category, keybinding, enabled: hasActiveFile, run: () => runEditorAction(group(), action) });
   editorAction("editor.action.formatDocument", "Format Document", "editor.action.formatDocument", "shift+alt+f");
-  editorAction("actions.find", "Find", "actions.find");
   editorAction("editor.action.startFindReplaceAction", "Replace", "editor.action.startFindReplaceAction");
   editorAction("editor.action.commentLine", "Toggle Line Comment", "editor.action.commentLine");
   editorAction("editor.action.rename", "Rename Symbol", "editor.action.rename");
   editorAction("editor.action.revealDefinition", "Go to Definition", "editor.action.revealDefinition", undefined, "Go");
   editorAction("editor.foldAll", "Fold All", "editor.foldAll");
   editorAction("editor.unfoldAll", "Unfold All", "editor.unfoldAll");
-  editorAction("editor.action.selectAll", "Select All", "editor.action.selectAll", undefined, "Edit");
-  editorAction("undo", "Undo", "undo", undefined, "Edit");
-  editorAction("redo", "Redo", "redo", undefined, "Edit");
+  // Undo, Redo, Find and Select All follow focus (editorCommands.ts); Selection/Go menu actions too.
+  registerEditorCommands();
 
   // ── Terminal ──
   registerCommand({
@@ -287,7 +290,7 @@ export function registerBuiltinCommands() {
 
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });
-  registerCommand({ id: "workbench.action.keybindingsReference", title: "Keyboard Shortcuts Reference", category: "Help", keybinding: "mod+k mod+s", run: () => openSpecialEditor("shortcuts") });
+  registerCommand({ id: "workbench.action.keybindingsReference", title: "Open Keyboard Shortcuts", category: "Preferences", keybinding: "mod+k mod+s", run: () => openSpecialEditor("shortcuts") });
   registerCommand({ id: "workbench.action.openWelcome", title: "Welcome", category: "Help", run: () => openSpecialEditor("welcome") });
   registerCommand({ id: "workbench.action.showAbout", title: "About", category: "Help", run: showAbout });
   registerCommand({ id: "update.checkForUpdates", title: "Check for Updates...", category: "Help", enabled: updatesSupported, run: () => checkForUpdates({ manual: true }) });
@@ -298,4 +301,18 @@ export function registerBuiltinCommands() {
     enabled: () => useUpdate.getState().status === "available",
     run: installUpdate,
   });
+
+  // V5-V8: untitled files, editor history, menu-only commands.
+  registerUntitledCommands();
+  registerNavigationCommands();
+  registerMenuCommands();
+}
+
+/**
+ * After every command is registered (Workbench start-up): Monaco's own keys,
+ * the user's keybindings, and the macOS menu's states.
+ */
+export function wirePaletteAndMenus() {
+  wireKeybindings();
+  wireNativeMenus();
 }

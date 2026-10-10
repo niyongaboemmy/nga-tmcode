@@ -121,7 +121,7 @@ export interface ExplorerEdit {
   error?: string | null;
 }
 
-export type QuickInputMode = "files" | "commands" | "line" | "theme" | "iconTheme";
+export type QuickInputMode = "files" | "commands" | "line" | "theme" | "iconTheme" | "editors";
 
 export interface OutputLine {
   t: number;

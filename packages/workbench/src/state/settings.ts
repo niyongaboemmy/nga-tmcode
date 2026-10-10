@@ -62,6 +62,8 @@ export interface Settings {
   "editor.accessibilitySupport": "auto" | "on" | "off";
   /** Whole-window zoom: 0 is 100 %, each step is 20 % (VS Code's window.zoomLevel). */
   "window.zoomLevel": number;
+  /** User keybindings: command id → key ("mod+shift+k"; "" removes the key). Edited in Keyboard Shortcuts. */
+  "keybindings.user": Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -96,6 +98,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "explorer.autoReveal": true,
   "editor.accessibilitySupport": "auto",
   "window.zoomLevel": 0,
+  "keybindings.user": {},
 };
 
 export type SettingKey = keyof Settings;

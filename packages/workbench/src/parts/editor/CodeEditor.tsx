@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { allCommands, executeCommand, keybindingFor } from "../../commands/registry";
+import { allCommands, dispatchKeybindingFor, executeCommand } from "../../commands/registry";
 import { ensureDocument, languageForPath, saveOnFocusChange } from "../../monaco/documents";
 import { registerCodeEditor } from "../../monaco/editors";
 import { monaco, monacoThemeFor, setupMonaco } from "../../monaco/setup";
@@ -121,7 +121,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
 
     // Chorded workbench commands (⌘K ⌘T …) must be bound inside Monaco, which owns ⌘K while focused.
     for (const cmd of allCommands()) {
-      const kb = keybindingFor(cmd, os);
+      const kb = dispatchKeybindingFor(cmd, os);
       if (!kb || !kb.includes(" ")) continue;
       const [a, b] = kb.split(" ").map((c) => toMonacoKey(c, os));
       if (a != null && b != null) ed.addCommand(monaco.KeyMod.chord(a, b), () => executeCommand(cmd.id));

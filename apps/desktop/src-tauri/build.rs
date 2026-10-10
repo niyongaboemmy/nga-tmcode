@@ -6,6 +6,7 @@ fn main() {
             "app_info",
             "take_pending_open",
             "set_native_theme",
+            "menu_update",
             "ws_open",
             "ws_reopen",
             "ws_open_file",
