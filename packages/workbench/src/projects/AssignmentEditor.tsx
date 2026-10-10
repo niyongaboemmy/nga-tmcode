@@ -410,10 +410,10 @@ export function AssignmentEditor({ input }: { input: Input }) {
         </>
       )}
 
+      {/* Students see the starter files in the Start card above. */}
       {detail.starter && teaching && (
         <p className="tm-muted tm-assignment-starter">
           <Codicon name="files" /> Starter files: {detail.starter.file_count} file{detail.starter.file_count === 1 ? "" : "s"}
-          {!teaching && !started && " — copied into your own workspace when you start."}
         </p>
       )}
 

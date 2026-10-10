@@ -6,53 +6,15 @@ import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
-import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, setSharePresence, signIn, useProjects } from "./service";
+import { SYNC_ICON, SYNC_LABEL, SYNC_TIP } from "./syncLabels";
+import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, compareConflict, setSharePresence, signIn, useProjects } from "./service";
 import { showAssignment, useAssignments } from "./assignments";
-import type { Link, Project, SyncState } from "./types";
+import type { Link, Project } from "./types";
 import { openInTaskMentor } from "./commands";
 import { dueText, TYPE_LABEL } from "./matching";
 
-/** Short: the sync row shares the side bar's width with Save. The tooltip says it in full. */
-const SYNC_LABEL: Record<SyncState, string> = {
-  unbound: "Not connected",
-  checking: "Checking…",
-  synced: "Saved online",
-  "local-changes": "Not saved yet",
-  "remote-changes": "Newer version online",
-  both: "Changed here and online",
-  conflict: "Conflicts to resolve",
-  saving: "Saving…",
-  pulling: "Getting the latest…",
-  offline: "Offline",
-  error: "Sync problem",
-};
-const SYNC_TIP: Record<SyncState, string> = {
-  unbound: "This folder is not a Task Mentor project",
-  checking: "Comparing this folder with Task Mentor",
-  synced: "Everything here is saved to Task Mentor",
-  "local-changes": "Changes in this folder are not saved to Task Mentor yet: Save",
-  "remote-changes": "Task Mentor has newer changes: Get Latest",
-  both: "Changes here and in Task Mentor: Save and Get Latest",
-  conflict: "The same files changed here and in Task Mentor",
-  saving: "Saving to Task Mentor",
-  pulling: "Getting the latest from Task Mentor",
-  offline: "Task Mentor can't be reached",
-  error: "Sync problem",
-};
-
-export const SYNC_ICON: Record<SyncState, string> = {
-  unbound: "circle-slash",
-  checking: "sync",
-  synced: "cloud",
-  "local-changes": "cloud-upload",
-  "remote-changes": "cloud-download",
-  both: "arrow-swap",
-  conflict: "warning",
-  saving: "sync",
-  pulling: "sync",
-  offline: "debug-disconnect",
-  error: "error",
-};
+// One label table for the Projects view, the brief and the status bar.
+export { SYNC_ICON } from "./syncLabels";
 
 function Section({ title, actions, children, defaultOpen = true, onOpen }: { title: string; actions?: ReactNode; children: ReactNode; defaultOpen?: boolean; onOpen?: () => void }) {
   const [open, setOpenState] = useState(defaultOpen);
@@ -225,6 +187,7 @@ export function ThisFolder() {
                 <div key={path} className="tm-list-row">
                   <Codicon name="warning" />
                   <span className="tm-project-name">{path}</span>
+                  <ActionButton icon="diff" label="Compare with Task Mentor's" onClick={() => void compareConflict(path)} />
                   <ActionButton icon="check" label="Keep Mine" onClick={() => void resolveConflict(path, "mine")} />
                   <ActionButton icon="cloud-download" label="Take Task Mentor's" onClick={() => void resolveConflict(path, "theirs")} />
                 </div>

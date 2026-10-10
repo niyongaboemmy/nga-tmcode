@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { notify, openContextMenu, revealView, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
-import { dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, returnedForChanges, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
+import { acceptsSubmissions, dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, returnedForChanges, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, refreshProjects, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
 import type { LinkableActivity, PracticalQuestion } from "./types";
@@ -75,6 +75,13 @@ function StateChip({ a }: { a: AssignmentSummary }) {
         {late}
       </>
     );
+  // The teacher closed it before it was handed in: no more submissions.
+  if (!acceptsSubmissions(a))
+    return (
+      <span className="tm-chip tm-chip--locked" data-testid="assignment-closed-chip" title="Your teacher closed this assignment: it no longer accepts work">
+        <Codicon name="lock" /> Closed
+      </span>
+    );
   if (returnedForChanges(a)) {
     return (
       <span className="tm-chip is-warning" data-testid="assignment-returned-chip" title={`Returned by your teacher${a.my?.returned_message ? `: ${a.my.returned_message}` : ""}`}>
@@ -136,7 +143,7 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
         openContextMenu(e.clientX, e.clientY, [
           { kind: "item", label: "Show Brief", run: () => showAssignment(a.id) },
           ...(!teaching && (started || !a.read_only) ? [{ kind: "item" as const, label: started ? "Continue in TMCode" : "Start", run: () => void startAssignment(a.id) }] : []),
-          ...(!teaching && started && !a.read_only ? [{ kind: "item" as const, label: "Submit…", run: () => void submitAssignment(a.id) }] : []),
+          ...(!teaching && started && acceptsSubmissions(a) ? [{ kind: "item" as const, label: "Submit…", run: () => void submitAssignment(a.id) }] : []),
           ...(teaching ? [{ kind: "item" as const, label: "Grade Submissions", run: () => openGrading(keyOf("assignment", a.id, null)) }] : []),
           { kind: "separator" },
           { kind: "item", label: "Open in Task Mentor", run: () => openAssignmentInTaskMentor(a.id) },
