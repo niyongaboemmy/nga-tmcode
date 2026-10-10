@@ -13,7 +13,6 @@ import {
   toServiceOptions,
   type DirEntryLike,
 } from "./tsProject";
-import { isJump, NavHistory } from "./navHistory";
 
 /** A fake folder: path → text. */
 function folder(files: Record<string, string>) {
@@ -160,31 +159,5 @@ describe("which files the TypeScript service gets", () => {
     b.release(40);
     expect(b.take(MAX_SOURCE_FILE_BYTES + 1)).toBe(false);
     expect(b.take(10)).toBe(true);
-  });
-});
-
-describe("Go Back / Go Forward", () => {
-  it("returns to where Go to Definition started", () => {
-    const h = new NavHistory();
-    h.record({ path: "main.ts", line: 3, column: 5 });
-    expect(h.goBack({ path: "utils.ts", line: 1, column: 17 })).toEqual({ path: "main.ts", line: 3, column: 5 });
-    expect(h.goForward({ path: "main.ts", line: 3, column: 5 })).toEqual({ path: "utils.ts", line: 1, column: 17 });
-    expect(h.goForward(null)).toBeNull();
-  });
-
-  it("merges nearby entries, drops deleted files and follows renames", () => {
-    const h = new NavHistory();
-    h.record({ path: "a.ts", line: 10, column: 1 });
-    h.record({ path: "a.ts", line: 12, column: 1 });
-    h.record({ path: "src/b.ts", line: 1, column: 1 });
-    h.rename("src", "lib");
-    expect(h.goBack(null)?.path).toBe("lib/b.ts");
-    expect(h.goBack(null)?.line).toBe(12);
-    expect(h.canGoBack()).toBe(false);
-    h.record({ path: "gone.ts", line: 1, column: 1 });
-    h.rename("gone.ts", null);
-    expect(h.canGoBack()).toBe(false);
-    expect(isJump({ line: 1 }, { line: 11 })).toBe(true);
-    expect(isJump({ line: 1 }, { line: 5 })).toBe(false);
   });
 });

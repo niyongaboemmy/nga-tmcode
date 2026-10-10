@@ -1,8 +1,7 @@
 import * as monaco from "monaco-editor";
-import { getPlatform, onEntryDeleted, onEntryRenamed, onWorkspaceChanged, workbench } from "../state/store";
-import { codeEditorFor, onCodeEditor } from "./editors";
+import { getPlatform } from "../state/store";
+import { onCodeEditor } from "./editors";
 import { revealInEditor } from "./reveal";
-import { isJump, NavHistory, type NavLocation } from "./navHistory";
 
 /**
  * Editor navigation that must work from the first keystroke, not only once an
@@ -10,41 +9,21 @@ import { isJump, NavHistory, type NavLocation } from "./navHistory";
  * - an editor opener, so Go to Definition / Peek / a reference into another
  *   workspace file opens that file in TMCode's editor;
  * - a link opener for `tmcode:` and web links;
- * - Go Back / Go Forward (⌃- / ⌃⇧- on macOS, Alt+← / Alt+→ elsewhere).
+ * - Go Back / Go Forward keys inside the editor (⌃- / ⌃⇧- on macOS, Alt+← /
+ *   Alt+→ elsewhere). There is one history: commands/navigation.ts records every
+ *   move and owns the Go menu and palette entries; these keys only call it.
  */
 
 const SCHEME = "tmcode";
 const pathOf = (uri: monaco.Uri) => uri.path.replace(/^\//, "");
 
-export const navHistory = new NavHistory();
-/** Set while TMCode itself moves the cursor (going back), so that move is not recorded as a jump. */
-let navigating = 0;
-
-function locationOf(ed: monaco.editor.ICodeEditor | null | undefined): NavLocation | null {
-  const model = ed?.getModel();
-  const pos = ed?.getPosition();
-  if (!model || !pos || model.uri.scheme !== SCHEME) return null;
-  return { path: pathOf(model.uri), line: pos.lineNumber, column: pos.column };
-}
-
-function currentLocation() {
-  return locationOf(codeEditorFor(workbench.get().activeGroup));
-}
-
-function go(target: NavLocation | null) {
-  if (!target) return false;
-  navigating++;
-  revealInEditor(target.path, target.line, target.column);
-  setTimeout(() => navigating--, 600);
-  return true;
-}
-
+// One history for the whole workbench (commands/navigation.ts). Imported lazily: it imports the editor modules.
 export function goBack() {
-  return go(navHistory.goBack(currentLocation()));
+  void import("../commands/navigation").then((m) => m.navigateBack());
 }
 
 export function goForward() {
-  return go(navHistory.goForward(currentLocation()));
+  void import("../commands/navigation").then((m) => m.navigateForward());
 }
 
 let installed = false;
@@ -53,13 +32,10 @@ export function installNavigation() {
   if (installed) return;
   installed = true;
   monaco.editor.registerEditorOpener({
-    openCodeEditor(source, resource, selectionOrPosition) {
+    openCodeEditor(_source, resource, selectionOrPosition) {
       if (resource.scheme !== SCHEME) return false;
-      navHistory.record(locationOf(source));
       const p = selectionOrPosition as (Partial<monaco.IRange> & Partial<monaco.IPosition>) | undefined;
-      navigating++;
       revealInEditor(pathOf(resource), p?.startLineNumber ?? p?.lineNumber, p?.startColumn ?? p?.column);
-      setTimeout(() => navigating--, 600);
       return true;
     },
   });
@@ -85,19 +61,6 @@ export function installNavigation() {
   });
 
   onCodeEditor((ed) => {
-    // Far moves inside one file (Go to Definition in the same file, a click 40 lines down) are jumps too.
-    let last = locationOf(ed);
-    ed.onDidChangeModel(() => {
-      last = locationOf(ed);
-    });
-    ed.onDidChangeCursorPosition((e) => {
-      const now = locationOf(ed);
-      const from = last;
-      last = now;
-      if (!now || !from || from.path !== now.path || navigating) return;
-      if (e.reason !== monaco.editor.CursorChangeReason.Explicit || e.source === "keyboard") return;
-      if (isJump(from, now)) navHistory.record(from);
-    });
     // Monaco reads KeyMod.WinCtrl by its own OS detection (the user agent), so choose the keys by the same rule.
     const mac = navigator.userAgent.includes("Macintosh");
     const { KeyMod, KeyCode } = monaco;
@@ -114,8 +77,4 @@ export function installNavigation() {
       run: () => void goForward(),
     });
   });
-
-  onWorkspaceChanged(() => navHistory.clear());
-  onEntryRenamed((from, to) => navHistory.rename(from, to));
-  onEntryDeleted((path) => navHistory.rename(path, null));
 }

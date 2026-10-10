@@ -523,6 +523,11 @@ export async function createEntry(parent: string, name: string, kind: "file" | "
 
 export async function renameEntry(from: string, newName: string) {
   set({ explorerEdit: null });
+  // F2 reaches here without the menu: the .git folder keeps its name, as it is never deleted.
+  if (isProtectedEntry(from)) {
+    notify("warning", "TMCode doesn't rename the .git folder: it holds this project's history.");
+    return;
+  }
   await moveEntry(from, join(dirname(from), newName.trim()));
 }
 
