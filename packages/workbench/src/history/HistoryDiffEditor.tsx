@@ -18,12 +18,13 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
     let disposed = false;
     const original = monaco.editor.createModel("", languageForPath(input.path));
     const grading = input.source === "grading";
+    const conflict = input.source === "conflict";
     let ownModified: monaco.editor.ITextModel | null = null;
     const diff = monaco.editor.createDiffEditor(host.current!, {
       ...editorOptions(useWorkbench.getState().settings, os),
       originalEditable: false,
-      // Grading compares two versions of a student's work: nothing to edit.
-      readOnly: grading,
+      // Grading compares two versions of a student's work, a conflict its two sides: nothing to edit.
+      readOnly: grading || conflict,
       renderSideBySide: true,
       useInlineViewWhenSpaceIsLimited: true,
       renderSideBySideInlineBreakpoint: 700,
@@ -32,6 +33,24 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
     });
     void (async () => {
       try {
+        if (conflict) {
+          // Merge conflict: the current side (left) against the incoming side (right).
+          const { conflictSides } = await import("../scm/extras");
+          const sides = conflictSides(input.path, Number(input.entry));
+          if (!sides) throw new Error("the conflict was resolved");
+          original.setValue(sides.current);
+          ownModified = monaco.editor.createModel(sides.incoming, languageForPath(input.path));
+          if (!disposed) diff.setModel({ original, modified: ownModified });
+          return;
+        }
+        if (input.source === "git") {
+          // Timeline: the file in a commit (left) against the file now (right, editable).
+          const text = await getPlatform().git?.showAt?.(input.path, input.entry);
+          original.setValue(text ?? "");
+          const modified = await ensureDocument(input.path);
+          if (!disposed) diff.setModel({ original, modified });
+          return;
+        }
         if (grading) {
           // Left: that version of the student's work; right: the submitted file (or nothing, when it was deleted).
           const { leftText } = await import("../grading/diff");
@@ -69,7 +88,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
       if (group) await closeEditors(group.id, [input.id]);
     });
   return (
-    <div className={`tm-code-editor tm-git-diff ${compare || input.source === "grading" ? "tm-history-compare" : ""}`} data-testid="history-diff">
+    <div className={`tm-code-editor tm-git-diff ${compare || input.source ? "tm-history-compare" : ""}`} data-testid="history-diff">
       {compare && (
         <div className="tm-compare-bar" data-testid="conflict-compare">
           <span className="tm-compare-side">Task Mentor's copy</span>
@@ -83,6 +102,13 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
               Take Task Mentor's
             </button>
           </span>
+        </div>
+      )}
+      {(input.source === "git" || input.source === "conflict") && (
+        <div className="tm-compare-bar" data-testid={input.source === "git" ? "git-timeline-diff" : "merge-compare"}>
+          <span className="tm-compare-side">{input.label ?? input.entry}</span>
+          <span className="codicon codicon-arrow-both" aria-hidden />
+          <span className="tm-compare-side">{input.source === "git" ? "Now" : "Incoming"}</span>
         </div>
       )}
       {input.source === "grading" && (

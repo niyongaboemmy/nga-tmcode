@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { create } from "zustand";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -11,6 +12,7 @@ import { enhanceTerminal, type EnhancedTerminal } from "../../terminal/enhance";
 import { setActiveTerminal } from "../../terminal/active";
 import { recordCommand, CommandLineTracker } from "../../terminal/history";
 import { SkeletonLines } from "../../widgets/Skeleton";
+import { defaultProfileSetting, fallbackShellName, loadTerminalProfiles, pickProfile } from "../../terminal/profiles";
 
 /** Terminal colours of the active colour theme (its terminal.* keys); the static palettes cover the moment before it loads. */
 export function terminalTheme(theme: string): ITheme {
@@ -68,7 +70,16 @@ export function terminalTheme(theme: string): ITheme {
 
 interface Instance {
   id: number;
+  /** Split terminals share a group and show side by side. */
+  group: number;
+  /** Its own name (renamed, or a task's); "" = the shell's. */
   name: string;
+  /** The shell's name: "zsh", "bash", "PowerShell", "Git Bash"… */
+  shell: string;
+  profile?: string;
+  cwd?: string;
+  /** Started for a task or the Run hub: probably running a program. */
+  owned: boolean;
   term: Terminal;
   fit: FitAddon;
   extras: EnhancedTerminal;
@@ -81,6 +92,10 @@ export interface NewTerminalRequest {
   command?: string;
   cwd?: string;
   name?: string;
+  /** A shell profile id (terminal/profiles.ts); absent = the default profile. */
+  profile?: string;
+  /** Split this terminal: the new one shows beside it. */
+  splitOf?: number;
   // ── Run hub: a terminal the Run hub owns (dev servers), so it can follow, reveal and stop it ──
   owner?: TerminalOwner;
 }
@@ -104,10 +119,25 @@ export interface OwnedTerminal {
 
 let seq = 0;
 
+/** Terminals in the panel, for the panel header (the ⌄ menu, split and kill act on the active one). */
+export const useTerminalPanel = create<{ count: number; activeName: string | null }>(() => ({ count: 0, activeName: null }));
+
+/** Asks the terminal view to do something (from the panel header and the Terminal commands). */
+export function terminalAction(action: "split" | "kill" | "rename", detail?: unknown) {
+  window.dispatchEvent(new CustomEvent(`tmcode:terminal-${action}`, { detail }));
+}
+
+/** The name on a terminal's tab: its own (renamed, task), else the shell's ("zsh", "PowerShell"). */
+function labelOf(i: Instance) {
+  return i.name || i.shell;
+}
+
 export function TerminalView({ visible }: { visible: boolean }) {
-  const host = useRef<HTMLDivElement>(null);
+  const area = useRef<HTMLDivElement>(null);
+  const hosts = useRef(new Map<number, HTMLDivElement>());
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [renaming, setRenaming] = useState<number | null>(null);
   const [finding, setFinding] = useState(false);
   // Terminals whose shell has printed something (until then a skeleton stands in for the prompt).
   const [started, setStarted] = useState<ReadonlySet<number>>(() => new Set());
@@ -120,6 +150,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
 
   const live = useRef<Instance[]>([]);
   live.current = instances;
+  const activeRef = useRef<number | null>(null);
+  activeRef.current = activeId;
   // One spawn at a time (StrictMode runs effects twice in development).
   const spawning = useRef(false);
   // Bumped when the workspace changes: a shell still spawning for the old folder is discarded on arrival.
@@ -131,14 +163,18 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const create = async (req: NewTerminalRequest = {}) => {
     if (!platform.terminal) return;
     if (spawning.current) {
-      if (req.command || req.owner) queued.current.push(req);
+      if (req.command || req.owner || req.splitOf != null) queued.current.push(req);
       return;
     }
     spawning.current = true;
     const myEpoch = epoch.current;
+    const profiles = await loadTerminalProfiles();
+    const parent = req.splitOf != null ? live.current.find((i) => i.id === req.splitOf) : undefined;
+    // A split starts the same shell as the terminal it splits, as in VS Code.
+    const profile = pickProfile(profiles, req.profile ?? parent?.profile, defaultProfileSetting());
     const term = new Terminal({
       fontFamily: defaultFontFamily(platform.os),
-      fontSize,
+      fontSize: useWorkbench.getState().settings["terminal.integrated.fontSize"],
       // VS Code: a blinking bar while focused, an outline when not, so the cursor is always visible.
       cursorBlink: true,
       cursorStyle: "bar",
@@ -152,14 +188,35 @@ export function TerminalView({ visible }: { visible: boolean }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     const extras = enhanceTerminal(term);
-    const inst: Instance = { id: ++seq, name: req.name ?? "", term, fit, extras, session: null, exited: false };
-    setInstances((list) => [...list, inst]);
+    const id = ++seq;
+    const inst: Instance = {
+      id,
+      group: parent?.group ?? id,
+      name: req.name ?? "",
+      shell: profile?.name ?? fallbackShellName(platform.os),
+      profile: profile?.id,
+      owned: !!req.owner || !!req.command,
+      term,
+      fit,
+      extras,
+      session: null,
+      exited: false,
+    };
+    setInstances((list) => {
+      if (!parent) return [...list, inst];
+      // After the last terminal of the parent's group, so split panes stay together.
+      const last = list.map((x) => x.group).lastIndexOf(parent.group);
+      const next = [...list];
+      next.splice(last + 1, 0, inst);
+      return next;
+    });
     setActiveId(inst.id);
     try {
       const session = await platform.terminal.spawn({
         cols: 80,
         rows: 24,
-        cwd: req.cwd,
+        cwd: req.cwd ?? parent?.cwd,
+        profile: profile?.id,
         onData: (d) => {
           markStarted(inst.id);
           term.write(d);
@@ -173,6 +230,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
           req.owner?.onExit?.(code);
         },
       });
+      inst.cwd = req.cwd ?? parent?.cwd;
       if (epoch.current !== myEpoch) {
         // The folder changed while the shell started (session restore at launch): this one belongs to nothing.
         session.kill();
@@ -203,7 +261,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
         setTimeout(() => inst.session?.write(`${req.command}\r`), 350);
       }
       term.onResize(({ cols, rows }) => inst.session?.resize(cols, rows));
-      log("Terminal", `Started terminal ${inst.id}`);
+      log("Terminal", `Started terminal ${inst.id} (${inst.shell})`);
     } catch (e) {
       markStarted(inst.id);
       term.write(`\x1b[31mCould not start a shell: ${String((e as Error)?.message ?? e)}\x1b[0m\r\n`);
@@ -216,45 +274,58 @@ export function TerminalView({ visible }: { visible: boolean }) {
     if (next) void create(next);
   };
 
-  // Mount the active instance into the host element.
+  const active = instances.find((i) => i.id === activeId) ?? null;
+  // The active terminal's group: split terminals show side by side.
+  const shown = active ? instances.filter((i) => i.group === active.group) : [];
+
   useEffect(() => {
-    const el = host.current;
-    const inst = instances.find((i) => i.id === activeId);
-    if (!el) return;
-    el.replaceChildren();
-    if (!inst) return;
-    setActiveTerminal(inst.term);
-    // Dev builds: the UI probe drives the active terminal directly (selection drawing vs mouse input).
-    if (import.meta.env?.DEV) (window as unknown as { __TMCODE_TERM__?: Terminal }).__TMCODE_TERM__ = inst.term;
-    if (!inst.term.element) inst.term.open(el);
-    else el.appendChild(inst.term.element);
+    useTerminalPanel.setState({ count: instances.length, activeName: active ? labelOf(active) : null });
+  }, [instances, active]);
+
+  // Mount the shown terminals into their hosts.
+  useEffect(() => {
+    for (const inst of shown) {
+      const el = hosts.current.get(inst.id);
+      if (!el) continue;
+      if (!inst.term.element) inst.term.open(el);
+      else if (inst.term.element.parentElement !== el) el.replaceChildren(inst.term.element);
+    }
+    if (active) {
+      setActiveTerminal(active.term);
+      // Dev builds: the UI probe drives the active terminal directly (selection drawing vs mouse input).
+      if (import.meta.env?.DEV) (window as unknown as { __TMCODE_TERM__?: Terminal }).__TMCODE_TERM__ = active.term;
+    }
     requestAnimationFrame(() => {
-      try {
-        inst.fit.fit();
-        inst.session?.resize(inst.term.cols, inst.term.rows);
-      } catch {
-        /* host not laid out yet */
+      for (const inst of shown) {
+        try {
+          inst.fit.fit();
+          inst.session?.resize(inst.term.cols, inst.term.rows);
+        } catch {
+          /* host not laid out yet */
+        }
       }
-      if (visible) inst.term.focus();
+      if (visible && active && !renaming) active.term.focus();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, instances, visible]);
 
   // Re-fit on panel resize.
   useEffect(() => {
-    const el = host.current;
+    const el = area.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      const inst = instances.find((i) => i.id === activeId);
-      if (!inst || !el.offsetParent) return;
-      try {
-        inst.fit.fit();
-      } catch {
-        /* ignore */
+      if (!el.offsetParent) return;
+      for (const inst of live.current.filter((i) => hosts.current.has(i.id))) {
+        try {
+          inst.fit.fit();
+        } catch {
+          /* ignore */
+        }
       }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [activeId, instances]);
+  }, []);
 
   useEffect(() => {
     for (const i of instances) {
@@ -280,44 +351,76 @@ export function TerminalView({ visible }: { visible: boolean }) {
       } else void create({ command: cmd });
     };
     const onFind = () => setFinding(true);
+    const onSplit = () => (activeRef.current != null ? void create({ splitOf: activeRef.current }) : void create());
+    const onKill = () => activeRef.current != null && kill(activeRef.current);
+    const onRename = (e: Event) => {
+      const name = (e as CustomEvent<string | undefined>).detail;
+      const id = activeRef.current;
+      if (id == null) return;
+      if (typeof name === "string") rename(id, name);
+      else setRenaming(id);
+    };
     window.addEventListener("tmcode:new-terminal", onNew);
     window.addEventListener("tmcode:terminal-run", onRun);
     window.addEventListener("tmcode:terminal-find", onFind);
+    window.addEventListener("tmcode:terminal-split", onSplit);
+    window.addEventListener("tmcode:terminal-kill", onKill);
+    window.addEventListener("tmcode:terminal-rename", onRename);
     return () => {
       window.removeEventListener("tmcode:new-terminal", onNew);
       window.removeEventListener("tmcode:terminal-run", onRun);
       window.removeEventListener("tmcode:terminal-find", onFind);
+      window.removeEventListener("tmcode:terminal-split", onSplit);
+      window.removeEventListener("tmcode:terminal-kill", onKill);
+      window.removeEventListener("tmcode:terminal-rename", onRename);
     };
   });
 
-  // A new workspace means a new cwd: close shells from the old one (and all of them on unmount).
+  // A new folder means a new cwd: close shells from the old one (and all of them on unmount), as VS Code does.
   useEffect(() => {
+    const root = workspace?.root;
     return () => {
-      for (const i of live.current) {
-        i.session?.kill();
-        i.extras.dispose();
-        i.term.dispose();
-      }
+      const closing = live.current;
       live.current = [];
       setInstances([]);
       setActiveId(null);
       // A spawn in flight is now stale; let the new folder start its own shell right away.
       epoch.current++;
       spawning.current = false;
+      const folderChanged = useWorkbench.getState().workspace?.root !== root;
+      void (async () => {
+        // Ask before killing: a program still running is worth a word (Windows can't tell, so tasks count).
+        const busy = folderChanged
+          ? (await Promise.all(closing.map(async (i) => !i.exited && ((await i.session?.busy?.().catch(() => false)) || (i.owned && !i.session?.busy))))).filter(Boolean).length
+          : 0;
+        for (const i of closing) {
+          i.session?.kill();
+          i.extras.dispose();
+          i.term.dispose();
+        }
+        if (busy) notify("info", `${busy === 1 ? "A terminal was" : `${busy} terminals were`} still running a program and ${busy === 1 ? "was" : "were"} closed. Terminals don't move to a new folder.`);
+      })();
     };
   }, [workspace?.root]);
 
   const kill = (id: number) => {
-    const inst = instances.find((i) => i.id === id);
+    const list = live.current;
+    const inst = list.find((i) => i.id === id);
     inst?.session?.kill();
     inst?.extras.dispose();
     inst?.term.dispose();
-    const rest = instances.filter((i) => i.id !== id);
+    hosts.current.delete(id);
+    const rest = list.filter((i) => i.id !== id);
+    // The split's other pane, else the last terminal, becomes active.
+    const siblings = inst ? rest.filter((i) => i.group === inst.group) : [];
     setInstances(rest);
-    setActiveId(rest[rest.length - 1]?.id ?? null);
+    setActiveId(siblings[siblings.length - 1]?.id ?? rest[rest.length - 1]?.id ?? null);
   };
 
-  const activeInstance = instances.find((i) => i.id === activeId);
+  const rename = (id: number, name: string) => {
+    setRenaming(null);
+    setInstances((list) => list.map((i) => (i.id === id ? Object.assign(i, { name: name.trim() }) : i)));
+  };
 
   if (!supported) {
     return (
@@ -327,26 +430,84 @@ export function TerminalView({ visible }: { visible: boolean }) {
     );
   }
 
+  const groupsInOrder = [...new Set(instances.map((i) => i.group))];
   return (
     <div className="tm-terminal" hidden={!visible}>
-      <div ref={host} className="tm-terminal-host" data-testid="integrated-terminal" />
-      {activeInstance && !started.has(activeInstance.id) && <ShellStarting />}
-      {finding && activeInstance && <TerminalFind key={activeInstance.id} inst={activeInstance} onClose={() => setFinding(false)} />}
+      <div ref={area} className="tm-terminal-area">
+        {shown.map((inst) => (
+          <div
+            key={inst.id}
+            className={`tm-terminal-pane ${inst.id === activeId && shown.length > 1 ? "is-active" : ""}`}
+            onMouseDown={() => inst.id !== activeId && setActiveId(inst.id)}
+          >
+            <div
+              ref={(el) => {
+                if (el) hosts.current.set(inst.id, el);
+                else hosts.current.delete(inst.id);
+              }}
+              className="tm-terminal-host"
+              data-testid={inst.id === activeId ? "integrated-terminal" : "integrated-terminal-split"}
+              aria-label={`Terminal ${labelOf(inst)}`}
+            />
+            {!started.has(inst.id) && <ShellStarting />}
+          </div>
+        ))}
+      </div>
+      {finding && active && <TerminalFind key={active.id} inst={active} onClose={() => setFinding(false)} />}
+      {renaming != null && instances.length <= 1 && (
+        <div className="tm-terminal-rename-float">
+          <RenameInput initial={labelOf(instances.find((i) => i.id === renaming) ?? instances[0])} onDone={(v) => (v === null ? setRenaming(null) : rename(renaming, v))} />
+        </div>
+      )}
       {instances.length > 1 && (
         <ul className="tm-terminal-list" aria-label="Terminals">
-          {instances.map((i, n) => (
-            <li key={i.id} className={i.id === activeId ? "is-active" : ""}>
-              <button type="button" onClick={() => setActiveId(i.id)}>
-                <Codicon name={i.name ? "tools" : "terminal"} /> {i.name || `${n + 1}: ${shellName(platform.os)}`}
-              </button>
-              <button type="button" className="tm-terminal-kill" aria-label="Kill terminal" title="Kill Terminal" onClick={() => kill(i.id)}>
-                <Codicon name="trash" />
-              </button>
-            </li>
-          ))}
+          {groupsInOrder.flatMap((g, gi) => {
+            const members = instances.filter((i) => i.group === g);
+            return members.map((i, mi) => (
+              <li key={i.id} className={i.id === activeId ? "is-active" : ""} data-terminal={i.id}>
+                {renaming === i.id ? (
+                  <RenameInput initial={labelOf(i)} onDone={(v) => (v === null ? setRenaming(null) : rename(i.id, v))} />
+                ) : (
+                  <button type="button" onClick={() => setActiveId(i.id)} onDoubleClick={() => setRenaming(i.id)} title={`${labelOf(i)} (double-click to rename)`}>
+                    {members.length > 1 && <span className="tm-terminal-tree">{mi === members.length - 1 ? "└" : mi === 0 ? "┌" : "├"}</span>}
+                    <Codicon name={i.owned ? "tools" : "terminal"} /> {members.length > 1 || mi > 0 ? "" : `${gi + 1}: `}
+                    {labelOf(i)}
+                  </button>
+                )}
+                <button type="button" className="tm-terminal-kill" aria-label={`Split ${labelOf(i)}`} title="Split Terminal" onClick={() => void create({ splitOf: i.id })}>
+                  <Codicon name="split-horizontal" />
+                </button>
+                <button type="button" className="tm-terminal-kill" aria-label="Kill terminal" title="Kill Terminal" onClick={() => kill(i.id)}>
+                  <Codicon name="trash" />
+                </button>
+              </li>
+            ));
+          })}
         </ul>
       )}
     </div>
+  );
+}
+
+function RenameInput({ initial, onDone }: { initial: string; onDone: (value: string | null) => void }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <input
+      className="tm-input tm-terminal-rename"
+      aria-label="Terminal name"
+      autoFocus
+      value={value}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onDone(value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onDone(value);
+        else if (e.key === "Escape") onDone(null);
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    />
   );
 }
 
@@ -362,10 +523,6 @@ function ShellStarting() {
       <SkeletonLines lines={3} label="Starting the shell" />
     </div>
   ) : null;
-}
-
-function shellName(os: string) {
-  return os === "windows" ? "powershell" : os === "mac" ? "zsh" : "bash";
 }
 
 /** VS Code's terminal find widget: incremental, case/word/regex toggles, match count. */

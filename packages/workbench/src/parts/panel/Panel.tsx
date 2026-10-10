@@ -21,6 +21,36 @@ import { OutputChannelPicker, useOutputChannelFilter } from "../../exthost/ui";
 import { ExtViewPanes } from "../../exthost/views/ViewPanes";
 import { useViews } from "../../exthost/views/model";
 import { terminalAllowed } from "@tmcode/protocol";
+import { terminalAction, useTerminalPanel } from "./TerminalView";
+import { newTerminal, openProfileMenu } from "../../terminal/commands";
+
+/** VS Code's terminal title actions: New (+), the profile menu (⌄), Split, Kill. */
+function TerminalActions() {
+  const count = useTerminalPanel((s) => s.count);
+  const name = useTerminalPanel((s) => s.activeName);
+  return (
+    <>
+      {count === 1 && name && (
+        <span className="tm-panel-run-label" title="Double-click to rename" onDoubleClick={() => terminalAction("rename")} data-testid="terminal-title">
+          {name}
+        </span>
+      )}
+      <span className="tm-split-action">
+        <ActionButton icon="add" label="New Terminal" onClick={() => newTerminal()} />
+        <ActionButton
+          icon="chevron-down"
+          label="Launch Profile..."
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            void openProfileMenu(r.left - 140, r.bottom + 2);
+          }}
+        />
+      </span>
+      <ActionButton icon="split-horizontal" label="Split Terminal" disabled={!count} onClick={() => terminalAction("split")} />
+      <ActionButton icon="trash" label="Kill Terminal" disabled={!count} onClick={() => terminalAction("kill")} />
+    </>
+  );
+}
 
 function OutputView({ filter }: { filter: string }) {
   const all = useWorkbench((s) => s.output);
@@ -141,9 +171,7 @@ export function Panel() {
           {current === "output" && <ActionButton icon="clear-all" label="Clear Output" onClick={clearOutput} />}
           {current === "debugConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearDebugConsole} />}
           {current === "jsConsole" && <ActionButton icon="clear-all" label="Clear Console" onClick={clearJsConsole} />}
-          {current === "terminal" && (
-            <ActionButton icon="add" label="New Terminal" onClick={() => window.dispatchEvent(new CustomEvent("tmcode:new-terminal"))} />
-          )}
+          {current === "terminal" && <TerminalActions />}
           <ActionButton icon={maximized ? "chevron-down" : "chevron-up"} label={maximized ? "Restore Panel Size" : "Maximize Panel Size"} onClick={togglePanelMaximized} />
           <ActionButton icon="close" label="Hide Panel" onClick={() => togglePanel(false)} />
         </div>

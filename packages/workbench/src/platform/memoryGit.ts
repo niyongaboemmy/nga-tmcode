@@ -49,6 +49,14 @@ export function createMemoryGit(fs: FileSystem, seed: Record<string, string>, op
       ]
     : [];
   const stashes: { index: Map<string, string>; files: Map<string, string> }[] = [];
+  // Each commit's files, for the Timeline (showAt / fileLog).
+  const snapshots = new Map<string, Map<string, string>>();
+  if (repo) {
+    snapshots.set("b".repeat(40), new Map(head));
+    const first = new Map(head);
+    if (first.has("main.py")) first.set("main.py", first.get("main.py")!.replace('    if average >= 80:\n        return "A"\n', ""));
+    snapshots.set("a".repeat(40), first);
+  }
 
   const run = async <T>(cmd: string, fn: () => Promise<T> | T): Promise<T> => {
     log(`> git ${cmd}`);
@@ -128,6 +136,28 @@ export function createMemoryGit(fs: FileSystem, seed: Record<string, string>, op
       const v = (rev === "HEAD" ? head : index).get(path);
       return v ?? null;
     },
+    async showAt(path, commit) {
+      need();
+      const c = commits.find((x) => x.hash.startsWith(commit));
+      return (c && snapshots.get(c.hash)?.get(path)) ?? null;
+    },
+    async fileLog(path, limit) {
+      if (!repo) return [];
+      // Commits where the file differs from the commit before (or first appears).
+      return commits
+        .filter((c, i) => {
+          const now = snapshots.get(c.hash)?.get(path);
+          const before = commits[i + 1] ? snapshots.get(commits[i + 1].hash)?.get(path) : undefined;
+          return now !== undefined && now !== before;
+        })
+        .slice(0, limit);
+    },
+    stageContent: (path, content) =>
+      run(`update-index --add --cacheinfo 100644,<blob>,${path}`, () => {
+        need();
+        index.set(path, content);
+        changed();
+      }),
     stage: (paths) =>
       run(`add -A -- ${paths.join(" ")}`, async () => {
         need();
@@ -177,6 +207,7 @@ export function createMemoryGit(fs: FileSystem, seed: Record<string, string>, op
         if (!message.trim() && !amend) throw new Error("Aborting commit due to empty commit message.");
         head = new Map(index);
         const hash = Math.random().toString(16).slice(2).padEnd(40, "0").slice(0, 40);
+        snapshots.set(hash, new Map(head));
         const c: GitCommit = { hash, short: hash.slice(0, 7), author: "You", email: "you@example.com", date: Math.floor(Date.now() / 1000), refs: `HEAD -> ${current}`, subject: message.trim().split("\n")[0] || commits[0]?.subject || "" };
         commits = amend ? [c, ...commits.slice(1)] : [c, ...commits.map((x) => ({ ...x, refs: x.refs.replace(`HEAD -> ${current}`, "").replace(/^, /, "") }))];
         if (!amend) ahead++;

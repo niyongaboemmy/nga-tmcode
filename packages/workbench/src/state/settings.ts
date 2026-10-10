@@ -29,6 +29,8 @@ export interface Settings {
   "files.autoSave": "off" | "afterDelay" | "onFocusChange";
   "files.autoSaveDelay": number;
   "terminal.integrated.fontSize": number;
+  /** Shell profile id for new terminals ("zsh", "bash", "pwsh", "cmd", "gitbash", "wsl"…); "" = the system's shell. */
+  "terminal.integrated.defaultProfile": string;
   "workbench.reduceMotion": boolean;
   /** "default": check at start and every 6 hours; "manual": only from the command; "none": never. */
   "update.mode": "default" | "manual" | "none";
@@ -84,6 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "files.autoSave": "afterDelay",
   "files.autoSaveDelay": 1000,
   "terminal.integrated.fontSize": 13,
+  "terminal.integrated.defaultProfile": "",
   "workbench.reduceMotion": false,
   "update.mode": "default",
   "projects.autoSave": "assignments",
@@ -113,8 +116,8 @@ export type SettingDef =
       description: string;
       type: "enum";
       options: { value: string; label: string }[];
-      /** Options computed when shown (themes from installed extensions). */
-      dynamicOptions?: "colorThemes" | "iconThemes";
+      /** Options computed when shown (themes from installed extensions, shells found on this computer). */
+      dynamicOptions?: "colorThemes" | "iconThemes" | "terminalProfiles";
     };
 
 export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
@@ -321,6 +324,14 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         type: "number",
         min: 8,
         max: 32,
+      },
+      {
+        key: "terminal.integrated.defaultProfile",
+        label: "Default Profile",
+        description: "The shell new terminals start. Other shells are in the terminal's ⌄ menu.",
+        type: "enum",
+        options: [{ value: "", label: "Automatic (the system's shell)" }],
+        dynamicOptions: "terminalProfiles",
       },
     ],
   },

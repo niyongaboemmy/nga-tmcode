@@ -31,7 +31,8 @@ import { initExtensionHost } from "./exthost/hostService";
 import { registerExtHostCommands } from "./exthost/commands";
 import "./extensions/monacoContributions";
 import { ActivityBar } from "./parts/ActivityBar";
-import { EditorGroupView } from "./parts/editor/EditorGroupView";
+import { EditorGrid } from "./parts/editor/EditorGrid";
+import { registerWorkbenchExtras } from "./layout/commands";
 import { Panel } from "./parts/panel/Panel";
 import { SideBar } from "./parts/SideBar";
 import { WebviewLayer } from "./exthost/views/WebviewSlot";
@@ -50,21 +51,9 @@ import { wireDebugServices } from "./debug/debugService";
 import { DebugToolbar } from "./debug/DebugToolbar";
 // ── end Run and Debug ──
 
-/**
- * Editor groups side by side. Always one Allotment with a stable key per group,
- * so splitting or closing a group never remounts (and re-lays-out) the others.
- */
+/** Editor groups in rows and columns (parts/editor/EditorGrid). */
 function EditorArea() {
-  const groups = useWorkbench((s) => s.groups);
-  return (
-    <Allotment className="tm-editor-groups">
-      {groups.map((g) => (
-        <Allotment.Pane key={g.id} minSize={180}>
-          <EditorGroupView group={g} single={groups.length === 1} />
-        </Allotment.Pane>
-      ))}
-    </Allotment>
-  );
+  return <EditorGrid />;
 }
 
 // Colour and icon themes (and the extensions that contribute them) load before the first paint.
@@ -104,6 +93,7 @@ export function Workbench() {
   useEffect(() => {
     registerBuiltinCommands();
     registerFilesSearchCommands();
+    registerWorkbenchExtras();
     registerDeveloperCommands();
     registerProjectCommands();
     wireProjects();

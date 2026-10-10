@@ -4,6 +4,15 @@ import { activeFilePath, getPlatform, notify, openEditorInput, showDialog, useWo
 import { basename } from "../util/paths";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { listHistory, readHistory, useHistory, type HistoryEntry } from "./localHistory";
+import { gitHost, useGit } from "../scm/gitService";
+import type { GitCommit } from "../platform/types";
+
+/** A commit that changed the file: compare that version with the file now. */
+export function compareWithCommit(path: string, c: GitCommit) {
+  openEditorInput({ kind: "historyDiff", id: `git:${path}:${c.hash}`, path, entry: c.hash, time: c.date * 1000, preview: false, source: "git", label: `${c.short} ${c.subject}` });
+}
+
+type Row = { kind: "local"; time: number; e: HistoryEntry } | { kind: "git"; time: number; c: GitCommit };
 
 function when(ms: number) {
   const s = (Date.now() - ms) / 1000;
@@ -43,16 +52,24 @@ export function TimelinePane() {
   const path = useWorkbench((s) => activeFilePath(s));
   const version = useHistory((s) => s.version);
   const [open, setOpen] = useState(false);
-  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const gitVersion = useGit((s) => s.version);
+  const repo = useGit((s) => !!s.status);
 
   useEffect(() => {
     if (!open || !path) return;
     let alive = true;
-    void listHistory(path).then((list) => alive && setEntries(list));
+    // Local History (every save) and the git commits that changed the file, newest first, as VS Code's Timeline.
+    const git = repo ? gitHost() : undefined;
+    void Promise.all([listHistory(path), git?.fileLog?.(path, 50).catch(() => [] as GitCommit[]) ?? Promise.resolve([] as GitCommit[])]).then(([local, commits]) => {
+      if (!alive) return;
+      const all: Row[] = [...local.map((e) => ({ kind: "local" as const, time: e.time, e })), ...commits.map((c) => ({ kind: "git" as const, time: c.date * 1000, c }))];
+      setRows(all.sort((a, b) => b.time - a.time));
+    });
     return () => {
       alive = false;
     };
-  }, [open, path, version]);
+  }, [open, path, version, gitVersion, repo]);
 
   return (
     <section className={`tm-pane tm-timeline ${open ? "is-open" : "is-collapsed"}`} aria-label="Timeline" data-testid="timeline">
@@ -65,25 +82,44 @@ export function TimelinePane() {
         <div className="tm-pane-body tm-scroll tm-timeline-body">
           {!path ? (
             <p className="tm-muted tm-projects-hint">The active editor's history appears here.</p>
-          ) : entries === null ? null : entries.length === 0 ? (
+          ) : rows === null ? null : rows.length === 0 ? (
             <p className="tm-muted tm-projects-hint">No saved versions of {basename(path)} yet. Every save keeps one here.</p>
           ) : (
-            entries.map((e, i) => (
-              <div
-                key={e.id}
-                className="tm-list-row tm-timeline-row"
-                role="button"
-                tabIndex={0}
-                title={`${new Date(e.time).toLocaleString()} — click to compare with the current file`}
-                onClick={() => compareWithHistory(path, e)}
-                onKeyDown={(k) => k.key === "Enter" && compareWithHistory(path, e)}
-              >
-                <Codicon name={i === 0 ? "circle-filled" : "circle-outline"} className="tm-timeline-dot" />
-                <span className="tm-project-name">File Saved</span>
-                <span className="tm-project-meta">{when(e.time)}</span>
-                <ActionButton icon="discard" label="Restore This Version" onClick={(ev) => (ev.stopPropagation(), void restoreFromHistory(path, e))} />
-              </div>
-            ))
+            rows.map((r, i) =>
+              r.kind === "local" ? (
+                <div
+                  key={r.e.id}
+                  className="tm-list-row tm-timeline-row"
+                  role="button"
+                  tabIndex={0}
+                  title={`${new Date(r.time).toLocaleString()} — click to compare with the current file`}
+                  onClick={() => compareWithHistory(path, r.e)}
+                  onKeyDown={(k) => k.key === "Enter" && compareWithHistory(path, r.e)}
+                >
+                  <Codicon name={i === 0 ? "circle-filled" : "circle-outline"} className="tm-timeline-dot" />
+                  <span className="tm-project-name">File Saved</span>
+                  <span className="tm-project-meta">{when(r.time)}</span>
+                  <ActionButton icon="discard" label="Restore This Version" onClick={(ev) => (ev.stopPropagation(), void restoreFromHistory(path, r.e))} />
+                </div>
+              ) : (
+                <div
+                  key={r.c.hash}
+                  className="tm-list-row tm-timeline-commit"
+                  role="button"
+                  tabIndex={0}
+                  data-commit={r.c.short}
+                  title={`${r.c.subject}\n${r.c.author}, ${new Date(r.time).toLocaleString()} (${r.c.short}) — click to compare with the file now`}
+                  onClick={() => compareWithCommit(path, r.c)}
+                  onKeyDown={(k) => k.key === "Enter" && compareWithCommit(path, r.c)}
+                >
+                  <Codicon name="git-commit" className="tm-timeline-dot" />
+                  <span className="tm-project-name">{r.c.subject || r.c.short}</span>
+                  <span className="tm-project-meta">
+                    {r.c.author} · {when(r.time)}
+                  </span>
+                </div>
+              ),
+            )
           )}
         </div>
       )}

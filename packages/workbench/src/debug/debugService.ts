@@ -860,6 +860,8 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     notify("error", `Configured debug type '${config.type}' is not supported.`);
     return false;
   }
+  // A launch.json from a cloned folder runs its author's commands: ask once (trust/trust.ts).
+  if (get().configs.includes(config) && !(await import("../trust/trust").then((m) => m.ensureTrusted("Debug configurations")))) return false;
   if (!host.kinds.includes(kind === "dart" ? "dart" : kind)) {
     notify(
       "info",
