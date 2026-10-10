@@ -22,6 +22,7 @@ mod updates;
 mod watcher;
 mod webview;
 mod workspace;
+mod encoding;
 
 use serde::Serialize;
 use tauri::webview::WebviewBuilder;
@@ -119,6 +120,13 @@ fn set_native_theme(app: tauri::AppHandle, theme: String) {
     let _ = window.set_theme(Some(if dark { Theme::Dark } else { Theme::Light }));
     let bg = if dark { (31, 31, 31, 255) } else { (255, 255, 255, 255) };
     let _ = window.set_background_color(Some(bg.into()));
+}
+
+/// Whole-window zoom (View › Zoom In / Out / Reset): the workbench webview's page zoom.
+#[tauri::command]
+fn set_zoom(app: tauri::AppHandle, factor: f64) -> Result<(), String> {
+    let webview = app.get_webview(WORKBENCH).ok_or("The workbench is not open.")?;
+    webview.set_zoom(factor.clamp(0.25, 5.0)).map_err(|e| e.to_string())
 }
 
 /// Size the first window for the screen it opens on (school laptops are often 1366×768).
@@ -233,6 +241,11 @@ pub fn run() {
             workspace::ws_rename,
             workspace::ws_remove,
             workspace::ws_trash,
+            workspace::ws_import,
+            workspace::ws_file_encoding,
+            workspace::ws_reopen_with_encoding,
+            workspace::ws_set_encoding,
+            set_zoom,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

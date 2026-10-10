@@ -176,14 +176,12 @@ export function registerBuiltinCommands() {
     id: "editor.action.fontZoomIn",
     title: "Editor Font Zoom In",
     category: "Editor",
-    keybinding: "mod+=",
     run: () => updateSetting("editor.fontSize", Math.min(40, useWorkbench.getState().settings["editor.fontSize"] + 1)),
   });
   registerCommand({
     id: "editor.action.fontZoomOut",
     title: "Editor Font Zoom Out",
     category: "Editor",
-    keybinding: "mod+-",
     run: () => updateSetting("editor.fontSize", Math.max(8, useWorkbench.getState().settings["editor.fontSize"] - 1)),
   });
   registerCommand({

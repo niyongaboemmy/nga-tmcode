@@ -18,6 +18,7 @@ import { useDebug } from "../debug/debugService";
 // ── Run hub ──
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
+import { encodingLabel, pickEncoding, pickEol, pickIndentation, pickLanguage, toggleScreenReaderMode, useActiveFileInfo } from "./editorStatus";
 
 // TMCode has no lab lockdown yet, so a "secure" exam runs exactly like a monitored one and says so.
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Monitored exam" } as const;
@@ -173,6 +174,8 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
   const debugging = useDebug((s) => s.phase !== "inactive");
+  const fileInfo = useActiveFileInfo();
+  const screenReader = useWorkbench((s) => s.settings["editor.accessibilitySupport"] === "on");
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
@@ -207,13 +210,24 @@ export function StatusBar({ chord }: { chord: string | null }) {
               Ln {cursor.line}, Col {cursor.column}
               {cursor.selected > 0 && ` (${cursor.selected} selected)`}
             </Item>
-            <Item className="tm-prio-low" title="Indentation (Settings)" onClick={() => executeCommand("workbench.action.openSettings")}>
-              {spaces ? "Spaces" : "Tab Size"}: {tabSize}
+            <Item className="tm-prio-low tm-status-indent" title="Select Indentation" onClick={() => void pickIndentation()}>
+              {fileInfo.path ? (fileInfo.insertSpaces ? "Spaces" : "Tab Size") : spaces ? "Spaces" : "Tab Size"}: {fileInfo.path ? fileInfo.tabSize : tabSize}
             </Item>
-            <Item className="tm-prio-low" title="Encoding">UTF-8</Item>
-            <Item className="tm-prio-low" title="End of Line Sequence">{eol}</Item>
-            <Item className="tm-prio-mid" title="Language Mode">{languageLabel(language)}</Item>
+            <Item className={`tm-prio-low tm-status-encoding ${fileInfo.encoding && fileInfo.encoding !== "utf8" ? "is-non-default" : ""}`} title="Select Encoding" onClick={() => void pickEncoding()}>
+              {encodingLabel(fileInfo.encoding)}
+            </Item>
+            <Item className="tm-prio-low tm-status-eol" title="Select End of Line Sequence" onClick={() => void pickEol()}>
+              {eol}
+            </Item>
+            <Item className="tm-prio-mid tm-status-language" title="Select Language Mode" onClick={() => void pickLanguage()}>
+              {languageLabel(language)}
+            </Item>
           </>
+        )}
+        {screenReader && (
+          <Item className="tm-prio-low" title="Screen reader mode is on. Click to turn it off." onClick={toggleScreenReaderMode}>
+            Screen Reader Optimized
+          </Item>
         )}
         <Item className="tm-prio-low" title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
           <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />

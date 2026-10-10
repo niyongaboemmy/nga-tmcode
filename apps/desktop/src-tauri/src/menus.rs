@@ -44,8 +44,9 @@ const VIEW: &[Item] = &[
     ("-", "", None),
     ("Word Wrap", "editor.action.toggleWordWrap", Some("Alt+Z")),
     ("Minimap", "editor.action.toggleMinimap", None),
-    ("Zoom In", "editor.action.fontZoomIn", Some("CmdOrCtrl+=")),
-    ("Zoom Out", "editor.action.fontZoomOut", Some("CmdOrCtrl+-")),
+    ("Zoom In", "workbench.action.zoomIn", Some("CmdOrCtrl+=")),
+    ("Zoom Out", "workbench.action.zoomOut", Some("CmdOrCtrl+-")),
+    ("Reset Zoom", "workbench.action.zoomReset", Some("CmdOrCtrl+0")),
 ];
 
 const GO: &[Item] = &[

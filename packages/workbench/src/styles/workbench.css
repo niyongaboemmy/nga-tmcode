@@ -8305,3 +8305,155 @@ kbd,
 .tm-signin-wait.is-compact .tm-signin-wait-actions {
   justify-content: flex-start;
 }
+
+/* ───────────── files & search (feat/files-search) ───────────── */
+.tm-search-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding-left: 2px;
+}
+.tm-search-replace-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-height: 26px;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+.tm-search-replace-toggle:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.tm-search-replace-toggle:focus-visible {
+  outline: 1px solid var(--focus-border);
+}
+.tm-search-inputs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.tm-search-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.tm-search-replace-row .tm-input-box {
+  flex: 1;
+  min-width: 0;
+}
+.tm-search-details-toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 12px 0 0;
+}
+.tm-search-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 8px 20px;
+}
+.tm-search-details-label {
+  font-size: 11px;
+  color: var(--description);
+  margin-top: 2px;
+}
+.tm-search-row-actions {
+  display: none;
+  align-items: center;
+  margin-left: auto;
+}
+.tm-search-row-actions .tm-action {
+  width: 20px;
+  height: 20px;
+}
+.tm-search-results .tm-list-row:hover .tm-search-row-actions,
+.tm-search-results .tm-list-row.is-focused .tm-search-row-actions {
+  display: inline-flex;
+}
+.tm-search-results .tm-list-row:hover .tm-search-row-actions ~ .tm-badge {
+  display: none;
+}
+.tm-search-hit.is-removed {
+  background: color-mix(in srgb, var(--error) 30%, transparent);
+  text-decoration: line-through;
+}
+.tm-search-hit.is-added {
+  background: color-mix(in srgb, #2ea043 30%, transparent);
+  text-decoration: none;
+  border-radius: 2px;
+  white-space: pre;
+}
+/* Keyboard trees (Search results, Problems): the focused row while the list has focus. */
+.tm-search-results:focus,
+.tm-problems:focus {
+  outline: none;
+}
+.tm-search-results .tm-list-row.is-focused,
+.tm-problems .tm-list-row.is-focused {
+  background: var(--list-inactive-bg);
+}
+.tm-search-results:focus .tm-list-row.is-focused,
+.tm-problems:focus .tm-list-row.is-focused {
+  background: var(--list-active-bg);
+  color: var(--list-active-fg);
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+/* Explorer: the focused row of a multi-selection, compact folder rows. */
+.tm-explorer:focus .tm-list-row.is-focused:not(.is-selected) {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-compact-sep {
+  margin: 0 1px;
+  color: var(--description);
+}
+.tm-status-encoding.is-non-default {
+  font-weight: 600;
+}
+/* Replace Preview: the file now (left) and after the replace (right). */
+.tm-replace-preview-backdrop {
+  padding-top: 6vh;
+}
+.tm-replace-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, calc(100vw - 32px));
+  height: min(640px, 80vh);
+  border: 1px solid var(--widget-border);
+  border-radius: 8px;
+  background: var(--widget-bg);
+  box-shadow: 0 16px 48px var(--shadow);
+  overflow: hidden;
+}
+.tm-replace-preview-header,
+.tm-replace-preview-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.tm-replace-preview-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-replace-preview-diff {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--widget-border);
+  border-bottom: 1px solid var(--widget-border);
+}
+.tm-replace-preview-footer {
+  justify-content: flex-end;
+}

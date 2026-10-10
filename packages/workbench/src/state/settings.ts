@@ -47,6 +47,21 @@ export interface Settings {
   "livePreview.followActiveFile": boolean;
   /** Dev servers open in the built-in browser beside the editor once they print their address. */
   "run.openBrowserOnStart": boolean;
+  // ── files, search, accessibility (feat/files-search) ──
+  /** Comma-separated globs hidden from the Explorer and Search (VS Code's files.exclude). */
+  "files.exclude": string;
+  /** Comma-separated globs left out of Search and Go to File. */
+  "search.exclude": string;
+  /** Search skips what .gitignore files ignore. */
+  "search.useIgnoreFiles": boolean;
+  /** Folders with a single folder inside show on one row (src/main/java). */
+  "explorer.compactFolders": boolean;
+  /** The Explorer shows and selects the active file. */
+  "explorer.autoReveal": boolean;
+  /** Screen reader mode for the editor. */
+  "editor.accessibilitySupport": "auto" | "on" | "off";
+  /** Whole-window zoom: 0 is 100 %, each step is 20 % (VS Code's window.zoomLevel). */
+  "window.zoomLevel": number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -74,6 +89,13 @@ export const DEFAULT_SETTINGS: Settings = {
   "livePreview.updateOn": "onType",
   "livePreview.followActiveFile": false,
   "run.openBrowserOnStart": true,
+  "files.exclude": "**/.git, **/.svn, **/.hg, **/.DS_Store, **/Thumbs.db",
+  "search.exclude": "**/node_modules, **/__pycache__, **/.venv, **/venv, **/dist, **/build, **/target",
+  "search.useIgnoreFiles": true,
+  "explorer.compactFolders": true,
+  "explorer.autoReveal": true,
+  "editor.accessibilitySupport": "auto",
+  "window.zoomLevel": 0,
 };
 
 export type SettingKey = keyof Settings;
@@ -297,6 +319,33 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         min: 8,
         max: 32,
       },
+    ],
+  },
+  {
+    title: "Files and Search",
+    settings: [
+      { key: "files.exclude", label: "Files: Exclude", description: "Glob patterns hidden from the Explorer and Search, separated by commas.", type: "string" },
+      { key: "search.exclude", label: "Search: Exclude", description: "Glob patterns left out of Search and Go to File, separated by commas.", type: "string" },
+      { key: "search.useIgnoreFiles", label: "Search: Use Ignore Files", description: "Search skips files that .gitignore ignores.", type: "boolean" },
+      { key: "explorer.compactFolders", label: "Explorer: Compact Folders", description: "Show a folder that holds only one folder on a single row.", type: "boolean" },
+      { key: "explorer.autoReveal", label: "Explorer: Auto Reveal", description: "Show and select the active file in the Explorer.", type: "boolean" },
+    ],
+  },
+  {
+    title: "Accessibility",
+    settings: [
+      {
+        key: "editor.accessibilitySupport",
+        label: "Editor: Accessibility Support",
+        description: "Optimise the editor for screen readers.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "auto (detect a screen reader)" },
+          { value: "on", label: "on" },
+          { value: "off", label: "off" },
+        ],
+      },
+      { key: "window.zoomLevel", label: "Window: Zoom Level", description: "Zoom the whole window. 0 is 100 %, each step is 20 %.", type: "number", min: -5, max: 8 },
     ],
   },
 ];
