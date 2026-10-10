@@ -27,6 +27,29 @@ export interface FileSystem {
   trash?(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;
+  // ── encodings and imports (feat/files-search) ──
+  /** The encoding a file is read and saved with ("utf8", "utf8bom", "utf16le", "utf16be", "windows1252", "iso88591"). */
+  encodingOf?(path: string): Promise<FileEncoding>;
+  /** Reads the file again with this encoding; later saves use it too. */
+  reopenWithEncoding?(path: string, encoding: FileEncoding): Promise<string>;
+  /** Saves of this file use this encoding from now on (Save with Encoding). */
+  setEncoding?(path: string, encoding: FileEncoding): Promise<void>;
+  /**
+   * Copies files and folders from outside the workspace (absolute paths dropped
+   * from Finder / File Explorer) into folder `dest`. Without `overwrite`, nothing
+   * is copied when a name is taken: the taken names come back in `conflicts`.
+   */
+  importPaths?(sources: string[], dest: string, overwrite: boolean): Promise<{ imported: string[]; conflicts: string[] }>;
+}
+
+export type FileEncoding = "utf8" | "utf8bom" | "utf16le" | "utf16be" | "windows1252" | "iso88591";
+
+/** Files dragged over / dropped on the window from the OS, in CSS pixels. */
+export interface FileDropEvent {
+  type: "over" | "drop" | "leave";
+  paths: string[];
+  x: number;
+  y: number;
 }
 
 export interface TerminalSession {
@@ -102,6 +125,10 @@ export interface Platform {
   webviews?: WebviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
   setNativeTheme?(theme: "dark" | "light"): void;
+  /** Whole-window zoom (1 = 100 %); absent → the workbench zooms with CSS. */
+  setZoom?(factor: number): void;
+  /** Files dragged in from Finder / File Explorer (desktop). Returns an unsubscribe. */
+  onFileDrop?(cb: (e: FileDropEvent) => void): () => void;
   // ── extensions (feat/extensions) ──
   /** VS Code extensions from Open VSX (declarative contributions only). */
   extensions?: ExtensionHost;

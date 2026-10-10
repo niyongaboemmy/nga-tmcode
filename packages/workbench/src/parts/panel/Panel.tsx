@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { revealInEditor } from "../../monaco/reveal";
+import { useEffect, useRef, useState } from "react";
+import { ProblemsView } from "./ProblemsView";
 import { clearOutput, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
-import { basename, dirname } from "../../util/paths";
-import { ActionButton, Codicon, FileIcon } from "../../widgets/icons";
+import { ActionButton, Codicon } from "../../widgets/icons";
 import { TerminalView } from "./TerminalView";
 import { RunConsole } from "./RunConsole";
 import { executeCommand } from "../../commands/registry";
@@ -22,67 +21,6 @@ import { OutputChannelPicker, useOutputChannelFilter } from "../../exthost/ui";
 import { ExtViewPanes } from "../../exthost/views/ViewPanes";
 import { useViews } from "../../exthost/views/model";
 import { terminalAllowed } from "@tmcode/protocol";
-
-function ProblemsView({ filter }: { filter: string }) {
-  const problems = useWorkbench((s) => s.problems);
-  const [collapsed, setCollapsed] = useState<Record<string, true>>({});
-  const byFile = useMemo(() => {
-    const q = filter.toLowerCase();
-    const map = new Map<string, typeof problems>();
-    for (const p of problems) {
-      if (q && !`${p.message} ${p.path} ${p.source ?? ""}`.toLowerCase().includes(q)) continue;
-      map.set(p.path, [...(map.get(p.path) ?? []), p]);
-    }
-    for (const list of map.values()) list.sort((a, b) => (a.severity === b.severity ? a.line - b.line : a.severity === "error" ? -1 : 1));
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [problems, filter]);
-
-  if (!byFile.length) {
-    return <div className="tm-panel-empty">{problems.length ? "No results found with provided filter criteria." : "No problems have been detected in the workspace."}</div>;
-  }
-
-  const reveal = (path: string, line: number, column: number) => revealInEditor(path, line, column);
-
-  return (
-    <div className="tm-problems tm-scroll" role="tree" aria-label="Problems">
-      {byFile.map(([path, list]) => {
-        const open = !collapsed[path];
-        return (
-          <div key={path} role="treeitem" aria-expanded={open}>
-            <div
-              className="tm-list-row tm-problems-file"
-              onClick={() => {
-                const next = { ...collapsed };
-                if (open) next[path] = true;
-                else delete next[path];
-                setCollapsed(next);
-              }}
-            >
-              <span className="tm-twistie">
-                <Codicon name={open ? "chevron-down" : "chevron-right"} />
-              </span>
-              <FileIcon path={path} />
-              <span className="tm-tree-label">{basename(path)}</span>
-              <span className="tm-search-dir">{dirname(path)}</span>
-              <span className="tm-badge">{list.length}</span>
-            </div>
-            {open &&
-              list.map((p, i) => (
-                <div key={i} className="tm-list-row tm-problem" onClick={() => reveal(p.path, p.line, p.column)} title={p.message}>
-                  <Codicon name={p.severity === "error" ? "error" : p.severity === "warning" ? "warning" : "info"} className={`tm-sev-${p.severity}`} />
-                  <span className="tm-problem-msg">{p.message}</span>
-                  {p.source && <span className="tm-muted">{p.source}</span>}
-                  <span className="tm-muted">
-                    [Ln {p.line}, Col {p.column}]
-                  </span>
-                </div>
-              ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function OutputView({ filter }: { filter: string }) {
   const all = useWorkbench((s) => s.output);

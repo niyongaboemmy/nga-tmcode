@@ -66,6 +66,7 @@ export function editorOptions(settings: Settings, os: OsKind): monaco.editor.ISt
     padding: { top: 0 },
     scrollbar: { verticalScrollbarSize: 14, horizontalScrollbarSize: 12, useShadows: false },
     "semanticHighlighting.enabled": true,
+    accessibilitySupport: settings["editor.accessibilitySupport"] ?? "auto",
   };
 }
 

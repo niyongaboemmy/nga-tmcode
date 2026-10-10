@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { fetch as httpFetch } from "@tauri-apps/plugin-http";
@@ -10,6 +11,7 @@ import type {
   DebugProbe,
   DebugTransportEvent,
   DirEntry,
+  FileEncoding,
   ExtHostTransportEvent,
   AccountHost,
   AccountStatus,
@@ -107,6 +109,7 @@ export async function createTauriPlatform(): Promise<Platform> {
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
   const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
+  let zoom = 1;
 
   return {
     kind: "desktop",
@@ -155,6 +158,10 @@ export async function createTauriPlatform(): Promise<Platform> {
       copy: (from, to) => invoke("ws_copy", { from, to }),
       remove: (path) => invoke("ws_remove", { path }),
       trash: (path) => invoke("ws_trash", { path }),
+      encodingOf: (path) => invoke<FileEncoding>("ws_file_encoding", { path }),
+      reopenWithEncoding: (path, encoding) => invoke<string>("ws_reopen_with_encoding", { path, encoding }),
+      setEncoding: (path, encoding) => invoke("ws_set_encoding", { path, encoding }),
+      importPaths: (sources, dest, overwrite) => invoke<{ imported: string[]; conflicts: string[] }>("ws_import", { sources, dest, overwrite }),
     },
     terminal: {
       async spawn({ cols, rows, cwd, onData, onExit }): Promise<TerminalSession> {
@@ -237,6 +244,34 @@ export async function createTauriPlatform(): Promise<Platform> {
       set: (key, value) => store.set(key, value),
     },
     setNativeTheme: (theme) => void invoke("set_native_theme", { theme }).catch(() => {}),
+    // ── whole-window zoom and files dropped from Finder / File Explorer (feat/files-search) ──
+    setZoom: (factor) => {
+      zoom = factor;
+      void invoke("set_zoom", { factor }).catch(() => {});
+    },
+    onFileDrop(cb) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      let paths: string[] = [];
+      // Positions come in physical pixels: back to CSS pixels (screen scale, then window zoom).
+      const toCss = async (p: { x: number; y: number }) => {
+        const scale = await win.scaleFactor().catch(() => window.devicePixelRatio || 1);
+        return { x: p.x / scale / zoom, y: p.y / scale / zoom };
+      };
+      void getCurrentWebview()
+        .onDragDropEvent(async (e) => {
+          const p = e.payload;
+          if (p.type === "leave") return cb({ type: "leave", paths: [], x: 0, y: 0 });
+          if (p.type === "enter" || p.type === "drop") paths = p.paths;
+          const { x, y } = await toCss(p.position);
+          cb({ type: p.type === "drop" ? "drop" : "over", paths, x, y });
+        })
+        .then((u) => (stopped ? u() : (un = u)));
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
     // ── extensions (feat/extensions): Open VSX only, unpacked under <app data>/extensions ──
     extensions: {
       fetch: (url, as) => invoke<string>("ext_fetch", { url, encoding: as }),

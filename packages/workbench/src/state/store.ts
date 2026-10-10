@@ -585,13 +585,32 @@ function confirmPermanentDelete(message: string, detail: string) {
  * fails, it asks again before deleting for good.
  */
 export async function deleteEntry(path: string) {
+  return deleteEntries([path]);
+}
+
+/** A repository's .git folder: the Explorer never deletes it (its history would be lost). */
+export function isProtectedEntry(path: string) {
+  return basename(path) === ".git";
+}
+
+/** Explorer Delete of several files and folders: one question, then each goes to the Trash. */
+export async function deleteEntries(paths: string[]) {
   const fs = getPlatform().fs;
-  const name = basename(path);
-  const isDir = Object.values(get().dirs).some((list) => list.some((e) => e.path === path && e.kind === "dir"));
+  // A folder's contents go with it: drop paths inside another selected folder.
+  let list = [...new Set(paths)].filter((p) => p && !paths.some((q) => q !== p && isWithin(p, q)));
+  if (list.some(isProtectedEntry)) {
+    notify("warning", "TMCode doesn't delete the .git folder: it holds this project's history. Use Source Control instead.");
+    list = list.filter((p) => !isProtectedEntry(p));
+  }
+  if (!list.length) return false;
+  const isDirPath = (p: string) => Object.values(get().dirs).some((l) => l.some((e) => e.path === p && e.kind === "dir"));
+  const name = basename(list[0]);
+  const many = list.length > 1;
+  const names = list.slice(0, 10).map(basename).join("\n") + (list.length > 10 ? `\n…and ${list.length - 10} more` : "");
   if (fs.trash) {
     const choice = await showDialog({
-      message: `Are you sure you want to delete '${name}'?`,
-      detail: `You can restore this ${isDir ? "folder" : "file"} from the Trash.`,
+      message: many ? `Are you sure you want to delete the following ${list.length} files or folders?` : `Are you sure you want to delete '${name}'?`,
+      detail: many ? `${names}\n\nYou can restore them from the Trash.` : `You can restore this ${isDirPath(list[0]) ? "folder" : "file"} from the Trash.`,
       severity: "warning",
       buttons: [
         { id: "trash", label: "Move to Trash", primary: true },
@@ -601,9 +620,20 @@ export async function deleteEntry(path: string) {
     });
     if (choice !== "trash") return false;
   } else {
-    const choice = await confirmPermanentDelete(`Are you sure you want to permanently delete '${name}'?`, "This cannot be undone.");
+    const choice = await confirmPermanentDelete(
+      many ? `Are you sure you want to permanently delete the following ${list.length} files or folders?` : `Are you sure you want to permanently delete '${name}'?`,
+      many ? `${names}\n\nThis cannot be undone.` : "This cannot be undone.",
+    );
     if (choice !== "delete") return false;
   }
+  let any = false;
+  for (const path of list) if (await deleteOne(path)) any = true;
+  return any;
+}
+
+async function deleteOne(path: string) {
+  const fs = getPlatform().fs;
+  const name = basename(path);
   for (const hook of beforeDeleteHooks) await hook(path).catch(() => {});
   let trashed = false;
   if (fs.trash) {
