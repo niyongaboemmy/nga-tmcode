@@ -1,5 +1,14 @@
 #[cfg(target_os = "macos")]
 mod menus;
+/// The menu bar is native on macOS only; elsewhere the workbench draws its own menus,
+/// so the command the workbench calls is a no-op there (the handler list is shared).
+#[cfg(not(target_os = "macos"))]
+mod menus {
+    #[tauri::command]
+    pub fn menu_update(items: Vec<serde_json::Value>) {
+        let _ = items;
+    }
+}
 pub mod askpass;
 mod debug;
 mod lsp;
