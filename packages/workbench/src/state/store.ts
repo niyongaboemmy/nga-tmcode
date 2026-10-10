@@ -3,6 +3,7 @@ import { PRACTICE_POLICY, type Policy } from "@tmcode/protocol";
 import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
 import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
+import { isExamRoot } from "../exam/roots";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
 export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | "grading" | `ext:${string}`;
@@ -26,7 +27,7 @@ export type EditorInput =
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
-  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). */ source?: "taskMentor" }
+  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading"; label?: string }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
   | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
   /** Grading one assignment / quiz practical question (grading/GradingEditor). */
@@ -254,7 +255,8 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
   const ui = (await p.store.get<PersistedUi>("ui")) ?? {};
   set({
     settings: { ...DEFAULT_SETTINGS, ...ui.settings },
-    recent: ui.recent ?? [],
+    // Exam folders never reopen from Recent (older versions listed them).
+    recent: (ui.recent ?? []).filter((r) => !isExamRoot(r.root)),
     sidebarVisible: ui.layout?.sidebarVisible ?? true,
     panelVisible: ui.layout?.panelVisible ?? false,
     activePanel: ui.layout?.activePanel ?? "terminal",
@@ -313,7 +315,9 @@ export async function setWorkspace(ws: { name: string; root: string }): Promise<
     if (!(await confirmLeaveWorkspace())) return false;
     if (moved && !(await getPlatform().reopenFolder(ws.root).catch(() => null))) return false;
   }
-  const recent = [ws, ...get().recent.filter((r) => r.root !== ws.root)].slice(0, 10);
+  // Exam folders stay out of Recent: they must only open through Task Mentor.
+  const others = get().recent.filter((r) => r.root !== ws.root && !isExamRoot(r.root));
+  const recent = (isExamRoot(ws.root) ? others : [ws, ...others]).slice(0, 10);
   set({
     workspace: ws,
     recent,

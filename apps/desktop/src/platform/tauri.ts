@@ -334,6 +334,7 @@ function createTauriAccount(): AccountHost {
     status: (refresh = false) => invoke("auth_status", { refresh }),
     signIn: () => invoke("auth_sign_in"),
     cancel: () => invoke("auth_cancel"),
+    reopenBrowser: () => invoke("auth_reopen_browser"),
     signOut: () => invoke("auth_sign_out"),
     onChange(cb) {
       let un: (() => void) | null = null;

@@ -13,8 +13,11 @@ import {
   openProjectLink,
   parseAssignmentLink,
   openAssignmentLink,
+  parseGradingLink,
+  openGradingLink,
   selfCheckWorkers,
   startExam,
+  checkExamInProgress,
   setWorkspace,
   startedWorkers,
   watchCspViolations,
@@ -80,6 +83,9 @@ async function boot() {
     const link = parseLaunchLink(launch);
     if (link) void startExam(link.api, link.ticket);
   }
+  // "You have an exam in progress" (an exam on this computer neither submitted nor ended); a launch link that
+  // started the app wins, so wait for it first. Also locks an exam folder that is open outside an exam.
+  setTimeout(() => void checkExamInProgress().catch(() => {}), 1500);
   const projectLink = params.get("project");
   if (platform.kind === "web" && projectLink) {
     const link = parseProjectLink(projectLink);
@@ -89,6 +95,11 @@ async function boot() {
   if (platform.kind === "web" && assignmentLink) {
     const link = parseAssignmentLink(assignmentLink);
     if (link) setTimeout(() => void openAssignmentLink(link), 500);
+  }
+  const gradingLink = params.get("grading");
+  if (platform.kind === "web" && gradingLink) {
+    const link = parseGradingLink(gradingLink);
+    if (link) setTimeout(() => void openGradingLink(link), 500);
   }
   if (inTauri) {
     // macOS menu bar items run the same workbench commands as keys and the palette.
@@ -118,6 +129,9 @@ async function boot() {
       // tmcode://assignment?id=…&api=… (a student's "Open in TMCode" on a TMCode practical).
       const assignment = urls?.map(parseAssignmentLink).find(Boolean);
       if (assignment) return void openAssignmentLink(assignment);
+      // tmcode://grading?type=…&id=…&question=…&student=…&api=… (a teacher's "Open in TMCode" on Task Mentor's grading page).
+      const grading = urls?.map(parseGradingLink).find(Boolean);
+      if (grading) return void openGradingLink(grading);
       const link = urls?.map(parseLaunchLink).find(Boolean);
       if (link) void startExam(link.api, link.ticket);
     };

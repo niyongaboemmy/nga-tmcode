@@ -65,6 +65,8 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
                "resume": { "snapshot_seq": 41, "files": [ "..." ] } } ],
   "live": null }
 ```
+- **`min_app_version`** (optional, e.g. `"0.12.0"`): the oldest TMCode that can take this exam. An older TMCode stops with "This exam needs TMCode 0.12.0 or newer" and an Update TMCode button (the in-app updater is allowed then: the exam has not started). A package an older TMCode can't parse shows "TMCode is out of date for this exam", never a schema dump.
+- **System check:** before the task view opens, TMCode checks the language tools each task needs, the package round trip (reachable), `server_time` against the local clock, and that the exam folder is writable. Problems hold the student in a lobby (Start the Exam / Check Again). The attempt's time is already running on Task Mentor then; a server-side "start the timer after the check" would need a new endpoint. "Check My Computer" runs the same checks outside an exam and uses `GET /profiles` (no auth) for reachability and its `Date` header for the clock.
 - **`policy.debugger`** (optional, default `false`): `true` lets students use Run and Debug (breakpoints, stepping, the Debug Console) during this exam. Debugger downloads (js-debug, debugpy) are still never made during an exam.
 - **Never sent:** hidden tests, reference solutions and web-check specs.
 - **`resume`:** present when the server already holds synced snapshots for that question; it is the latest one.
@@ -77,9 +79,9 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
 | `POST /sessions/:sid/snapshots` | `{ seq, question_id, kind: "auto"\|"run"\|"final"\|"offline_final", client_ts, files: [{path,content}], files_hash, hmac }` | `{ accepted_seq, server_ts }` | See below the table. |
 | `POST /sessions/:sid/telemetry` | `{ seq, events: TelemetryEvent[] }` (`packages/protocol/src/telemetry.ts`) | `{ ok: true }` | Idempotent per `(sid, seq)`. Stored for Phase 4 (replay and flags). |
 | `POST /sessions/:sid/heartbeat` | `{ synced_seq, current_question, focus: "in"\|"out" }` | `{ server_time, deadline, status: "active"\|"superseded"\|"revoked"\|"ended", paused, message }` | Every 10 s while online. A deadline extension is picked up here. |
-| `POST /sessions/:sid/server-run` | `{ question_id, files }` | `{ tests: [{ id, verdict, passed, stdout, stderr, time_ms }] }` | Visible tests only, on tm-judge. For profiles with no local toolchain (`fallback: "server"`). Rate-limited (10/min). |
+| `POST /sessions/:sid/server-run` | `{ question_id, files }` | `{ tests: [{ id, verdict, passed, stdout, stderr, time_ms }] }` | Visible tests only, on tm-judge. TMCode calls it when the task's language tool is missing on the computer ("Running on Task Mentor… (queued)"). Rate-limited (10/min): `429 RATE_LIMITED`, with `retry_after_s` in the body or a `Retry-After` header if available, else TMCode counts its own runs ("Run again in 40 s"). |
 | `POST /sessions/:sid/submit` | `{ final: [{ question_id, seq }] }` | `{ status: "grading" }` | See below the table. |
-| `GET /sessions/:sid/results` | — | `{ status: "grading"\|"hidden"\|"released", score?, max_score?, questions?: [{ question_id, points, max_points, tests: [{ id, name, hidden, passed }] }] }` | Released by the quiz's existing visibility rules (`resultVisibility`). |
+| `GET /sessions/:sid/results` | — | `{ status: "grading"\|"hidden"\|"released", score?, max_score?, questions?: [{ question_id, points, max_points, tests: [{ id, name, hidden, passed, verdict? }] }] }` | `verdict` (optional, same values as server-run) lets TMCode say why an example test failed. Released by the quiz's existing visibility rules (`resultVisibility`). |
 
 **Snapshots** (`POST /sessions/:sid/snapshots`):
 - **Idempotency:** idempotent per `(sid, seq)`. The same `hmac` again returns 200; a different `hmac` returns `409 SEQ_CONFLICT`.

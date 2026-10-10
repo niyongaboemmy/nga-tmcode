@@ -97,6 +97,7 @@
     "allow-webview-dispose",
     "allow-auth-sign-in",
     "allow-auth-cancel",
+    "allow-auth-reopen-browser",
     "allow-auth-status",
     "allow-auth-sign-out",
     "allow-tm-api",

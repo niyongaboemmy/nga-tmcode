@@ -10,7 +10,7 @@ export { startedWorkers, selfCheckWorkers } from "./monaco/setup";
 export { PREVIEW_MESSAGE_KEY, injectIntoHead, shimTag } from "./preview/compose";
 export { composeReactPage } from "./preview/page";
 export { loadTests, runTests } from "./run/testService";
-export { startExam, parseLaunchLink, stopExam, submitExam } from "./exam/session";
+export { startExam, parseLaunchLink, stopExam, submitExam, checkExamInProgress } from "./exam/session";
 export { getPlatform as getPlatformForSelfTest } from "./state/store";
 export type { JournalEntry } from "./platform/types";
 export { useExam } from "./exam/state";
@@ -19,6 +19,7 @@ export { DapSession } from "./debug/dapSession";
 export { runUiProbe, watchCspViolations, type UiCheck } from "./selftest/uiProbe";
 export { parseProjectLink, openProjectLink } from "./projects/service";
 export { parseAssignmentLink, openAssignmentLink } from "./projects/assignments";
+export { parseGradingLink, openGradingLink } from "./grading/link";
 // Native self-test (apps/desktop/src/selftest.ts, TMCODE_DEV_SELFTEST=projects).
 export * as projectsForSelfTest from "./projects/service";
 export * as assignmentsForSelfTest from "./projects/assignments";

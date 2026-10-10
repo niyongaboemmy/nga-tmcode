@@ -60,6 +60,7 @@ const HELP: &[Item] = &[
     ("Welcome", "workbench.action.openWelcome", None),
     ("Show All Commands", "workbench.action.showCommands", None),
     ("Keyboard Shortcuts Reference", "workbench.action.keybindingsReference", None),
+    ("Check My Computer", "tmcode.checkMyComputer", None),
 ];
 
 fn submenu<R: Runtime>(app: &AppHandle<R>, title: &str, items: &[Item]) -> tauri::Result<tauri::menu::Submenu<R>> {

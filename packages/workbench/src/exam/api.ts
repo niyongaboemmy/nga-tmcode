@@ -11,6 +11,8 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** Extra fields of the error body ({ retry_after_s }, { question_ids }, …). */
+    public data: Record<string, unknown> = {},
   ) {
     super(message);
   }
@@ -59,7 +61,72 @@ export interface Results {
   status: "grading" | "hidden" | "released";
   score?: number;
   max_score?: number;
-  questions?: { question_id: number; points: number; max_points: number; tests: { id: string; name?: string; hidden: boolean; passed: boolean }[] }[];
+  /** `verdict` (accepted, wrong-answer, time-limit, …) when Task Mentor sends it. */
+  questions?: { question_id: number; points: number; max_points: number; tests: { id: string; name?: string; hidden: boolean; passed: boolean; verdict?: string }[] }[];
+}
+
+/** One visible test run on Task Mentor (`POST /sessions/:sid/server-run`). */
+export interface ServerRunTest {
+  id: string;
+  verdict: string;
+  passed: boolean | null;
+  stdout: string;
+  stderr: string;
+  time_ms: number;
+}
+
+/** Plain words for a judge verdict (docs/PROTOCOL.md §3). */
+export function verdictLabel(verdict: string | undefined): string | null {
+  switch (verdict) {
+    case undefined:
+    case "":
+      return null;
+    case "accepted":
+    case "ok":
+      return "Passed";
+    case "wrong-answer":
+      return "Wrong answer";
+    case "runtime-error":
+      return "Crashed (runtime error)";
+    case "compile-error":
+      return "Did not compile";
+    case "time-limit":
+      return "Too slow (time limit)";
+    case "memory-limit":
+      return "Used too much memory";
+    case "output-limit":
+      return "Printed too much";
+    case "internal-error":
+      return "Task Mentor could not run it";
+    default:
+      return verdict.replace(/[-_]/g, " ");
+  }
+}
+
+/** "0.9.2" < "0.10.0" (numeric parts; anything after "-" or "+" is ignored). */
+export function versionLess(a: string, b: string): boolean {
+  const parts = (v: string) =>
+    v
+      .replace(/^v/, "")
+      .split(/[-+]/)[0]
+      .split(".")
+      .map((n) => Number.parseInt(n, 10) || 0);
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d) return d < 0;
+  }
+  return false;
+}
+
+/** Cuts a long task title at a word boundary: "Write a function that…". */
+export function shortTitle(title: string, max = 60): string {
+  const t = title.replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:–—-]+$/, "")}…`;
 }
 
 /** Hosts a deep link may point TMCode at (a crafted link must not reach a fake server). */
@@ -109,10 +176,45 @@ export class TmApi {
       /* not JSON */
     }
     if (!res.ok) {
-      const d = (data ?? {}) as { error_code?: string; message?: string };
-      throw new ApiError(res.status, d.error_code ?? `HTTP_${res.status}`, d.message ?? `Task Mentor answered ${res.status}.`);
+      const d = (data ?? {}) as { error_code?: string; message?: string } & Record<string, unknown>;
+      const retry = Number(res.headers?.get?.("Retry-After") ?? res.headers?.get?.("RateLimit-Reset"));
+      if (d.retry_after_s === undefined && Number.isFinite(retry) && retry > 0) d.retry_after_s = retry;
+      throw new ApiError(res.status, d.error_code ?? `HTTP_${res.status}`, d.message ?? `Task Mentor answered ${res.status}.`, d);
     }
     return data as T;
+  }
+
+  /**
+   * "Is Task Mentor reachable, and what time is it there?" Any HTTP answer
+   * counts as reachable; the time comes from `{ server_time }` if sent, else
+   * the Date header of `GET /profiles` (no auth). Throws ApiError OFFLINE when there is no answer.
+   */
+  async ping(timeoutMs = 8_000): Promise<{ ms: number; serverTime: number | null }> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const t0 = Date.now();
+    try {
+      const res = await this.fetchImpl(`${this.base}/api/tmcode/profiles`, { method: "GET", headers: { Accept: "application/json" }, signal: ctrl.signal });
+      const ms = Date.now() - t0;
+      let serverTime: number | null = null;
+      try {
+        const d = JSON.parse(await res.text()) as { server_time?: string };
+        if (d?.server_time) serverTime = Date.parse(d.server_time);
+      } catch {
+        /* not JSON */
+      }
+      if (serverTime === null || Number.isNaN(serverTime)) {
+        const date = res.headers?.get?.("Date");
+        serverTime = date ? Date.parse(date) : null;
+        if (serverTime !== null && Number.isNaN(serverTime)) serverTime = null;
+      }
+      // Half the round trip: the server stamped its time about then.
+      return { ms, serverTime: serverTime === null ? null : serverTime + ms / 2 };
+    } catch (e) {
+      throw new ApiError(0, "OFFLINE", `Can't reach Task Mentor (${(e as Error)?.message ?? e}).`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async redeem(ticket: string, device: DeviceInfo, envReport: unknown): Promise<SessionGrant> {
@@ -122,8 +224,25 @@ export class TmApi {
     return g;
   }
 
-  async examPackage(): Promise<ExamPackage> {
-    return ExamPackageSchema.parse(await this.call("GET", `/sessions/${this.sid}/package`));
+  /**
+   * The exam package. An exam this TMCode can't read (a newer package format,
+   * or `min_app_version` above this app) is APP_TOO_OLD, never a schema dump.
+   */
+  async examPackage(appVersion?: string): Promise<ExamPackage> {
+    const raw = await this.call<Record<string, unknown> | null>("GET", `/sessions/${this.sid}/package`);
+    const min = typeof raw?.min_app_version === "string" ? raw.min_app_version : null;
+    if (min && appVersion && versionLess(appVersion, min)) {
+      throw new ApiError(200, "APP_TOO_OLD", `This exam needs TMCode ${min} or newer.`, { min_app_version: min });
+    }
+    const parsed = ExamPackageSchema.safeParse(raw);
+    if (!parsed.success) {
+      const detail = parsed.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ");
+      throw new ApiError(200, "APP_TOO_OLD", "TMCode is out of date for this exam.", { detail });
+    }
+    return parsed.data;
   }
 
   snapshot(s: SnapshotUpload) {
@@ -139,7 +258,7 @@ export class TmApi {
   }
 
   serverRun(question_id: number, files: { path: string; content: string }[]) {
-    return this.call<{ tests: { id: string; verdict: string; passed: boolean | null; stdout: string; stderr: string; time_ms: number }[] }>(
+    return this.call<{ tests: ServerRunTest[] }>(
       "POST",
       `/sessions/${this.sid}/server-run`,
       { question_id, files },

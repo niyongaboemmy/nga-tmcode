@@ -76,6 +76,10 @@ pub struct AccountStatus {
     pub phase: String,
     /// Why the last attempt or check failed, for the UI.
     pub error: Option<String>,
+    /// While waiting: the browser sign-in page (Open the Browser Again, Copy Sign-in Link).
+    pub signin_url: Option<String>,
+    /// The sign-in worked but could not be saved to the system keychain (signed out at the next start).
+    pub keychain_error: Option<String>,
 }
 
 #[derive(Default)]
@@ -92,6 +96,8 @@ struct Inner {
     user: Option<AccountUser>,
     phase: String,
     error: Option<String>,
+    signin_url: Option<String>,
+    keychain_error: Option<String>,
 }
 
 fn entry(account: &str) -> Result<keyring::Entry, String> {
@@ -128,6 +134,8 @@ fn status_of(inner: &Inner) -> AccountStatus {
         tm_api: origins().tm_api,
         phase: if inner.phase.is_empty() { "idle".into() } else { inner.phase.clone() },
         error: inner.error.clone(),
+        signin_url: if inner.phase == "waiting" { inner.signin_url.clone() } else { None },
+        keychain_error: inner.keychain_error.clone(),
     }
 }
 
@@ -339,6 +347,7 @@ pub fn auth_sign_in(app: AppHandle, account: State<'_, Account>) -> Result<(), S
         let mut inner = account.inner.lock().unwrap();
         inner.phase = "waiting".into();
         inner.error = None;
+        inner.signin_url = Some(url.clone());
     }
     emit_status(&app);
     log::info!("account: waiting for the browser sign-in on 127.0.0.1:{port}");
@@ -365,12 +374,17 @@ pub fn auth_sign_in(app: AppHandle, account: State<'_, Account>) -> Result<(), S
         let Some(code) = code else {
             let mut inner = account.inner.lock().unwrap();
             inner.phase = "idle".into();
+            inner.signin_url = None;
             inner.error = Some("The sign-in timed out. Try again.".into());
             drop(inner);
             emit_status(&app);
             return;
         };
-        account.inner.lock().unwrap().phase = "completing".into();
+        {
+            let mut inner = account.inner.lock().unwrap();
+            inner.phase = "completing".into();
+            inner.signin_url = None;
+        }
         emit_status(&app);
         let result = tauri::async_runtime::block_on(complete(&code, &verifier));
         let mut inner = account.inner.lock().unwrap();
@@ -378,9 +392,14 @@ pub fn auth_sign_in(app: AppHandle, account: State<'_, Account>) -> Result<(), S
         match result {
             Ok((mis, tm, user)) => {
                 let saved = entry(MIS_ACCOUNT).and_then(|e| e.set_password(&mis).map_err(|e| e.to_string())).and_then(|_| entry(TM_ACCOUNT).and_then(|e| e.set_password(&tm).map_err(|e| e.to_string())));
-                if let Err(e) = saved {
-                    log::warn!("account: keychain save failed: {e}");
-                }
+                // Signed in for now, but not at the next start: the UI says so once (review F2).
+                inner.keychain_error = match saved {
+                    Err(e) => {
+                        log::warn!("account: keychain save failed: {e}");
+                        Some(e)
+                    }
+                    Ok(()) => None,
+                };
                 inner.loaded = true;
                 inner.mis = Some(mis);
                 inner.tm = Some(tm);
@@ -402,8 +421,28 @@ pub fn auth_sign_in(app: AppHandle, account: State<'_, Account>) -> Result<(), S
 #[tauri::command]
 pub fn auth_cancel(app: AppHandle, account: State<'_, Account>) {
     account.generation.fetch_add(1, Ordering::SeqCst);
-    account.inner.lock().unwrap().phase = "idle".into();
+    {
+        let mut inner = account.inner.lock().unwrap();
+        inner.phase = "idle".into();
+        inner.signin_url = None;
+    }
     emit_status(&app);
+}
+
+/// "Open the Browser Again" while waiting: the same sign-in page (same state and PKCE challenge).
+#[tauri::command]
+pub fn auth_reopen_browser(account: State<'_, Account>) -> Result<(), String> {
+    let url = {
+        let inner = account.inner.lock().unwrap();
+        if inner.phase != "waiting" {
+            return Err("No sign-in is waiting. Choose Sign in with NGA.".into());
+        }
+        inner.signin_url.clone().ok_or("No sign-in is waiting. Choose Sign in with NGA.")?
+    };
+    if !url.starts_with(&origins().mis_web) {
+        return Err("The sign-in link is not valid.".into());
+    }
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| format!("Cannot open the browser: {e}"))
 }
 
 /// The current account, checked with Task Mentor (a revoked session signs out).

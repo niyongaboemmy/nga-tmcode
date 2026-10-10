@@ -19,6 +19,41 @@ export interface Criterion {
   criteria: string;
   description: string | null;
   max_score: number;
+  /** Named levels ("Excellent" = 12…), when the rubric has them: they become the quick scores. */
+  levels?: { label: string; score: number }[] | null;
+}
+
+/** A teacher's comment on one line of the submitted code. */
+export interface Annotation {
+  path: string;
+  line: number;
+  text: string;
+}
+
+export interface RowGrade {
+  score: number | null;
+  rubric_scores: { index: number; score: number; comment?: string | null }[] | null;
+  feedback: string | null;
+  graded_at: string | null;
+  ref_id: number | null;
+  /** Newer Task Mentor (older ones omit these fields). */
+  annotations?: Annotation[] | null;
+  /** false: a draft the student doesn't see yet (or nothing graded); missing means released. */
+  released?: boolean;
+  /** Task Mentor 0.12: "ungraded" (a row with no grade yet still has one, for its version), "draft", "released". */
+  status?: "ungraded" | "draft" | "released";
+  /** What the student sees while a draft is pending (null: nothing released). */
+  released_score?: number | null;
+  graded_by?: { id: number; name: string } | null;
+  /** Opaque; changes on every save (sent back as if_version). */
+  version?: string;
+}
+
+/** A version the student saved: `revision` is its number (or id, see diff.ts). */
+export interface RevisionRef {
+  revision: number;
+  at: string;
+  id?: number;
 }
 
 /** One gradable thing: an assignment, or one practical question of a quiz. */
@@ -43,9 +78,13 @@ export interface RosterRow {
   state: RowState;
   project: { id: number; name: string; status?: string; kind: "tm" | "github"; language: string | null; repo_url: string | null } | null;
   link: { id: number; status: string; submitted_at: string | null; revision_id: number | null; revision_number: number | null; git_commit: string | null } | null;
-  grade: { score: number | null; rubric_scores: { index: number; score: number; comment?: string | null }[] | null; feedback: string | null; graded_at: string | null; ref_id: number | null } | null;
+  grade: RowGrade | null;
   submitted_at: string | null;
   late: boolean;
+  /** The starter files' version: a revision number of the student's project, or another project's revision. */
+  starter_revision?: number | { project_id: number; revision_id: number } | null;
+  /** The versions the student saved. */
+  revisions?: RevisionRef[] | null;
 }
 
 export interface Roster {
@@ -60,8 +99,10 @@ export interface Roster {
     question: { id: number; text: string; instructions: string } | null;
     questions: { question_id: number; title: string; points: number }[];
     can_grade: boolean;
+    /** Task Mentor 0.12: whether "Return for changes" works here (false for quiz practicals). */
+    can_return?: boolean;
   };
-  counts: { total: number; to_grade: number; graded: number };
+  counts: { total: number; to_grade: number; graded: number; drafts?: number };
   rows: RosterRow[];
   loadedAt: number;
 }
@@ -241,18 +282,136 @@ export interface GradeInput {
   rubric_scores: { index: number; score: number; comment?: string | null }[];
   score?: number | null;
   feedback: string;
+  annotations?: Annotation[];
 }
 
-async function saveGradeNow(key: string, studentId: number, input: GradeInput): Promise<boolean> {
+export type SaveResult =
+  | { ok: true; score: number; max_points: number; released: boolean; locksStudent: boolean }
+  /** `conflict`: another teacher saved first (409 GRADE_CHANGED); their grade. `code`: Task Mentor's error code. */
+  | { ok: false; error: string; conflict?: RowGrade; code?: string };
+
+export interface SaveOptions {
+  /** false: a draft grade the student doesn't see yet (Task Mentor ≥ 0.12). */
+  release: boolean;
+  /** The version this grade was edited from: a newer one on the server answers 409. */
+  ifVersion?: string | null;
+  /** No toast (bulk release says one thing at the end). */
+  quiet?: boolean;
+}
+
+/** Does this Task Mentor keep draft grades? true / false once a grade says so, null before any grade. */
+export function draftsSupported(r: Roster | undefined): boolean | null {
+  const graded = r?.rows.filter((x) => x.grade) ?? [];
+  if (!graded.length) return null;
+  return graded.some((x) => x.grade && "released" in x.grade);
+}
+
+/** A grade the student can't see yet. */
+export const isDraftGrade = (row: RosterRow) => !!row.grade && (row.grade.status ? row.grade.status === "draft" : row.grade.released === false);
+
+function savedMessage(type: ActivityType, score: number, max: number, released: boolean, draftsKnown: boolean) {
+  if (!released) {
+    return draftsKnown
+      ? { severity: "info" as const, text: `Draft saved: ${score}/${max}. The student doesn't see it until you release it.` }
+      : { severity: "warning" as const, text: `Grade saved: ${score}/${max}. This Task Mentor has no draft grades yet, so the student can already see it.` };
+  }
+  return { severity: "info" as const, text: type === "quiz" ? `Grade saved: ${score}/${max}. The student sees it when the quiz results are released.` : `Grade saved: ${score}/${max}. The student sees it in Task Mentor.` };
+}
+
+async function saveGradeNow(key: string, studentId: number, input: GradeInput, opts: SaveOptions = { release: true }): Promise<SaveResult> {
   const { type, id, question_id } = parseKey(key);
   try {
-    const res = await api<{ ok: true; score: number; max_points: number }>("PUT", `/grading/${type}/${id}/students/${studentId}`, { ...input, question_id });
-    await loadRoster(key, { quiet: true });
-    notify("info", `Grade saved: ${res.score}/${res.max_points}. The student sees it in Task Mentor.`);
-    return true;
+    const body: Record<string, unknown> = { ...input, question_id, release: opts.release };
+    if (opts.ifVersion) body.if_version = opts.ifVersion;
+    const res = await api<{ ok: true; score: number; max_points: number; released?: boolean; locks_student?: boolean }>("PUT", `/grading/${type}/${id}/students/${studentId}`, body);
+    const roster = await loadRoster(key, { quiet: true });
+    const row = roster?.rows.find((r) => r.student?.id === studentId);
+    // Older servers ignore `release`: they answer no `released`, their grades carry none, and they are live.
+    const known = typeof res.released === "boolean" || (!!row?.grade && "released" in row.grade);
+    const released = typeof res.released === "boolean" ? res.released : opts.release || !known || row?.grade?.released !== false;
+    const locksStudent = res.locks_student === true;
+    if (!opts.quiet) {
+      const m = savedMessage(type, res.score, res.max_points, released, known);
+      notify(m.severity, locksStudent ? `${m.text} The student's project is now read-only.` : m.text);
+    }
+    return { ok: true, score: res.score, max_points: res.max_points, released, locksStudent };
   } catch (e) {
-    notify("error", (e as Error).message);
-    return false;
+    if (e instanceof TmError && e.status === 409 && e.code === "GRADE_CHANGED") {
+      void loadRoster(key, { quiet: true });
+      return { ok: false, code: e.code, error: "Another teacher saved a grade while you were editing.", conflict: (e.body.grade as RowGrade | undefined) ?? undefined };
+    }
+    if (e instanceof TmError && e.code === "DRAFT_NEEDS_SUBMISSION") {
+      return { ok: false, code: e.code, error: "This student hasn't handed in yet: you can only release a grade, not save a draft." };
+    }
+    return { ok: false, code: e instanceof TmError ? e.code : undefined, error: (e as Error).message || "Task Mentor could not be reached." };
+  }
+}
+
+/**
+ * "Release N Drafts": every draft grade of the activity becomes visible to its
+ * student (POST /grading/:type/:id/release; one PUT per draft on older servers).
+ */
+export async function releaseDrafts(key: string, toInput: (roster: Roster, row: RosterRow) => GradeInput): Promise<void> {
+  const roster = get().rosters[key] ?? (await loadRoster(key));
+  if (!roster) return;
+  const rows = roster.rows.filter(isDraftGrade);
+  if (!rows.length) {
+    notify("info", "There are no draft grades to release.");
+    return;
+  }
+  const { type, id, question_id } = parseKey(key);
+  const nameOf = (sid: number) => roster.rows.find((r) => r.student?.id === sid)?.student?.name ?? "A student";
+  const why = (code: string) => (code === "GRADE_CHANGED" ? "changed by another teacher" : code === "DRAFT_NEEDS_SUBMISSION" ? "not handed in yet" : code.toLowerCase().replace(/_/g, " "));
+  let done = 0;
+  let locked = 0;
+  const failed: string[] = [];
+  try {
+    const res = await api<{ released: number; student_ids: number[]; skipped: { student_id: number; code: string }[]; locked_students?: number | number[] }>("POST", `/grading/${type}/${id}/release`, question_id ? { question_id } : {});
+    done = res.released ?? res.student_ids?.length ?? 0;
+    locked = Array.isArray(res.locked_students) ? res.locked_students.length : (res.locked_students ?? 0);
+    for (const sk of res.skipped ?? []) failed.push(`${nameOf(sk.student_id)}: ${why(sk.code)}`);
+  } catch (e) {
+    if (!(e instanceof TmError && e.status === 404)) {
+      notify("error", `Could not release the drafts: ${(e as Error).message}`);
+      return;
+    }
+    // Older Task Mentor: one save per draft.
+    for (const row of rows) {
+      const r = await saveGradeNow(key, row.student!.id, toInput(roster, row), { release: true, ifVersion: row.grade?.version, quiet: true });
+      if (r.ok) {
+        done++;
+        if (r.locksStudent) locked++;
+      } else failed.push(`${row.student?.name ?? "A student"}: ${r.conflict ? "changed by another teacher" : r.error}`);
+    }
+  }
+  await loadRoster(key, { quiet: true });
+  const what = type === "quiz" ? " Students see them when the quiz results are released." : " Students see them in Task Mentor now.";
+  const locks = locked ? ` ${locked === 1 ? "1 student's project is" : `${locked} students' projects are`} now read-only.` : "";
+  if (failed.length) notify("warning", `Released ${done} of ${done + failed.length} grades. Not released: ${failed.join("; ")}.${locks}`);
+  else notify("info", `Released ${done} grade${done === 1 ? "" : "s"}.${what}${locks}`);
+}
+
+/**
+ * "Return for changes" (assignments): the submitted project goes back to the
+ * student as a draft, with the teacher's message. Same endpoint as Task
+ * Mentor's web grading page (POST /projects/:id/return).
+ */
+export async function returnForChanges(key: string, row: RosterRow, message: string, allowResubmission = false): Promise<{ ok: true } | { ok: false; error: string; unsupported?: boolean; canAllowResubmission?: boolean }> {
+  if (!row.project) return { ok: false, error: "There is no project to return." };
+  try {
+    await api("POST", `/projects/${row.project.id}/return`, { message: message.trim() || null, ...(allowResubmission ? { allow_resubmission: true } : {}) });
+    await loadRoster(key, { quiet: true });
+    notify("info", allowResubmission ? `${row.student?.name ?? "The student"} can change their work and submit again. Their grade was taken back.` : `Returned to ${row.student?.name ?? "the student"} for changes. They can edit and submit again.`);
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof TmError && e.code === "RETURN_NOT_SUPPORTED") return { ok: false, unsupported: true, error: "Quiz practicals can't be returned for changes. Grade the answer as it is." };
+    if (e instanceof TmError && e.code === "PROJECT_GRADED") {
+      return e.body.allow_resubmission === true
+        ? { ok: false, canAllowResubmission: true, error: "This work is already graded. Allow Resubmission takes the grade back so the student can change it and submit again." }
+        : { ok: false, error: "This work is already graded, so it can't be returned." };
+    }
+    if (e instanceof TmError && e.code === "NOT_SUBMITTED") return { ok: false, error: "This work isn't submitted any more (the student may have withdrawn it)." };
+    return { ok: false, error: (e as Error).message };
   }
 }
 
@@ -404,6 +563,8 @@ let wired = false;
 export function wireGrading() {
   if (wired) return;
   wired = true;
+  void import("./commands").then((m) => m.registerGradingCommands());
+  void import("./comments").then((m) => m.wireReviewComments());
   let was = false;
   const follow = (signed: boolean) => {
     if (signed && !was) void refreshGrading({ rosters: true });
