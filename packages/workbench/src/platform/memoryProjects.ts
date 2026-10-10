@@ -43,7 +43,9 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   let signedIn = localStorage.getItem("tmcode:mock-account") === "signed-in";
   let phase: AccountStatus["phase"] = "idle";
   const listeners = new Set<(s: AccountStatus) => void>();
-  const status = (): AccountStatus => ({ signed_in: signedIn, user: signedIn ? user : null, tm_api: API, phase, error: null });
+  // Why the session ended (expireSession): the account shows it until the next sign-in.
+  let accountError: string | null = null;
+  const status = (): AccountStatus => ({ signed_in: signedIn, user: signedIn ? user : null, tm_api: API, phase, error: signedIn ? null : accountError });
   const emit = () => listeners.forEach((l) => l(status()));
 
   const projects: Record<string, unknown>[] = [];
@@ -535,6 +537,24 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       return studentGrades.get(`${type}:${id}:${type === "quiz" ? questionId : ""}:${studentId}`) ?? null;
     },
     assignments: () => assignments,
+    /** A teacher publishes a new TMCode assignment (fields over a practical's defaults). */
+    addAssignment(fields: Record<string, unknown>) {
+      assignments.push({ id: ++seq, title: "New practical", kind: "practical", course_id: 3, course_name: "Web Development", status: "published", due_date: new Date(Date.now() + 5 * day).toISOString(), points: 10, language: "javascript", description_html: "<p>New work</p>", instructions: null, attachments: [], rubric: null, starter_project_id: null, ...fields });
+    },
+    /** A quiz's practical fields: start_date / attempt_open on the quiz, state / grade on its questions. */
+    setQuizPractical(quizId: number, quiz: Record<string, unknown>, questions: Record<number, Record<string, unknown>> = {}) {
+      const a = activities.find((x) => x.type === "quiz" && x.id === quizId) as Record<string, unknown> | undefined;
+      if (!a) return;
+      Object.assign(a, quiz);
+      for (const q of (a.practical_questions as Record<string, unknown>[] | undefined) ?? []) Object.assign(q, questions[q.question_id as number] ?? {});
+    },
+    /** The NGA session ends here (expired, or signed out elsewhere): signed out, with the reason. */
+    expireSession(reason = "Your NGA session ended.") {
+      signedIn = false;
+      accountError = reason;
+      localStorage.removeItem("tmcode:mock-account");
+      emit();
+    },
     // The student's view of the data: the teacher's starter project is not theirs.
     state: () => ({ projects: projects.filter((x) => !x.hidden), revisions: revisions.filter((r) => !projects.find((x) => x.id === r.project_id)?.hidden).map((r) => ({ id: r.id, number: r.number, project_id: r.project_id, files: r.files.map((f) => f.path) })), links }),
   };
@@ -548,6 +568,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       emit();
       setTimeout(() => {
         signedIn = true;
+        accountError = null;
         phase = "idle";
         localStorage.setItem("tmcode:mock-account", "signed-in");
         emit();

@@ -34,9 +34,19 @@ export function normalizeActivity(raw: Record<string, unknown>): LinkableActivit
     open: raw.open === undefined ? true : !!raw.open,
     practical_questions: Array.isArray(raw.practical_questions)
       ? (raw.practical_questions as Record<string, unknown>[])
-          .map((q) => ({ question_id: Number(q.question_id), title: String(q.title ?? "TMCode practical"), points: Number(q.points ?? 0) }))
+          .map((q) => ({
+            question_id: Number(q.question_id),
+            title: String(q.title ?? "TMCode practical"),
+            points: Number(q.points ?? 0),
+            // Servers that say where the student stands (else TMCode works it out from their projects).
+            ...(typeof q.state === "string" ? { state: q.state as PracticalQuestion["state"] } : {}),
+            ...(q.grade != null && Number.isFinite(Number(q.grade)) ? { grade: Number(q.grade) } : {}),
+          }))
           .filter((q) => Number.isInteger(q.question_id) && q.question_id > 0)
       : [],
+    // Quizzes, when Task Mentor sends them: when the quiz opens, and whether the student's attempt is open.
+    ...(typeof raw.start_date === "string" ? { start_date: raw.start_date } : {}),
+    ...(typeof (raw.attempt_open ?? raw.quiz_open) === "boolean" ? { attempt_open: (raw.attempt_open ?? raw.quiz_open) as boolean } : {}),
   };
 }
 

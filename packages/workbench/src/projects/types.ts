@@ -100,12 +100,19 @@ export interface LinkableActivity {
   open?: boolean;
   /** Quizzes: their TMCode practical questions (start one to get its starter files). */
   practical_questions?: PracticalQuestion[];
+  /** Quizzes (servers that send it): when the quiz opens; practicals can't start before. */
+  start_date?: string | null;
+  /** Quizzes (servers that send it): the student's attempt is open in Task Mentor. */
+  attempt_open?: boolean;
 }
 
 export interface PracticalQuestion {
   question_id: number;
   title: string;
   points: number;
+  /** Servers that send it: where the student stands, and the grade once marked. */
+  state?: "not_started" | "in_progress" | "submitted" | "graded";
+  grade?: number;
 }
 
 /** `.tmcode/project.json`: which Task Mentor project this folder is, and what it last synced. */
