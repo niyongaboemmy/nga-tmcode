@@ -5,7 +5,9 @@ import "allotment/dist/style.css";
 import "@vscode/codicons/dist/codicon.css";
 import "./styles/theme.css";
 import "./styles/workbench.css";
-import { registerBuiltinCommands } from "./commands/builtin";
+import { registerBuiltinCommands, wirePaletteAndMenus } from "./commands/builtin";
+import { registerFilesSearchCommands } from "./parts/editorStatus";
+
 import { registerDeveloperCommands } from "./commands/developer";
 import { registerProjectCommands } from "./projects/commands";
 import { wireProjects } from "./projects/service";
@@ -13,7 +15,14 @@ import { toggleZenMode, useZen } from "./state/zen";
 import { acquireTypes, enableEmmet, enablePrettier, resetProjectConfig } from "./monaco/languageServices";
 import { setupMonaco } from "./monaco/setup";
 import { installFormatterSelection, registerFormatterActions } from "./monaco/formatters";
-import { KeybindingResolver } from "./commands/registry";
+import { KeybindingResolver, canonical, chordOf } from "./commands/registry";
+import { isBrowserReservedKey, WheelZoom } from "./commands/reservedKeys";
+import { registerVsCodeCommands } from "./commands/vscodeCommands";
+import { wireNotificationCenter } from "./state/notificationCenter";
+import { loadUserSnippets } from "./snippets/userSnippets";
+import { NotificationCenter } from "./widgets/NotificationCenter";
+import { zoomIn, zoomOut } from "./state/windowZoom";
+import { inExam } from "./exam/state";
 import { wireDocuments } from "./monaco/documents";
 import { wireRunServices } from "./run/wire";
 import { applyExternalChanges } from "./monaco/external";
@@ -29,7 +38,8 @@ import { initExtensionHost } from "./exthost/hostService";
 import { registerExtHostCommands } from "./exthost/commands";
 import "./extensions/monacoContributions";
 import { ActivityBar } from "./parts/ActivityBar";
-import { EditorGroupView } from "./parts/editor/EditorGroupView";
+import { EditorGrid } from "./parts/editor/EditorGrid";
+import { registerWorkbenchExtras } from "./layout/commands";
 import { Panel } from "./parts/panel/Panel";
 import { SideBar } from "./parts/SideBar";
 import { WebviewLayer } from "./exthost/views/WebviewSlot";
@@ -39,6 +49,7 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 import { ExamOverlay } from "./exam/ExamViews";
+import { wireSmartEditor } from "./monaco/smartEditor";
 // ── git (scm/*) ──
 import { wireScm } from "./scm/commands";
 import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
@@ -48,21 +59,9 @@ import { wireDebugServices } from "./debug/debugService";
 import { DebugToolbar } from "./debug/DebugToolbar";
 // ── end Run and Debug ──
 
-/**
- * Editor groups side by side. Always one Allotment with a stable key per group,
- * so splitting or closing a group never remounts (and re-lays-out) the others.
- */
+/** Editor groups in rows and columns (parts/editor/EditorGrid). */
 function EditorArea() {
-  const groups = useWorkbench((s) => s.groups);
-  return (
-    <Allotment className="tm-editor-groups">
-      {groups.map((g) => (
-        <Allotment.Pane key={g.id} minSize={180}>
-          <EditorGroupView group={g} single={groups.length === 1} />
-        </Allotment.Pane>
-      ))}
-    </Allotment>
-  );
+  return <EditorGrid />;
 }
 
 // Colour and icon themes (and the extensions that contribute them) load before the first paint.
@@ -90,6 +89,11 @@ export function Workbench() {
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
+  // View › Appearance: hidden activity / status bar, side bar on the right (never hidden in exams).
+  const examLayout = useWorkbench((s) => s.policy.mode !== "practice");
+  const activityBarHidden = useWorkbench((s) => !s.settings["workbench.activityBar.visible"]) && !examLayout;
+  const statusBarHidden = useWorkbench((s) => !s.settings["workbench.statusBar.visible"]) && !examLayout;
+  const sideBarRight = useWorkbench((s) => s.settings["workbench.sideBar.location"] === "right");
   const quickPick = useQuickPick((s) => !!s.request);
   const blocking = useWorkbench((s) => !!s.dialog || !!s.quickInput) || quickPick;
   const [chord, setChord] = useState<string | null>(null);
@@ -101,6 +105,11 @@ export function Workbench() {
 
   useEffect(() => {
     registerBuiltinCommands();
+    registerVsCodeCommands();
+    wireNotificationCenter();
+    void loadUserSnippets();
+    registerFilesSearchCommands();
+    registerWorkbenchExtras();
     registerDeveloperCommands();
     registerProjectCommands();
     wireProjects();
@@ -110,12 +119,14 @@ export function Workbench() {
     installFormatterSelection();
     registerFormatterActions();
     wireDocuments();
+    wireSmartEditor();
     wireRunServices();
     wireScm();
     wireDebugServices();
     registerExtHostCommands();
     initExtensionHost();
     startAutoUpdates();
+    wirePaletteAndMenus();
     // After `npm install` (lock file) or a config edit, re-read types and .prettierrc.
     let projectTimer: ReturnType<typeof setTimeout> | undefined;
     const unwatch = platform.watch?.((paths) => {
@@ -175,23 +186,46 @@ export function Workbench() {
 
   // Global keybindings, in the capture phase so they win over focused widgets.
   useEffect(() => {
+    const os = platform.os;
     const onKey = (e: KeyboardEvent) => {
-      if (blockingRef.current || e.isComposing) return;
+      if (e.isComposing) return;
       const target = e.target as HTMLElement | null;
       // Monaco owns chords like ⌘K ⌘C while it has focus; our chord commands are bound inside it.
-      const inMonaco = !!target?.closest(".monaco-editor");
-      const inTerminal = !!target?.closest(".xterm");
-      if (inTerminal && !(e.metaKey || e.ctrlKey || e.key === "F1")) return;
-      if (inMonaco && (e.metaKey || e.ctrlKey) && e.code === "KeyK") return;
-      const r = resolver.handle(e);
-      if (r !== "none") {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      const inMonaco = !!target?.closest?.(".monaco-editor");
+      const inTerminal = !!target?.closest?.(".xterm");
+      const inInput = !inMonaco && !inTerminal && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || !!target?.isContentEditable);
+      const chord = chordOf(e, os);
+      const c = chord ? canonical(chord, os) : null;
+      // Reload, print, find bar, back…: the webview's own keys never act, even when no command takes them.
+      const reserved = !!c && isBrowserReservedKey(c, os, { inEditor: inMonaco, inInput, inTerminal, devtools: !!platform.shell?.toggleDevTools && !inExam() });
+      const done = (r: "executed" | "chord" | "none") => {
+        if (r !== "none") {
+          e.preventDefault();
+          e.stopPropagation();
+        } else if (reserved) e.preventDefault();
+      };
+      if (blockingRef.current) return done("none");
+      if (inTerminal && !(e.metaKey || e.ctrlKey || e.key === "F1")) return done("none");
+      // The shell's reverse search (Ctrl+R) wins over Reload Window inside the terminal.
+      if (inTerminal && os !== "mac" && c === "mod+r") return done("none");
+      if (inMonaco && (e.metaKey || e.ctrlKey) && e.code === "KeyK") return done("none");
+      done(resolver.handle(e));
+    };
+    // Ctrl+wheel (a pinch): window zoom steps, never the webview's page zoom.
+    const wheelZoom = new WheelZoom((dir) => (dir > 0 ? zoomIn() : zoomOut()));
+    const onWheel = (e: WheelEvent) => {
+      // WebView2 / Chromium zoom the page on Ctrl+wheel; WKWebView doesn't (and a trackpad pinch must not zoom TMCode).
+      if (!e.ctrlKey || os === "mac") return;
+      e.preventDefault();
+      wheelZoom.wheel(e.deltaY, performance.now());
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [resolver]);
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("wheel", onWheel, { capture: true });
+    };
+  }, [resolver, platform]);
 
   useEffect(() => {
     const onFocus = () => setFocused(true);
@@ -242,6 +276,9 @@ export function Workbench() {
       data-motion={reduceMotion ? "reduced" : "full"}
       data-size={viewport}
       data-zen={zen ? "on" : undefined}
+      data-activitybar={activityBarHidden ? "hidden" : undefined}
+      data-statusbar={statusBarHidden ? "hidden" : undefined}
+      data-sidebar={sideBarRight ? "right" : "left"}
       onContextMenu={(e) => {
         // No browser context menu anywhere in the workbench (Monaco and inputs bring their own).
         if (!(e.target as HTMLElement).closest(".monaco-editor, input, textarea, .xterm")) e.preventDefault();
@@ -251,23 +288,26 @@ export function Workbench() {
       <ProgressLine />
       <div className="tm-main">
         <ActivityBar />
-        <Allotment className="tm-split" proportionalLayout={false}>
-          <Allotment.Pane minSize={170} preferredSize={viewport === "sm" ? 220 : 260} maxSize={720} visible={sidebarVisible} snap>
-            <SideBar />
-          </Allotment.Pane>
-          <Allotment.Pane minSize={220}>
-            <Allotment vertical className="tm-split" proportionalLayout={false}>
-              <Allotment.Pane minSize={120} visible={!panelMaximized}>
-                <main className="tm-editor-area" aria-label="Editor">
-                  <EditorArea />
-                  <DebugToolbar />
-                </main>
-              </Allotment.Pane>
-              <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>
-                <Panel />
-              </Allotment.Pane>
-            </Allotment>
-          </Allotment.Pane>
+        <Allotment key={sideBarRight ? "side-right" : "side-left"} className="tm-split" proportionalLayout={false}>
+          {orderPanes(
+            sideBarRight,
+            <Allotment.Pane key="side" minSize={170} preferredSize={viewport === "sm" ? 220 : 260} maxSize={720} visible={sidebarVisible} snap>
+              <SideBar />
+            </Allotment.Pane>,
+            <Allotment.Pane key="main" minSize={220}>
+              <Allotment vertical className="tm-split" proportionalLayout={false}>
+                <Allotment.Pane minSize={120} visible={!panelMaximized}>
+                  <main className="tm-editor-area" aria-label="Editor">
+                    <EditorArea />
+                    <DebugToolbar />
+                  </main>
+                </Allotment.Pane>
+                <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>
+                  <Panel />
+                </Allotment.Pane>
+              </Allotment>
+            </Allotment.Pane>,
+          )}
         </Allotment>
       </div>
       {/* Extension webview iframes, over their slots (exthost/views/webviews.ts). */}
@@ -280,8 +320,14 @@ export function Workbench() {
       <Dialog />
       <ExamOverlay />
       <Notifications />
+      <NotificationCenter />
     </div>
   );
+}
+
+/** Side bar and editor panes, left to right (Toggle Primary Side Bar Position puts the side bar last). */
+function orderPanes(sideRight: boolean, side: React.ReactElement, main: React.ReactElement) {
+  return sideRight ? [main, side] : [side, main];
 }
 
 /** A thin running line under the title bar while anything is in flight (VS Code's progress bar). */

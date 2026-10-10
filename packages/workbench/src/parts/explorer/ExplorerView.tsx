@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { openFileToSide } from "../../commands/vscodeCommands";
+import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import { revealLabel } from "../../commands/builtin";
 import {
@@ -6,8 +8,10 @@ import {
   beginExplorerEdit,
   cancelExplorerEdit,
   createEntry,
-  deleteEntry,
+  deleteEntries,
   getPlatform,
+  isProtectedEntry,
+  loadDir,
   moveEntry,
   notify,
   openContextMenu,
@@ -20,35 +24,99 @@ import {
   type ContextMenuItem,
 } from "../../state/store";
 import { basename, dirname, isWithin, join, validateName } from "../../util/paths";
+import { globMatcher } from "../../util/glob";
 import { ActionButton, FileIcon, FolderIcon, Codicon } from "../../widgets/icons";
 import { SkeletonRows } from "../../widgets/Skeleton";
 import { writeClipboardText } from "../../util/clipboard";
 import { copyEntries, cutEntries, duplicateEntry, pasteEntries, useFileClipboard } from "./fileClipboard";
+import { rangeBetween, rowLabel, topLevelPaths, typeAheadMatch, visibleChildren, visibleRows, type Row } from "./explorerModel";
+import { importBrowserFiles, importPaths } from "./importFiles";
 import type { DirEntry } from "../../platform/types";
 // ── git ──
 import { useGit, useGitAllowed } from "../../scm/gitService";
 import { isIgnored } from "../../scm/model";
 
-interface Row {
-  entry: DirEntry;
-  depth: number;
+/** Explorer multi-selection: `paths` (Cmd/Ctrl-click, Shift-click, Shift+arrows) around the store's focused `selection`. */
+export const useExplorerSelection = create<{ paths: string[]; anchor: string | null }>(() => ({ paths: [], anchor: null }));
+const setMulti = (paths: string[], anchor: string | null = paths[paths.length - 1] ?? null) => useExplorerSelection.setState({ paths, anchor });
+
+/** The selected paths: the multi-selection when it holds the focused row, else just the focused row. */
+export function explorerSelection(): string[] {
+  const focus = useWorkbench.getState().selection;
+  const { paths } = useExplorerSelection.getState();
+  if (focus != null && paths.includes(focus)) return paths;
+  return focus != null ? [focus] : [];
+}
+
+/** Files dragged in from the OS: the folder under the pointer (set while dragging over the Explorer). */
+const useOsDrag = create<{ target: string | null }>(() => ({ target: null }));
+
+function useExclude() {
+  const pattern = useWorkbench((s) => s.settings["files.exclude"]);
+  return useMemo(() => globMatcher(pattern ?? ""), [pattern]);
 }
 
 /** Flattens the expanded tree into visible rows (keyboard navigation works on this list). */
 function useRows(): Row[] {
   const dirs = useWorkbench((s) => s.dirs);
   const expanded = useWorkbench((s) => s.expanded);
-  return useMemo(() => {
-    const rows: Row[] = [];
-    const walk = (path: string, depth: number) => {
-      for (const entry of dirs[path] ?? []) {
-        rows.push({ entry, depth });
-        if (entry.kind === "dir" && expanded[entry.path]) walk(entry.path, depth + 1);
-      }
-    };
-    walk("", 0);
-    return rows;
-  }, [dirs, expanded]);
+  const compact = useWorkbench((s) => s.settings["explorer.compactFolders"] ?? true);
+  const exclude = useExclude();
+  return useMemo(() => visibleRows(dirs, expanded, { exclude, compact }), [dirs, expanded, exclude, compact]);
+}
+
+/** Expands a folder and, with compact folders, every single-folder child below it (one click for src/main/java). */
+async function expandFolder(path: string) {
+  await toggleDir(path, true);
+  const { settings } = useWorkbench.getState();
+  if (!(settings["explorer.compactFolders"] ?? true)) return;
+  const exclude = globMatcher(settings["files.exclude"] ?? "");
+  let cur = path;
+  for (let i = 0; i < 64; i++) {
+    const kids = visibleChildren(useWorkbench.getState().dirs, cur, exclude);
+    if (!kids || kids.length !== 1 || kids[0].kind !== "dir") break;
+    cur = kids[0].path;
+    const expanded = { ...useWorkbench.getState().expanded, [cur]: true as const };
+    useWorkbench.setState({ expanded });
+    if (!useWorkbench.getState().dirs[cur]) await loadDir(cur);
+  }
+}
+
+/** Opens or closes a row; a compact row opens and closes its whole chain. */
+async function setRowOpen(row: Row, open: boolean) {
+  if (!open) {
+    const expanded = { ...useWorkbench.getState().expanded };
+    for (const e of row.chain ?? [row.entry]) delete expanded[e.path];
+    useWorkbench.setState({ expanded, selection: row.entry.path });
+    return;
+  }
+  if (row.chain) {
+    const expanded = { ...useWorkbench.getState().expanded };
+    for (const e of row.chain) expanded[e.path] = true;
+    useWorkbench.setState({ expanded });
+  }
+  await expandFolder(row.entry.path);
+  select(row.entry.path);
+}
+
+/** Shows `path` in the tree: every folder above it is expanded and loaded. */
+async function revealPath(path: string) {
+  const parts = path.split("/");
+  const state = useWorkbench.getState();
+  const expanded = { ...state.expanded };
+  let changed = false;
+  for (let i = 1; i < parts.length; i++) {
+    const dir = parts.slice(0, i).join("/");
+    if (!expanded[dir]) {
+      expanded[dir] = true;
+      changed = true;
+    }
+  }
+  if (changed) useWorkbench.setState({ expanded });
+  for (let i = 1; i < parts.length; i++) {
+    const dir = parts.slice(0, i).join("/");
+    if (!useWorkbench.getState().dirs[dir]) await loadDir(dir);
+  }
 }
 
 function InlineNameInput({
@@ -131,17 +199,66 @@ export function ExplorerView() {
   const dirs = useWorkbench((s) => s.dirs);
   const expanded = useWorkbench((s) => s.expanded);
   const selection = useWorkbench((s) => s.selection);
+  const multi = useExplorerSelection((s) => s.paths);
+  const anchor = useExplorerSelection((s) => s.anchor);
   const edit = useWorkbench((s) => s.explorerEdit);
   const dirty = useWorkbench((s) => s.dirty);
   const problems = useWorkbench((s) => s.problems);
   const activePath = useWorkbench((s) => activeFilePath(s));
+  const autoReveal = useWorkbench((s) => s.settings["explorer.autoReveal"] ?? true);
+  const exclude = useExclude();
   const gitAllowed = useGitAllowed();
   const gitDecorations = useGit((s) => s.decorations);
   const gitIgnored = useGit((s) => s.ignored);
+  const osDropTarget = useOsDrag((s) => s.target);
   const os = getPlatform().os;
   const [collapsed, setCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
+  const typeAhead = useRef<{ text: string; timer: ReturnType<typeof setTimeout> | null }>({ text: "", timer: null });
+
+  const selected = useMemo(() => new Set(selection != null && multi.includes(selection) ? multi : selection != null ? [selection] : []), [selection, multi]);
+
+  // A selection made elsewhere (opening a file, a new file) replaces the multi-selection.
+  useEffect(() => {
+    if (selection == null) setMulti([], null);
+    else if (!useExplorerSelection.getState().paths.includes(selection)) setMulti([selection]);
+  }, [selection]);
+
+  // Auto reveal: the active file's folders open and its row scrolls into view.
+  useEffect(() => {
+    if (!autoReveal || !activePath || !workspace || exclude(activePath)) return;
+    let cancelled = false;
+    void revealPath(activePath).then(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => treeRef.current?.querySelector(`[data-path="${CSS.escape(activePath)}"]`)?.scrollIntoView({ block: "nearest" }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePath, autoReveal, workspace, exclude]);
+
+  // Files dragged in from Finder / File Explorer (desktop: native drop events with absolute paths).
+  useEffect(() => {
+    const platform = getPlatform();
+    if (!platform.onFileDrop) return;
+    const folderAt = (x: number, y: number): string | null => {
+      const el = document.elementFromPoint(x, y);
+      const tree = el?.closest(".tm-explorer");
+      if (!tree) return null;
+      const row = el?.closest<HTMLElement>("[data-path]");
+      if (!row) return "";
+      const path = row.dataset.path!;
+      return row.dataset.kind === "dir" ? path : dirname(path);
+    };
+    return platform.onFileDrop((e) => {
+      if (e.type === "leave") return useOsDrag.setState({ target: null });
+      const target = folderAt(e.x, e.y);
+      if (e.type === "over") return useOsDrag.setState({ target });
+      useOsDrag.setState({ target: null });
+      if (target != null) void importPaths(target, e.paths);
+    });
+  }, []);
 
   const errorPaths = useMemo(() => {
     const set = new Map<string, "error" | "warning">();
@@ -177,14 +294,32 @@ export function ExplorerView() {
     return cmd ? formatKeybinding(keybindingFor(cmd, os), os) : undefined;
   };
 
+  const folderOf = (entry: DirEntry | null) => (entry ? (entry.kind === "dir" ? entry.path : dirname(entry.path)) : "");
+
   const contextFor = (entry: DirEntry | null): ContextMenuItem[] => {
-    const folder = entry ? (entry.kind === "dir" ? entry.path : dirname(entry.path)) : "";
+    const folder = folderOf(entry);
+    const bulk = entry && selected.has(entry.path) && selected.size > 1 ? [...selected] : null;
+    if (bulk) {
+      return [
+        { kind: "item", label: "Cut", keybinding: os === "mac" ? "⌘X" : "Ctrl+X", run: () => cutEntries(bulk) },
+        { kind: "item", label: "Copy", keybinding: os === "mac" ? "⌘C" : "Ctrl+C", run: () => copyEntries(bulk) },
+        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", disabled: !useFileClipboard.getState(), run: () => void pasteEntries(folder) },
+        { kind: "separator" },
+        { kind: "item", label: `Delete ${bulk.length} Items`, keybinding: os === "mac" ? "⌘⌫" : "Delete", danger: true, run: () => void deleteEntries(bulk) },
+      ];
+    }
     const items: ContextMenuItem[] = [
       { kind: "item", label: "New File...", keybinding: kb("explorer.newFile"), run: () => void beginExplorerEdit({ mode: "newFile", target: folder }) },
       { kind: "item", label: "New Folder...", run: () => void beginExplorerEdit({ mode: "newFolder", target: folder }) },
     ];
     if (entry) {
       items.push(
+        ...(entry.kind === "file"
+          ? ([
+              { kind: "separator" },
+              { kind: "item", label: "Open to the Side", keybinding: kb("explorer.openToSide"), run: () => openFileToSide(entry.path) },
+            ] as ContextMenuItem[])
+          : []),
         { kind: "separator" },
         ...(getPlatform().reveal
           ? ([{ kind: "item", label: revealLabel(), run: () => void getPlatform().reveal?.(entry.path) }] as ContextMenuItem[])
@@ -206,114 +341,195 @@ export function ExplorerView() {
           run: () => void writeClipboardText(entry.path).catch(() => notify("warning", "Clipboard is not available.")),
         },
         { kind: "separator" },
-        { kind: "item", label: "Rename...", keybinding: "F2", run: () => void beginExplorerEdit({ mode: "rename", target: entry.path }) },
-        { kind: "item", label: "Delete", keybinding: os === "mac" ? "⌘⌫" : "Delete", danger: true, run: () => void deleteEntry(entry.path) },
+        { kind: "item", label: "Rename...", keybinding: "F2", disabled: isProtectedEntry(entry.path), run: () => void beginExplorerEdit({ mode: "rename", target: entry.path }) },
+        { kind: "item", label: "Delete", keybinding: os === "mac" ? "⌘⌫" : "Delete", danger: true, disabled: isProtectedEntry(entry.path), run: () => void deleteEntries([entry.path]) },
       );
     }
     return items;
   };
 
-  const activate = (entry: DirEntry, pinned: boolean) => {
-    if (entry.kind === "dir") void toggleDir(entry.path);
-    else openFile(entry.path, { pinned });
+  const activate = (row: Row, pinned: boolean) => {
+    if (row.entry.kind === "dir") void setRowOpen(row, !expanded[row.entry.path]);
+    else openFile(row.entry.path, { pinned });
+  };
+
+  const focusRow = (path: string) => {
+    select(path);
+    treeRef.current?.querySelector(`[data-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: "nearest" });
+  };
+
+  const onRowClick = (e: MouseEvent, row: Row) => {
+    const path = row.entry.path;
+    const toggleKey = os === "mac" ? e.metaKey : e.ctrlKey;
+    if (e.shiftKey) {
+      const from = anchor ?? selection;
+      setMulti(rangeBetween(rows, from, path), from);
+      select(path);
+      return;
+    }
+    if (toggleKey) {
+      const base = [...selected];
+      const next = base.includes(path) ? base.filter((p) => p !== path) : [...base, path];
+      setMulti(next, path);
+      select(next.includes(path) ? path : (next[next.length - 1] ?? null));
+      return;
+    }
+    setMulti([path], path);
+    select(path);
+    activate(row, false);
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (edit) return;
     const idx = rows.findIndex((r) => r.entry.path === selection);
     const row = idx >= 0 ? rows[idx] : null;
-    const move = (i: number) => {
+    const move = (i: number, extend = false) => {
       const r = rows[Math.max(0, Math.min(rows.length - 1, i))];
-      if (r) {
-        select(r.entry.path);
-        treeRef.current?.querySelector(`[data-path="${CSS.escape(r.entry.path)}"]`)?.scrollIntoView({ block: "nearest" });
-      }
+      if (!r) return;
+      if (extend) {
+        const from = anchor ?? selection ?? r.entry.path;
+        setMulti(rangeBetween(rows, from, r.entry.path), from);
+      } else setMulti([r.entry.path], r.entry.path);
+      focusRow(r.entry.path);
     };
+    const mod = os === "mac" ? e.metaKey : e.ctrlKey;
     switch (e.key) {
       case "ArrowDown":
-        move(idx + 1);
+        move(idx + 1, e.shiftKey);
         break;
       case "ArrowUp":
-        move(idx < 0 ? rows.length - 1 : idx - 1);
+        move(idx < 0 ? rows.length - 1 : idx - 1, e.shiftKey);
+        break;
+      case "Home":
+        move(0, e.shiftKey);
+        break;
+      case "End":
+        move(rows.length - 1, e.shiftKey);
         break;
       case "ArrowRight":
         if (row?.entry.kind === "dir") {
-          if (!expanded[row.entry.path]) void toggleDir(row.entry.path, true);
+          if (!expanded[row.entry.path]) void setRowOpen(row, true);
           else move(idx + 1);
         }
         break;
       case "ArrowLeft":
-        if (row?.entry.kind === "dir" && expanded[row.entry.path]) void toggleDir(row.entry.path, false);
+        if (row?.entry.kind === "dir" && expanded[row.entry.path]) void setRowOpen(row, false);
         else if (row) {
-          const parent = dirname(row.entry.path);
-          if (parent) select(parent);
+          // The parent row: for a compact parent, the deepest folder of its chain is the row.
+          const head = dirname((row.chain?.[0] ?? row.entry).path);
+          const parent = rows.find((r) => r.entry.path === head || r.chain?.some((c) => c.path === head));
+          if (parent) move(rows.indexOf(parent));
         }
         break;
       case "Enter":
         if (os === "mac" && row) void beginExplorerEdit({ mode: "rename", target: row.entry.path });
-        else if (row) activate(row.entry, true);
+        else if (row) activate(row, true);
         break;
       case " ":
-        if (row) activate(row.entry, false);
+        if (row) activate(row, false);
         break;
       case "F2":
         if (row) void beginExplorerEdit({ mode: "rename", target: row.entry.path });
         break;
       case "Delete":
-        if (row) void deleteEntry(row.entry.path);
+        if (selected.size) void deleteEntries([...selected]);
         break;
       case "Backspace":
-        if (row && (e.metaKey || e.ctrlKey)) void deleteEntry(row.entry.path);
+        if (selected.size && (e.metaKey || e.ctrlKey)) void deleteEntries([...selected]);
         else return;
         break;
+      case "Escape":
+        if (selected.size > 1 && selection) setMulti([selection]);
+        else return;
+        break;
+      case "a":
       case "c":
       case "x":
       case "v": {
+        if (!mod || e.altKey || e.shiftKey) {
+          if (!mod && !e.altKey) return typeAheadKey(e, idx);
+          return;
+        }
         // VS Code's Explorer clipboard (files, not text): ⌘C / ⌘X / ⌘V, Ctrl elsewhere.
-        if (!(os === "mac" ? e.metaKey : e.ctrlKey) || e.altKey || e.shiftKey) return;
-        if (e.key === "v") void pasteEntries(row ? (row.entry.kind === "dir" ? row.entry.path : dirname(row.entry.path)) : "");
-        else if (row) (e.key === "c" ? copyEntries : cutEntries)([row.entry.path]);
+        if (e.key === "a") setMulti(rows.map((r) => r.entry.path), selection);
+        else if (e.key === "v") void pasteEntries(row ? folderOf(row.entry) : "");
+        else if (selected.size) (e.key === "c" ? copyEntries : cutEntries)([...selected]);
         else return;
         break;
       }
       default:
-        return;
+        return typeAheadKey(e, idx);
     }
     e.preventDefault();
     e.stopPropagation();
   };
 
-  // ── drag & drop: move files and folders between folders ──
-  const onDragStart = (e: DragEvent, entry: DirEntry) => {
-    e.dataTransfer.setData("application/x-tmcode-path", entry.path);
-    e.dataTransfer.setData("text/plain", entry.path);
-    e.dataTransfer.effectAllowed = "move";
-  };
-  const folderOf = (entry: DirEntry | null) => (entry ? (entry.kind === "dir" ? entry.path : dirname(entry.path)) : "");
-  const onDragOver = (e: DragEvent, entry: DirEntry | null) => {
-    if (!e.dataTransfer.types.includes("application/x-tmcode-path")) return;
+  /** Typing a name jumps to it (letters typed within a moment add up). */
+  const typeAheadKey = (e: KeyboardEvent, idx: number) => {
+    if (e.key.length !== 1 || e.key === " " || e.metaKey || e.ctrlKey || e.altKey) return;
+    const ta = typeAhead.current;
+    if (ta.timer) clearTimeout(ta.timer);
+    ta.text += e.key;
+    ta.timer = setTimeout(() => (ta.text = ""), 800);
+    const i = typeAheadMatch(rows, idx, ta.text);
+    if (i >= 0) {
+      setMulti([rows[i].entry.path]);
+      focusRow(rows[i].entry.path);
+    }
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
+  };
+
+  // ── drag & drop: move files and folders between folders; files from the OS are copied in ──
+  const onDragStart = (e: DragEvent, entry: DirEntry) => {
+    const paths = selected.has(entry.path) ? topLevelPaths([...selected]) : [entry.path];
+    e.dataTransfer.setData("application/x-tmcode-path", entry.path);
+    e.dataTransfer.setData("application/x-tmcode-paths", JSON.stringify(paths));
+    e.dataTransfer.setData("text/plain", paths.join("\n"));
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const isOsFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files") && !e.dataTransfer.types.includes("application/x-tmcode-path");
+  const onDragOver = (e: DragEvent, entry: DirEntry | null) => {
+    const internal = e.dataTransfer.types.includes("application/x-tmcode-path");
+    if (!internal && !isOsFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = internal ? "move" : "copy";
     setDropTarget(folderOf(entry));
   };
   const onDrop = async (e: DragEvent, entry: DirEntry | null) => {
     e.preventDefault();
     e.stopPropagation();
     setDropTarget(null);
-    const from = e.dataTransfer.getData("application/x-tmcode-path");
     const folder = folderOf(entry);
-    if (!from || dirname(from) === folder || isWithin(folder, from)) return;
-    const name = basename(from);
-    if ((dirs[folder] ?? []).some((x) => x.name === name)) {
-      notify("warning", `A file or folder '${name}' already exists in '${folder || workspace.name}'.`);
+    if (isOsFiles(e)) {
+      // Browser build: the files' contents (the desktop gets paths through onFileDrop instead).
+      await importBrowserFiles(folder, [...e.dataTransfer.files]);
       return;
     }
+    let paths: string[] = [];
     try {
-      if (folder && !expanded[folder]) await toggleDir(folder, true);
-      await moveEntry(from, join(folder, name));
-    } catch (err) {
-      notify("error", `Could not move '${name}': ${String((err as Error)?.message ?? err)}`);
+      paths = JSON.parse(e.dataTransfer.getData("application/x-tmcode-paths") || "[]");
+    } catch {
+      /* fall back to the single path */
+    }
+    if (!paths.length) paths = [e.dataTransfer.getData("application/x-tmcode-path")].filter(Boolean);
+    if (folder && !expanded[folder]) await toggleDir(folder, true);
+    const names = new Set((dirs[folder] ?? []).map((x) => x.name));
+    for (const from of paths) {
+      const name = basename(from);
+      if (!from || dirname(from) === folder || isWithin(folder, from)) continue;
+      if (isProtectedEntry(from)) continue;
+      if (names.has(name)) {
+        notify("warning", `A file or folder '${name}' already exists in '${folder || workspace.name}'.`);
+        continue;
+      }
+      try {
+        await moveEntry(from, join(folder, name));
+        names.add(name);
+      } catch (err) {
+        notify("error", `Could not move '${name}': ${String((err as Error)?.message ?? err)}`);
+      }
     }
   };
 
@@ -335,7 +551,8 @@ export function ExplorerView() {
   };
 
   const out: React.ReactNode[] = [renderEditRow("", 0)];
-  for (const { entry, depth } of rows) {
+  for (const row of rows) {
+    const { entry, depth } = row;
     const isDir = entry.kind === "dir";
     const open = isDir && !!expanded[entry.path];
     if (edit?.mode === "rename" && edit.target === entry.path) {
@@ -354,20 +571,25 @@ export function ExplorerView() {
       const isDirty = !isDir && dirty[entry.path];
       const git = gitAllowed ? gitDecorations[entry.path] : undefined;
       const ignored = gitAllowed && isIgnored(entry.path, gitIgnored);
+      const isSelected = selected.has(entry.path);
+      const target = dropTarget ?? osDropTarget;
       out.push(
         <div
           key={entry.path}
           data-path={entry.path}
+          data-kind={entry.kind}
           role="treeitem"
           aria-level={depth + 1}
           aria-expanded={isDir ? open : undefined}
-          aria-selected={selection === entry.path}
+          aria-selected={isSelected}
           className={[
             "tm-list-row",
             "tm-tree-row",
-            selection === entry.path ? "is-selected" : "",
+            isSelected ? "is-selected" : "",
+            selection === entry.path ? "is-focused" : "",
+            row.chain ? "is-compact" : "",
             activePath === entry.path ? "is-active-editor" : "",
-            dropTarget === entry.path && isDir ? "is-drop-target" : "",
+            target === entry.path && isDir ? "is-drop-target" : "",
             decoration ? `has-${decoration}` : "",
             git ? `git-${git.color}` : ignored ? "git-ignored" : "",
           ].join(" ")}
@@ -377,14 +599,12 @@ export function ExplorerView() {
           onDragOver={(e) => onDragOver(e, entry)}
           onDragLeave={() => setDropTarget(null)}
           onDrop={(e) => void onDrop(e, entry)}
-          onClick={() => {
-            select(entry.path);
-            activate(entry, false);
-          }}
+          onClick={(e) => onRowClick(e, row)}
           onDoubleClick={() => !isDir && openFile(entry.path, { pinned: true })}
           onContextMenu={(e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
+            if (!selected.has(entry.path)) setMulti([entry.path]);
             select(entry.path);
             openContextMenu(e.clientX, e.clientY, contextFor(entry));
           }}
@@ -394,7 +614,16 @@ export function ExplorerView() {
           ))}
           <span className="tm-twistie">{isDir && <Codicon name={open ? "chevron-down" : "chevron-right"} />}</span>
           {isDir ? <FolderIcon open={open} name={entry.name} /> : <FileIcon path={entry.path} />}
-          <span className="tm-tree-label">{entry.name}</span>
+          <span className="tm-tree-label" title={row.chain ? rowLabel(row) : undefined}>
+            {row.chain
+              ? row.chain.map((c, i) => (
+                  <span key={c.path} className="tm-compact-segment">
+                    {i > 0 && <span className="tm-compact-sep">/</span>}
+                    {c.name}
+                  </span>
+                ))
+              : entry.name}
+          </span>
           {isDirty && <span className="tm-dirty-dot" title="Unsaved changes" />}
           {decoration && !isDir && <span className={`tm-decoration-badge is-${decoration}`}>{problems.filter((p) => p.path === entry.path && p.severity === decoration).length}</span>}
           {decoration && isDir && <span className={`tm-decoration-dot is-${decoration}`} />}
@@ -409,6 +638,8 @@ export function ExplorerView() {
       if (isDir && open) out.push(renderEditRow(entry.path, depth + 1));
     }
   }
+
+  const rootTarget = (dropTarget ?? osDropTarget) === "";
 
   return (
     <div className="tm-pane">
@@ -432,12 +663,16 @@ export function ExplorerView() {
       {!collapsed && (
         <div
           ref={treeRef}
-          className={`tm-pane-body tm-explorer tm-scroll ${dropTarget === "" ? "is-drop-target" : ""}`}
+          className={`tm-pane-body tm-explorer tm-scroll ${rootTarget ? "is-drop-target" : ""}`}
           role="tree"
           aria-label="Files Explorer"
+          aria-multiselectable="true"
           tabIndex={0}
           onKeyDown={onKeyDown}
           onDragOver={(e) => onDragOver(e, null)}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+          }}
           onDrop={(e) => void onDrop(e, null)}
           onContextMenu={(e) => {
             e.preventDefault();

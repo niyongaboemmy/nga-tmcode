@@ -626,6 +626,7 @@ export async function cloneRepository(urlArg?: string) {
     n.close();
   }
   if (!dest) return;
+  await import("../trust/trust").then((m) => m.markCloned(dest!)).catch(() => {});
   if (!getPlatform().openPath) {
     notify("info", `Cloned into ${dest}.`);
     return;

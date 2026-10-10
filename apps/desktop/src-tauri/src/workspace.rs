@@ -2,11 +2,13 @@
 //! the opened folder, and nothing outside that folder can be read or written
 //! (no absolute paths, no `..`, no symlink escapes).
 
+use crate::encoding::{self, Encoding};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -232,6 +234,32 @@ pub fn ws_read_file(ws: State<'_, Workspace>, path: String) -> Result<String, St
     read_file(&root, &path)
 }
 
+// ── encodings (feat/files-search) ──
+// A file is read with the encoding detected from its bytes (BOM, valid UTF-8,
+// else Windows-1252 / ISO 8859-1) and saved back in the encoding it has on
+// disk, BOM included, so non-UTF-8 files are never rewritten lossily.
+// "Reopen / Save with Encoding" pin a file's encoding for the session.
+
+fn encoding_overrides() -> &'static Mutex<HashMap<PathBuf, Encoding>> {
+    static MAP: OnceLock<Mutex<HashMap<PathBuf, Encoding>>> = OnceLock::new();
+    MAP.get_or_init(Default::default)
+}
+
+fn encoding_override(file: &Path) -> Option<Encoding> {
+    encoding_overrides().lock().unwrap().get(file).copied()
+}
+
+/// The encoding `file` is read and saved with: the pinned one, else the one its bytes show.
+fn encoding_of_file(file: &Path) -> Encoding {
+    if let Some(enc) = encoding_override(file) {
+        return enc;
+    }
+    match fs::read(file) {
+        Ok(bytes) => encoding::detect(&bytes),
+        Err(_) => Encoding::Utf8,
+    }
+}
+
 pub fn read_file(root: &Path, path: &str) -> Result<String, String> {
     let file = resolve(root, path)?;
     let meta = fs::metadata(&file).map_err(|e| e.to_string())?;
@@ -239,12 +267,34 @@ pub fn read_file(root: &Path, path: &str) -> Result<String, String> {
         return Err(format!("'{path}' is too large to open in the editor ({} MB).", meta.len() / 1_048_576));
     }
     let bytes = fs::read(&file).map_err(|e| e.to_string())?;
-    if bytes.iter().take(8000).any(|b| *b == 0) {
+    let enc = encoding_override(&file).unwrap_or_else(|| encoding::detect(&bytes));
+    if encoding::looks_binary(&bytes, enc) {
         return Err(format!("'{path}' is a binary file and cannot be opened as text."));
     }
-    // Strip a UTF-8 BOM; replace invalid sequences rather than refusing the file.
-    let text = String::from_utf8_lossy(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes)).into_owned();
-    Ok(text)
+    Ok(encoding::decode(&bytes, enc))
+}
+
+#[tauri::command]
+pub fn ws_file_encoding(ws: State<'_, Workspace>, path: String) -> Result<String, String> {
+    let file = resolve(&ws.root()?, &path)?;
+    Ok(encoding_of_file(&file).id().to_string())
+}
+
+/// Reopen with Encoding: reads the file again as `encoding`; saves keep it.
+#[tauri::command]
+pub fn ws_reopen_with_encoding(ws: State<'_, Workspace>, path: String, encoding: String) -> Result<String, String> {
+    let root = ws.root()?;
+    let file = resolve(&root, &path)?;
+    encoding_overrides().lock().unwrap().insert(file, Encoding::from_id(&encoding)?);
+    read_file(&root, &path)
+}
+
+/// Save with Encoding: the next saves of the file use `encoding`.
+#[tauri::command]
+pub fn ws_set_encoding(ws: State<'_, Workspace>, path: String, encoding: String) -> Result<(), String> {
+    let file = resolve(&ws.root()?, &path)?;
+    encoding_overrides().lock().unwrap().insert(file, Encoding::from_id(&encoding)?);
+    Ok(())
 }
 
 #[tauri::command]
@@ -258,13 +308,15 @@ pub fn ws_write_file(ws: State<'_, Workspace>, path: String, content: String) ->
 pub fn write_file(root: &Path, path: &str, content: &str) -> Result<(), String> {
     let file = resolve(root, path)?;
     let parent = file.parent().ok_or("Invalid path")?;
+    // Before the temp file exists: the encoding the file has now (UTF-8 for a new file).
+    let bytes = encoding::encode(content, encoding_of_file(&file)).map_err(|e| format!("'{path}': {e}"))?;
     let tmp = parent.join(format!(
         ".{}.tmcode-tmp",
         file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
     ));
     {
         let mut f = fs::File::create(&tmp).map_err(|e| e.to_string())?;
-        f.write_all(content.as_bytes()).map_err(|e| e.to_string())?;
+        f.write_all(&bytes).map_err(|e| e.to_string())?;
         f.sync_all().map_err(|e| e.to_string())?;
     }
     fs::rename(&tmp, &file).map_err(|e| {
@@ -321,22 +373,77 @@ pub fn copy_entry(root: &Path, from: &str, to: &str) -> Result<(), String> {
     if dst.starts_with(&src) {
         return Err(format!("Cannot copy '{from}' into itself."));
     }
-    fn walk(src: &Path, dst: &Path) -> std::io::Result<()> {
-        let meta = fs::symlink_metadata(src)?;
-        if meta.is_dir() {
-            fs::create_dir_all(dst)?;
-            for entry in fs::read_dir(src)? {
-                let entry = entry?;
-                walk(&entry.path(), &dst.join(entry.file_name()))?;
-            }
-            Ok(())
-        } else if meta.file_type().is_symlink() {
-            Ok(()) // links are not followed out of the workspace
-        } else {
-            fs::copy(src, dst).map(|_| ())
+    copy_tree(&src, &dst).map_err(|e| e.to_string())
+}
+
+/// Copies a file or folder recursively; symbolic links are skipped, never followed.
+fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let meta = fs::symlink_metadata(src)?;
+    if meta.is_dir() {
+        fs::create_dir_all(dst)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            copy_tree(&entry.path(), &dst.join(entry.file_name()))?;
         }
+        Ok(())
+    } else if meta.file_type().is_symlink() {
+        Ok(())
+    } else {
+        fs::copy(src, dst).map(|_| ())
     }
-    walk(&src, &dst).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Imported {
+    imported: Vec<String>,
+    conflicts: Vec<String>,
+}
+
+/// Files dropped from Finder / File Explorer: copies absolute `sources` into the
+/// workspace folder `dest`. Without `overwrite`, nothing is copied while a name
+/// is taken; the taken names are returned so the workbench can ask first.
+pub fn import_paths(root: &Path, sources: &[String], dest: &str, overwrite: bool) -> Result<Imported, String> {
+    let dir = resolve(root, dest)?;
+    if !dir.is_dir() {
+        return Err(format!("'{dest}' is not a folder."));
+    }
+    let mut plan = Vec::new();
+    let mut conflicts = Vec::new();
+    for s in sources {
+        let src = dunce::canonicalize(s).map_err(|e| format!("Cannot read '{s}': {e}"))?;
+        let name = src.file_name().ok_or_else(|| format!("'{s}' has no name."))?.to_owned();
+        let target = dir.join(&name);
+        if target == src {
+            continue; // dropped where it already is
+        }
+        if dir.starts_with(&src) {
+            return Err(format!("Cannot copy '{}' into itself.", name.to_string_lossy()));
+        }
+        if fs::symlink_metadata(&target).is_ok() {
+            if src.starts_with(&target) {
+                return Err(format!("Cannot replace '{}' with something inside it.", name.to_string_lossy()));
+            }
+            conflicts.push(name.to_string_lossy().into_owned());
+        }
+        plan.push((src, target));
+    }
+    if !conflicts.is_empty() && !overwrite {
+        return Ok(Imported { imported: Vec::new(), conflicts });
+    }
+    let mut imported = Vec::new();
+    for (src, target) in plan {
+        if let Ok(meta) = fs::symlink_metadata(&target) {
+            if meta.is_dir() { fs::remove_dir_all(&target) } else { fs::remove_file(&target) }.map_err(|e| e.to_string())?;
+        }
+        copy_tree(&src, &target).map_err(|e| format!("Cannot copy '{}': {e}", src.display()))?;
+        imported.push(rel_of(root, &target));
+    }
+    Ok(Imported { imported, conflicts })
+}
+
+#[tauri::command]
+pub fn ws_import(ws: State<'_, Workspace>, sources: Vec<String>, dest: String, overwrite: bool) -> Result<Imported, String> {
+    import_paths(&ws.root()?, &sources, &dest, overwrite)
 }
 
 #[tauri::command]
@@ -475,6 +582,55 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().ends_with(".tmcode-tmp"))
             .collect();
         assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn saves_keep_the_files_encoding_and_bom() {
+        let (_d, root) = root();
+        // A French Windows-1252 file: the accents survive a read and an edited save.
+        fs::write(root.join("fr.txt"), b"caf\xE9 cr\xE8me\r\n").unwrap();
+        let text = read_file(&root, "fr.txt").unwrap();
+        assert_eq!(text, "caf\u{e9} cr\u{e8}me\r\n");
+        write_file(&root, "fr.txt", &format!("{text}d\u{e9}j\u{e0}\r\n")).unwrap();
+        assert_eq!(fs::read(root.join("fr.txt")).unwrap(), b"caf\xE9 cr\xE8me\r\nd\xE9j\xE0\r\n".to_vec());
+        // A character Windows-1252 can't hold is refused, not replaced.
+        assert!(write_file(&root, "fr.txt", "\u{2713}").unwrap_err().contains("Save with Encoding"));
+        assert_eq!(fs::read(root.join("fr.txt")).unwrap(), b"caf\xE9 cr\xE8me\r\nd\xE9j\xE0\r\n".to_vec());
+        // UTF-8 with BOM keeps its BOM.
+        fs::write(root.join("bom.py"), b"\xEF\xBB\xBFx = 1\n").unwrap();
+        write_file(&root, "bom.py", "x = 2\n").unwrap();
+        assert_eq!(fs::read(root.join("bom.py")).unwrap(), b"\xEF\xBB\xBFx = 2\n".to_vec());
+        // UTF-16 opens as text (its NULs are not "binary") and stays UTF-16.
+        fs::write(root.join("w.txt"), b"\xFF\xFEh\0i\0").unwrap();
+        assert_eq!(read_file(&root, "w.txt").unwrap(), "hi");
+        write_file(&root, "w.txt", "ho").unwrap();
+        assert_eq!(fs::read(root.join("w.txt")).unwrap(), b"\xFF\xFEh\0o\0".to_vec());
+        // New files are UTF-8.
+        write_file(&root, "new.txt", "\u{e9}").unwrap();
+        assert_eq!(fs::read(root.join("new.txt")).unwrap(), "\u{e9}".as_bytes());
+    }
+
+    #[test]
+    fn imports_dropped_files_and_asks_before_replacing() {
+        let (_d, root) = root();
+        let outside = tempfile::tempdir().unwrap();
+        let o = dunce::canonicalize(outside.path()).unwrap();
+        fs::write(o.join("main.py"), "print('new')\n").unwrap();
+        fs::create_dir_all(o.join("lib/sub")).unwrap();
+        fs::write(o.join("lib/sub/a.txt"), "a").unwrap();
+        let sources = vec![o.join("main.py").display().to_string(), o.join("lib").display().to_string()];
+        // main.py is taken: nothing is copied yet.
+        let first = import_paths(&root, &sources, "", false).unwrap();
+        assert_eq!(first, Imported { imported: vec![], conflicts: vec!["main.py".into()] });
+        assert!(!root.join("lib").exists());
+        let second = import_paths(&root, &sources, "", true).unwrap();
+        assert_eq!(second.imported, vec!["main.py".to_string(), "lib".to_string()]);
+        assert_eq!(fs::read_to_string(root.join("main.py")).unwrap(), "print('new')\n");
+        assert_eq!(fs::read_to_string(root.join("lib/sub/a.txt")).unwrap(), "a");
+        // Into a sub-folder; never into itself or outside the workspace.
+        assert_eq!(import_paths(&root, &[o.join("lib/sub/a.txt").display().to_string()], "src", false).unwrap().imported, vec!["src/a.txt".to_string()]);
+        assert!(import_paths(&root, &[root.display().to_string()], "src", true).is_err());
+        assert!(import_paths(&root, &sources, "../x", true).is_err());
     }
 
     #[test]

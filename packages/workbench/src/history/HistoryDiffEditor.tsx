@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { editorOptions } from "../parts/editor/CodeEditor";
-import { ensureDocument, languageForPath } from "../monaco/documents";
+import { ensureDocument, languageForPath, lastDiskText, onDocumentSaved } from "../monaco/documents";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { closeEditors, getPlatform, useWorkbench, type EditorInput } from "../state/store";
 import { readHistory } from "./localHistory";
@@ -18,20 +18,56 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
     let disposed = false;
     const original = monaco.editor.createModel("", languageForPath(input.path));
     const grading = input.source === "grading";
+    const conflict = input.source === "conflict";
     let ownModified: monaco.editor.ITextModel | null = null;
+    let unsub: (() => void) | null = null;
     const diff = monaco.editor.createDiffEditor(host.current!, {
       ...editorOptions(useWorkbench.getState().settings, os),
       originalEditable: false,
-      // Grading compares two versions of a student's work: nothing to edit.
-      readOnly: grading,
+      // Grading compares two versions of a student's work, a conflict its two sides: nothing to edit.
+      readOnly: grading || conflict,
       renderSideBySide: true,
       useInlineViewWhenSpaceIsLimited: true,
       renderSideBySideInlineBreakpoint: 700,
       ignoreTrimWhitespace: false,
-      ariaLabel: input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : grading ? `${input.path}: ${input.label ?? "version"} ↔ submitted` : `${input.path} (Local History) ↔ current`,
+      ariaLabel: input.source === "saved" ? `${input.path} (saved) ↔ unsaved changes` : input.source === "file" ? `${input.entry} ↔ ${input.path}` : input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : grading ? `${input.path}: ${input.label ?? "version"} ↔ submitted` : `${input.path} (Local History) ↔ current`,
     });
     void (async () => {
       try {
+        if (conflict) {
+          // Merge conflict: the current side (left) against the incoming side (right).
+          const { conflictSides } = await import("../scm/extras");
+          const sides = conflictSides(input.path, Number(input.entry));
+          if (!sides) throw new Error("the conflict was resolved");
+          original.setValue(sides.current);
+          ownModified = monaco.editor.createModel(sides.incoming, languageForPath(input.path));
+          if (!disposed) diff.setModel({ original, modified: ownModified });
+          return;
+        }
+        if (input.source === "saved") {
+          // Compare with Saved: the file on disk (left) against the unsaved editor (right, editable).
+          const disk = async () => lastDiskText(input.path) ?? (await getPlatform().fs.readFile(input.path).catch(() => ""));
+          original.setValue(await disk());
+          unsub = onDocumentSaved((p) => p === input.path && void disk().then((t) => !disposed && original.setValue(t)));
+          const modified = await ensureDocument(input.path);
+          if (!disposed) diff.setModel({ original, modified });
+          return;
+        }
+        if (input.source === "file") {
+          // Compare Active File With…: both files as they are in their editors (left read-only).
+          const left = await ensureDocument(input.entry);
+          const modified = await ensureDocument(input.path);
+          if (!disposed) diff.setModel({ original: left, modified });
+          return;
+        }
+        if (input.source === "git") {
+          // Timeline: the file in a commit (left) against the file now (right, editable).
+          const text = await getPlatform().git?.showAt?.(input.path, input.entry);
+          original.setValue(text ?? "");
+          const modified = await ensureDocument(input.path);
+          if (!disposed) diff.setModel({ original, modified });
+          return;
+        }
         if (grading) {
           // Left: that version of the student's work; right: the submitted file (or nothing, when it was deleted).
           const { leftText } = await import("../grading/diff");
@@ -54,6 +90,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
     })();
     return () => {
       disposed = true;
+      unsub?.();
       diff.setModel(null);
       diff.dispose();
       original.dispose();
@@ -69,7 +106,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
       if (group) await closeEditors(group.id, [input.id]);
     });
   return (
-    <div className={`tm-code-editor tm-git-diff ${compare || input.source === "grading" ? "tm-history-compare" : ""}`} data-testid="history-diff">
+    <div className={`tm-code-editor tm-git-diff ${compare || input.source ? "tm-history-compare" : ""}`} data-testid="history-diff">
       {compare && (
         <div className="tm-compare-bar" data-testid="conflict-compare">
           <span className="tm-compare-side">Task Mentor's copy</span>
@@ -83,6 +120,20 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
               Take Task Mentor's
             </button>
           </span>
+        </div>
+      )}
+      {(input.source === "git" || input.source === "conflict") && (
+        <div className="tm-compare-bar" data-testid={input.source === "git" ? "git-timeline-diff" : "merge-compare"}>
+          <span className="tm-compare-side">{input.label ?? input.entry}</span>
+          <span className="codicon codicon-arrow-both" aria-hidden />
+          <span className="tm-compare-side">{input.source === "git" ? "Now" : "Incoming"}</span>
+        </div>
+      )}
+      {(input.source === "saved" || input.source === "file") && (
+        <div className="tm-compare-bar" data-testid={input.source === "saved" ? "saved-compare" : "file-compare"}>
+          <span className="tm-compare-side">{input.source === "saved" ? "Saved" : input.entry}</span>
+          <span className="codicon codicon-arrow-both" aria-hidden />
+          <span className="tm-compare-side">{input.source === "saved" ? "Current" : input.path}</span>
         </div>
       )}
       {input.source === "grading" && (

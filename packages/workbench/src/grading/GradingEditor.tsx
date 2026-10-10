@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type MutableRefObject } fr
 import { formatKeybinding } from "../commands/registry";
 import { getPlatform, openFile, showDialog, useWorkbench, type EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
-import { ActionButton, Codicon } from "../widgets/icons";
+import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { taskMentorWeb } from "../projects/commands";
 import { useProjects } from "../projects/service";
@@ -70,7 +70,7 @@ function SubmissionFiles() {
     <div className="tm-grade-files" aria-label="Submitted files">
       {files.map((f) => (
         <button key={f.name} type="button" className="tm-filter-chip" onClick={() => open(f.name)} title={`Open ${f.name}`}>
-          <Codicon name="file" /> {f.name}
+          <FileIcon path={f.name} size={14} /> {f.name}
         </button>
       ))}
     </div>
@@ -132,6 +132,7 @@ function SubmissionChanges({ row }: { row: RosterRow }) {
                 <span className={`tm-grade-change-letter is-${c.status}`} aria-label={CHANGE[c.status].label}>
                   {CHANGE[c.status].letter}
                 </span>
+                <FileIcon path={c.path} size={14} />
                 <span className="tm-grade-change-path">{c.path}</span>
               </button>
             </li>

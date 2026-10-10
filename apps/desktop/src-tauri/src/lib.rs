@@ -1,7 +1,17 @@
 #[cfg(target_os = "macos")]
 mod menus;
+/// The menu bar is native on macOS only; elsewhere the workbench draws its own menus,
+/// so the command the workbench calls is a no-op there (the handler list is shared).
+#[cfg(not(target_os = "macos"))]
+mod menus {
+    #[tauri::command]
+    pub fn menu_update(items: Vec<serde_json::Value>) {
+        let _ = items;
+    }
+}
 pub mod askpass;
 mod debug;
+mod lsp;
 mod netcoredbg;
 mod phpdebug;
 mod account;
@@ -22,6 +32,7 @@ mod updates;
 mod watcher;
 mod webview;
 mod workspace;
+mod encoding;
 
 use serde::Serialize;
 use tauri::webview::WebviewBuilder;
@@ -73,6 +84,8 @@ struct AppInfo {
     dev_launch: Option<String>,
     /// A folder or file given on the command line (`tmcode ~/project`).
     open_path: Option<String>,
+    /// Debug builds only: Toggle Developer Tools works (`toggle_devtools`).
+    devtools: bool,
 }
 
 /// The first argument that is a path (not a flag, not a tmcode:// link), made absolute.
@@ -107,8 +120,77 @@ fn app_info() -> AppInfo {
         dev_selftest_extensions: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("extensions"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
+        devtools: cfg!(debug_assertions),
     }
 }
+
+/// Everything the workbench page started that a new page can't talk to any more:
+/// terminals, runs, debuggers, language servers, the extension host, one-shot
+/// commands and published webview pages. Called before Reload Window and when a
+/// reloaded page starts loading (a native reload, Vite's full reload).
+fn stop_page_processes<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    app.state::<pty::Terminals>().kill_all();
+    app.state::<runner::Runs>().kill_all();
+    app.state::<debug::Debuggers>().kill_all();
+    app.state::<lsp::LanguageServers>().kill_all();
+    app.state::<exthost::ExtHosts>().kill_all();
+    app.state::<proc::Procs>().kill_all();
+    app.state::<webview::Webviews>().clear();
+}
+
+/// Developer: Reload Window — the workbench is about to reload itself.
+#[tauri::command]
+fn webview_reloading(app: tauri::AppHandle) {
+    log::info!("workbench reloading: stopping its processes");
+    stop_page_processes(&app);
+}
+
+/// View: Toggle Full Screen.
+#[tauri::command]
+fn toggle_fullscreen(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app.get_window(WINDOW).ok_or("The window is not open.")?;
+    let on = window.is_fullscreen().map_err(|e| e.to_string())?;
+    window.set_fullscreen(!on).map_err(|e| e.to_string())
+}
+
+/// Developer: Toggle Developer Tools — debug builds only (release builds have no devtools feature).
+#[tauri::command]
+fn toggle_devtools(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    {
+        let wb = app.get_webview(WORKBENCH).ok_or("The workbench is not open.")?;
+        if wb.is_devtools_open() {
+            wb.close_devtools();
+        } else {
+            wb.open_devtools();
+        }
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err("Developer tools are not available in this build.".into())
+    }
+}
+
+/// WebView2 acts on browser keys itself when the page doesn't stop them: F5 / Ctrl+R
+/// reload (losing unsaved work), Ctrl+P prints, Ctrl+F opens a find bar, F7 offers caret
+/// browsing, Alt+Left goes back. TMCode has its own commands for those keys, so turn the
+/// browser's off (editing keys such as Ctrl+C / Ctrl+V are not affected).
+#[cfg(windows)]
+fn disable_browser_keys<R: tauri::Runtime>(webview: &tauri::Webview<R>) {
+    let _ = webview.with_webview(|pw| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+        use windows_core::Interface;
+        let Ok(core) = pw.controller().CoreWebView2() else { return };
+        let Ok(settings) = core.Settings() else { return };
+        if let Ok(s3) = settings.cast::<ICoreWebView2Settings3>() {
+            let _ = s3.SetAreBrowserAcceleratorKeysEnabled(false);
+        }
+    });
+}
+
+static PAGE_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Native window appearance follows the workbench theme, so resizing and the
 /// macOS title-bar overlay never flash the wrong colour.
@@ -119,6 +201,13 @@ fn set_native_theme(app: tauri::AppHandle, theme: String) {
     let _ = window.set_theme(Some(if dark { Theme::Dark } else { Theme::Light }));
     let bg = if dark { (31, 31, 31, 255) } else { (255, 255, 255, 255) };
     let _ = window.set_background_color(Some(bg.into()));
+}
+
+/// Whole-window zoom (View › Zoom In / Out / Reset): the workbench webview's page zoom.
+#[tauri::command]
+fn set_zoom(app: tauri::AppHandle, factor: f64) -> Result<(), String> {
+    let webview = app.get_webview(WORKBENCH).ok_or("The workbench is not open.")?;
+    webview.set_zoom(factor.clamp(0.25, 5.0)).map_err(|e| e.to_string())
 }
 
 /// Size the first window for the screen it opens on (school laptops are often 1366×768).
@@ -154,11 +243,21 @@ fn build_main_window(app: &mut App) -> tauri::Result<()> {
     let builder = builder.decorations(false).shadow(true);
     let window = builder.build()?;
     let size = window.inner_size()?.to_logical::<f64>(window.scale_factor()?);
-    let wb = window.add_child(
-        WebviewBuilder::new(WORKBENCH, WebviewUrl::App("index.html".into())),
-        LogicalPosition::new(0.0, 0.0),
-        size,
-    )?;
+    let builder = WebviewBuilder::new(WORKBENCH, WebviewUrl::App("index.html".into())).on_page_load(|webview, payload| {
+        if payload.event() != tauri::webview::PageLoadEvent::Started {
+            return;
+        }
+        #[cfg(windows)]
+        disable_browser_keys(&webview);
+        // A second load is a reload: the old page's processes have nobody to talk to.
+        if PAGE_LOADED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            log::info!("workbench page reloaded: stopping the old page's processes");
+            stop_page_processes(webview.app_handle());
+        }
+    });
+    let wb = window.add_child(builder, LogicalPosition::new(0.0, 0.0), size)?;
+    #[cfg(windows)]
+    disable_browser_keys(&wb);
     wb.set_auto_resize(true)?;
     Ok(())
 }
@@ -201,6 +300,7 @@ pub fn run() {
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
         .manage(debug::Debuggers::default())
+        .manage(lsp::LanguageServers::default())
         .manage(proc::Procs::default())
         .manage(preview::Preview::default())
         .manage(watcher::Watcher::default())
@@ -216,6 +316,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,
+            menus::menu_update,
             take_pending_open,
             workspace::ws_open,
             workspace::ws_reopen,
@@ -233,10 +334,20 @@ pub fn run() {
             workspace::ws_rename,
             workspace::ws_remove,
             workspace::ws_trash,
+            workspace::ws_import,
+            workspace::ws_file_encoding,
+            workspace::ws_reopen_with_encoding,
+            workspace::ws_set_encoding,
+            set_zoom,
+            webview_reloading,
+            toggle_fullscreen,
+            toggle_devtools,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_profiles,
+            pty::pty_busy,
             toolchains::toolchains_detect,
             runner::run_start,
             runner::run_input,
@@ -251,6 +362,12 @@ pub fn run() {
             debug::debug_stop,
             debug::debug_run_in_terminal,
             debug::debug_policy,
+            lsp::lsp_probe,
+            lsp::lsp_install,
+            lsp::lsp_start,
+            lsp::lsp_send,
+            lsp::lsp_stop,
+            lsp::lsp_policy,
             preview::preview_publish,
             api::api_request,
             proc::proc_run,
@@ -297,6 +414,8 @@ pub fn run() {
             git::git_branches,
             git::git_checkout,
             git::git_log,
+            git::git_file_log,
+            git::git_stage_content,
             git::git_init,
             git::git_stash,
             git::git_check_ignore,
@@ -351,7 +470,9 @@ pub fn run() {
             handle.state::<pty::Terminals>().kill_all();
             handle.state::<runner::Runs>().kill_all();
             handle.state::<debug::Debuggers>().kill_all();
+            handle.state::<lsp::LanguageServers>().kill_all();
             handle.state::<exthost::ExtHosts>().kill_all();
+            handle.state::<proc::Procs>().kill_all();
         }
     });
 }

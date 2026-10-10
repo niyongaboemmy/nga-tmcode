@@ -8305,3 +8305,530 @@ kbd,
 .tm-signin-wait.is-compact .tm-signin-wait-actions {
   justify-content: flex-start;
 }
+
+/* ───────────── files & search (feat/files-search) ───────────── */
+.tm-search-form {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding-left: 2px;
+}
+.tm-search-replace-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-height: 26px;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+.tm-search-replace-toggle:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.tm-search-replace-toggle:focus-visible {
+  outline: 1px solid var(--focus-border);
+}
+.tm-search-inputs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.tm-search-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.tm-search-replace-row .tm-input-box {
+  flex: 1;
+  min-width: 0;
+}
+.tm-search-details-toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 12px 0 0;
+}
+.tm-search-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 8px 20px;
+}
+.tm-search-details-label {
+  font-size: 11px;
+  color: var(--description);
+  margin-top: 2px;
+}
+.tm-search-row-actions {
+  display: none;
+  align-items: center;
+  margin-left: auto;
+}
+.tm-search-row-actions .tm-action {
+  width: 20px;
+  height: 20px;
+}
+.tm-search-results .tm-list-row:hover .tm-search-row-actions,
+.tm-search-results .tm-list-row.is-focused .tm-search-row-actions {
+  display: inline-flex;
+}
+.tm-search-results .tm-list-row:hover .tm-search-row-actions ~ .tm-badge {
+  display: none;
+}
+.tm-search-hit.is-removed {
+  background: color-mix(in srgb, var(--error) 30%, transparent);
+  text-decoration: line-through;
+}
+.tm-search-hit.is-added {
+  background: color-mix(in srgb, #2ea043 30%, transparent);
+  text-decoration: none;
+  border-radius: 2px;
+  white-space: pre;
+}
+/* Keyboard trees (Search results, Problems): the focused row while the list has focus. */
+.tm-search-results:focus,
+.tm-problems:focus {
+  outline: none;
+}
+.tm-search-results .tm-list-row.is-focused,
+.tm-problems .tm-list-row.is-focused {
+  background: var(--list-inactive-bg);
+}
+.tm-search-results:focus .tm-list-row.is-focused,
+.tm-problems:focus .tm-list-row.is-focused {
+  background: var(--list-active-bg);
+  color: var(--list-active-fg);
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+/* Explorer: the focused row of a multi-selection, compact folder rows. */
+.tm-explorer:focus .tm-list-row.is-focused:not(.is-selected) {
+  outline: 1px solid var(--list-focus-outline);
+  outline-offset: -1px;
+}
+.tm-compact-sep {
+  margin: 0 1px;
+  color: var(--description);
+}
+.tm-status-encoding.is-non-default {
+  font-weight: 600;
+}
+/* Replace Preview: the file now (left) and after the replace (right). */
+.tm-replace-preview-backdrop {
+  padding-top: 6vh;
+}
+.tm-replace-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, calc(100vw - 32px));
+  height: min(640px, 80vh);
+  border: 1px solid var(--widget-border);
+  border-radius: 8px;
+  background: var(--widget-bg);
+  box-shadow: 0 16px 48px var(--shadow);
+  overflow: hidden;
+}
+.tm-replace-preview-header,
+.tm-replace-preview-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.tm-replace-preview-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-replace-preview-diff {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--widget-border);
+  border-bottom: 1px solid var(--widget-border);
+}
+.tm-replace-preview-footer {
+  justify-content: flex-end;
+}
+/* ───────────────────────── keyboard shortcuts editor (V9) ───────────────────────── */
+.tm-shortcuts-row {
+  grid-template-columns: minmax(220px, 2fr) minmax(130px, 1fr) 70px minmax(180px, 2fr);
+}
+.tm-shortcuts-row:not(.is-head) {
+  cursor: default;
+}
+.tm-shortcuts-row:focus-visible {
+  outline: 1px solid var(--focus-border, #007fd4);
+  outline-offset: -1px;
+}
+.tm-shortcuts-row.is-user > :nth-child(3) {
+  color: var(--foreground);
+}
+.tm-shortcuts-cmd {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.tm-shortcuts-actions {
+  display: inline-flex;
+  flex: none;
+  width: 44px;
+  visibility: hidden;
+}
+.tm-shortcuts-row:hover .tm-shortcuts-actions,
+.tm-shortcuts-row:focus-within .tm-shortcuts-actions,
+.tm-shortcuts-row.is-user .tm-shortcuts-actions {
+  visibility: visible;
+}
+.tm-shortcuts-actions .tm-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tm-shortcuts-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.tm-key-recorder {
+  padding: 18px 20px 0;
+}
+.tm-key-recorder p {
+  margin: 0 0 10px;
+}
+.tm-key-recorder-title {
+  font-weight: 600;
+}
+.tm-key-recorder-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 4px 8px;
+  margin-bottom: 10px;
+  cursor: text;
+}
+.tm-key-recorder-box kbd {
+  margin: 0;
+}
+.tm-key-recorder-conflict {
+  color: var(--warning-fg, #cca700);
+}
+.tm-key-recorder .tm-dialog-buttons {
+  padding: 8px 0 18px;
+}
+.tm-qi-detail {
+  flex: none;
+}
+.tm-root[data-size="xs"] .tm-shortcuts-row {
+  grid-template-columns: 1fr auto;
+}
+.tm-root[data-size="xs"] .tm-shortcuts-row > :nth-child(3),
+.tm-root[data-size="xs"] .tm-shortcuts-row > :nth-child(4) {
+  display: none;
+}
+/* ───── V15–V17, V12: editor grid, pinned tabs, settings.json, split terminals, merge conflicts ───── */
+/* Drop a tab on an editor's edge to split (VS Code's drop overlay). */
+.tm-editor-drop {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--focus-border) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--focus-border) 60%, transparent);
+  transition: inset 80ms ease-out;
+}
+.tm-editor-drop.is-center {
+  inset: 0;
+}
+.tm-editor-drop.is-left {
+  inset: 0 50% 0 0;
+}
+.tm-editor-drop.is-right {
+  inset: 0 0 0 50%;
+}
+.tm-editor-drop.is-up {
+  inset: 0 0 50% 0;
+}
+.tm-editor-drop.is-down {
+  inset: 50% 0 0 0;
+}
+/* Pinned tabs: the pin always shows, as in VS Code. */
+.tm-tab.is-pinned .tm-tab-close {
+  opacity: 1;
+}
+.tm-tab.is-pinned .tm-tab-close-x {
+  font-size: 13px;
+}
+.tm-tab:focus-visible {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+/* Settings: User / Workspace tabs, the JSON button and the folder's overrides. */
+button.tm-settings-tab {
+  border-width: 0 0 1px;
+  border-style: solid;
+  border-color: transparent;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.tm-settings-tab.is-active {
+  border-bottom-color: var(--panel-active-border);
+}
+.tm-settings-tabs-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+.tm-setting-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  background: color-mix(in srgb, var(--badge-bg) 22%, transparent);
+  color: var(--foreground);
+  cursor: default;
+}
+button.tm-setting-badge {
+  cursor: pointer;
+}
+.tm-settings-workspace-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-settings-ignored {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.tm-settings-json {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tm-settings-json-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--description);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.tm-settings-json-bar > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+.tm-settings-json .tm-monaco-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+/* Split terminals side by side; the active pane is outlined when there are several. */
+.tm-terminal-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.tm-terminal-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+}
+.tm-terminal-pane + .tm-terminal-pane {
+  border-left: 1px solid var(--border);
+}
+.tm-terminal-pane.is-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--focus-border) 45%, transparent);
+}
+.tm-terminal-list {
+  width: 190px;
+}
+.tm-terminal-tree {
+  width: 10px;
+  color: var(--description);
+  font-family: monospace;
+}
+.tm-terminal-rename {
+  flex: 1;
+  height: 20px;
+  margin: 0 4px;
+  font-size: 12px;
+}
+.tm-terminal-rename-float {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 3;
+  width: 200px;
+  display: flex;
+}
+/* Merge conflicts: current (green) and incoming (blue), as VS Code colours them. */
+.monaco-editor .tm-merge-current-header {
+  background: rgba(64, 200, 174, 0.5);
+}
+.monaco-editor .tm-merge-current {
+  background: rgba(64, 200, 174, 0.2);
+}
+.monaco-editor .tm-merge-incoming-header {
+  background: rgba(64, 166, 255, 0.5);
+}
+.monaco-editor .tm-merge-incoming {
+  background: rgba(64, 166, 255, 0.2);
+}
+.monaco-editor .tm-merge-base {
+  background: rgba(150, 150, 150, 0.15);
+}
+/* Diff editor title actions (Stage / Revert / Previous / Next / Inline). */
+.tm-diff-actions .tm-action {
+  font-size: 14px;
+}
+/* Git commits in the Timeline: laid out like Local History rows. */
+.tm-timeline-commit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px 0 20px;
+  cursor: pointer;
+}
+.tm-timeline-commit .tm-timeline-dot {
+  color: var(--description);
+}
+/* ───── end V15–V17, V12 ───── */
+
+/* ───── VS Code default commands (commands/vscodeCommands.ts) ───── */
+/* View › Appearance: hidden activity / status bar, side bar on the right. */
+.tm-root[data-activitybar="hidden"] .tm-activitybar,
+.tm-root[data-statusbar="hidden"] .tm-statusbar {
+  display: none;
+}
+.tm-root[data-statusbar="hidden"] .tm-toasts,
+.tm-root[data-statusbar="hidden"] .tm-notification-center {
+  bottom: 10px;
+}
+.tm-root[data-sidebar="right"] .tm-main {
+  flex-direction: row-reverse;
+}
+.tm-root[data-sidebar="right"] .tm-activitybar {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+/* Toggle Maximize Editor Group. */
+.tm-editor-groups.is-maximized {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.tm-editor-groups.is-maximized > .tm-editor-group {
+  flex: 1;
+  min-width: 0;
+}
+/* Breadcrumbs from the keyboard (Focus Breadcrumbs). */
+.tm-crumb:focus-visible {
+  outline: 1px solid var(--focus-border, #0078d4);
+  outline-offset: -1px;
+}
+/* Notifications centre (status bar bell, Show Notifications). */
+.tm-notification-center {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--statusbar-h) + 10px);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  width: min(450px, calc(100vw - 24px));
+  max-height: min(60vh, 520px);
+  border: 1px solid var(--widget-border);
+  border-radius: 8px;
+  background: var(--widget-bg);
+  box-shadow: 0 6px 20px var(--shadow);
+  outline: none;
+  overflow: hidden;
+}
+.tm-nc-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--widget-border);
+}
+.tm-nc-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tm-nc-list {
+  overflow-y: auto;
+  min-height: 0;
+}
+.tm-nc-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--widget-border);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-nc-item:last-child {
+  border-bottom: 0;
+}
+.tm-nc-item.is-closed .tm-nc-message {
+  color: var(--description);
+}
+.tm-nc-message {
+  overflow-wrap: anywhere;
+}
+.tm-nc-time {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-action.is-checked {
+  background: var(--toolbar-active-bg, rgba(128, 128, 128, 0.25));
+}
+/* ───── end VS Code default commands ───── */
+/* ───── file icons everywhere + smart editor (feat/icons-smart) ───── */
+.tm-status-detected {
+  opacity: 0.75;
+}
+.tm-timeline-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tm-grade-change {
+  align-items: center;
+}
+.tm-grade-change .tm-themed-icon,
+.tm-grade-change .tm-file-icon,
+.tm-projects-conflicts .tm-themed-icon {
+  flex: none;
+}
+.tm-themed-icon.codicon {
+  font-size: 16px;
+  color: var(--description);
+}
+/* ───── end feat/icons-smart ───── */

@@ -5,7 +5,8 @@ import { createMemoryAccountHost } from "./memoryProjects";
 import { createSimulatedDebugHost } from "../debug/fakeAdapter";
 import { createSimulatedProc } from "./memoryProc";
 import { createSimulatedTerminal } from "./memoryTerminal";
-import type { DirEntry, ExamHost, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform, Runner } from "./types";
+import { createFakeLanguageServers, fakeLanguageServersEnabled } from "./memoryLanguageServer";
+import type { DirEntry, ExamHost, FileEncoding, FileSystem, JournalEntry, JournalStore, KeyValueStore, OsKind, Platform, Runner } from "./types";
 
 /**
  * An in-memory file system. Used by the browser build (dev server, Playwright,
@@ -106,6 +107,20 @@ export class MemoryFileSystem implements FileSystem {
     }
   }
 
+  /** Memory files are text already; the encoding is only a label the status bar shows and saves keep. */
+  private encodings = new Map<string, FileEncoding>();
+  async encodingOf(path: string): Promise<FileEncoding> {
+    if (!this.files.has(path)) throw new Error(`File '${path}' does not exist`);
+    return this.encodings.get(path) ?? "utf8";
+  }
+  async reopenWithEncoding(path: string, encoding: FileEncoding) {
+    this.encodings.set(path, encoding);
+    return this.readFile(path);
+  }
+  async setEncoding(path: string, encoding: FileEncoding) {
+    this.encodings.set(path, encoding);
+  }
+
   async remove(path: string) {
     if (this.files.delete(path)) return;
     if (!this.dirs.has(path) || path === "") throw new Error(`'${path}' does not exist`);
@@ -140,6 +155,15 @@ export class SwitchableFileSystem implements FileSystem {
   }
   remove(p: string) {
     return this.target.remove(p);
+  }
+  encodingOf(p: string) {
+    return this.target.encodingOf ? this.target.encodingOf(p) : Promise.resolve<FileEncoding>("utf8");
+  }
+  reopenWithEncoding(p: string, e: FileEncoding) {
+    return this.target.reopenWithEncoding ? this.target.reopenWithEncoding(p, e) : this.target.readFile(p);
+  }
+  setEncoding(p: string, e: FileEncoding) {
+    return this.target.setEncoding ? this.target.setEncoding(p, e) : Promise.resolve();
   }
   /** Set by the dev / e2e platform only: the browser has no Trash. */
   trash?: (p: string) => Promise<void>;
@@ -443,6 +467,8 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
       : {}),
     // Dev server / e2e: a simulated Python debugger so Run and Debug can be exercised without processes.
     ...(import.meta.env?.DEV ? { debug: createSimulatedDebugHost((p) => fs.readFile(p)) } : {}),
+    // e2e: a Pyright stand-in, only when a test asks for it (window.__TMCODE_FAKE_LSP__).
+    ...(import.meta.env?.DEV && fakeLanguageServersEnabled() ? { languageServers: createFakeLanguageServers(fs) } : {}),
     exam,
     extensions: createMemoryExtensionHost(),
     http: createMemoryHttp(),

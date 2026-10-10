@@ -123,6 +123,15 @@ pub fn proc_run(app: AppHandle, ws: State<'_, Workspace>, procs: State<'_, Procs
     Ok(id)
 }
 
+impl Procs {
+    /// Stops every command still running (app exit, Reload Window).
+    pub fn kill_all(&self) {
+        for (_, tree) in self.trees.lock().unwrap().drain() {
+            tree.kill();
+        }
+    }
+}
+
 #[tauri::command]
 pub fn proc_kill(procs: State<'_, Procs>, id: u32) {
     if let Some(tree) = procs.trees.lock().unwrap().remove(&id) {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryFileSystem, SwitchableFileSystem } from "../platform/memory";
 import type { Platform } from "../platform/types";
 import { useExam } from "../exam/state";
-import { beforeQuit } from "./quit";
+import { beforeQuit, beforeReload } from "./quit";
 import {
   initWorkbench,
   notify,
@@ -140,6 +140,18 @@ describe("quit guard", () => {
     quitting = beforeQuit();
     await answer("quit");
     expect(await quitting).toBe(true);
+  });
+
+  it("Reload Window: refused in an exam until everything is sent, then the usual checks", async () => {
+    useExam.setState({ phase: "active", sync: { pending: 1, queued: 0, offline: true, lastSyncedAt: null, tampered: false } });
+    const refused = beforeReload();
+    expect(await answer("ok")).toBe("TMCode can't reload yet.");
+    expect(await refused).toBe(false);
+    useExam.setState({ sync: { pending: 0, queued: 0, offline: false, lastSyncedAt: null, tampered: false } });
+    setDirty("main.py", true);
+    const reloading = beforeReload();
+    await answer("discard");
+    expect(await reloading).toBe(true);
   });
 });
 

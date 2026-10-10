@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { KeybindingResolver, allCommands, formatKeybinding, registerCommand } from "./registry";
+import {
+  KeybindingResolver,
+  allCommands,
+  defaultKeybindingFor,
+  dispatchKeybindingFor,
+  formatKeybinding,
+  keybindingFor,
+  registerCommand,
+  setEditorDefaultKeybindings,
+  setUserKeybindings,
+  suspendKeybindings,
+} from "./registry";
 
 function key(init: Partial<KeyboardEvent> & { key: string; code: string }) {
   return new KeyboardEvent("keydown", init);
@@ -50,5 +61,51 @@ describe("KeybindingResolver", () => {
     const r = new KeybindingResolver("windows");
     expect(r.handle(key({ key: "`", code: "Backquote", ctrlKey: true }))).toBe("none");
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("user keybindings", () => {
+  const disposers: (() => void)[] = [];
+  afterEach(() => {
+    disposers.splice(0).forEach((d) => d());
+    setUserKeybindings({});
+    setEditorDefaultKeybindings(new Map());
+    suspendKeybindings(false);
+  });
+
+  it("an override replaces the default key, and an empty one removes it", () => {
+    const run = vi.fn();
+    disposers.push(registerCommand({ id: "a", title: "A", keybinding: "mod+shift+p", run }));
+    const r = new KeybindingResolver("mac");
+    setUserKeybindings({ a: "mod+alt+j" });
+    expect(r.handle(key({ key: "P", code: "KeyP", metaKey: true, shiftKey: true }))).toBe("none");
+    expect(r.handle(key({ key: "j", code: "KeyJ", metaKey: true, altKey: true }))).toBe("executed");
+    expect(keybindingFor(allCommands()[0], "mac")).toBe("mod+alt+j");
+    expect(defaultKeybindingFor(allCommands()[0], "mac")).toBe("mod+shift+p");
+    setUserKeybindings({ a: "" });
+    expect(keybindingFor(allCommands()[0], "mac")).toBeUndefined();
+    expect(r.handle(key({ key: "j", code: "KeyJ", metaKey: true, altKey: true }))).toBe("none");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("shows Monaco's own keys but never dispatches them from the workbench", () => {
+    const run = vi.fn();
+    disposers.push(registerCommand({ id: "editor.action.copyLinesDownAction", title: "Copy Line Down", editorOwned: true, run }));
+    setEditorDefaultKeybindings(new Map([["editor.action.copyLinesDownAction", "alt+shift+down"]]));
+    expect(keybindingFor(allCommands()[0], "mac")).toBe("alt+shift+down");
+    expect(dispatchKeybindingFor(allCommands()[0], "mac")).toBeUndefined();
+    const r = new KeybindingResolver("mac");
+    expect(r.handle(key({ key: "ArrowDown", code: "ArrowDown", altKey: true, shiftKey: true }))).toBe("none");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("lets every key through while one is being recorded", () => {
+    const run = vi.fn();
+    disposers.push(registerCommand({ id: "s", title: "S", keybinding: "mod+s", run }));
+    const r = new KeybindingResolver("windows");
+    suspendKeybindings(true);
+    expect(r.handle(key({ key: "s", code: "KeyS", ctrlKey: true }))).toBe("none");
+    suspendKeybindings(false);
+    expect(r.handle(key({ key: "s", code: "KeyS", ctrlKey: true }))).toBe("executed");
   });
 });

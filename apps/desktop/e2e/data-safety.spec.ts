@@ -6,14 +6,16 @@ const mod = process.platform === "darwin" ? "Meta" : "Control";
 const B = "memory://folders/folder-b";
 
 async function fresh(page: Page) {
-  await page.goto("/");
-  await page.evaluate((b) => {
+  // Seed storage before any app code runs (once per test), so a save from a still-starting page can't overwrite it.
+  await page.addInitScript((b) => {
+    if (sessionStorage.getItem("tmcode:e2e-seeded")) return;
+    sessionStorage.setItem("tmcode:e2e-seeded", "1");
     localStorage.clear();
     // No auto save: the edits stay unsaved. Folder B is a second project with its own main.py.
     localStorage.setItem("tmcode:ui", JSON.stringify({ settings: { "files.autoSave": "off" }, recent: [{ name: "folder-b", root: b }] }));
     localStorage.setItem(`tmcode:mock-folder:${b}`, JSON.stringify({ "main.py": "print('folder B')\n", "b-only.txt": "B\n" }));
   }, B);
-  await page.reload();
+  await page.goto("/");
   await expect(page.locator(".tm-statusbar")).toBeVisible();
 }
 

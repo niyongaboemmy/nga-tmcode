@@ -1,7 +1,9 @@
 import { useRef } from "react";
+import { toggleNotificationCenter, useNotificationCenter } from "../state/notificationCenter";
 import { currentActivity, useActivity } from "../state/activity";
 import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
+import { useDetectedLanguage } from "../monaco/smartEditor";
 import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
@@ -18,6 +20,7 @@ import { useDebug } from "../debug/debugService";
 // ── Run hub ──
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
+import { encodingLabel, pickEncoding, pickEol, pickIndentation, pickLanguage, toggleScreenReaderMode, useActiveFileInfo } from "./editorStatus";
 
 // TMCode has no lab lockdown yet, so a "secure" exam runs exactly like a monitored one and says so.
 const MODE_LABEL = { practice: "Practice", monitored: "Monitored exam", secure: "Monitored exam" } as const;
@@ -160,6 +163,18 @@ function BusyItem() {
   );
 }
 
+/** The language of the active editor; an untitled editor's guessed language says "(auto detected)". */
+function LanguageItem({ language }: { language: string | null }) {
+  const path = useWorkbench((s) => activeFilePath(s));
+  const detected = useDetectedLanguage((s) => !!path && !!s.paths[path]);
+  return (
+    <Item className="tm-prio-mid tm-status-language" title={detected ? "Select Language Mode (auto detected)" : "Select Language Mode"} onClick={() => void pickLanguage()}>
+      {languageLabel(language)}
+      {detected && <span className="tm-status-detected"> (auto detected)</span>}
+    </Item>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -172,7 +187,10 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
+  const dnd = useNotificationCenter((s) => s.dnd);
   const debugging = useDebug((s) => s.phase !== "inactive");
+  const fileInfo = useActiveFileInfo();
+  const screenReader = useWorkbench((s) => s.settings["editor.accessibilitySupport"] === "on");
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
@@ -207,13 +225,22 @@ export function StatusBar({ chord }: { chord: string | null }) {
               Ln {cursor.line}, Col {cursor.column}
               {cursor.selected > 0 && ` (${cursor.selected} selected)`}
             </Item>
-            <Item className="tm-prio-low" title="Indentation (Settings)" onClick={() => executeCommand("workbench.action.openSettings")}>
-              {spaces ? "Spaces" : "Tab Size"}: {tabSize}
+            <Item className="tm-prio-low tm-status-indent" title="Select Indentation" onClick={() => void pickIndentation()}>
+              {fileInfo.path ? (fileInfo.insertSpaces ? "Spaces" : "Tab Size") : spaces ? "Spaces" : "Tab Size"}: {fileInfo.path ? fileInfo.tabSize : tabSize}
             </Item>
-            <Item className="tm-prio-low" title="Encoding">UTF-8</Item>
-            <Item className="tm-prio-low" title="End of Line Sequence">{eol}</Item>
-            <Item className="tm-prio-mid" title="Language Mode">{languageLabel(language)}</Item>
+            <Item className={`tm-prio-low tm-status-encoding ${fileInfo.encoding && fileInfo.encoding !== "utf8" ? "is-non-default" : ""}`} title="Select Encoding" onClick={() => void pickEncoding()}>
+              {encodingLabel(fileInfo.encoding)}
+            </Item>
+            <Item className="tm-prio-low tm-status-eol" title="Select End of Line Sequence" onClick={() => void pickEol()}>
+              {eol}
+            </Item>
+            <LanguageItem language={language} />
           </>
+        )}
+        {screenReader && (
+          <Item className="tm-prio-low" title="Screen reader mode is on. Click to turn it off." onClick={toggleScreenReaderMode}>
+            Screen Reader Optimized
+          </Item>
         )}
         <Item className="tm-prio-low" title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
           <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />
@@ -221,8 +248,12 @@ export function StatusBar({ chord }: { chord: string | null }) {
         </Item>
         <ExtensionStatusItems side="right" />
         <UpdateItem />
-        <Item title={notifications ? `${notifications} notifications` : "No Notifications"}>
-          <Codicon name={notifications ? "bell-dot" : "bell"} />
+        <Item
+          className="tm-status-bell"
+          title={dnd ? "Do Not Disturb" : notifications ? `${notifications} notifications` : "No Notifications"}
+          onClick={toggleNotificationCenter}
+        >
+          <Codicon name={dnd ? "bell-slash" : notifications ? "bell-dot" : "bell"} />
         </Item>
       </div>
       <RunMenuHost />

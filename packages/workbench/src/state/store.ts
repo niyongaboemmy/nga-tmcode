@@ -2,16 +2,24 @@ import { create } from "zustand";
 import { PRACTICE_POLICY, type Policy } from "@tmcode/protocol";
 import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
-import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
+import { DEFAULT_SETTINGS, migrateSettings, type SettingKey, type Settings } from "./settings";
 import { isExamRoot } from "../exam/roots";
+import { MAX_GROUPS, groupOrder as groupOrderOf, leaf, mapGroups, neighbour, readSavedLayout, reconcile as reconcileTree, removeNode, serializeLayout, splitNode, type GridNode, type SplitDirection } from "./layout";
+import { editorMemento } from "./viewStates";
+import { resolveSettings, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
 export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | "grading" | `ext:${string}`;
 export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole" | `ext:${string}`;
 
-export type EditorInput =
+/** Any editor; `sticky` = a pinned tab (kept at the left, never replaced by a preview). */
+export type EditorInput = EditorInputBase & { sticky?: boolean };
+
+type EditorInputBase =
   | { kind: "file"; id: string; path: string; preview: boolean }
   | { kind: "settings"; id: "settings"; preview: false }
+  /** The user settings.json (parts/editor/SettingsJsonEditor). */
+  | { kind: "settingsJson"; id: "settingsJson"; preview: false }
   | { kind: "welcome"; id: "welcome"; preview: false }
   | { kind: "shortcuts"; id: "shortcuts"; preview: false }
   /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
@@ -27,7 +35,9 @@ export type EditorInput =
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
-  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading"; label?: string }
+  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict" | "saved" | "file"; label?: string }
+  /** A language's user snippets file (snippets/SnippetsEditor). */
+  | { kind: "snippets"; id: string; language: string; preview: false }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
   | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
   /** Grading one assignment / quiz practical question (grading/GradingEditor). */
@@ -121,7 +131,7 @@ export interface ExplorerEdit {
   error?: string | null;
 }
 
-export type QuickInputMode = "files" | "commands" | "line" | "theme" | "iconTheme";
+export type QuickInputMode = "files" | "commands" | "line" | "theme" | "iconTheme" | "editors";
 
 export interface OutputLine {
   t: number;
@@ -142,6 +152,8 @@ export interface WorkbenchState {
   explorerEdit: ExplorerEdit | null;
 
   groups: EditorGroup[];
+  /** How the groups are arranged (rows and columns); its leaves are the groups' ids. */
+  editorLayout: GridNode;
   activeGroup: number;
   dirty: Record<string, true>;
 
@@ -151,7 +163,16 @@ export interface WorkbenchState {
   panelMaximized: boolean;
   activePanel: PanelId;
 
+  /** The settings in effect: defaults < user < the folder's .vscode/settings.json (language scopes: settingsForLanguage). */
   settings: Settings;
+  /** The user's own settings (Settings editor "User", settings.json). */
+  userSettings: Settings;
+  /** User `[language]` scopes from settings.json. */
+  languageSettings: LanguageOverrides;
+  /** settings.json keys TMCode doesn't know, kept so they survive a round trip. */
+  otherSettings: Record<string, unknown>;
+  /** The open folder's .vscode/settings.json, read-only (null: none). */
+  workspaceSettings: WorkspaceOverlay | null;
   /** Theme shown while the theme picker is open (live preview). */
   previewTheme: Settings["workbench.colorTheme"] | null;
   /** File icon theme shown while its picker is open. */
@@ -201,6 +222,7 @@ const initialState: WorkbenchState = {
   selection: null,
   explorerEdit: null,
   groups: [{ id: 0, editors: [], activeId: null }],
+  editorLayout: leaf(0),
   activeGroup: 0,
   dirty: {},
   sidebarVisible: true,
@@ -209,6 +231,10 @@ const initialState: WorkbenchState = {
   panelMaximized: false,
   activePanel: "terminal",
   settings: DEFAULT_SETTINGS,
+  userSettings: DEFAULT_SETTINGS,
+  languageSettings: {},
+  otherSettings: {},
+  workspaceSettings: null,
   previewTheme: null,
   previewIconTheme: null,
   cursor: { line: 1, column: 1, selected: 0 },
@@ -230,9 +256,15 @@ const initialState: WorkbenchState = {
 /** Persisted between launches (per user, not per workspace). */
 interface PersistedUi {
   settings?: Partial<Settings>;
+  /** `[language]` scopes and unknown keys from settings.json. */
+  languageSettings?: LanguageOverrides;
+  otherSettings?: Record<string, unknown>;
   recent?: { name: string; root: string }[];
   layout?: { sidebarVisible: boolean; panelVisible: boolean; activePanel: PanelId };
+  /** One-time settings migrations already applied (state/settings.ts SETTINGS_MIGRATIONS). */
+  migrations?: string[];
 }
+let appliedMigrations: string[] = [];
 
 export const useWorkbench = create<WorkbenchState>()(() => ({ ...initialState }));
 const set = useWorkbench.setState;
@@ -241,9 +273,12 @@ const get = useWorkbench.getState;
 function persist() {
   const s = get();
   const ui: PersistedUi = {
-    settings: s.settings,
+    settings: s.userSettings,
+    ...(Object.keys(s.languageSettings).length ? { languageSettings: s.languageSettings } : {}),
+    ...(Object.keys(s.otherSettings).length ? { otherSettings: s.otherSettings } : {}),
     recent: s.recent,
     layout: { sidebarVisible: s.sidebarVisible, panelVisible: s.panelVisible, activePanel: s.activePanel },
+    migrations: appliedMigrations,
   };
   void platform?.store.set("ui", ui);
 }
@@ -253,8 +288,14 @@ function persist() {
 export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean } = {}) {
   platform = p;
   const ui = (await p.store.get<PersistedUi>("ui")) ?? {};
+  const migrated = migrateSettings(ui.settings, ui.migrations);
+  appliedMigrations = migrated.done;
+  const user = { ...DEFAULT_SETTINGS, ...migrated.settings };
   set({
-    settings: { ...DEFAULT_SETTINGS, ...ui.settings },
+    settings: user,
+    userSettings: user,
+    languageSettings: ui.languageSettings && typeof ui.languageSettings === "object" ? ui.languageSettings : {},
+    otherSettings: ui.otherSettings && typeof ui.otherSettings === "object" ? ui.otherSettings : {},
     // Exam folders never reopen from Recent (older versions listed them).
     recent: (ui.recent ?? []).filter((r) => !isExamRoot(r.root)),
     sidebarVisible: ui.layout?.sidebarVisible ?? true,
@@ -278,6 +319,7 @@ export const startupHooks: { beforeReady: () => Promise<void> } = { beforeReady:
 export function resetWorkbenchForTests() {
   platform = null;
   groupSeq = 1;
+  editorMemento.clear();
   set({ ...initialState }, true);
 }
 
@@ -325,16 +367,19 @@ export async function setWorkspace(ws: { name: string; root: string }): Promise<
     expanded: {},
     selection: null,
     groups: [{ id: 0, editors: [], activeId: null }],
+    editorLayout: leaf(0),
     activeGroup: 0,
     dirty: {},
     problems: [],
   });
   // The old folder's documents go: B's main.py must never show (or save over) A's.
+  editorMemento.clear();
   workspaceListeners.forEach((l) => l());
   persist();
   await loadDir("");
   log("Workspace", `Opened ${ws.name}`);
-  await restoreEditors(ws.root);
+  restoringLayout = true;
+  await restoreEditors(ws.root).finally(() => (restoringLayout = false));
   return true;
 }
 
@@ -345,32 +390,101 @@ export function onWorkspaceChanged(l: () => void) {
   return () => workspaceListeners.delete(l);
 }
 
-// ── open editors per folder (restored when the folder is opened again, as in VS Code) ──
+// ── editor layout per folder: groups, splits, tabs, cursors and pane sizes (restored as in VS Code) ──
 
 const editorsKey = (root: string) => `editors:${root}`;
 
 async function restoreEditors(root: string) {
   if (root.startsWith("memory://exam") || !platform) return;
-  const saved = await platform.store.get<{ paths: string[]; active: string | null }>(editorsKey(root)).catch(() => undefined);
-  if (!saved?.paths?.length) return;
-  for (const path of saved.paths) {
-    const exists = await platform.fs.readFile(path).then(() => true).catch(() => false);
-    if (exists) openFile(path, { pinned: true });
+  const saved = readSavedLayout(await platform.store.get<unknown>(editorsKey(root)).catch(() => undefined));
+  if (!saved?.groups.some((g) => g.editors.length)) return;
+  const exists = new Map<string, boolean>();
+  const check = async (path: string) => {
+    if (!exists.has(path)) exists.set(path, await platform!.fs.readFile(path).then(() => true).catch(() => false));
+    return exists.get(path)!;
+  };
+  // Saved ids become fresh ones; a group whose files are all gone disappears.
+  const ids = new Map<number, number>();
+  const groups: EditorGroup[] = [];
+  for (const g of saved.groups) {
+    const editors: EditorInput[] = [];
+    for (const e of g.editors) if (await check(e.path)) editors.push({ kind: "file", id: e.path, path: e.path, preview: false, ...(e.pinned ? { sticky: true } : {}) });
+    if (!editors.length) continue;
+    const id = groups.length === 0 ? 0 : groupSeq++;
+    ids.set(g.id, id);
+    const active = editors.find((e) => e.id === g.active)?.id ?? editors[editors.length - 1].id;
+    groups.push({ id, editors: sortSticky(editors), activeId: active });
   }
-  if (saved.active && saved.paths.includes(saved.active)) openFile(saved.active, { pinned: true });
+  if (!groups.length || get().workspace?.root !== root) return;
+  const tree = reconcileTree(mapGroups(saved.tree, (id) => ids.get(id) ?? null), groups.map((g) => g.id));
+  for (const [key, sizes] of Object.entries(saved.sizes ?? {})) {
+    const m = /^(row|column):(\d+)$/.exec(key);
+    if (m && ids.has(Number(m[2]))) editorMemento.sizes.set(`${m[1]}:${ids.get(Number(m[2]))}`, sizes);
+  }
+  for (const [key, vs] of Object.entries(saved.viewStates ?? {})) {
+    const at = key.indexOf(":");
+    const id = ids.get(Number(key.slice(0, at)));
+    if (id !== undefined) editorMemento.viewStates.set(`${id}:${key.slice(at + 1)}`, vs);
+  }
+  // A file opened while restoring stays open, in the first group.
+  const opened = get().groups[0]?.editors.filter((e) => !groups[0].editors.some((x) => x.id === e.id)) ?? [];
+  if (opened.length) groups[0] = { ...groups[0], editors: sortSticky([...groups[0].editors, ...opened]) };
+  const activeGroup = ids.get(saved.activeGroup) ?? groups[0].id;
+  set({ groups, editorLayout: tree, activeGroup });
+  const g = groups.find((x) => x.id === activeGroup);
+  const input = g?.editors.find((e) => e.id === g.activeId);
+  if (input?.kind === "file") set({ selection: input.path });
 }
 
 let editorsTimer: ReturnType<typeof setTimeout> | null = null;
-useWorkbench.subscribe((s, prev) => {
-  if (!s.workspace || (s.groups === prev.groups && s.activeGroup === prev.activeGroup)) return;
-  if (editorsTimer) clearTimeout(editorsTimer);
+/** While a folder opens, its saved layout must not be overwritten by the empty one. */
+let restoringLayout = false;
+/** Saves the folder's layout soon (also called when pane sizes or cursors change). */
+let editorsDue = 0;
+export function scheduleLayoutSave(delay = 500) {
+  // Throttled, not debounced: cursor moves and sash drags must not keep postponing the save.
+  // A sooner request (a tab opened while a slow view-state save waits) brings the save forward.
+  const due = Date.now() + delay;
+  if (editorsTimer) {
+    if (due >= editorsDue) return;
+    clearTimeout(editorsTimer);
+  }
+  editorsDue = due;
   editorsTimer = setTimeout(() => {
+    editorsTimer = null;
     const st = get();
-    if (!st.workspace || !platform) return;
-    const paths = [...new Set(st.groups.flatMap((g) => g.editors.flatMap((e) => (e.kind === "file" && !e.preview ? [e.path] : []))))].slice(0, 30);
-    void platform.store.set(editorsKey(st.workspace.root), { paths, active: activeFilePath(st) });
-  }, 500);
+    if (!st.workspace || !platform || restoringLayout || st.workspace.root.startsWith("memory://exam")) return;
+    void platform.store.set(editorsKey(st.workspace.root), serializeLayout(st.editorLayout, st.groups, st.activeGroup, editorMemento.snapshot()));
+  }, delay);
+}
+/** Saves the folder's layout now (before Reload Window), and the UI state with it. */
+export async function flushLayoutSave() {
+  if (editorsTimer) clearTimeout(editorsTimer);
+  editorsTimer = null;
+  persist();
+  const st = get();
+  if (!st.workspace || !platform || restoringLayout || st.workspace.root.startsWith("memory://exam")) return;
+  await platform.store.set(editorsKey(st.workspace.root), serializeLayout(st.editorLayout, st.groups, st.activeGroup, editorMemento.snapshot())).catch(() => {});
+}
+
+/** File › Open Recent › Clear Recently Opened: every folder but the open one. */
+export function clearRecentFolders() {
+  const ws = get().workspace;
+  set({ recent: ws ? get().recent.filter((r) => r.root === ws.root) : [] });
+  persist();
+}
+
+useWorkbench.subscribe((s, prev) => {
+  if (!s.workspace || (s.groups === prev.groups && s.activeGroup === prev.activeGroup && s.editorLayout === prev.editorLayout)) return;
+  scheduleLayoutSave();
 });
+
+// A reload or quit that doesn't go through Reload Window still keeps the last tabs (VS Code saves state on shutdown).
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    if (editorsTimer) void flushLayoutSave();
+  });
+}
 
 // The open* functions return false when nothing was opened: the picker was
 // closed, the path failed, or the student kept the current folder (Cancel on
@@ -523,6 +637,11 @@ export async function createEntry(parent: string, name: string, kind: "file" | "
 
 export async function renameEntry(from: string, newName: string) {
   set({ explorerEdit: null });
+  // F2 reaches here without the menu: the .git folder keeps its name, as it is never deleted.
+  if (isProtectedEntry(from)) {
+    notify("warning", "TMCode doesn't rename the .git folder: it holds this project's history.");
+    return;
+  }
   await moveEntry(from, join(dirname(from), newName.trim()));
 }
 
@@ -585,13 +704,32 @@ function confirmPermanentDelete(message: string, detail: string) {
  * fails, it asks again before deleting for good.
  */
 export async function deleteEntry(path: string) {
+  return deleteEntries([path]);
+}
+
+/** A repository's .git folder: the Explorer never deletes it (its history would be lost). */
+export function isProtectedEntry(path: string) {
+  return basename(path) === ".git";
+}
+
+/** Explorer Delete of several files and folders: one question, then each goes to the Trash. */
+export async function deleteEntries(paths: string[]) {
   const fs = getPlatform().fs;
-  const name = basename(path);
-  const isDir = Object.values(get().dirs).some((list) => list.some((e) => e.path === path && e.kind === "dir"));
+  // A folder's contents go with it: drop paths inside another selected folder.
+  let list = [...new Set(paths)].filter((p) => p && !paths.some((q) => q !== p && isWithin(p, q)));
+  if (list.some(isProtectedEntry)) {
+    notify("warning", "TMCode doesn't delete the .git folder: it holds this project's history. Use Source Control instead.");
+    list = list.filter((p) => !isProtectedEntry(p));
+  }
+  if (!list.length) return false;
+  const isDirPath = (p: string) => Object.values(get().dirs).some((l) => l.some((e) => e.path === p && e.kind === "dir"));
+  const name = basename(list[0]);
+  const many = list.length > 1;
+  const names = list.slice(0, 10).map(basename).join("\n") + (list.length > 10 ? `\n…and ${list.length - 10} more` : "");
   if (fs.trash) {
     const choice = await showDialog({
-      message: `Are you sure you want to delete '${name}'?`,
-      detail: `You can restore this ${isDir ? "folder" : "file"} from the Trash.`,
+      message: many ? `Are you sure you want to delete the following ${list.length} files or folders?` : `Are you sure you want to delete '${name}'?`,
+      detail: many ? `${names}\n\nYou can restore them from the Trash.` : `You can restore this ${isDirPath(list[0]) ? "folder" : "file"} from the Trash.`,
       severity: "warning",
       buttons: [
         { id: "trash", label: "Move to Trash", primary: true },
@@ -601,9 +739,20 @@ export async function deleteEntry(path: string) {
     });
     if (choice !== "trash") return false;
   } else {
-    const choice = await confirmPermanentDelete(`Are you sure you want to permanently delete '${name}'?`, "This cannot be undone.");
+    const choice = await confirmPermanentDelete(
+      many ? `Are you sure you want to permanently delete the following ${list.length} files or folders?` : `Are you sure you want to permanently delete '${name}'?`,
+      many ? `${names}\n\nThis cannot be undone.` : "This cannot be undone.",
+    );
     if (choice !== "delete") return false;
   }
+  let any = false;
+  for (const path of list) if (await deleteOne(path)) any = true;
+  return any;
+}
+
+async function deleteOne(path: string) {
+  const fs = getPlatform().fs;
+  const name = basename(path);
   for (const hook of beforeDeleteHooks) await hook(path).catch(() => {});
   let trashed = false;
   if (fs.trash) {
@@ -651,8 +800,20 @@ export function onEntryDeleted(l: DeleteListener) {
 
 // ───────────────────────────── editors ─────────────────────────────
 
+/** Pinned (sticky) tabs first, each side keeping its order. */
+export function sortSticky(editors: EditorInput[]): EditorInput[] {
+  if (!editors.some((e) => e.sticky)) return editors;
+  return [...editors.filter((e) => e.sticky), ...editors.filter((e) => !e.sticky)];
+}
+
 function updateGroup(id: number, fn: (g: EditorGroup) => EditorGroup) {
-  set({ groups: get().groups.map((g) => (g.id === id ? fn(g) : g)) });
+  set({
+    groups: get().groups.map((g) => {
+      if (g.id !== id) return g;
+      const next = fn(g);
+      return next.editors === g.editors ? next : { ...next, editors: sortSticky(next.editors) };
+    }),
+  });
 }
 
 export function activeEditor(state: WorkbenchState = get()): EditorInput | null {
@@ -700,25 +861,30 @@ export function pinEditor(path: string) {
   });
 }
 
+/** Pin Tab / Unpin Tab (VS Code's sticky editors): pinned tabs stay at the left and are never replaced by a preview. */
+export function setEditorSticky(groupId: number, id: string, sticky: boolean) {
+  updateGroup(groupId, (g) => {
+    const target = g.editors.find((e) => e.id === id);
+    if (!target || !!target.sticky === sticky) return g;
+    const rest = g.editors.filter((e) => e !== target);
+    const updated = { ...target, preview: false, sticky: sticky || undefined } as EditorInput;
+    // Pinning puts the tab after the other pinned tabs; unpinning puts it first among the others.
+    rest.splice(rest.filter((e) => e.sticky).length, 0, updated);
+    return { ...g, editors: rest };
+  });
+}
+
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
-export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" | "grading" | "sqlResults" | "logic" | "api" }>, opts: { group?: number; toSide?: boolean } = {}) {
+export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" | "grading" | "sqlResults" | "logic" | "api" | "snippets" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
   if (opts.toSide) {
     const s = get();
-    const idx = s.groups.findIndex((g) => g.id === s.activeGroup);
-    const right = s.groups[idx + 1];
-    if (right) groupId = right.id;
-    else {
-      const id = groupSeq++;
-      const groups = [...s.groups];
-      groups.splice(idx + 1, 0, { id, editors: [], activeId: null });
-      set({ groups });
-      groupId = id;
-    }
+    const right = neighbour(reconcileTree(s.editorLayout, s.groups.map((g) => g.id)), s.activeGroup, "right");
+    groupId = right ?? addGroup(s.activeGroup, "right") ?? groupId;
   }
   updateGroup(groupId, (g) => {
     if (g.editors.some((e) => e.id === input.id)) {
-      return { ...g, editors: g.editors.map((e) => (e.id === input.id ? input : e)), activeId: input.id };
+      return { ...g, editors: g.editors.map((e) => (e.id === input.id ? ({ ...input, sticky: e.sticky } as EditorInput) : e)), activeId: input.id };
     }
     const editors = [...g.editors];
     const activeIdx = editors.findIndex((e) => e.id === g.activeId);
@@ -741,7 +907,7 @@ export function updateTest(id: string, patch: Partial<TestItem>) {
   set({ tests: { ...t, items: t.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) } });
 }
 
-export function openSpecialEditor(kind: "settings" | "welcome" | "shortcuts") {
+export function openSpecialEditor(kind: "settings" | "settingsJson" | "welcome" | "shortcuts") {
   const groupId = get().activeGroup;
   updateGroup(groupId, (g) => {
     if (g.editors.some((e) => e.id === kind)) return { ...g, activeId: kind };
@@ -832,10 +998,7 @@ export async function closeEditors(groupId: number, ids: string[]) {
   // An empty split closes; the last group always stays.
   const s = get();
   const target = s.groups.find((x) => x.id === groupId);
-  if (target && !target.editors.length && s.groups.length > 1) {
-    const groups = s.groups.filter((x) => x.id !== groupId);
-    set({ groups, activeGroup: groups[Math.max(0, s.groups.indexOf(target) - 1)].id });
-  }
+  if (target && !target.editors.length && s.groups.length > 1) removeGroup(groupId);
   closedListeners.forEach((l) => l(closingPaths));
 }
 
@@ -855,20 +1018,81 @@ export async function closeAllEditors() {
   for (const g of [...get().groups]) await closeEditors(g.id, g.editors.map((e) => e.id));
 }
 
-export function splitEditor(direction: "right" = "right") {
-  void direction;
+/** The groups in reading order (the grid's left-to-right, top-to-bottom order). */
+function orderedGroups(groups: EditorGroup[], tree: GridNode): EditorGroup[] {
+  const order = groupOrderOf(tree);
+  return [...groups].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+}
+
+/** A new empty group beside `target`; null when there are already as many as fit. */
+export function addGroup(target: number, direction: SplitDirection): number | null {
   const s = get();
-  if (s.groups.length >= 3) {
-    notify("info", "TMCode supports up to three side-by-side editor groups.");
-    return;
+  if (s.groups.length >= MAX_GROUPS) {
+    notify("info", `TMCode shows up to ${MAX_GROUPS} editor groups. Close one to split again.`);
+    return null;
   }
-  const current = activeEditor(s);
   const id = groupSeq++;
-  const group: EditorGroup = { id, editors: current ? [{ ...current, preview: false } as EditorInput] : [], activeId: current?.id ?? null };
-  const idx = s.groups.findIndex((g) => g.id === s.activeGroup);
-  const groups = [...s.groups];
-  groups.splice(idx + 1, 0, group);
-  set({ groups, activeGroup: id });
+  const tree = splitNode(reconcileTree(s.editorLayout, s.groups.map((g) => g.id)), target, id, direction);
+  set({ groups: orderedGroups([...s.groups, { id, editors: [], activeId: null }], tree), editorLayout: tree });
+  return id;
+}
+
+/** Closes a group (its editors must be gone or moved); the group next to it becomes active. */
+function removeGroup(groupId: number) {
+  const s = get();
+  if (s.groups.length <= 1) return;
+  const tree = reconcileTree(s.editorLayout, s.groups.map((g) => g.id));
+  const next = (["left", "up", "right", "down"] as const).map((d) => neighbour(tree, groupId, d)).find((g) => g != null);
+  const groups = s.groups.filter((x) => x.id !== groupId);
+  const layout = removeNode(tree, groupId) ?? leaf(groups[0].id);
+  set({ groups, editorLayout: layout, activeGroup: s.activeGroup === groupId ? (next ?? groups[0].id) : s.activeGroup });
+}
+
+/** Split Editor Right / Down / Left / Up: the active editor (or `from`) also opens in a new group beside its own. */
+export function splitEditor(direction: SplitDirection = "right", from?: { group: number; editorId?: string }) {
+  const s = get();
+  const sourceId = from?.group ?? s.activeGroup;
+  const source = s.groups.find((g) => g.id === sourceId);
+  const current = source?.editors.find((e) => e.id === (from?.editorId ?? source.activeId)) ?? null;
+  const id = addGroup(sourceId, direction);
+  if (id == null) return;
+  // Files show the same document in both groups; the copy is never a preview or pinned.
+  if (current) updateGroup(id, (g) => ({ ...g, editors: [{ ...current, preview: false, sticky: undefined } as EditorInput], activeId: current.id }));
+  set({ activeGroup: id });
+}
+
+/** Takes an editor out of a group without a save prompt (it stays open elsewhere); an emptied group closes. */
+function detachEditor(groupId: number, id: string) {
+  updateGroup(groupId, (g) => {
+    const idx = g.editors.findIndex((e) => e.id === id);
+    const editors = g.editors.filter((e) => e.id !== id);
+    const activeId = g.activeId === id ? (editors[Math.min(idx, editors.length - 1)]?.id ?? null) : g.activeId;
+    return { ...g, editors, activeId };
+  });
+  if (!get().groups.find((g) => g.id === groupId)?.editors.length) removeGroup(groupId);
+}
+
+/** A tab dropped on an editor's edge moves into a new group on that side, as in VS Code. */
+export function moveEditorToNewGroup(fromGroup: number, id: string, target: number, direction: SplitDirection) {
+  const s = get();
+  const from = s.groups.find((g) => g.id === fromGroup);
+  const input = from?.editors.find((e) => e.id === id);
+  if (!from || !input) return;
+  // A group's only editor dropped on its own edge: nothing would be left behind.
+  if (fromGroup === target && from.editors.length === 1) return;
+  const created = addGroup(target, direction);
+  if (created == null) return;
+  updateGroup(created, (g) => ({ ...g, editors: [{ ...input, preview: false } as EditorInput], activeId: input.id }));
+  detachEditor(fromGroup, id);
+  set({ activeGroup: created });
+}
+
+/** Moves focus to the group beside the active one (Focus Left/Right/Above/Below Editor Group). */
+export function focusNeighbourGroup(direction: SplitDirection) {
+  const s = get();
+  const next = neighbour(reconcileTree(s.editorLayout, s.groups.map((g) => g.id)), s.activeGroup, direction);
+  if (next != null) set({ activeGroup: next });
+  return next;
 }
 
 export function moveEditor(fromGroup: number, id: string, toGroup: number, index: number) {
@@ -890,8 +1114,9 @@ export function moveEditor(fromGroup: number, id: string, toGroup: number, index
     editors.splice(Math.min(index, editors.length), 0, { ...input, preview: false } as EditorInput);
     return { ...g, editors, activeId: id };
   });
+  // The document is still open (in the target group), so leaving this one never asks to save.
+  detachEditor(fromGroup, id);
   set({ activeGroup: toGroup });
-  void closeEditors(fromGroup, [id]);
 }
 
 export function setDirty(path: string, dirty: boolean) {
@@ -946,8 +1171,47 @@ export function updateSetting<K extends SettingKey>(key: K, value: Settings[K]) 
     notify("warning", "This setting is locked by your teacher for this session.");
     return;
   }
-  set({ settings: { ...get().settings, [key]: value } });
+  const userSettings = { ...get().userSettings, [key]: value };
+  set({ userSettings, settings: effective(userSettings) });
   persist();
+}
+
+/** User settings plus the folder's (non-language) settings. */
+function effective(user: Settings, overlay = get().workspaceSettings): Settings {
+  return resolveSettings(user, {}, overlay, null, get().policy.locked_settings);
+}
+
+/** The settings an editor of this Monaco language uses (`[python]` scopes included). */
+export function settingsForLanguage(language: string | null, s: WorkbenchState = get()): Settings {
+  return resolveSettings(s.userSettings, s.languageSettings, s.workspaceSettings, language, s.policy.locked_settings);
+}
+
+/**
+ * Applies a parsed settings.json: keys it lists take their value, keys it no
+ * longer lists go back to their default. Locked settings keep their value.
+ */
+export function applyUserSettingsJson(parsed: { values: Partial<Settings>; languages: LanguageOverrides; other: Record<string, unknown> }) {
+  const locked = get().policy.locked_settings;
+  const current = get().userSettings;
+  const next = { ...DEFAULT_SETTINGS, ...parsed.values } as Settings;
+  for (const k of locked) if (k in current) (next as unknown as Record<string, unknown>)[k] = current[k as SettingKey];
+  set({ userSettings: next, settings: effective(next), languageSettings: parsed.languages, otherSettings: parsed.other });
+  persist();
+}
+
+let workspaceSettingsText: string | null = null;
+/** The open folder's .vscode/settings.json text (null: none); re-read when it changes. */
+export function setWorkspaceSettingsText(text: string | null) {
+  workspaceSettingsText = text;
+  applyWorkspaceSettings();
+}
+
+/** Re-applies the folder's settings: during an exam only layout keys, never locked ones. */
+function applyWorkspaceSettings() {
+  const s = get();
+  const exam = s.policy.mode !== "practice" || (!!s.workspace && isExamRoot(s.workspace.root));
+  const overlay = workspaceSettingsText === null ? null : workspaceOverlay(workspaceSettingsText, { exam, locked: s.policy.locked_settings });
+  set({ workspaceSettings: overlay, settings: effective(s.userSettings, overlay) });
 }
 
 export function setPreviewTheme(theme: Settings["workbench.colorTheme"] | null) {
@@ -960,6 +1224,7 @@ export function setPreviewIconTheme(theme: string | null) {
 
 export function setPolicy(policy: Policy) {
   set({ policy });
+  applyWorkspaceSettings();
 }
 
 // ───────────────────────────── status / panels ─────────────────────────────

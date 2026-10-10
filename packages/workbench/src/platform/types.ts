@@ -27,12 +27,48 @@ export interface FileSystem {
   trash?(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;
+  // ── encodings and imports (feat/files-search) ──
+  /** The encoding a file is read and saved with ("utf8", "utf8bom", "utf16le", "utf16be", "windows1252", "iso88591"). */
+  encodingOf?(path: string): Promise<FileEncoding>;
+  /** Reads the file again with this encoding; later saves use it too. */
+  reopenWithEncoding?(path: string, encoding: FileEncoding): Promise<string>;
+  /** Saves of this file use this encoding from now on (Save with Encoding). */
+  setEncoding?(path: string, encoding: FileEncoding): Promise<void>;
+  /**
+   * Copies files and folders from outside the workspace (absolute paths dropped
+   * from Finder / File Explorer) into folder `dest`. Without `overwrite`, nothing
+   * is copied when a name is taken: the taken names come back in `conflicts`.
+   */
+  importPaths?(sources: string[], dest: string, overwrite: boolean): Promise<{ imported: string[]; conflicts: string[] }>;
+}
+
+export type FileEncoding = "utf8" | "utf8bom" | "utf16le" | "utf16be" | "windows1252" | "iso88591";
+
+/** Files dragged over / dropped on the window from the OS, in CSS pixels. */
+export interface FileDropEvent {
+  type: "over" | "drop" | "leave";
+  paths: string[];
+  x: number;
+  y: number;
 }
 
 export interface TerminalSession {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
+  /** A program other than the shell is running in it (npm run dev, python…); absent where unknown. */
+  busy?(): Promise<boolean>;
+}
+
+/** A shell found on this computer (pty.rs `detect_profiles`). */
+export interface TerminalProfile {
+  /** "zsh", "bash", "fish", "powershell", "pwsh", "cmd", "gitbash", "wsl", or the $SHELL's name. */
+  id: string;
+  /** Shown on the terminal tab and in the ⌄ menu: "zsh", "PowerShell", "Git Bash"… */
+  name: string;
+  path: string;
+  /** The system's shell ($SHELL, or PowerShell on Windows). */
+  is_default: boolean;
 }
 
 export interface TerminalSpawnOptions {
@@ -40,6 +76,8 @@ export interface TerminalSpawnOptions {
   rows: number;
   /** Workspace-relative working directory (default: the workspace root). */
   cwd?: string;
+  /** A profile id from `profiles()`; absent = the system's shell. */
+  profile?: string;
   onData(data: string): void;
   onExit(code: number | null): void;
 }
@@ -50,6 +88,26 @@ export interface WindowControls {
   close(): void;
   isMaximized(): Promise<boolean>;
   onMaximizedChange(cb: (maximized: boolean) => void): () => void;
+}
+
+export interface ShellHost {
+  /** Before Reload Window: the host stops what the old page started (terminals, runs, debuggers, language servers, extension host). */
+  beforeReload?(): Promise<void>;
+  /** Toggles native full screen. */
+  toggleFullScreen?(): Promise<void>;
+  /** Closes the window through the same close guard as the close button. */
+  closeWindow?(): void;
+  /** Present only where developer tools may open (debug builds). */
+  toggleDevTools?(): Promise<void>;
+}
+
+export interface NativeMenuItemState {
+  /** Workbench command id (the native item's id is "cmd:<id>"). */
+  id: string;
+  text: string;
+  enabled: boolean;
+  /** Tauri accelerator ("CmdOrCtrl+Shift+P"), or null for none. */
+  accel: string | null;
 }
 
 export interface KeyValueStore {
@@ -84,7 +142,7 @@ export interface Platform {
   setTitle?(title: string): void;
   fs: FileSystem;
   /** Absent where a shell is impossible (web) or forbidden by policy. */
-  terminal?: { spawn(opts: TerminalSpawnOptions): Promise<TerminalSession> };
+  terminal?: { spawn(opts: TerminalSpawnOptions): Promise<TerminalSession>; profiles?(): Promise<TerminalProfile[]> };
   /** Absent in the browser, where the page has no window chrome to drive. */
   window?: WindowControls;
   store: KeyValueStore;
@@ -102,6 +160,14 @@ export interface Platform {
   webviews?: WebviewHost;
   /** Sets the native window background/appearance so resize flashes match the theme. */
   setNativeTheme?(theme: "dark" | "light"): void;
+  /** Whole-window zoom (1 = 100 %); absent → the workbench zooms with CSS. */
+  setZoom?(factor: number): void;
+  /** Files dragged in from Finder / File Explorer (desktop). Returns an unsubscribe. */
+  onFileDrop?(cb: (e: FileDropEvent) => void): () => void;
+  /** macOS menu bar (commands/menus.json): label, enabled state and accelerator of each "cmd:<id>" item. */
+  setMenuState?(items: NativeMenuItemState[]): void;
+  /** Window commands (VS Code's Reload Window, Toggle Full Screen, Close Window, Toggle Developer Tools). */
+  shell?: ShellHost;
   // ── extensions (feat/extensions) ──
   /** VS Code extensions from Open VSX (declarative contributions only). */
   extensions?: ExtensionHost;
@@ -112,6 +178,42 @@ export interface Platform {
   account?: AccountHost;
   /** Run and Debug (Debug Adapter Protocol); absent where nothing can be debugged. */
   debug?: DebugHost;
+  /** Built-in language servers (Pyright); absent where none can run. */
+  languageServers?: LanguageServerHost;
+}
+
+// ───────────── built-in language servers (review V4) ─────────────
+
+export type LanguageServerId = "pyright" | "jdtls";
+
+export interface LanguageServerProbe {
+  available: boolean;
+  /** What would make it available: a server to download. */
+  install: LanguageServerId | null;
+  detail: string | null;
+  message: string | null;
+  /** The Python TMCode runs, for the server's import resolution. */
+  python: string | null;
+}
+
+/** From the server: one LSP message as JSON text, its stderr, or its exit. */
+export type LanguageServerEvent = { type: "message"; message: string } | { type: "stderr"; data: string } | { type: "exit"; code: number | null };
+
+export interface LanguageServerConnection {
+  id: number;
+  /** Sends one LSP message (JSON text). */
+  send(message: string): void;
+  stop(): void;
+}
+
+export interface LanguageServerHost {
+  probe(server: LanguageServerId): Promise<LanguageServerProbe>;
+  /** Downloads the server once (pinned version and checksum); refused in exams. */
+  install(server: LanguageServerId, onEvent: (e: DebugInstallEvent) => void): Promise<void>;
+  /** Starts the server in the open folder. */
+  start(server: LanguageServerId, onEvent: (e: LanguageServerEvent) => void): Promise<LanguageServerConnection>;
+  /** Whether the exam's policy allows editor intelligence (the host refuses servers in exam folders otherwise). */
+  setExamPolicy?(allowed: boolean): void;
 }
 
 // ───────────── extensions ─────────────
@@ -445,6 +547,12 @@ export interface GitHost {
   status(): Promise<GitStatus | null>;
   /** A file at HEAD or in the index; null when it doesn't exist there. */
   show(path: string, rev: "HEAD" | "index"): Promise<string | null>;
+  /** A file as it was in a commit (full or short hash); null when it didn't exist there. */
+  showAt?(path: string, commit: string): Promise<string | null>;
+  /** The commits that changed a file, newest first (the Timeline). */
+  fileLog?(path: string, limit: number): Promise<GitCommit[]>;
+  /** Puts this text in the index as the file's staged content (Stage Change for one hunk). */
+  stageContent?(path: string, content: string): Promise<void>;
   stage(paths: string[]): Promise<void>;
   unstage(paths: string[]): Promise<void>;
   /** Tracked files return to their index version; untracked ones are deleted. */

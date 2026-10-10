@@ -16,7 +16,19 @@ export interface Command {
   win?: string;
   /** Hidden from the command palette (still runnable). */
   hidden?: boolean;
+  /**
+   * A Monaco action: its keys are Monaco's own (handled inside the editor), so
+   * the workbench resolver never dispatches them; user overrides become Monaco rules.
+   */
+  editorOwned?: boolean;
+  /** Other words the palette finds this command by ("reload", "close all"); see commands/aliases.ts. */
+  aliases?: string[];
   enabled?: () => boolean;
+  /**
+   * Key-only condition (VS Code's keybinding `when`): the key reaches this command
+   * only while it holds; the palette and menus ignore it.
+   */
+  when?: () => boolean;
   run: () => unknown;
 }
 
@@ -39,6 +51,11 @@ export function isEnabled(cmd: Command) {
   return cmd.enabled ? cmd.enabled() : true;
 }
 
+/** Enabled, and its key's `when` holds. */
+function keyApplies(cmd: Command) {
+  return isEnabled(cmd) && (!cmd.when || cmd.when());
+}
+
 export function executeCommand(id: string) {
   const cmd = commands.get(id);
   if (!cmd || !isEnabled(cmd)) return false;
@@ -46,12 +63,55 @@ export function executeCommand(id: string) {
   return true;
 }
 
+/** The built-in key of a command (before user overrides). */
+export function defaultKeybindingFor(cmd: Command, os: OsKind): string | undefined {
+  const own = os === "mac" ? (cmd.mac ?? cmd.keybinding) : (cmd.win ?? cmd.keybinding);
+  return own ?? editorDefaults.get(cmd.id);
+}
+
+const hasOverride = (id: string) => Object.prototype.hasOwnProperty.call(userOverrides, id);
+
+/** The key shown for a command: the user's override ("" = removed), else the default. */
 export function keybindingFor(cmd: Command, os: OsKind): string | undefined {
-  if (os === "mac") return cmd.mac ?? cmd.keybinding;
-  return cmd.win ?? cmd.keybinding;
+  if (hasOverride(cmd.id)) return userOverrides[cmd.id] || undefined;
+  return defaultKeybindingFor(cmd, os);
+}
+
+/** The key the workbench resolver dispatches (Monaco handles its own keys). */
+export function dispatchKeybindingFor(cmd: Command, os: OsKind): string | undefined {
+  if (cmd.editorOwned) return undefined;
+  if (hasOverride(cmd.id)) return userOverrides[cmd.id] || undefined;
+  return os === "mac" ? (cmd.mac ?? cmd.keybinding) : (cmd.win ?? cmd.keybinding);
+}
+
+/** User keybindings: command id → key ("" = no key). Set from settings (commands/keybindings.ts). */
+let userOverrides: Record<string, string> = {};
+export function setUserKeybindings(map: Record<string, string>) {
+  userOverrides = { ...map };
+}
+export function userKeybindings(): Readonly<Record<string, string>> {
+  return userOverrides;
+}
+
+/** Monaco's own keys for its actions (⌘D, ⌥↑…), filled once Monaco is up. Display only. */
+const editorDefaults = new Map<string, string>();
+export function setEditorDefaultKeybindings(map: Map<string, string>) {
+  editorDefaults.clear();
+  map.forEach((v, k) => editorDefaults.set(k, v));
+}
+export function editorDefaultKeybinding(id: string) {
+  return editorDefaults.get(id);
+}
+
+/** While a key is being recorded (keybindings editor), the resolver lets every key through. */
+let suspended = false;
+export function suspendKeybindings(on: boolean) {
+  suspended = on;
 }
 
 const MAC_SYMBOLS: Record<string, string> = { mod: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧" };
+/** macOS menus show arrows as symbols (⌥⌘↑), as VS Code does. */
+const MAC_ARROWS: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→" };
 const KEY_LABELS: Record<string, string> = {
   enter: "Enter",
   escape: "Escape",
@@ -64,6 +124,11 @@ const KEY_LABELS: Record<string, string> = {
   left: "LeftArrow",
   right: "RightArrow",
   "`": "`",
+  pageup: "PageUp",
+  pagedown: "PageDown",
+  home: "Home",
+  end: "End",
+  insert: "Insert",
 };
 
 /** Formats "mod+shift+p" as "⇧⌘P" (macOS) or "Ctrl+Shift+P". */
@@ -74,7 +139,7 @@ export function formatKeybinding(kb: string | undefined, os: OsKind): string {
     .map((chord) => {
       const parts = chord.split("+");
       const key = parts.pop()!;
-      const keyLabel = KEY_LABELS[key] ?? (key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1));
+      const keyLabel = (os === "mac" ? MAC_ARROWS[key] : undefined) ?? KEY_LABELS[key] ?? (key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1));
       if (os === "mac") {
         const order = ["ctrl", "alt", "shift", "mod"];
         const mods = order.filter((m) => parts.includes(m)).map((m) => MAC_SYMBOLS[m]);
@@ -127,7 +192,7 @@ export function chordOf(e: KeyboardEvent, os: OsKind): string | null {
   return parts.join("+");
 }
 
-function canonical(chord: string, os: OsKind) {
+export function canonical(chord: string, os: OsKind) {
   // Off macOS, Ctrl *is* the primary modifier, so "ctrl+`" and "mod+`" are the same key.
   const parts = chord.split("+").map((p) => (os !== "mac" && p === "ctrl" ? "mod" : p));
   const key = parts.pop()!;
@@ -149,25 +214,26 @@ export class KeybindingResolver {
   ) {}
 
   handle(e: KeyboardEvent): "executed" | "chord" | "none" {
+    if (suspended) return "none";
     const chord = chordOf(e, this.os);
     if (!chord) return "none";
     const c = canonical(chord, this.os);
     const bindings = allCommands()
-      .map((cmd) => ({ cmd, kb: keybindingFor(cmd, this.os) }))
+      .map((cmd) => ({ cmd, kb: dispatchKeybindingFor(cmd, this.os) }))
       .filter((b): b is { cmd: Command; kb: string } => !!b.kb);
 
     if (this.pendingChord) {
       const full = `${this.pendingChord} ${c}`;
       this.clearPending();
-      const hit = bindings.find((b) => b.kb.split(" ").map((k) => canonical(k, this.os)).join(" ") === full);
-      if (hit && isEnabled(hit.cmd)) {
+      const hit = bindings.find((b) => b.kb.split(" ").map((k) => canonical(k, this.os)).join(" ") === full && keyApplies(b.cmd));
+      if (hit) {
         executeCommand(hit.cmd.id);
         return "executed";
       }
       return "chord"; // swallow the unknown second key, as VS Code does
     }
 
-    const direct = bindings.find((b) => !b.kb.includes(" ") && canonical(b.kb, this.os) === c && isEnabled(b.cmd));
+    const direct = bindings.find((b) => !b.kb.includes(" ") && canonical(b.kb, this.os) === c && keyApplies(b.cmd));
     if (direct) {
       executeCommand(direct.cmd.id);
       return "executed";

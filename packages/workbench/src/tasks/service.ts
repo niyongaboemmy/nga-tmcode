@@ -2,6 +2,7 @@ import { getPlatform, notify, showPanel, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { MANIFESTS, detectTasks, type Task } from "./detect";
 import { terminalAllowed } from "@tmcode/protocol";
+import { ensureTrusted } from "../trust/trust";
 
 const SKIP = new Set(["node_modules", ".git", "dist", "build", "target", ".venv", "venv", "__pycache__", ".next", "out"]);
 
@@ -37,7 +38,9 @@ export function runInTerminal(command: string, opts: { cwd?: string; name?: stri
   window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { command, cwd: opts.cwd ?? "", name: opts.name } }));
 }
 
-export function runTask(task: Task) {
+export async function runTask(task: Task) {
+  // A cloned folder's scripts run its author's commands: ask once (trust/trust.ts).
+  if (!(await ensureTrusted("Tasks"))) return;
   runInTerminal(task.command, { cwd: task.cwd, name: task.label });
 }
 
@@ -71,5 +74,5 @@ export async function pickAndRunTask() {
   const task = tasks.find((t) => t.label === choice?.id);
   if (!task) return;
   recent.splice(0, recent.length, task.label, ...recent.filter((l) => l !== task.label).slice(0, 4));
-  runTask(task);
+  await runTask(task);
 }

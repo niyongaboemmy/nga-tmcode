@@ -782,6 +782,8 @@ pub async fn git_show(app: AppHandle, path: String, rev: String) -> Result<Optio
         let spec = match rev.as_str() {
             "HEAD" => format!("HEAD:./{path}"),
             "index" => format!(":./{path}"),
+            // A commit from the Timeline: only a hash, never an arbitrary revision expression.
+            r if is_commit_hash(r) => format!("{r}:./{path}"),
             _ => return Err("Unknown revision.".into()),
         };
         let git = app.state::<Git>();
@@ -796,6 +798,67 @@ pub async fn git_show(app: AppHandle, path: String, rev: String) -> Result<Optio
             return Err("binary".into());
         }
         Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+    })
+    .await
+}
+
+/// 7 to 40 lowercase hex digits: a commit hash (short or full).
+pub fn is_commit_hash(s: &str) -> bool {
+    (7..=40).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// The file mode from `git ls-files -s` ("100755 <sha> 0\tpath"); a new file is a regular one.
+pub fn stage_mode(ls_files: &str) -> String {
+    ls_files
+        .split_whitespace()
+        .next()
+        .filter(|m| *m == "100644" || *m == "100755" || *m == "120000")
+        .unwrap_or("100644")
+        .to_string()
+}
+
+/// The commits that changed one file, newest first (the Timeline).
+#[tauri::command]
+pub async fn git_file_log(app: AppHandle, path: String, limit: u32) -> Result<Vec<Commit>, String> {
+    blocking(move || {
+        check_rel_path(&path)?;
+        if local(&app, &["rev-parse", "--verify", "-q", "HEAD"]).is_err() {
+            return Ok(Vec::new());
+        }
+        let n = format!("-n{}", limit.clamp(1, 200));
+        let format = format!("--format={LOG_FORMAT}");
+        let out = local(&app, &["log", &n, &format, "--follow", "--", &path])?;
+        Ok(parse_log(&text(&out)))
+    })
+    .await
+}
+
+/// Stage Change for one hunk: `content` becomes the file's staged version
+/// (hash-object + update-index), leaving the working tree alone.
+#[tauri::command]
+pub async fn git_stage_content(app: AppHandle, path: String, content: String) -> Result<(), String> {
+    blocking(move || {
+        check_rel_path(&path)?;
+        let git = app.state::<Git>();
+        let exe = git.exe()?;
+        let root = workspace_root(&app, &app.state::<Workspace>())?;
+        let log = emit_log(&app);
+        let mut inv = Invocation::new(&root, &["hash-object", "-w", "--stdin", "--path", &path]);
+        inv.stdin = Some(content.into_bytes());
+        let sha = text(&ok(run(&exe, inv, &log)?)?).trim().to_string();
+        if !is_commit_hash(&sha) {
+            return Err("git did not store the change.".into());
+        }
+        let mode = stage_mode(&text(&ok(run(&exe, Invocation::new(&root, &["ls-files", "-s", "--", &path]), &log)?)?));
+        // --cacheinfo paths are from the top of the repository: run there with the full path.
+        let top = ok(run(&exe, Invocation::new(&root, &["rev-parse", "--show-toplevel", "--show-prefix"]), &log)?)?;
+        let t = text(&top);
+        let mut lines = t.lines();
+        let top_dir = PathBuf::from(lines.next().unwrap_or_default());
+        let prefix = lines.next().unwrap_or_default().to_string();
+        let info = format!("{mode},{sha},{prefix}{path}");
+        ok(run(&exe, Invocation::new(&top_dir, &["update-index", "--add", "--cacheinfo", &info]), &log)?)?;
+        Ok(())
     })
     .await
 }
@@ -1223,6 +1286,23 @@ pub fn git_open_url(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commit_hashes_only_for_timeline_revisions() {
+        assert!(is_commit_hash("abc1234"));
+        assert!(is_commit_hash(&"f".repeat(40)));
+        assert!(!is_commit_hash("HEAD~1"));
+        assert!(!is_commit_hash("abc"));
+        assert!(!is_commit_hash("--output=x"));
+        assert!(!is_commit_hash("ABCDEF1"));
+    }
+
+    #[test]
+    fn stage_mode_keeps_executables_and_defaults_to_regular_files() {
+        assert_eq!(stage_mode("100755 0123456789abcdef0123456789abcdef01234567 0\trun.sh\n"), "100755");
+        assert_eq!(stage_mode(""), "100644");
+        assert_eq!(stage_mode("160000 abc 0\tsub"), "100644");
+    }
 
     #[test]
     fn parses_branch_headers_and_entries() {

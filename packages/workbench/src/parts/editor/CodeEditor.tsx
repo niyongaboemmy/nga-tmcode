@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { allCommands, executeCommand, keybindingFor } from "../../commands/registry";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { allCommands, dispatchKeybindingFor, executeCommand } from "../../commands/registry";
 import { ensureDocument, languageForPath, saveOnFocusChange } from "../../monaco/documents";
 import { registerCodeEditor } from "../../monaco/editors";
 import { monaco, monacoThemeFor, setupMonaco } from "../../monaco/setup";
 import { defaultFontFamily, type Settings } from "../../state/settings";
 import { SkeletonLines } from "../../widgets/Skeleton";
-import { focusGroup, getPlatform, setCursor, setEditorInfo, useWorkbench } from "../../state/store";
+import { focusGroup, getPlatform, scheduleLayoutSave, setCursor, setEditorInfo, settingsForLanguage, useWorkbench } from "../../state/store";
+import { editorMemento } from "../../state/viewStates";
 import type { OsKind } from "../../platform/types";
 import { attachDebugEditor } from "../../debug/editorContrib";
 import { guardEditorHelp, guardEditorPaste, intelligenceOptions } from "../../exam/editorPolicy";
+import { smartEditorOptions } from "../../monaco/smartOptions";
+import type { Intelligence } from "@tmcode/protocol";
 
 const KEY_CODES: Record<string, number> = {
   "`": monaco.KeyCode.Backquote,
@@ -18,6 +21,11 @@ const KEY_CODES: Record<string, number> = {
   "/": monaco.KeyCode.Slash,
   "=": monaco.KeyCode.Equal,
   "-": monaco.KeyCode.Minus,
+  enter: monaco.KeyCode.Enter,
+  left: monaco.KeyCode.LeftArrow,
+  right: monaco.KeyCode.RightArrow,
+  up: monaco.KeyCode.UpArrow,
+  down: monaco.KeyCode.DownArrow,
 };
 
 /** "mod+k" → Monaco keybinding number (for chords Monaco must own while it has focus). */
@@ -55,7 +63,7 @@ export function editorOptions(settings: Settings, os: OsKind): monaco.editor.ISt
     renderWhitespace: settings["editor.renderWhitespace"],
     cursorBlinking: settings["editor.cursorBlinking"],
     bracketPairColorization: { enabled: settings["editor.bracketPairColorization.enabled"] },
-    guides: { bracketPairs: "active", indentation: true },
+    guides: { bracketPairs: settings["editor.guides.bracketPairs"] === "active" ? "active" : settings["editor.guides.bracketPairs"] === "true", indentation: settings["editor.guides.indentation"] },
     stickyScroll: { enabled: settings["editor.stickyScroll.enabled"] },
     smoothScrolling: !reduce,
     cursorSmoothCaretAnimation: reduce ? "off" : "on",
@@ -66,7 +74,14 @@ export function editorOptions(settings: Settings, os: OsKind): monaco.editor.ISt
     padding: { top: 0 },
     scrollbar: { verticalScrollbarSize: 14, horizontalScrollbarSize: 12, useShadows: false },
     "semanticHighlighting.enabled": true,
+    accessibilitySupport: settings["editor.accessibilitySupport"] ?? "auto",
   };
+}
+
+/** A code editor's options: the user's settings, then what the exam's intelligence level allows (it wins). */
+function codeEditorOptions(settings: Settings, level: Intelligence, os: OsKind) {
+  const help = intelligenceOptions(level);
+  return { ...editorOptions(settings, os), ...help, ...smartEditorOptions(settings, level, help) };
 }
 
 /**
@@ -80,7 +95,17 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const currentPath = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const settings = useWorkbench((s) => s.settings);
+  // The model's language: `[python]` settings apply to Python files only.
+  const [language, setLanguage] = useState<string | null>(null);
+  const userSettings = useWorkbench((s) => s.userSettings);
+  const languageSettings = useWorkbench((s) => s.languageSettings);
+  const workspaceSettings = useWorkbench((s) => s.workspaceSettings);
+  const locked = useWorkbench((s) => s.policy.locked_settings);
+  const settings = useMemo(
+    () => settingsForLanguage(language, useWorkbench.getState()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [language, userSettings, languageSettings, workspaceSettings, locked],
+  );
   const readOnly = useWorkbench((s) => s.readOnly);
   const readOnlyReason = useWorkbench((s) => s.readOnlyReason);
   const intelligence = useWorkbench((s) => s.policy.intelligence);
@@ -91,8 +116,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   useEffect(() => {
     setupMonaco();
     const ed = monaco.editor.create(host.current!, {
-      ...editorOptions(useWorkbench.getState().settings, os),
-      ...intelligenceOptions(useWorkbench.getState().policy.intelligence),
+      ...codeEditorOptions(useWorkbench.getState().settings, useWorkbench.getState().policy.intelligence, os),
       model: null,
       theme: monacoThemeFor(),
       ariaLabel: "Editor content",
@@ -100,8 +124,23 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     editorRef.current = ed;
     const unregister = registerCodeEditor(groupId, ed);
 
+    // Cursor and scroll are remembered per folder (restored after a restart, like VS Code).
+    let viewTimer: ReturnType<typeof setTimeout> | null = null;
+    const rememberView = () => {
+      if (viewTimer) clearTimeout(viewTimer);
+      viewTimer = setTimeout(() => {
+        const p = currentPath.current;
+        const vs = ed.getModel() ? ed.saveViewState() : null;
+        if (p && vs) {
+          editorMemento.viewStates.set(`${groupId}:${p}`, vs);
+          scheduleLayoutSave(1500);
+        }
+      }, 400);
+    };
     const disposables = [
+      ed.onDidScrollChange(rememberView),
       ed.onDidChangeCursorSelection((e) => {
+        rememberView();
         const sel = e.selection;
         const model = ed.getModel();
         setCursor({
@@ -111,6 +150,8 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
         });
       }),
       ed.onDidFocusEditorText(() => focusGroup(groupId)),
+      // Language detection (untitled) or Change Language Mode: `[language]` settings follow.
+      ed.onDidChangeModelLanguage((e) => setLanguage(e.newLanguage)),
       ed.onDidBlurEditorText(() => saveOnFocusChange()),
       attachDebugEditor(ed),
       { dispose: guardEditorPaste(ed) },
@@ -120,13 +161,16 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
 
     // Chorded workbench commands (⌘K ⌘T …) must be bound inside Monaco, which owns ⌘K while focused.
     for (const cmd of allCommands()) {
-      const kb = keybindingFor(cmd, os);
+      const kb = dispatchKeybindingFor(cmd, os);
       if (!kb || !kb.includes(" ")) continue;
       const [a, b] = kb.split(" ").map((c) => toMonacoKey(c, os));
       if (a != null && b != null) ed.addCommand(monaco.KeyMod.chord(a, b), () => executeCommand(cmd.id));
     }
 
     return () => {
+      if (viewTimer) clearTimeout(viewTimer);
+      // Remounted (a split moved this group in the grid): the next editor of this group starts where this one was.
+      if (currentPath.current && ed.getModel()) editorMemento.viewStates.set(`${groupId}:${currentPath.current}`, ed.saveViewState());
       disposables.forEach((d) => d.dispose());
       unregister();
       ed.dispose();
@@ -143,14 +187,19 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     setError(null);
     // Only show the skeleton if loading is slow enough to notice (large or remote files).
     const slow = setTimeout(() => !cancelled && setLoading(true), 150);
-    if (currentPath.current) viewStates.current.set(currentPath.current, ed.saveViewState());
+    if (currentPath.current) {
+      const vs = ed.saveViewState();
+      viewStates.current.set(currentPath.current, vs);
+      if (vs) editorMemento.viewStates.set(`${groupId}:${currentPath.current}`, vs);
+    }
     ensureDocument(path)
       .then((model) => {
         if (cancelled || model.isDisposed()) return;
         ed.setModel(model);
         currentPath.current = path;
-        const vs = viewStates.current.get(path);
+        const vs = viewStates.current.get(path) ?? (editorMemento.viewStates.get(`${groupId}:${path}`) as monaco.editor.ICodeEditorViewState | undefined);
         if (vs) ed.restoreViewState(vs);
+        setLanguage(model.getLanguageId() || languageForPath(path));
         // Opening from the explorer or search keeps focus there (keyboard browsing), as in VS Code.
         if (!document.activeElement?.closest(".tm-explorer, .tm-search")) ed.focus();
         const pos = ed.getPosition();
@@ -169,14 +218,31 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   }, [path]);
 
   useEffect(() => {
-    editorRef.current?.updateOptions({
-      ...editorOptions(settings, os),
-      ...intelligenceOptions(intelligence),
+    const ed = editorRef.current;
+    ed?.updateOptions({
+      ...codeEditorOptions(settings, intelligence, os),
       readOnly,
       readOnlyMessage: { value: readOnlyReason ?? "Time is up. Your code can no longer be changed." },
     });
     setHelpLevel.current?.(intelligence);
-  }, [settings, os, readOnly, readOnlyReason, intelligence]);
+    // Indentation set for this language or by the folder wins over what Monaco guessed from the file.
+    const model = ed?.getModel();
+    if (model && language) {
+      // editor.detectIndentation off: the settings always win over the file's own indentation.
+      const explicit = (k: "editor.tabSize" | "editor.insertSpaces") =>
+        !settings["editor.detectIndentation"] ||
+        k in (languageSettings[language] ?? {}) ||
+        k in (workspaceSettings?.values ?? {}) ||
+        k in (workspaceSettings?.languages[language] ?? {});
+      const opts: monaco.editor.ITextModelUpdateOptions = {};
+      if (explicit("editor.tabSize")) {
+        opts.tabSize = settings["editor.tabSize"];
+        opts.indentSize = settings["editor.tabSize"];
+      }
+      if (explicit("editor.insertSpaces")) opts.insertSpaces = settings["editor.insertSpaces"];
+      if (Object.keys(opts).length) model.updateOptions(opts);
+    }
+  }, [settings, os, readOnly, readOnlyReason, intelligence, language, languageSettings, workspaceSettings]);
 
 
   return (

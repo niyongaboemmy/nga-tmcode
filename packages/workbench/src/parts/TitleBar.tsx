@@ -1,111 +1,28 @@
 import { useEffect, useState } from "react";
-import { executeCommand, formatKeybinding, getCommand, isEnabled, keybindingFor } from "../commands/registry";
+import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
+import { inAppMenus, menuItems, type MenuSpec } from "../commands/menus";
 import { closeContextMenu, getPlatform, openContextMenu, useWorkbench, type ContextMenuItem } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { Logo } from "../widgets/Logo";
 import { ExamTitle } from "../exam/ExamViews";
 import { useExam } from "../exam/state";
 
-type MenuSpec = (string | "-")[];
+/** The menus come from commands/menus.json, shared with the macOS menu bar (V7). */
+const MENUS = inAppMenus();
 
-/** Top-level menus, as command ids ("-" = separator). Mirrors VS Code's menu bar. */
-const MENUS: { label: string; items: MenuSpec }[] = [
-  {
-    label: "File",
-    items: [
-      "explorer.newFile",
-      "explorer.newFolder",
-      "-",
-      "workbench.action.files.openFile",
-      "workbench.action.files.openFolder",
-      "-",
-      "workbench.action.files.save",
-      "workbench.action.files.saveAll",
-      "-",
-      "workbench.action.openSettings",
-      "workbench.action.selectTheme",
-      "-",
-      "workbench.action.closeActiveEditor",
-      "workbench.action.closeFolder",
-    ],
-  },
-  {
-    label: "Edit",
-    items: ["undo", "redo", "-", "actions.find", "editor.action.startFindReplaceAction", "workbench.view.search", "-", "editor.action.commentLine", "editor.action.formatDocument"],
-  },
-  {
-    label: "View",
-    items: [
-      "workbench.action.showCommands",
-      "-",
-      "workbench.view.explorer",
-      "workbench.view.search",
-      "-",
-      "workbench.actions.view.problems",
-      "workbench.action.output.toggleOutput",
-      "workbench.action.terminal.toggleTerminal",
-      "-",
-      "workbench.action.toggleSidebarVisibility",
-      "workbench.action.togglePanel",
-      "workbench.action.splitEditor",
-      "workbench.action.toggleZenMode",
-      "-",
-      "editor.action.toggleWordWrap",
-      "editor.action.toggleMinimap",
-      "editor.action.fontZoomIn",
-      "editor.action.fontZoomOut",
-    ],
-  },
-  { label: "Go", items: ["workbench.action.quickOpen", "workbench.action.gotoLine", "editor.action.revealDefinition"] },
-  {
-    label: "Terminal",
-    items: [
-      "workbench.action.terminal.new",
-      "workbench.action.terminal.toggleTerminal",
-      "-",
-      "workbench.action.tasks.runTask",
-      "workbench.action.terminal.runRecentCommand",
-      "workbench.action.terminal.focusFind",
-      "-",
-      "simpleBrowser.show",
-    ],
-  },
-  {
-    label: "Help",
-    items: [
-      "workbench.action.openWelcome",
-      "workbench.action.showCommands",
-      "workbench.action.keybindingsReference",
-      "tmcode.checkMyComputer",
-      "-",
-      "update.checkForUpdates",
-      "update.restartToUpdate",
-      "-",
-      "workbench.action.showAbout",
-    ],
-  },
-];
-
-function menuItems(spec: MenuSpec): ContextMenuItem[] {
-  const os = getPlatform().os;
-  const out: ContextMenuItem[] = [];
-  for (const id of spec) {
-    if (id === "-") {
-      if (out.length && out[out.length - 1].kind !== "separator") out.push({ kind: "separator" });
-      continue;
-    }
-    const cmd = getCommand(id);
-    if (!cmd) continue;
-    out.push({
-      kind: "item",
-      label: cmd.title,
-      keybinding: formatKeybinding(keybindingFor(cmd, os), os),
-      disabled: !isEnabled(cmd),
-      run: () => executeCommand(id),
-    });
-  }
-  if (out[out.length - 1]?.kind === "separator") out.pop();
-  return out;
+/**
+ * Items for one menu. Focus goes back to what had it before the menu opened, so
+ * Undo / Find / Select All act on that (the editor, a text field, the terminal).
+ */
+let menuOrigin: HTMLElement | null = null;
+function itemsFor(menu: MenuSpec): ContextMenuItem[] {
+  // Moving from one open menu to the next keeps the original focus.
+  const active = document.activeElement as HTMLElement | null;
+  if (!active?.closest(".tm-menu")) menuOrigin = active;
+  const before = menuOrigin;
+  return menuItems(menu, getPlatform().os, () => {
+    if (before?.isConnected && before !== document.body) before.focus();
+  });
 }
 
 /** Narrow windows: one ☰ button listing the menus (each opens its items). */
@@ -127,7 +44,7 @@ function MenuButton() {
           MENUS.map((m) => ({
             kind: "item" as const,
             label: `${m.label}  ›`,
-            run: () => setTimeout(() => openContextMenu(r.left, r.bottom, menuItems(m.items)), 0),
+            run: () => setTimeout(() => openContextMenu(r.left, r.bottom, itemsFor(m)), 0),
           })),
         );
       }}
@@ -147,7 +64,7 @@ function MenuBar() {
   const show = (i: number, el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     setOpen(i);
-    openContextMenu(r.left, r.bottom, menuItems(MENUS[i].items));
+    openContextMenu(r.left, r.bottom, itemsFor(MENUS[i]));
   };
 
   return (

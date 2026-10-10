@@ -1,4 +1,10 @@
-import type { FileSystem, TerminalSession, TerminalSpawnOptions } from "./types";
+import type { FileSystem, TerminalProfile, TerminalSession, TerminalSpawnOptions } from "./types";
+
+/** The simulated shells (so the profile menu, labels and split can be tried in a browser). */
+const SIM_PROFILES: TerminalProfile[] = [
+  { id: "zsh", name: "zsh", path: "/bin/zsh", is_default: true },
+  { id: "bash", name: "bash", path: "/bin/bash", is_default: false },
+];
 
 /**
  * Dev server / e2e only (`?terminal=sim`): a pretend shell over the in-memory
@@ -12,7 +18,9 @@ import type { FileSystem, TerminalSession, TerminalSpawnOptions } from "./types"
  */
 export function createSimulatedTerminal(fs: FileSystem) {
   return {
+    profiles: async () => SIM_PROFILES,
     async spawn(opts: TerminalSpawnOptions): Promise<TerminalSession> {
+      const shell = SIM_PROFILES.find((p) => p.id === opts.profile)?.id ?? "zsh";
       const cwd = opts.cwd ?? "";
       let line = "";
       let busy: { interrupt: () => void } | null = null;
@@ -92,7 +100,7 @@ export function createSimulatedTerminal(fs: FileSystem) {
         }
         if (pm === "true") return 0;
         if (pm === "false") return 1;
-        out(`zsh: command not found: ${pm} (simulated terminal)\n`);
+        out(`${shell}: command not found: ${pm} (simulated terminal)\n`);
         return 127;
       };
 
@@ -150,6 +158,7 @@ export function createSimulatedTerminal(fs: FileSystem) {
           }
         },
         resize() {},
+        busy: async () => !!busy || lineRunning,
         kill() {
           busy?.interrupt();
           exit(lastCode || 130);

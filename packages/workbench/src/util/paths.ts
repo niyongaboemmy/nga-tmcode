@@ -1,6 +1,8 @@
 /** Workspace paths are "/"-separated, relative, with no leading slash ("" is the root). */
 
 export function basename(path: string): string {
+  // Untitled buffers ("tmcode-untitled:Untitled-1", util/untitled.ts) show their name.
+  if (path.startsWith("tmcode-untitled:")) return path.slice("tmcode-untitled:".length);
   const i = path.lastIndexOf("/");
   return i < 0 ? path : path.slice(i + 1);
 }

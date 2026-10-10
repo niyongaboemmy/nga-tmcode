@@ -17,6 +17,7 @@ import {
 import { basename, extname, isWithin, rebase } from "../util/paths";
 import { setIconLanguageResolver } from "../themes/iconThemes";
 import { recordSave, snapshotBeforeDelete } from "../history/localHistory";
+import { isUntitled, untitledName, UNTITLED_SCHEME } from "../util/untitled";
 
 /**
  * One Monaco text model per open file. The workbench store only knows paths
@@ -27,6 +28,13 @@ interface Doc {
   savedVersion: number;
   /** The text TMCode last read from or wrote to disk: a watcher event for exactly this is our own echo. */
   diskText: string;
+  /**
+   * Loaded for a language feature, not shown by an editor: a file Go to
+   * Definition or Find References looked into, or one a rename edits. Edits
+   * to it are saved at once (VS Code's `files.refactoring.autoSave`), and its
+   * diagnostics stay out of Problems until an editor opens it.
+   */
+  background?: boolean;
 }
 
 const docs = new Map<string, Doc>();
@@ -37,11 +45,16 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const SCHEME = "tmcode";
 export function uriFor(path: string) {
+  if (isUntitled(path)) return monaco.Uri.from({ scheme: UNTITLED_SCHEME, path: untitledName(path) });
   return monaco.Uri.from({ scheme: SCHEME, path: `/${path}` });
 }
 export function pathOfUri(uri: monaco.Uri) {
+  if (uri.scheme === UNTITLED_SCHEME) return `${UNTITLED_SCHEME}:${uri.path.replace(/^\//, "")}`;
   return uri.path.replace(/^\//, "");
 }
+
+/** Untitled buffers have no file: Save asks for a path (commands/untitled.ts sets this). */
+export const untitledSave: { run: (path: string) => Promise<void> } = { run: async () => {} };
 
 const EXTRA_LANGS: Record<string, string> = { jsx: "javascript", tsx: "typescript", mjs: "javascript", cjs: "javascript", h: "c", hpp: "cpp" };
 
@@ -77,21 +90,30 @@ export function getDocument(path: string) {
   return docs.get(path)?.model ?? null;
 }
 
-/** Loads (once) and returns the model for `path`. */
-export function ensureDocument(path: string): Promise<monaco.editor.ITextModel> {
+/** Loads (once) and returns the model for `path`. `background`: for a language feature, not an editor. */
+export function ensureDocument(path: string, opts: { background?: boolean } = {}): Promise<monaco.editor.ITextModel> {
   setupMonaco();
   const existing = docs.get(path);
-  if (existing) return Promise.resolve(existing.model);
+  if (existing) {
+    // An editor opens a file a language feature loaded earlier: it is a normal document from now on.
+    if (!opts.background && existing.background) {
+      existing.background = false;
+      recomputeProblemsSoon();
+    }
+    return Promise.resolve(existing.model);
+  }
   const inflight = pending.get(path);
   if (inflight) return inflight;
   const gen = generation;
-  const p = getPlatform()
-    .fs.readFile(path)
+  const p = (isUntitled(path) ? Promise.resolve("") : getPlatform().fs.readFile(path))
     .then((content): monaco.editor.ITextModel | Promise<monaco.editor.ITextModel> => {
       // Read from the folder that was open before: read it again from the new one.
-      if (gen !== generation) return ensureDocument(path);
+      if (gen !== generation) return ensureDocument(path, opts);
+      // Monaco created it meanwhile (a definition in this file): adopted already.
+      const adopted = docs.get(path);
+      if (adopted) return ensureDocument(path, opts);
       const model = createTrackedModel(path, content);
-      docs.set(path, { model, savedVersion: model.getAlternativeVersionId(), diskText: content });
+      docs.set(path, { model, savedVersion: model.getAlternativeVersionId(), diskText: content, background: opts.background });
       return model;
     })
     .finally(() => {
@@ -124,28 +146,91 @@ export function onDocumentSaved(l: (path: string) => void) {
 export const extraProblems: { get: () => Problem[] } = { get: () => [] };
 // ── end extension host ──
 
+/** Set while TMCode creates a model itself, so the adoption below leaves it alone. */
+let creatingModel = false;
+
 function createTrackedModel(path: string, content: string) {
-  const model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
-  model.onDidChangeContent(() => {
-    changeListeners.forEach((l) => l(pathOfUri(model.uri)));
-    const d = docs.get(pathOfUri(model.uri));
-    if (!d) return;
-    const isDirty = model.getAlternativeVersionId() !== d.savedVersion;
-    setDirty(pathOfUri(model.uri), isDirty);
-    if (isDirty) scheduleAutoSave();
-  });
+  creatingModel = true;
+  let model: monaco.editor.ITextModel;
+  try {
+    model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
+  } finally {
+    creatingModel = false;
+  }
+  trackModel(model);
   return model;
 }
 
-/** Run before a file is written (extensions' onWillSaveTextDocument edits); each may change the model. */
-export const willSaveParticipants: ((path: string, model: monaco.editor.ITextModel) => Promise<void>)[] = [];
+function trackModel(model: monaco.editor.ITextModel) {
+  model.onDidChangeContent(() => {
+    changeListeners.forEach((l) => l(pathOfUri(model.uri)));
+    const d = docs.get(pathOfUri(model.uri));
+    if (!d || d.model !== model) return;
+    const isDirty = model.getAlternativeVersionId() !== d.savedVersion;
+    if (d.background) {
+      if (isDirty) saveBackgroundSoon(pathOfUri(model.uri));
+      return;
+    }
+    setDirty(pathOfUri(model.uri), isDirty);
+    if (isDirty) scheduleAutoSave();
+  });
+}
 
-export async function saveDocument(path: string) {
+const backgroundSaves = new Set<string>();
+/** A refactoring changed a file no editor shows: write it (once per burst of edits). */
+function saveBackgroundSoon(path: string) {
+  if (backgroundSaves.has(path)) return;
+  backgroundSaves.add(path);
+  setTimeout(() => {
+    backgroundSaves.delete(path);
+    const d = docs.get(path);
+    if (!d?.background || d.model.isDisposed()) return;
+    if (d.model.getValue() === d.diskText) {
+      d.savedVersion = d.model.getAlternativeVersionId();
+      return;
+    }
+    void saveDocument(path).catch(() => {});
+  }, 0);
+}
+
+/**
+ * Monaco creates models of its own for workspace files that are not open
+ * (TypeScript's Go to Definition, Find References and Rename read them from
+ * the project copies in monaco/workspaceSources.ts). Adopt them as background
+ * documents: an editor opening the file reuses the model, and a rename's
+ * edits to them are saved.
+ */
+function adoptForeignModel(model: monaco.editor.ITextModel) {
+  if (creatingModel || model.uri.scheme !== SCHEME) return;
+  const path = pathOfUri(model.uri);
+  if (docs.has(path)) return;
+  const lang = languageForPath(path);
+  if (model.getLanguageId() !== lang) monaco.editor.setModelLanguage(model, lang);
+  docs.set(path, { model, savedVersion: model.getAlternativeVersionId(), diskText: model.getValue(), background: true });
+  trackModel(model);
+  model.onWillDispose(() => {
+    if (docs.get(path)?.model === model) docs.delete(path);
+  });
+}
+
+let problemsTimer: ReturnType<typeof setTimeout> | undefined;
+function recomputeProblemsSoon() {
+  clearTimeout(problemsTimer);
+  problemsTimer = setTimeout(() => recomputeProblems(), 0);
+}
+
+/** Run before a file is written (extensions' onWillSaveTextDocument edits); each may change the model. */
+/** "explicit": ⌘S, Save All, a command; "auto": auto save (VS Code skips some save actions then). */
+export type SaveReason = "explicit" | "auto";
+export const willSaveParticipants: ((path: string, model: monaco.editor.ITextModel, reason: SaveReason) => Promise<void>)[] = [];
+
+export async function saveDocument(path: string, reason: SaveReason = "explicit") {
+  if (isUntitled(path)) return untitledSave.run(path);
   const doc = docs.get(path);
   if (!doc) return;
   for (const participant of willSaveParticipants) {
     try {
-      await participant(path, doc.model);
+      await participant(path, doc.model, reason);
     } catch {
       /* a participant never blocks saving */
     }
@@ -171,9 +256,10 @@ export async function saveDocument(path: string) {
   }
 }
 
-export async function saveAll() {
-  const dirty = Object.keys(useWorkbench.getState().dirty);
-  for (const p of dirty) await saveDocument(p).catch(() => {});
+export async function saveAll(reason: SaveReason = "explicit") {
+  // Untitled buffers wait for an explicit Save (auto save would keep asking for a path).
+  const dirty = Object.keys(useWorkbench.getState().dirty).filter((p) => !isUntitled(p));
+  for (const p of dirty) await saveDocument(p, reason).catch(() => {});
 }
 
 /** The model's current text is what's on disk (after an outside change was loaded). */
@@ -208,12 +294,12 @@ function scheduleAutoSave() {
   if (!exam && settings["files.autoSave"] !== "afterDelay") return;
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   const delay = exam ? Math.min(settings["files.autoSaveDelay"] || EXAM_AUTOSAVE_MS, EXAM_AUTOSAVE_MS) : settings["files.autoSaveDelay"];
-  autoSaveTimer = setTimeout(() => void saveAll(), delay);
+  autoSaveTimer = setTimeout(() => void saveAll("auto"), delay);
 }
 
 /** Auto save "onFocusChange": called when the editor loses focus or the window blurs. */
 export function saveOnFocusChange() {
-  if (useWorkbench.getState().settings["files.autoSave"] === "onFocusChange") void saveAll();
+  if (useWorkbench.getState().settings["files.autoSave"] === "onFocusChange") void saveAll("auto");
 }
 
 function disposeDoc(path: string) {
@@ -229,7 +315,20 @@ export function wireDocuments() {
   if (wired) return;
   wired = true;
   setupMonaco();
-  setIconLanguageResolver((p) => languageForPath(p));
+  // Icons are cached per file name until the set of languages changes (an extension adds one).
+  let languageCount = 0;
+  let countedAt = -Infinity;
+  setIconLanguageResolver(
+    (p) => languageForPath(p),
+    () => {
+      const now = performance.now();
+      if (now - countedAt > 500) {
+        countedAt = now;
+        languageCount = monaco.languages.getLanguages().length;
+      }
+      return String(languageCount);
+    },
+  );
   saveHandlers.save = saveDocument;
   saveHandlers.revert = (path) => {
     // Closing without saving: drop the model so the next open re-reads disk.
@@ -262,7 +361,7 @@ export function wireDocuments() {
       doc.model.dispose();
       docs.delete(path);
       // A model can't change its URI, so a renamed file gets a fresh one that keeps the dirty state.
-      docs.set(next, { model, savedVersion: dirty ? -1 : model.getAlternativeVersionId(), diskText: doc.diskText });
+      docs.set(next, { model, savedVersion: dirty ? -1 : model.getAlternativeVersionId(), diskText: doc.diskText, background: doc.background });
     }
   });
 
@@ -270,9 +369,12 @@ export function wireDocuments() {
     for (const p of [...docs.keys()]) if (isWithin(p, path)) disposeDoc(p);
   });
 
+  monaco.editor.onDidCreateModel(adoptForeignModel);
   monaco.editor.onDidChangeMarkers(() => recomputeProblems());
 
   window.addEventListener("blur", saveOnFocusChange);
+  // Built-in language servers (Pyright) start when a file of their language opens.
+  void import("../lsp/servers").then((m) => m.wireLanguageServers()).catch(() => {});
   log("Workbench", "Editor services ready");
 }
 
@@ -281,7 +383,8 @@ export function recomputeProblems() {
   const problems: Problem[] = monaco.editor
     .getModelMarkers({})
     // Hints (unused variables etc.) show in the editor but not in Problems, as in VS Code.
-    .filter((m) => m.resource.scheme === SCHEME && m.severity !== monaco.MarkerSeverity.Hint)
+    // Files only a language feature loaded (background) report once an editor opens them, as in VS Code.
+    .filter((m) => m.resource.scheme === SCHEME && m.severity !== monaco.MarkerSeverity.Hint && !docs.get(pathOfUri(m.resource))?.background)
     .map((m) => ({
       path: pathOfUri(m.resource),
       message: m.message,
@@ -291,5 +394,6 @@ export function recomputeProblems() {
       source: m.source,
     }));
   const open = new Set(problems.map((p) => p.path));
-  setProblems([...problems, ...extraProblems.get().filter((p) => !open.has(p.path) && !getDocument(p.path))]);
+  const shown = (p: string) => !!docs.get(p) && !docs.get(p)!.background;
+  setProblems([...problems, ...extraProblems.get().filter((p) => !open.has(p.path) && !shown(p.path))]);
 }

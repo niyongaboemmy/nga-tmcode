@@ -229,8 +229,11 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean } =
       return openExternalUrl(url);
     }
     case "devServer":
+      // Project scripts (npm run dev, manage.py…) run the folder author's code: ask once in a cloned folder.
+      if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
       return startDevServer(a);
     case "task":
+      if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
       return runInNamedTerminal(shellLine(a.command!, { prelude: a.prelude, os }), a.cwd ?? "", a.label);
     case "repl":
       return runInNamedTerminal(shellLine(a.command!, { os }), a.cwd ?? "", a.label);
