@@ -49,6 +49,7 @@ import { getPlatform, useWorkbench } from "./state/store";
 import { ContextMenu, Dialog, Notifications } from "./widgets/Overlays";
 import { QuickInput } from "./widgets/QuickInput";
 import { ExamOverlay } from "./exam/ExamViews";
+import { wireSmartEditor } from "./monaco/smartEditor";
 // ── git (scm/*) ──
 import { wireScm } from "./scm/commands";
 import { QuickPickHost, useQuickPick } from "./widgets/QuickPick";
@@ -118,6 +119,7 @@ export function Workbench() {
     installFormatterSelection();
     registerFormatterActions();
     wireDocuments();
+    wireSmartEditor();
     wireRunServices();
     wireScm();
     wireDebugServices();

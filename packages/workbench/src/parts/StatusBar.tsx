@@ -3,6 +3,7 @@ import { toggleNotificationCenter, useNotificationCenter } from "../state/notifi
 import { currentActivity, useActivity } from "../state/activity";
 import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
+import { useDetectedLanguage } from "../monaco/smartEditor";
 import { activeFilePath, showPanel, useWorkbench } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
@@ -162,6 +163,18 @@ function BusyItem() {
   );
 }
 
+/** The language of the active editor; an untitled editor's guessed language says "(auto detected)". */
+function LanguageItem({ language }: { language: string | null }) {
+  const path = useWorkbench((s) => activeFilePath(s));
+  const detected = useDetectedLanguage((s) => !!path && !!s.paths[path]);
+  return (
+    <Item className="tm-prio-mid tm-status-language" title={detected ? "Select Language Mode (auto detected)" : "Select Language Mode"} onClick={() => void pickLanguage()}>
+      {languageLabel(language)}
+      {detected && <span className="tm-status-detected"> (auto detected)</span>}
+    </Item>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -221,9 +234,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
             <Item className="tm-prio-low tm-status-eol" title="Select End of Line Sequence" onClick={() => void pickEol()}>
               {eol}
             </Item>
-            <Item className="tm-prio-mid tm-status-language" title="Select Language Mode" onClick={() => void pickLanguage()}>
-              {languageLabel(language)}
-            </Item>
+            <LanguageItem language={language} />
           </>
         )}
         {screenReader && (

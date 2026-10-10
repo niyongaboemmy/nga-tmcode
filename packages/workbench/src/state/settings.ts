@@ -12,7 +12,10 @@ export type ThemeId = string;
 
 export interface Settings {
   "workbench.colorTheme": ThemeId;
-  /** File icon theme: "tmcode" (built-in glyphs), "none", or "ext:<publisher.name>:<id>". */
+  /**
+   * File icon theme: "vs-seti" (VS Code's Seti, the default), "vs-minimal",
+   * "tmcode" (TMCode's colour badges), "none", or "ext:<publisher.name>:<id>".
+   */
   "workbench.iconTheme": string;
   "editor.fontSize": number;
   "editor.fontFamily": string;
@@ -75,11 +78,42 @@ export interface Settings {
   "breadcrumbs.enabled": boolean;
   /** Primary side bar on the left or the right (Toggle Primary Side Bar Position). */
   "workbench.sideBar.location": "left" | "right";
+  // ── smart editor (feat/icons-smart): VS Code's ids; the exam's intelligence level still wins ──
+  /** Renaming an HTML/XML/JSX tag renames its pair. (VS Code's default is false; TMCode turns it on for students.) */
+  "editor.linkedEditing": boolean;
+  /** Bracket pair guides: "active" (the pair around the cursor), "true" (all) or "false". */
+  "editor.guides.bracketPairs": "active" | "true" | "false";
+  "editor.guides.indentation": boolean;
+  "editor.inlayHints.enabled": "on" | "off" | "onUnlessPressed" | "offUnlessPressed";
+  "editor.formatOnPaste": boolean;
+  "editor.formatOnType": boolean;
+  /**
+   * Code actions run on save, as in VS Code: { "source.organizeImports": "explicit", "source.fixAll": "explicit" }
+   * (or a list of kinds). "explicit"/true: on ⌘S; "always": on auto save too; "never"/false: off.
+   */
+  "editor.codeActionsOnSave": Record<string, "explicit" | "always" | "never" | boolean> | string[];
+  /** Preview the selected suggestion's result in the editor. */
+  "editor.suggest.preview": boolean;
+  /** Show inline (ghost text) suggestions from extensions. Never during an exam. */
+  "editor.inlineSuggest.enabled": boolean;
+  "editor.wordBasedSuggestions": "off" | "currentDocument" | "matchingDocuments" | "allDocuments";
+  "editor.detectIndentation": boolean;
+  "editor.occurrencesHighlight": "off" | "singleFile" | "multiFile";
+  "editor.dragAndDrop": boolean;
+  "editor.copyWithSyntaxHighlighting": boolean;
+  /** Applied on save. */
+  "files.trimTrailingWhitespace": boolean;
+  "files.insertFinalNewline": boolean;
+  "files.trimFinalNewlines": boolean;
+  /** Untitled editors guess their language from what is typed. */
+  "workbench.editor.languageDetection": boolean;
+  /** Dropping or pasting files into Markdown inserts links / images (VS Code's markdown.editor.drop.enabled). */
+  "markdown.editor.drop.enabled": "always" | "smart" | "never";
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   "workbench.colorTheme": "dark-modern",
-  "workbench.iconTheme": "tmcode",
+  "workbench.iconTheme": "vs-seti",
   "editor.fontSize": 14,
   "editor.fontFamily": "",
   "editor.tabSize": 4,
@@ -115,7 +149,44 @@ export const DEFAULT_SETTINGS: Settings = {
   "workbench.statusBar.visible": true,
   "breadcrumbs.enabled": true,
   "workbench.sideBar.location": "left",
+  "editor.linkedEditing": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.guides.indentation": true,
+  "editor.inlayHints.enabled": "on",
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+  "editor.codeActionsOnSave": {},
+  "editor.suggest.preview": false,
+  "editor.inlineSuggest.enabled": true,
+  "editor.wordBasedSuggestions": "matchingDocuments",
+  "editor.detectIndentation": true,
+  "editor.occurrencesHighlight": "singleFile",
+  "editor.dragAndDrop": true,
+  "editor.copyWithSyntaxHighlighting": true,
+  "files.trimTrailingWhitespace": false,
+  "files.insertFinalNewline": false,
+  "files.trimFinalNewlines": false,
+  "workbench.editor.languageDetection": true,
+  "markdown.editor.drop.enabled": "smart",
 };
+
+/** One-time changes to saved settings, by id (kept in the saved UI state once applied). */
+export const SETTINGS_MIGRATIONS = ["iconTheme.vs-seti"] as const;
+
+/**
+ * Applies the migrations not applied yet. "iconTheme.vs-seti": 0.13 made VS
+ * Code's Seti the default file icon theme; users still on the old default
+ * ("tmcode") move with it once, and can pick TMCode Glyphs again after.
+ */
+export function migrateSettings(saved: Partial<Settings> | undefined, done: readonly string[] | undefined): { settings: Partial<Settings>; done: string[] } {
+  const settings = { ...(saved ?? {}) };
+  const applied = new Set(Array.isArray(done) ? done : []);
+  if (!applied.has("iconTheme.vs-seti")) {
+    if (settings["workbench.iconTheme"] === "tmcode") settings["workbench.iconTheme"] = "vs-seti";
+    applied.add("iconTheme.vs-seti");
+  }
+  return { settings, done: [...applied] };
+}
 
 export type SettingKey = keyof Settings;
 
@@ -155,6 +226,8 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Specifies the file icon theme used in the workbench, or 'None' to not show any file icons.",
         type: "enum",
         options: [
+          { value: "vs-seti", label: "Seti (Visual Studio Code)" },
+          { value: "vs-minimal", label: "Minimal (Visual Studio Code)" },
           { value: "tmcode", label: "TMCode Glyphs" },
           { value: "none", label: "None" },
         ],
@@ -235,6 +308,67 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         type: "boolean",
       },
       { key: "editor.formatOnSave", label: "Format On Save", description: "Format a file on save (where a formatter is available).", type: "boolean" },
+      { key: "editor.formatOnPaste", label: "Format On Paste", description: "Format pasted content (where a formatter can format a range).", type: "boolean" },
+      { key: "editor.formatOnType", label: "Format On Type", description: "Format the line after typing it (where the language supports it).", type: "boolean" },
+      {
+        key: "editor.linkedEditing",
+        label: "Linked Editing",
+        description: "Renaming an HTML, XML or JSX tag renames its matching opening or closing tag too.",
+        type: "boolean",
+      },
+      {
+        key: "editor.guides.bracketPairs",
+        label: "Guides: Bracket Pairs",
+        description: "Controls whether bracket pair guides are shown: only for the active pair, for all pairs, or not at all.",
+        type: "enum",
+        options: [
+          { value: "active", label: "active" },
+          { value: "true", label: "true" },
+          { value: "false", label: "false" },
+        ],
+      },
+      { key: "editor.guides.indentation", label: "Guides: Indentation", description: "Controls whether the editor should render indent guides.", type: "boolean" },
+      {
+        key: "editor.inlayHints.enabled",
+        label: "Inlay Hints",
+        description: "Shows parameter names and inferred types inline (when the language provides them). Toggle with View: Toggle Inlay Hints.",
+        type: "enum",
+        options: ["on", "off", "onUnlessPressed", "offUnlessPressed"].map((v) => ({ value: v, label: v })),
+      },
+      {
+        key: "editor.occurrencesHighlight",
+        label: "Occurrences Highlight",
+        description: "Highlights other occurrences of the symbol at the cursor.",
+        type: "enum",
+        options: ["singleFile", "multiFile", "off"].map((v) => ({ value: v, label: v })),
+      },
+      {
+        key: "editor.wordBasedSuggestions",
+        label: "Word Based Suggestions",
+        description: "Suggest words from documents when no language completion applies.",
+        type: "enum",
+        options: ["matchingDocuments", "currentDocument", "allDocuments", "off"].map((v) => ({ value: v, label: v })),
+      },
+      { key: "editor.suggest.preview", label: "Suggest: Preview", description: "Preview the result of the selected suggestion in the editor.", type: "boolean" },
+      {
+        key: "editor.inlineSuggest.enabled",
+        label: "Inline Suggest",
+        description: "Show inline suggestions (ghost text) from extensions. Never during an exam.",
+        type: "boolean",
+      },
+      {
+        key: "editor.detectIndentation",
+        label: "Detect Indentation",
+        description: "Tab Size and Insert Spaces follow the file's own indentation when it is opened.",
+        type: "boolean",
+      },
+      { key: "editor.dragAndDrop", label: "Drag and Drop", description: "Move selections by dragging them.", type: "boolean" },
+      {
+        key: "editor.copyWithSyntaxHighlighting",
+        label: "Copy With Syntax Highlighting",
+        description: "Copy keeps the syntax colours (for pasting into documents and slides).",
+        type: "boolean",
+      },
     ],
   },
   {
@@ -258,6 +392,26 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         type: "number",
         min: 200,
         max: 60000,
+      },
+      { key: "files.trimTrailingWhitespace", label: "Trim Trailing Whitespace", description: "Remove spaces at the ends of lines when saving.", type: "boolean" },
+      { key: "files.insertFinalNewline", label: "Insert Final Newline", description: "End the file with a newline when saving.", type: "boolean" },
+      { key: "files.trimFinalNewlines", label: "Trim Final Newlines", description: "Remove extra newlines at the end of the file when saving.", type: "boolean" },
+      {
+        key: "workbench.editor.languageDetection",
+        label: "Editor: Language Detection",
+        description: "Untitled editors take the language of what you type in them (Python, JavaScript, HTML…).",
+        type: "boolean",
+      },
+      {
+        key: "markdown.editor.drop.enabled",
+        label: "Markdown: Drop and Paste Files",
+        description: "Dropping or pasting a file or image into Markdown inserts a relative link or image.",
+        type: "enum",
+        options: [
+          { value: "smart", label: "smart" },
+          { value: "always", label: "always" },
+          { value: "never", label: "never" },
+        ],
       },
     ],
   },

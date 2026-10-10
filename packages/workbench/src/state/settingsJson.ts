@@ -66,11 +66,25 @@ export function validateValue(key: SettingKey, value: unknown): string | null {
     case "string":
       return typeof value === "string" ? null : "Expected a string.";
     case "enum":
+      // VS Code writes some of these as booleans ("editor.guides.bracketPairs": true).
+      if (typeof value === "boolean" && def.options.some((o) => o.value === String(value))) return null;
       if (typeof value !== "string") return "Expected a string.";
       // Theme lists depend on installed extensions: any id is accepted (an unknown one falls back to the default).
       if (def.dynamicOptions) return null;
       return def.options.some((o) => o.value === value) ? null : `Value is not accepted. Valid values: ${def.options.map((o) => JSON.stringify(o.value)).join(", ")}.`;
   }
+}
+
+/** A valid value as TMCode stores it: `true` for an enum that lists "true" becomes "true". */
+function normalizeValue(key: SettingKey, value: unknown): unknown {
+  return typeof value === "boolean" && DEFS.get(key)?.type === "enum" ? String(value) : value;
+}
+
+/** Equal settings values: objects (keybindings, code actions on save) compare by content. */
+export function sameSettingValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** Where `"key"` first appears as a property name (for markers). */
@@ -118,7 +132,7 @@ export function parseSettingsJson(text: string): ParsedSettings {
           out.issues.push({ severity: "error", key: k, message: `${k}: ${problem}`, offset: offsetOfKey(text, k) });
           continue;
         }
-        for (const lang of langs) out.languages[lang] = { ...out.languages[lang], [k]: v };
+        for (const lang of langs) out.languages[lang] = { ...out.languages[lang], [k]: normalizeValue(k, v) };
       }
       continue;
     }
@@ -132,7 +146,7 @@ export function parseSettingsJson(text: string): ParsedSettings {
       out.issues.push({ severity: "error", key, message: `${key}: ${problem}`, offset: offsetOfKey(text, key) });
       continue;
     }
-    (out.values as Record<string, unknown>)[key] = value;
+    (out.values as Record<string, unknown>)[key] = normalizeValue(key, value);
   }
   return out;
 }
@@ -141,7 +155,7 @@ export function parseSettingsJson(text: string): ParsedSettings {
 export function stringifySettings(values: Partial<Settings>, languages: LanguageOverrides = {}, other: Record<string, unknown> = {}): string {
   const obj: Record<string, unknown> = {};
   for (const key of Object.keys(values).sort() as SettingKey[]) {
-    if (values[key] !== undefined && values[key] !== DEFAULT_SETTINGS[key]) obj[key] = values[key];
+    if (values[key] !== undefined && !sameSettingValue(values[key], DEFAULT_SETTINGS[key])) obj[key] = values[key];
   }
   for (const [k, v] of Object.entries(other)) obj[k] = v;
   for (const lang of Object.keys(languages).sort()) if (Object.keys(languages[lang]).length) obj[`[${lang}]`] = languages[lang];
@@ -151,7 +165,7 @@ export function stringifySettings(values: Partial<Settings>, languages: Language
 /** Only the values that differ from the defaults (what the user really set). */
 export function userDiff(settings: Settings): Partial<Settings> {
   const out: Partial<Settings> = {};
-  for (const key of Object.keys(settings) as SettingKey[]) if (settings[key] !== DEFAULT_SETTINGS[key]) (out as Record<string, unknown>)[key] = settings[key];
+  for (const key of Object.keys(settings) as SettingKey[]) if (!sameSettingValue(settings[key], DEFAULT_SETTINGS[key])) (out as Record<string, unknown>)[key] = settings[key];
   return out;
 }
 
@@ -170,6 +184,16 @@ export const WORKSPACE_KEYS: SettingKey[] = [
   "editor.bracketPairColorization.enabled",
   "editor.stickyScroll.enabled",
   "editor.formatOnSave",
+  "editor.formatOnPaste",
+  "editor.formatOnType",
+  "editor.codeActionsOnSave",
+  "editor.linkedEditing",
+  "editor.guides.bracketPairs",
+  "editor.guides.indentation",
+  "editor.detectIndentation",
+  "files.trimTrailingWhitespace",
+  "files.insertFinalNewline",
+  "files.trimFinalNewlines",
   "files.autoSave",
   "files.autoSaveDelay",
   "livePreview.updateOn",

@@ -220,15 +220,17 @@ function recomputeProblemsSoon() {
 }
 
 /** Run before a file is written (extensions' onWillSaveTextDocument edits); each may change the model. */
-export const willSaveParticipants: ((path: string, model: monaco.editor.ITextModel) => Promise<void>)[] = [];
+/** "explicit": ⌘S, Save All, a command; "auto": auto save (VS Code skips some save actions then). */
+export type SaveReason = "explicit" | "auto";
+export const willSaveParticipants: ((path: string, model: monaco.editor.ITextModel, reason: SaveReason) => Promise<void>)[] = [];
 
-export async function saveDocument(path: string) {
+export async function saveDocument(path: string, reason: SaveReason = "explicit") {
   if (isUntitled(path)) return untitledSave.run(path);
   const doc = docs.get(path);
   if (!doc) return;
   for (const participant of willSaveParticipants) {
     try {
-      await participant(path, doc.model);
+      await participant(path, doc.model, reason);
     } catch {
       /* a participant never blocks saving */
     }
@@ -254,10 +256,10 @@ export async function saveDocument(path: string) {
   }
 }
 
-export async function saveAll() {
+export async function saveAll(reason: SaveReason = "explicit") {
   // Untitled buffers wait for an explicit Save (auto save would keep asking for a path).
   const dirty = Object.keys(useWorkbench.getState().dirty).filter((p) => !isUntitled(p));
-  for (const p of dirty) await saveDocument(p).catch(() => {});
+  for (const p of dirty) await saveDocument(p, reason).catch(() => {});
 }
 
 /** The model's current text is what's on disk (after an outside change was loaded). */
@@ -292,12 +294,12 @@ function scheduleAutoSave() {
   if (!exam && settings["files.autoSave"] !== "afterDelay") return;
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   const delay = exam ? Math.min(settings["files.autoSaveDelay"] || EXAM_AUTOSAVE_MS, EXAM_AUTOSAVE_MS) : settings["files.autoSaveDelay"];
-  autoSaveTimer = setTimeout(() => void saveAll(), delay);
+  autoSaveTimer = setTimeout(() => void saveAll("auto"), delay);
 }
 
 /** Auto save "onFocusChange": called when the editor loses focus or the window blurs. */
 export function saveOnFocusChange() {
-  if (useWorkbench.getState().settings["files.autoSave"] === "onFocusChange") void saveAll();
+  if (useWorkbench.getState().settings["files.autoSave"] === "onFocusChange") void saveAll("auto");
 }
 
 function disposeDoc(path: string) {
@@ -313,7 +315,20 @@ export function wireDocuments() {
   if (wired) return;
   wired = true;
   setupMonaco();
-  setIconLanguageResolver((p) => languageForPath(p));
+  // Icons are cached per file name until the set of languages changes (an extension adds one).
+  let languageCount = 0;
+  let countedAt = -Infinity;
+  setIconLanguageResolver(
+    (p) => languageForPath(p),
+    () => {
+      const now = performance.now();
+      if (now - countedAt > 500) {
+        countedAt = now;
+        languageCount = monaco.languages.getLanguages().length;
+      }
+      return String(languageCount);
+    },
+  );
   saveHandlers.save = saveDocument;
   saveHandlers.revert = (path) => {
     // Closing without saving: drop the model so the next open re-reads disk.

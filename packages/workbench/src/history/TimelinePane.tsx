@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getDocument } from "../monaco/documents";
 import { activeFilePath, getPlatform, notify, openEditorInput, showDialog, useWorkbench } from "../state/store";
 import { basename } from "../util/paths";
-import { ActionButton, Codicon } from "../widgets/icons";
+import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { listHistory, readHistory, useHistory, type HistoryEntry } from "./localHistory";
 import { gitHost, useGit } from "../scm/gitService";
 import type { GitCommit } from "../platform/types";
@@ -76,7 +76,12 @@ export function TimelinePane() {
       <div className="tm-pane-header" role="button" tabIndex={0} aria-expanded={open} onClick={() => setOpen(!open)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setOpen(!open)}>
         <Codicon name={open ? "chevron-down" : "chevron-right"} />
         <span className="tm-pane-title">Timeline</span>
-        {path && <span className="tm-pane-desc">{basename(path)}</span>}
+        {path && (
+          <span className="tm-pane-desc tm-timeline-file">
+            <FileIcon path={path} size={14} />
+            {basename(path)}
+          </span>
+        )}
       </div>
       {open && (
         <div className="tm-pane-body tm-scroll tm-timeline-body">

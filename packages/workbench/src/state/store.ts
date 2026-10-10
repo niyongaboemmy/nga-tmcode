@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { PRACTICE_POLICY, type Policy } from "@tmcode/protocol";
 import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
-import { DEFAULT_SETTINGS, type SettingKey, type Settings } from "./settings";
+import { DEFAULT_SETTINGS, migrateSettings, type SettingKey, type Settings } from "./settings";
 import { isExamRoot } from "../exam/roots";
 import { MAX_GROUPS, groupOrder as groupOrderOf, leaf, mapGroups, neighbour, readSavedLayout, reconcile as reconcileTree, removeNode, serializeLayout, splitNode, type GridNode, type SplitDirection } from "./layout";
 import { editorMemento } from "./viewStates";
@@ -261,7 +261,10 @@ interface PersistedUi {
   otherSettings?: Record<string, unknown>;
   recent?: { name: string; root: string }[];
   layout?: { sidebarVisible: boolean; panelVisible: boolean; activePanel: PanelId };
+  /** One-time settings migrations already applied (state/settings.ts SETTINGS_MIGRATIONS). */
+  migrations?: string[];
 }
+let appliedMigrations: string[] = [];
 
 export const useWorkbench = create<WorkbenchState>()(() => ({ ...initialState }));
 const set = useWorkbench.setState;
@@ -275,6 +278,7 @@ function persist() {
     ...(Object.keys(s.otherSettings).length ? { otherSettings: s.otherSettings } : {}),
     recent: s.recent,
     layout: { sidebarVisible: s.sidebarVisible, panelVisible: s.panelVisible, activePanel: s.activePanel },
+    migrations: appliedMigrations,
   };
   void platform?.store.set("ui", ui);
 }
@@ -284,7 +288,9 @@ function persist() {
 export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean } = {}) {
   platform = p;
   const ui = (await p.store.get<PersistedUi>("ui")) ?? {};
-  const user = { ...DEFAULT_SETTINGS, ...ui.settings };
+  const migrated = migrateSettings(ui.settings, ui.migrations);
+  appliedMigrations = migrated.done;
+  const user = { ...DEFAULT_SETTINGS, ...migrated.settings };
   set({
     settings: user,
     userSettings: user,

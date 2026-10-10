@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { parseJsonc } from "../textmate/jsonc";
 import { resolveRelative } from "../textmate/themeData";
+import { iconLanguageId } from "./iconLanguages";
 
 /**
  * File icon themes (VS Code's `iconThemes` contribution): the explorer, tabs,
@@ -8,6 +9,10 @@ import { resolveRelative } from "../textmate/themeData";
  * path gets, then render it as an SVG/PNG image or a font glyph. Assets load
  * lazily, one icon at a time, and are cached as data: URLs (the CSP allows
  * images and fonts from data: only).
+ *
+ * Built in: VS Code's own Seti theme (the default; vendored in ./seti with its
+ * MIT licences, see THIRD_PARTY_NOTICES.md) and Minimal, TMCode's older
+ * colour badges ("TMCode Glyphs"), and None.
  */
 
 export interface IconDefinition {
@@ -16,6 +21,8 @@ export interface IconDefinition {
   fontColor?: string;
   fontSize?: string;
   fontId?: string;
+  /** TMCode's built-in themes only: a codicon instead of an image or a glyph. */
+  codicon?: string;
 }
 
 interface IconAssociations {
@@ -48,12 +55,35 @@ export interface IconThemeEntry {
   path?: string;
   /** Reads an extension file: text, or base64 for binary assets. */
   read?(path: string, as: "text" | "base64"): Promise<string>;
+  /** A theme bundled with TMCode: its document, and the URL of a font it names. */
+  builtin?: { load(): Promise<IconThemeDocument>; fontUrl?(fontPath: string): Promise<string | undefined> };
 }
 
+/** VS Code's default file icon theme, and TMCode's. */
+export const DEFAULT_ICON_THEME = "vs-seti";
+
+/** VS Code's "Minimal": one generic file icon, no folder icons. */
+export const MINIMAL_ICON_THEME: IconThemeDocument = {
+  iconDefinitions: { _file: { codicon: "file" } },
+  file: "_file",
+};
+
 export const BUILTIN_ICON_THEMES: IconThemeEntry[] = [
+  {
+    id: "vs-seti",
+    label: "Seti (Visual Studio Code)",
+    builtin: {
+      // Separate chunks, fetched once when the theme is first applied.
+      load: async () => parseJsonc<IconThemeDocument>((await import("./seti/vs-seti-icon-theme.json?raw")).default),
+      fontUrl: async (p) => (/seti\.woff$/.test(p) ? (await import("./seti/seti.woff?url")).default : undefined),
+    },
+  },
+  { id: "vs-minimal", label: "Minimal (Visual Studio Code)", builtin: { load: async () => MINIMAL_ICON_THEME } },
   { id: "tmcode", label: "TMCode Glyphs" },
   { id: "none", label: "None" },
 ];
+/** TMCode's colour badges: also what shows if a theme fails to load. */
+const GLYPHS = BUILTIN_ICON_THEMES[2];
 
 let extensionIconThemes: IconThemeEntry[] = [];
 
@@ -73,7 +103,7 @@ interface IconThemeState {
   assets: number;
 }
 
-export const useIconTheme = create<IconThemeState>()(() => ({ version: 0, active: { entry: BUILTIN_ICON_THEMES[0], doc: null }, assets: 0 }));
+export const useIconTheme = create<IconThemeState>()(() => ({ version: 0, active: { entry: GLYPHS, doc: null }, assets: 0 }));
 
 export function setExtensionIconThemes(list: IconThemeEntry[]) {
   extensionIconThemes = list;
@@ -146,15 +176,55 @@ export function fontCharacter(raw: string): string {
   return m ? String.fromCodePoint(parseInt(m[1], 16)) : raw;
 }
 
+// ───────────── cached resolution ─────────────
+
+/** Per theme document: "variant|kind|expanded|root|name" → icon definition id (null: none). */
+let resolved = new WeakMap<IconThemeDocument, Map<string, string | null>>();
+let resolvedStamp = "";
+
+/**
+ * `iconFor` with the file's language filled in, cached per file name: the
+ * explorer, tabs and search ask for the same few names thousands of times.
+ */
+export function resolveIcon(
+  doc: IconThemeDocument,
+  path: string,
+  kind: "file" | "folder",
+  opts: { expanded?: boolean; variant?: "dark" | "light" | "hc"; root?: boolean } = {},
+): string | undefined {
+  // Extensions can register languages later: start over when the set changes.
+  const stamp = languageStamp();
+  if (stamp !== resolvedStamp) {
+    resolvedStamp = stamp;
+    resolved = new WeakMap();
+  }
+  let cache = resolved.get(doc);
+  if (!cache) resolved.set(doc, (cache = new Map()));
+  const name = (path.split("/").pop() ?? path).toLowerCase();
+  const key = `${opts.variant ?? "dark"}|${kind}|${opts.expanded ? 1 : 0}|${opts.root ? 1 : 0}|${name}`;
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit ?? undefined;
+  const id = iconFor(doc, path, kind, { ...opts, languageId: kind === "file" ? languageForIcon(path) : undefined });
+  cache.set(key, id ?? null);
+  return id;
+}
+
 // ───────────── loading ─────────────
 
 let languageOf: (path: string) => string | undefined = () => undefined;
-/** The documents module supplies Monaco's file → language mapping (for `languageIds`). */
-export function setIconLanguageResolver(fn: (path: string) => string | undefined) {
+let languageStamp: () => string = () => "";
+/**
+ * The documents module supplies Monaco's file → language mapping (for
+ * `languageIds`), and a stamp that changes when languages are registered.
+ */
+export function setIconLanguageResolver(fn: (path: string) => string | undefined, stamp?: () => string) {
   languageOf = fn;
+  languageStamp = stamp ?? (() => "");
+  resolved = new WeakMap();
 }
+/** The VS Code language id of a file, as icon themes' `languageIds` expect ("dockerfile", "ignore", "javascriptreact"…). */
 export function languageForIcon(path: string) {
-  return languageOf(path);
+  return iconLanguageId(path, languageOf(path));
 }
 
 const images = new Map<string, string | null>();
@@ -208,7 +278,28 @@ export function iconFont(active: ActiveIconTheme, def: IconDefinition): { family
 }
 
 async function loadFonts(entry: IconThemeEntry, doc: IconThemeDocument) {
-  if (!entry.read || !entry.path || typeof FontFace === "undefined") return;
+  if (typeof FontFace === "undefined") return;
+  if (entry.builtin) {
+    for (const font of doc.fonts ?? []) {
+      const key = `${entry.id}|${font.id}`;
+      // A bundled font loads once per session, however often the theme is switched.
+      if (fontFamilies.has(key)) continue;
+      const src = font.src?.[0];
+      const url = src ? await entry.builtin.fontUrl?.(src.path) : undefined;
+      if (!url) continue;
+      try {
+        const family = `tm-icons-${entry.id}`;
+        const face = new FontFace(family, `url(${url})`, { weight: font.weight ?? "normal", style: font.style ?? "normal" });
+        await face.load();
+        document.fonts.add(face);
+        fontFamilies.set(key, family);
+      } catch (e) {
+        console.warn(`icon font ${font.id} of ${entry.id} failed`, e);
+      }
+    }
+    return;
+  }
+  if (!entry.read || !entry.path) return;
   for (const font of doc.fonts ?? []) {
     const src = font.src?.[0];
     if (!src) continue;
@@ -229,18 +320,22 @@ async function loadFonts(entry: IconThemeEntry, doc: IconThemeDocument) {
 }
 
 let applySeq = 0;
-/** Loads and activates an icon theme; unknown ids fall back to the built-in glyphs. */
+const builtinDocs = new Map<string, IconThemeDocument>();
+/** Loads and activates an icon theme; unknown ids (an uninstalled extension's) fall back to the default, Seti. */
 export async function applyIconTheme(id: string) {
   const seq = ++applySeq;
   const entry = allIconThemes().find((t) => t.id === id) ?? BUILTIN_ICON_THEMES[0];
   let doc: IconThemeDocument | null = null;
-  if (entry.read && entry.path) {
+  if (entry.builtin || (entry.read && entry.path)) {
     try {
-      doc = parseJsonc<IconThemeDocument>(await entry.read(entry.path, "text"));
+      if (entry.builtin) {
+        doc = builtinDocs.get(entry.id) ?? (await entry.builtin.load());
+        builtinDocs.set(entry.id, doc);
+      } else doc = parseJsonc<IconThemeDocument>(await entry.read!(entry.path!, "text"));
       await loadFonts(entry, doc);
     } catch (e) {
       console.error(`icon theme ${entry.id} failed to load`, e);
-      if (seq === applySeq) useIconTheme.setState({ active: { entry: BUILTIN_ICON_THEMES[0], doc: null } });
+      if (seq === applySeq) useIconTheme.setState({ active: { entry: GLYPHS, doc: null } });
       return false;
     }
   }

@@ -30,6 +30,10 @@ import { editorsByMru, recentFiles } from "../commands/navigation";
 import { documentSymbols, hasWorkspaceSymbolProvider, workspaceSymbols, type FlatSymbol, type WorkspaceSymbol } from "../commands/symbols";
 import { currentKeybinding } from "../commands/keybindings";
 import { symbolIcon } from "../outline/OutlinePane";
+import { aliasesFor, aliasMatch, similarCommands } from "../commands/aliases";
+
+/** The group of the palette's typo suggestions, shown under "No matching commands". */
+const SIMILAR_GROUP = "similar commands";
 
 interface Item {
   id: string;
@@ -234,9 +238,15 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
             .getSupportedActions()
             .filter((a) => !known.has(a.id) && a.id !== "editor.action.quickCommand" && a.label && (intelligence === "full" || !HELP_ACTIONS.test(a.id)))
         : [];
-      type Entry = { id: string; label: string; kb?: string; run: () => void };
+      type Entry = { id: string; label: string; kb?: string; aliases?: string[]; run: () => void };
       const entries: Entry[] = [
-        ...cmds.map((c) => ({ id: c.id, label: c.category ? `${c.category}: ${c.title}` : c.title, kb: keybindingFor(c, os), run: () => executeCommand(c.id) })),
+        ...cmds.map((c) => ({
+          id: c.id,
+          label: c.category ? `${c.category}: ${c.title}` : c.title,
+          kb: keybindingFor(c, os),
+          aliases: c.aliases,
+          run: () => executeCommand(c.id),
+        })),
         ...actions.map((a) => ({
           id: a.id,
           label: a.label,
@@ -247,14 +257,29 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           },
         })),
       ];
-      const scored = entries
+      let scored = entries
         .map((c) => {
           const m = fuzzyMatch(query, c.label);
+          // Another word for it ("reload", "close all", "format"): ranks like the typed phrase in the label.
+          const alias = query ? aliasMatch(query, aliasesFor(c.id, c.aliases)) : null;
+          if (alias) {
+            const q = query.trim().toLowerCase();
+            const aliasScore = 100 + q.length * 6 + (alias.toLowerCase() === q ? 12 : 4);
+            if (!m || m.score < aliasScore) return { c, m: { score: aliasScore, indices: m?.indices ?? [] } };
+          }
           return m ? { c, m } : null;
         })
         .filter((x): x is NonNullable<typeof x> => !!x);
+      // Nothing matches: "No matching commands", then the closest ones by spelling (a typo: "relaod").
+      let similar = false;
+      if (query && !scored.length) {
+        scored = similarCommands(query, entries).map((c) => ({ c, m: { score: 0, indices: [] as number[] } }));
+        similar = scored.length > 0;
+      }
       // Equal scores: the shorter (closer) label first, as VS Code ranks "Format Document" above "Format Document With...".
-      if (query) scored.sort((a, b) => b.m.score - a.m.score || a.c.label.length - b.c.label.length);
+      if (similar) {
+        /* already closest first */
+      } else if (query) scored.sort((a, b) => b.m.score - a.m.score || a.c.label.length - b.c.label.length);
       else scored.sort((a, b) => a.c.label.localeCompare(b.c.label));
       const pick = (ids: string[]) => ids.map((id) => scored.find((s) => s.c.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
       const recent = query ? [] : recentCommands.length ? pick(recentCommands) : pick(COMMON_COMMANDS);
@@ -279,6 +304,7 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           closeAndRun(s.c.run);
         },
       });
+      if (similar) return scored.map((s, i) => toItem(s, i === 0 ? SIMILAR_GROUP : undefined));
       return [...recent.map((s, i) => toItem(s, i === 0 ? firstGroup : undefined)), ...rest.map((s, i) => toItem(s, i === 0 && recent.length ? "other commands" : undefined))];
     }
     if (mode === "files") {
@@ -557,6 +583,11 @@ function QuickInputWidget({ baseMode, initial }: { baseMode: QuickInputMode; ini
           <div ref={listRef} id="tm-qi-list" className="tm-qi-list tm-scroll" role="listbox">
             {items.length === 0 && loading && <SkeletonRows rows={6} label="Loading" />}
             {items.length === 0 && !loading && <div className="tm-qi-message">{emptyText}</div>}
+            {mode === "commands" && items[0]?.group === SIMILAR_GROUP && (
+              <div className="tm-qi-message" data-testid="qi-no-match">
+                No matching commands
+              </div>
+            )}
             {items.map((it, i) => (
               <div
                 key={it.id}
