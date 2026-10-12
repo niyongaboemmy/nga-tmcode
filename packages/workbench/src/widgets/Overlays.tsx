@@ -172,13 +172,15 @@ export function Notifications() {
   const centreOpen = useNotificationCenter((s) => s.open);
   const examActive = useExam((s) => !!s.quiz && (s.phase === "active" || s.phase === "locked" || s.phase === "submitting"));
   const list = visibleToasts(all, dnd, examActive);
+  // A grading tab in front: its Save buttons are at the bottom right, so the toasts sit above them.
+  const aboveFooter = useWorkbench((s) => s.groups.some((g) => g.editors.some((e) => e.id === g.activeId && e.kind === "grading")));
   // The centre shows them while it is open, as VS Code's does.
   if (!list.length || centreOpen) return null;
   // The newest few; the rest wait in the centre ("+2 more").
   const shown = list.slice(-MAX_VISIBLE_TOASTS);
   const hidden = list.length - shown.length;
   return (
-    <div className="tm-toasts" role="region" aria-label="Notifications" aria-live="polite">
+    <div className={`tm-toasts ${aboveFooter ? "is-above-footer" : ""}`} role="region" aria-label="Notifications" aria-live="polite">
       {hidden > 0 && (
         <button type="button" className="tm-toast-more" onClick={() => showNotificationCenter(true)} data-testid="toast-more">
           +{hidden} more
