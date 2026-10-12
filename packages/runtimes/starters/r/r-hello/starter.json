@@ -1,0 +1,20 @@
+{
+  "id": "r-hello",
+  "language": "r",
+  "kind": "r/single",
+  "title": "R – Hello, world",
+  "description": "The smallest R program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.R",
+  "open": [
+    "main.R"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.3",
+  "tools": [
+    "Rscript"
+  ]
+}

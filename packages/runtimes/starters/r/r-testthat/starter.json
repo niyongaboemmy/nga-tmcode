@@ -1,0 +1,31 @@
+{
+  "id": "r-testthat",
+  "language": "r",
+  "purpose": "project",
+  "kind": "r/project",
+  "title": "R – Package with testthat",
+  "description": "Functions that turn marks into letter grades, with one testthat test file",
+  "level": "intermediate",
+  "entry": "R/main.R",
+  "open": [
+    "R/grades.R",
+    "tests/testthat/test-grades.R"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "testthat",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "DESCRIPTION"
+  ],
+  "tags": [
+    "testthat",
+    "functions"
+  ],
+  "tools": [
+    "Rscript"
+  ],
+  "since": "2026.10.3"
+}

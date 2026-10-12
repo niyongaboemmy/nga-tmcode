@@ -57,8 +57,8 @@ describe("starters", () => {
     }
   });
 
-  it("give every wave C and D language a hello and a two-number io-exercise", () => {
-    for (const lang of LANGUAGES.filter((l) => l.wave === "C" || l.wave === "D")) {
+  it("give every wave B, C and D language a hello and a two-number io-exercise", () => {
+    for (const lang of LANGUAGES.filter((l) => l.wave === "B" || l.wave === "C" || l.wave === "D")) {
       const hello = STARTERS.find((s) => s.manifest.id === `${lang.key}-hello`);
       const io = STARTERS.find((s) => s.manifest.id === `${lang.key}-io`);
       expect(hello?.manifest.purpose, `${lang.key}-hello`).toBe("hello");
@@ -66,6 +66,15 @@ describe("starters", () => {
       const tests = IoTestsSchema.parse(JSON.parse(io!.files.find((f) => f.path === ".nga/tests.json")!.content));
       expect(tests.entry).toBe(io!.manifest.entry);
       for (const t of tests.tests) expect(t.expected_output, `${lang.key}-io ${t.id}`).toMatch(/^Sum: -?\d+\n$/);
+    }
+  });
+
+  it("give PHP, Ruby, Lua, Bash and R a project with a unit test (PHPUnit, RSpec, busted, bats, testthat)", () => {
+    const want = { php: "phpunit", ruby: "rspec", lua: "busted", bash: "bats", r: "testthat" } as const;
+    for (const [lang, framework] of Object.entries(want)) {
+      const m = manifests.find((x) => x.language === lang && x.purpose === "project" && x.tests?.unit?.framework === framework);
+      expect(m, `${lang} ${framework} project`).toBeDefined();
+      expect(kindById(m!.kind)?.steps.test, `${m!.kind} has a test step`).toBeDefined();
     }
   });
 

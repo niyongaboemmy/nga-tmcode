@@ -1,0 +1,29 @@
+{
+  "id": "lua-busted",
+  "language": "lua",
+  "purpose": "project",
+  "kind": "lua/single",
+  "title": "Lua – Module with busted tests",
+  "description": "A small module that turns marks into letter grades, with one busted spec file",
+  "level": "beginner",
+  "entry": "main.lua",
+  "open": [
+    "grades.lua",
+    "spec/grades_spec.lua"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "busted",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "busted",
+    "modules"
+  ],
+  "tools": [
+    "lua",
+    "busted"
+  ],
+  "since": "2026.10.3"
+}
