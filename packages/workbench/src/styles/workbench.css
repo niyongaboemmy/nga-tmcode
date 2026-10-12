@@ -9101,3 +9101,7 @@ button.tm-setting-badge {
 .tm-explorer-empty-assignments {
   margin-top: 16px;
 }
+/* Results that stay (Released…, Returned…) never cover the grade panel's Save buttons. */
+.tm-toasts.is-above-footer {
+  bottom: calc(var(--statusbar-h) + 64px);
+}
