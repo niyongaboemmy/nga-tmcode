@@ -1,5 +1,104 @@
 # Changelog
 
+## 0.15.0 — 2026-10-12
+
+**TMCode 0.15: start here, one way to do it.** TMCode now opens on Home: your next assignment, or what you have to grade, one click away. Every screen shows one status and has one main button, grading opens the first student by itself, and messages say what happened in plain words and stay until you've read them.
+
+### Start here
+
+#### Home
+- **TMCode opens on Home** every time, in front of the files you had open (they're still there, one tab away). Students see **Next up**: the assignment to work on now (work your teacher returned comes first), with one button: Start or Continue. Below it: Returned, To do and Graded, each one click from the list.
+- **Teachers see what's waiting:** "3 submissions to grade in 2 practicals · 1 draft not released", with **Start Grading**, and each practical's count.
+- Signed out, Home has one thing to do: **Sign in**.
+- Don't want it? **Settings › Startup Editor: none** (or "Home, only when no folder is open").
+- The Explorer with no folder now says where your assignments are, with a button.
+
+#### The right layout from the start
+- **TMCode remembers whether you teach.** Teachers get Grading on the first frame instead of the student layout, and a teacher's first sign-in opens Grading (students still get Assignments). The account menu has **Grading**.
+- On a first run, the side bar starts on Assignments (or Grading) instead of the Explorer; after that it comes back where you left it.
+
+#### One status everywhere
+- The brief, the side bar, the Assignments list and the status bar always show **the same status**: Not started, In progress, Submitted, Returned, Graded or Closed. When the two are catching up you see "Updating…", never two answers.
+- **Returned work** shows your teacher's message right where you continue, with **Submit Again**. The steps gain a Returned step.
+- **Graded work** shows the score, feedback and criteria at the top of the brief.
+
+#### Messages that stay
+- **"Submitted…", "Returned to…" and "Released…" stay until you close them.** Other messages wait while your pointer is over them.
+- **New work, grades and returned work** stay until you've seen them, and the bell counts what you haven't read.
+- **Do Not Disturb never hides exam warnings, teacher messages or returned work.** During an exam it hides nothing.
+- Exam time warnings replace each other (10, then 5, then 1 minute left) instead of piling up.
+- The update download shows its progress until it's done.
+- Things that used to happen silently now say so: work returned for changes, the first automatic save that fails (in the brief, at once), **Moved to the Trash** (with **Undo**), files dragged in, Git commit, push and pull, a deleted line comment (with **Undo**), and an exam save to Task Mentor that fails (once, not on every retry).
+
+#### Fixes
+- Renaming a file to a name that's taken now shows the error under the name and keeps the box open (it used to do nothing).
+- A folder that opened while a check was still running could lose its project card in the side bar.
+
+### One way to do it
+
+#### Students
+- **Save and Submit live on the brief only.** The side bar's This Folder is now one line, "● In progress · Saved online 2 min ago · Open Brief", so your assignment list has room again. The steps (In progress → Submitted → Graded) moved to the brief.
+- **Live status** (what teachers see while you work) is in the line's "…" menu. It stays on while an assignment is open.
+- **Quiz practicals have a brief too**, with the same Start, Submit and Withdraw to Edit. Until your quiz attempt is open, the first step is **Open Quiz**. You no longer go through All My Projects to hand one in.
+- **Signing in carries on with what you started:** "Signed in. Starting your new project…".
+- Files that changed both here and in Task Mentor are listed on the brief, with Compare, Keep Mine and Take Task Mentor's.
+
+#### Teachers
+- **Opening a practical opens its first waiting submission** (the oldest hand-in). Home's **Start Grading** goes straight there: one click from launch.
+- **The code gets the width:** while a submission is open, the side bar and the student list fold away; a switcher (‹ Ben Learner 1 of 2 ›) stays above the grade. Settings › Grading › Focus While Reviewing turns this off.
+- **The grade panel reads top to bottom:** criteria, feedback, line comments, then files and changes (folded). Return for Changes, Preview, Compare with Version and Shortcuts are under **More Actions**.
+- **One main button: Save & Next ▾.** Its menu has Save Draft and Save & Release; your last choice becomes the main button. ⌘Enter / Ctrl+Enter is still Save & Next.
+- "Score every criterion" now shows on the first criterion without a score, outlined.
+- **Progress shows once**, in one line at the top of the grading tab: "2 to grade · 0 graded · 1 in progress".
+- Saving a grade says so in the panel's footer (no extra message); Save & Next also shows a short message, since the panel moves on.
+
+#### Words
+- Task Mentor failures are in plain words, "Task Mentor had a problem. Try again in a minute.", with the technical part behind **Details**.
+- Messages name what you see and put the next step in a button, not a menu path: "Connect to Task Mentor", "Show Conflicts" (opens the brief), "Restore".
+- One word for each thing: Start, Continue, Save to Task Mentor, Submit, Withdraw to Edit, In progress, Returned, Graded, Closed, Sign in.
+- Reasons a draft wasn't released are in words ("not handed in yet"), never server codes.
+
+### Polish
+
+#### Always a way on
+- Empty screens have one action: Grading with no practicals offers **Create in Task Mentor**; "Nothing waiting to be graded" offers **Show All Practicals** or **Show All Students**.
+- A student still working shows **See Their Live Status** (assignments) or **Open in Task Mentor**, not just "you can grade once the work is submitted".
+- **Close Review** is a button at the top of the grading tab (the side bar can be folded while you review). "Back to My Folder" is now called Close Review everywhere.
+
+#### Teachers' Assignments
+- **Your classes come first**, and each assignment has **Grade (2)**: one click to the first waiting submission.
+
+#### Notifications
+- The notification centre **keeps 30 days** of messages (up to 200), across restarts.
+- **View Feedback, Open and Show Brief stay** in the centre after their message closes.
+- **Mark All as Read** clears the bell's count.
+- Sign Out, Disconnect and Sign out of GitHub ask as warnings: they affect more than this window.
+
+#### Fits the window
+- Grading's filter chips wrap instead of clipping ("Not sta…").
+- The side bar's sync words fold into the icon (with the words as its tooltip) when the side bar is narrow; course names show in full on hover.
+- **Menus that don't fit go under "…"** in the title bar, so Help and Check My Computer are always reachable.
+
+#### Less noise for students
+- **Source Control is hidden in assignment workspaces** (your work saves to Task Mentor). Settings › Source Control in Assignments brings it back.
+- No "↑" badge on All My Projects (the brief and the side-bar line show sync; conflicts still show).
+- The status bar's Run item names Live Preview only beside web files.
+
+#### Newcomers
+- **Where the work is comes first in the activity bar:** Assignments for students; Grading, then Assignments, for teachers.
+- A one-time pointer says "Your assignments live here" (or "Grading lives here"). It goes at your first click and never shows again.
+
+### All changes
+
+- Final polish before 0.15.0: icon alignment, gentler first hint, returned note, guides
+- Workflow plan Phases 3–4 (polish, validation clean-up)
+- Fix brace lost when merging the toast offset rule
+- Toasts sit above the grading footer while a grading tab is in front
+- Toasts sit above the grading footer while a grading tab is in front
+- Workflow plan Phase 2 (0.16 "One way to do it")
+- Workflow plan Phase 1 (0.15 "Start here"): Home, role, one status, notification policy
+- Workflow plan Phase 0: golden journeys, journey counter, WebKit UA off macOS
+
 ## 0.14.0 — 2026-10-10
 
 **TMCode 0.14: the VS Code you know.** The everyday commands VS Code users reach for, a reload that never loses work, VS Code's own file icons and a smarter editor.
