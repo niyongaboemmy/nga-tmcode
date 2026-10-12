@@ -55,8 +55,9 @@ test("#4 students: Assignments comes first, Projects is the secondary All My Pro
   const labels = await page.locator(".tm-activitybar-top .tm-activity").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
   const a = labels.findIndex((l) => l.startsWith("Assignments"));
   const p = labels.findIndex((l) => l.startsWith("All My Projects"));
-  expect(a).toBeGreaterThan(-1);
-  expect(p).toBe(a + 1);
+  // 0.17 (L10): Assignments is the first icon; All My Projects comes later, after the editor views.
+  expect(a).toBe(0);
+  expect(p).toBeGreaterThan(a);
   expect(labels.some((l) => l.startsWith("Task Mentor Projects"))).toBe(false);
   // Assignments has the mortar board; the exam Task view has its own icon.
   await expect(assignmentsIcon(page).locator(".codicon-mortar-board")).toHaveCount(1);

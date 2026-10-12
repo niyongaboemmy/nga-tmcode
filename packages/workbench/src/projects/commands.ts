@@ -363,7 +363,7 @@ export function registerProjectCommands() {
   registerCommand({ id: "workbench.action.newProjectFromTemplate", title: "New Project from Template…", category: "File", enabled: () => !!getPlatform().account && !inExam(), run: newProjectFromTemplate });
   registerCommand({ id: "workbench.view.grading", title: "Show Grading", category: "View", enabled: () => usable() && useGrading.getState().grader, run: () => revealView("grading") });
   registerCommand({ id: "grading.refresh", title: "Refresh Grading", category: "Grading", enabled: () => usable() && signedIn(), run: () => refreshGrading() });
-  registerCommand({ id: "grading.closeReview", title: "Close Review (Back to My Folder)", category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
+  registerCommand({ id: "grading.closeReview", title: "Close Review", aliases: ["back to my folder"], category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
   registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
   registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });
   registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm" && useAssignments.getState().staff === true, run: publishAsStarter });

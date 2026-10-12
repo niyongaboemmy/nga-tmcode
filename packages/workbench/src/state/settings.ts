@@ -117,6 +117,8 @@ export interface Settings {
   "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
   /** Grading: while a student's submission is open, the side bar and the student list fold away (a switcher stays). */
   "grading.focusWhileReviewing": boolean;
+  /** Source Control in a student's assignment workspace (off: the view and its badge are hidden there). */
+  "scm.showInAssignments": boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -178,6 +180,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "markdown.editor.drop.enabled": "smart",
   "workbench.startupEditor": "home",
   "grading.focusWhileReviewing": true,
+  "scm.showInAssignments": false,
 };
 
 /** One-time changes to saved settings, by id (kept in the saved UI state once applied). */
@@ -451,6 +454,12 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
   {
     title: "Grading",
     settings: [
+      {
+        key: "scm.showInAssignments",
+        label: "Source Control in Assignments",
+        description: "Show Source Control (git) in assignment workspaces. Off: the view and its change count are hidden there, since your work is saved to Task Mentor.",
+        type: "boolean",
+      },
       {
         key: "grading.focusWhileReviewing",
         label: "Focus While Reviewing",

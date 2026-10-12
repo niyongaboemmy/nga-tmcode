@@ -5,6 +5,7 @@ import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { projectsSupported, signIn, useProjects } from "../projects/service";
 import { dueLabel } from "../projects/assignments";
+import { openTaskMentorPage } from "../projects/commands";
 import { closeReview, openGrading, progressOf, refreshGrading, useGrading, type Gradable } from "./service";
 
 /** Graded / to grade / in progress, as one bar. */
@@ -133,7 +134,7 @@ export function GradingView() {
           </span>
           {home && (
             <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void closeReview()} title="Close the review and go back to your own folder">
-              Back to my folder
+              Close Review
             </button>
           )}
         </div>
@@ -168,9 +169,24 @@ export function GradingView() {
         <div className="tm-view-empty">
           <Codicon name="tasklist" className="tm-projects-hero" />
           <p>No TMCode practicals to grade yet. Turn on "TMCode practical" for an assignment, or add a practical question to a quiz, in Task Mentor.</p>
+          {/* W6: every empty state has one action. */}
+          <button type="button" className="tm-button" onClick={() => openTaskMentorPage("/assignments/create")} data-testid="grading-create">
+            <Codicon name="add" /> Create in Task Mentor
+          </button>
         </div>
       ) : list.length === 0 ? (
-        <p className="tm-muted tm-projects-hint">{show === "to-grade" ? "Nothing waiting to be graded." : "No matching practicals."}</p>
+        <div className="tm-projects-hint">
+          <p className="tm-muted">{show === "to-grade" ? "Nothing waiting to be graded." : "No matching practicals."}</p>
+          {show === "to-grade" ? (
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => setShow("all")} data-testid="grading-show-all">
+              Show All Practicals
+            </button>
+          ) : (
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => setFilter("")}>
+              Clear Filter
+            </button>
+          )}
+        </div>
       ) : (
         [...bySubject.entries()]
           .sort(([x], [y]) => x.localeCompare(y))

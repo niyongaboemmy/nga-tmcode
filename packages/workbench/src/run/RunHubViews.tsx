@@ -123,9 +123,12 @@ function useLastOutcome(): Outcome | null {
 }
 
 /** The status bar's ▶ Run item: the target while idle, ■ Stop with elapsed time while running. */
+const WEB_FILE = /\.(html?|css|scss|less|jsx?|tsx?|vue|svelte|json)$/i;
+
 export function RunStatusItems() {
   const h = useHubState();
   const ws = useWorkbench((s) => !!s.workspace);
+  const activePath = useWorkbench((s) => activeFilePath(s));
   const info = runningInfo(h);
   const now = useNow(!!info);
   const outcome = useLastOutcome();
@@ -168,6 +171,8 @@ export function RunStatusItems() {
   }
   const target = currentTarget(h.hub);
   const kb = runProjectKeybinding();
+  // L7 (0.17): "React - app (Live Preview)" only beside web files; elsewhere it's just Run.
+  const quiet = target?.kind === "livePreview" && !!activePath && !WEB_FILE.test(activePath);
   return (
     <>
       <span className="tm-run-split">
@@ -179,8 +184,8 @@ export function RunStatusItems() {
           data-testid="run-hub-status"
           onClick={() => void runProject()}
         >
-          <Codicon name={target?.kind === "livePreview" ? "open-preview" : "play"} className="tm-run-play" />
-          <span className="tm-run-status-label">{target ? target.label : "Run"}</span>
+          <Codicon name={target?.kind === "livePreview" && !quiet ? "open-preview" : "play"} className="tm-run-play" />
+          <span className="tm-run-status-label">{target && !quiet ? target.label : "Run"}</span>
         </button>
         <button
           type="button"

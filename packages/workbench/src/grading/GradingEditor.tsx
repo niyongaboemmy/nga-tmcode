@@ -6,6 +6,7 @@ import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { taskMentorWeb } from "../projects/commands";
 import { useProjects } from "../projects/service";
+import { showAssignment } from "../projects/assignments";
 import { revealComment } from "./comments";
 import { compareWithVersion, diffWithStarter, draftGradeCount, GRADING_SHORTCUTS, openGradingDiff, registerGradingController, releaseDraftGrades } from "./commands";
 import { changesAgainst, revisionFiles, starterOf, type Change, type Version } from "./diff";
@@ -173,6 +174,16 @@ function LineComments({ draft, loaded, canEdit }: { draft: Draft; loaded: boolea
 interface PanelApi {
   saveAndNext(): void;
   focus(): void;
+}
+
+/** Task Mentor's grading page for this practical (and student). */
+function openGradingInTaskMentor(key: string, studentId: number | null) {
+  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
+  const { type, id, question_id } = parseKey(key);
+  const q = new URLSearchParams();
+  if (question_id) q.set("question", String(question_id));
+  if (studentId != null) q.set("student", String(studentId));
+  void openExternalUrl(`${taskMentorWeb(api)}/grading/practical/${type}/${id}${q.toString() ? `?${q}` : ""}`);
 }
 
 /** What the split button's main part does; the teacher's last choice from its menu (L3). */
@@ -465,8 +476,18 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
           {!roster.activity.can_grade
             ? "You can follow this practical, but only its teachers can grade it."
             : row.state === "in_progress"
-              ? "Still working: you can grade once the work is submitted."
-              : "Not started yet."}
+              ? "In progress: you can grade once the work is submitted."
+              : "Not started yet."}{" "}
+          {/* W6: a way on, not a dead end. */}
+          {roster.activity.type === "assignment" && row.state === "in_progress" ? (
+            <button type="button" className="tm-link-button" onClick={() => showAssignment(roster.activity.id)} data-testid="grade-live-status">
+              See Their Live Status
+            </button>
+          ) : (
+            <button type="button" className="tm-link-button" onClick={() => openGradingInTaskMentor(gkey, row.student?.id ?? null)} data-testid="grade-open-tm">
+              Open in Task Mentor
+            </button>
+          )}
         </p>
       )}
 
@@ -870,18 +891,23 @@ export function GradingEditor({ input }: { input: Input }) {
             className="tm-action"
             title="Open the grading page in Task Mentor"
             aria-label="Open in Task Mentor"
-            onClick={() => {
-              const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
-              const { type, id, question_id } = parseKey(key);
-              const q = new URLSearchParams();
-              if (question_id) q.set("question", String(question_id));
-              if (selected != null) q.set("student", String(selected));
-              void openExternalUrl(`${taskMentorWeb(api)}/grading/practical/${type}/${id}${q.toString() ? `?${q}` : ""}`);
-            }}
+            onClick={() => openGradingInTaskMentor(key, selected ?? null)}
           >
             <Codicon name="link-external" />
           </button>
         </div>
+        {/* W9: the way back is a button you can see (the side bar may be folded while reviewing). */}
+        {reviewing && (
+          <div className="tm-grade-review-bar" role="status" data-testid="grade-review-bar">
+            <Codicon name="eye" />
+            <span>
+              Reviewing <b>{reviewing.student}</b>'s submission (read-only)
+            </span>
+            <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void closeReview()} data-testid="grade-close-review" title="Close the review and go back to the folder you had open">
+              Close Review
+            </button>
+          </div>
+        )}
         {/* L4: progress once, in one line (the switcher and the side bar don't repeat it). */}
         <p className="tm-grade-progress-line" data-testid="grading-progress" title={`${p.pct}% of submissions graded (students still working are not counted)`}>
           <span className="is-to-grade">
@@ -955,7 +981,16 @@ export function GradingEditor({ input }: { input: Input }) {
               run();
             }}
           >
-            {rows.length === 0 && <p className="tm-muted tm-projects-hint">{filter === "to-grade" ? "Nothing waiting to be graded." : "No students here."}</p>}
+            {rows.length === 0 && (
+              <div className="tm-projects-hint">
+                <p className="tm-muted">{filter === "to-grade" ? "Nothing waiting to be graded." : "No students here."}</p>
+                {filter !== "all" && (
+                  <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => setFilter("all")} data-testid="grade-show-all">
+                    Show All Students
+                  </button>
+                )}
+              </div>
+            )}
             {rows.map((r, i) => {
               const dk = draftKey(key, r.student?.id);
               const unsaved = !!localDrafts[dk];
@@ -1043,7 +1078,7 @@ export function GradingEditor({ input }: { input: Input }) {
               <div className="tm-grade-finished-actions">
                 {reviewing && (
                   <button type="button" className="tm-button" onClick={() => void closeReview()}>
-                    <Codicon name="home" /> Back to My Folder
+                    <Codicon name="home" /> Close Review
                   </button>
                 )}
                 <button

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { dismissNotification, useWorkbench } from "../state/store";
-import { clearAllNotifications, clearNotification, showNotificationCenter, toggleDoNotDisturb, useNotificationCenter } from "../state/notificationCenter";
+import { clearAllNotifications, clearNotification, keptActions, markAllAsRead, showNotificationCenter, toggleDoNotDisturb, unreadCount, useNotificationCenter } from "../state/notificationCenter";
 import { Codicon } from "./icons";
 
 const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -28,6 +28,11 @@ export function NotificationCenter() {
     <div ref={ref} className="tm-notification-center" role="dialog" aria-label="Notifications" tabIndex={-1} data-testid="notification-center">
       <div className="tm-nc-header">
         <span className="tm-nc-title">{history.length ? "Notifications" : "No New Notifications"}</span>
+        {unreadCount(history) > 0 && (
+          <button type="button" className="tm-action" title="Mark All as Read" aria-label="Mark All as Read" onClick={markAllAsRead} data-testid="notifications-mark-read">
+            <Codicon name="check-all" />
+          </button>
+        )}
         <button type="button" className="tm-action" title="Clear All Notifications" aria-label="Clear All Notifications" onClick={clearAllNotifications}>
           <Codicon name="clear-all" />
         </button>
@@ -58,23 +63,29 @@ export function NotificationCenter() {
               <button type="button" className="tm-action" title="Clear Notification" aria-label="Clear Notification" onClick={() => clearNotification(h.id)}>
                 <Codicon name="close" />
               </button>
-              {n?.actions?.length ? (
-                <div className="tm-toast-actions">
-                  {n.actions.map((a) => (
-                    <button
-                      key={a.label}
-                      type="button"
-                      className="tm-button"
-                      onClick={() => {
-                        dismissNotification(n.id);
-                        a.run();
-                      }}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              {(() => {
+                // Open toasts: all their buttons. Closed ones: the buttons that are still valid (N8).
+                const actions = n?.actions?.length ? n.actions : keptActions(h.id);
+                if (!actions.length) return null;
+                return (
+                  <div className="tm-toast-actions">
+                    {actions.map((a) => (
+                      <button
+                        key={a.label}
+                        type="button"
+                        className="tm-button"
+                        data-testid="notification-entry-action"
+                        onClick={() => {
+                          if (n) dismissNotification(n.id);
+                          a.run();
+                        }}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

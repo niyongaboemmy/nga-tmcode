@@ -236,7 +236,7 @@ function AssignmentFolderLine({ project, summary, openBrief, savedAt }: { projec
       <span className="tm-folder-line-status" data-testid="project-student-status-line">
         {view!.syncing ? "Updating…" : STUDENT_LABEL[view!.status]}
       </span>
-      <span className={`tm-folder-line-sync tm-tone-${SYNC_TONE[sync]}`}>
+      <span className={`tm-folder-line-sync tm-tone-${SYNC_TONE[sync]}`} title={syncLineText(sync, { changes, savedAt })}>
         <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
         <span className="tm-folder-line-sync-text">{syncLineText(sync, { changes, savedAt })}</span>
       </span>

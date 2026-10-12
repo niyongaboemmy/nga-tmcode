@@ -285,7 +285,7 @@ function WhatsNew() {
     <div className="tm-home-whats-new" role="note" data-testid="home-whats-new">
       <Codicon name="sparkle" />
       <span>
-        <b>New in TMCode {WHATS_NEW.version}:</b> TMCode now opens on Home, with your next assignment or what to grade one click away.{" "}
+        <b>New in TMCode {WHATS_NEW.version}:</b> TMCode opens on Home, with your next assignment or what to grade one click away. Every screen has one main button.{" "}
         <button type="button" className="tm-link-button" onClick={() => openExternal(RELEASE_NOTES_URL)}>
           What's new
         </button>

@@ -101,19 +101,21 @@ test("a quiz practical question is graded the same way", async ({ page }) => {
   await expect(page.getByTestId("grading-progress")).toContainText("0 to grade");
 });
 
-test("students still working or not started can't be graded yet; Back to my folder ends the review", async ({ page }) => {
+test("students still working or not started can't be graded yet (with a way on); Close Review ends the review", async ({ page }) => {
   await teacher(page);
   await activity(page, "assignment:51:").click();
   await showRoster(page);
   await page.getByTestId("grade-filter-all").click();
   await openStudent(page, "Dan Doer");
-  await expect(page.getByTestId("grade-hint")).toContainText("Still working");
+  await expect(page.getByTestId("grade-hint")).toContainText("In progress: you can grade once the work is submitted.");
+  // 0.17 (W6): not a dead end.
+  await expect(page.getByTestId("grade-live-status")).toBeVisible();
   await expect(page.getByTestId("load-project")).toBeDisabled();
   await openStudent(page, "Chloe Coder");
   await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
-  await command(page, "View: Show Grading");
-  await page.getByTestId("grading-reviewing").getByRole("button", { name: "Back to my folder" }).click();
-  await expect(page.getByTestId("grading-reviewing")).toHaveCount(0);
+  // 0.17 (W9): Close Review is a visible button in the grading tab (the side bar is folded while reviewing).
+  await page.getByTestId("grade-close-review").click();
+  await expect(page.getByTestId("grade-review-bar")).toHaveCount(0);
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="main.py"]')).toBeVisible();
 });
@@ -174,7 +176,7 @@ test("beside the code the roster folds into a switcher; Full marks, the save hin
   const done = page.getByTestId("grade-finished");
   await expect(done).toContainText("All handed-in work is graded", { timeout: 15_000 });
   await expect(done).toContainText("2 of 2 graded");
-  await done.getByRole("button", { name: "Back to My Folder" }).click();
+  await done.getByRole("button", { name: "Close Review" }).click();
   await expect(page.getByTestId("grading-reviewing")).toHaveCount(0);
 });
 

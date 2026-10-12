@@ -162,18 +162,18 @@ export function announceChanges(before: AssignmentSummary[] | null, after: Assig
   for (const a of after) {
     const was = old.get(a.id);
     if (!was) {
-      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id) }], { kind: "external" });
+      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id), keep: true }], { kind: "external" });
       continue;
     }
     // Returned for changes (N2): never hidden by Do Not Disturb, the teacher's words in the message.
     if (returnedForChanges(a) && a.my!.returned_at !== was.my?.returned_at && once(`returned:${a.id}:${a.my!.returned_at}`)) {
       const note = a.my!.returned_message?.trim();
-      notify("info", `Your teacher returned "${a.title}"${note ? `: "${note.length > 120 ? `${note.slice(0, 117)}…` : note}"` : " for changes"}`, [{ label: "Open", run: () => showAssignment(a.id) }], { kind: "external", bypassDnd: true, source: "teacher" });
+      notify("info", `Your teacher returned "${a.title}"${note ? `: "${note.length > 120 ? `${note.slice(0, 117)}…` : note}"` : " for changes"}`, [{ label: "Open", run: () => showAssignment(a.id), keep: true }], { kind: "external", bypassDnd: true, source: "teacher" });
     }
     if (a.my?.state === "graded" && was.my?.state !== "graded" && once(`graded:${a.id}:${a.my.submitted_at ?? ""}:${a.my.grade ?? ""}`)) {
       const max = a.my.max_points ?? a.points;
       const score = a.my.grade != null ? `: ${a.my.grade}${max != null ? `/${max}` : ""}` : "";
-      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id) }], { kind: "external" });
+      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id), keep: true }], { kind: "external" });
     }
   }
 }

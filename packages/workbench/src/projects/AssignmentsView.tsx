@@ -11,7 +11,7 @@ import { startQuizPractical } from "./matching";
 import { showQuizPractical } from "./quizPractical";
 import type { LinkableActivity, PracticalQuestion } from "./types";
 import { openAssignmentInTaskMentor, openTaskMentorPage } from "./commands";
-import { keyOf, openGrading } from "../grading/service";
+import { keyOf, openGrading, progressOf, useGrading } from "../grading/service";
 import { ThisFolder } from "./ProjectsView";
 import { useRowNav } from "./rowNav";
 import { SignInWaiting } from "./SignInWaiting";
@@ -112,6 +112,8 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
   const viewing = useViewingBrief(a.id);
   const started = !!a.my?.project_id;
   const canWork = !teaching && !open && (!a.read_only || started);
+  // W10: a teacher's row grades in one click (the tab opens the first waiting submission).
+  const toGrade = useGrading((s) => (teaching ? (progressOf(s.rosters[keyOf("assignment", a.id, null)])?.toGrade ?? null) : null));
   return (
     <div
       className={`tm-list-row tm-assignment-row ${open ? "is-current" : ""} ${viewing ? "is-viewing" : ""} ${urgent ? "is-urgent" : ""}`}
@@ -158,7 +160,11 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
         <span className="tm-project-name">{a.title}</span>
         <span className="tm-assignment-sub">
           {!teaching && <StateChip a={a} view={view} />}
-          {a.course_name && <span className="tm-assignment-course">{a.course_name}</span>}
+          {a.course_name && (
+            <span className="tm-assignment-course" title={a.course_name}>
+              {a.course_name}
+            </span>
+          )}
           {teaching && (a.status as string) === "draft" ? (
             <span className="tm-due is-soon" title="Publish it in Task Mentor so students can start it">
               Draft · students can't see it
@@ -176,6 +182,22 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
         <span className="tm-open-here" title="Your work for this assignment is the folder open in this window">
           <Codicon name="folder-opened" /> Open here
         </span>
+      )}
+      {teaching && (
+        <button
+          type="button"
+          className={`tm-button tm-button--small ${toGrade ? "" : "tm-button--secondary tm-row-action"}`}
+          tabIndex={-1}
+          data-testid="assignment-row-grade"
+          title={toGrade ? `${toGrade} submission${toGrade === 1 ? "" : "s"} waiting: open the first one` : "Open grading for this assignment"}
+          onClick={(e) => {
+            e.stopPropagation();
+            openGrading(keyOf("assignment", a.id, null));
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          {toGrade ? `Grade (${toGrade})` : "Grade"}
+        </button>
       )}
       {canWork && (
         // Quiet in the list (shown on hover, focus or selection), as VS Code's row actions; the most urgent to-do keeps a solid Start.
@@ -260,7 +282,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
           <span className={`tm-chip tm-status-chip ${state === "graded" ? "is-success" : PRACTICAL_CHIP[state]}`} data-testid="quiz-practical-state">
             {label}
           </span>
-          <span className="tm-assignment-course">
+          <span className="tm-assignment-course" title={`${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}`}>
             {quiz.title} · {q.points} pt{q.points === 1 ? "" : "s"}
           </span>
           {opens ? (
@@ -491,6 +513,12 @@ export function AssignmentsView() {
         </div>
       ) : (
         <>
+          {/* W10: for teachers, their classes come first. */}
+          {staff === true && teach.length > 0 && (
+            <Section title="Teaching" count={teach.length}>
+              {rows(teach, "", true)}
+            </Section>
+          )}
           {(student?.length ?? 0) > 0 && (
             <>
               <Section title="To Do" count={groups.todo.length}>
@@ -513,16 +541,17 @@ export function AssignmentsView() {
               )}
             </>
           )}
+          {staff !== true && teach.length > 0 && (
+            <Section title="Teaching" count={teach.length}>
+              {rows(teach, "", true)}
+            </Section>
+          )}
           {practicalCount > 0 && (
             <Section title="Quiz Practicals" count={practicalCount}>
               {quizzes.flatMap((quiz) => (quiz.practical_questions ?? []).map((q) => <QuizPracticalRow key={`${quiz.activity_id}:${q.question_id}`} quiz={quiz} q={q} />))}
             </Section>
           )}
-          {teach.length > 0 && (
-            <Section title="Teaching" count={teach.length}>
-              {rows(teach, "", true)}
-            </Section>
-          )}
+
         </>
       )}
     </div>

@@ -182,7 +182,8 @@ export async function signOut() {
   const host = getPlatform().account;
   if (!host) return;
   const choice = await showDialog({
-    severity: "info",
+    // N10: it signs out everywhere, so it is a warning.
+    severity: "warning",
     message: "Sign out of NGA?",
     detail: "This signs you out of Central MIS and Task Mentor everywhere. Your files stay on this computer.",
     buttons: [
@@ -797,7 +798,7 @@ export async function disconnectFolder() {
   const binding = get().binding;
   if (!binding) return;
   const choice = await showDialog({
-    severity: "info",
+    severity: "warning",
     message: `Disconnect this folder from "${binding.name}"?`,
     detail: "TMCode stops syncing this folder with Task Mentor. Your files stay here, and the project stays in Task Mentor (delete it there if you no longer need it).",
     buttons: [
