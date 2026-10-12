@@ -115,7 +115,7 @@ hmac_0     = ""   (the chain is per session, across questions)
   - seq 1 (question 42, auto, `2026-10-05T10:00:00.000Z`): hmac = `f9bb208003aa8286b0cc58e586b0ce76013fe9e3d5ffa8853d0bf49ca46b2dfa`
   - seq 2 (question 42, final, `2026-10-05T10:05:00.000Z`, prev = seq 1): hmac = `f95e202aa9cb68ed3e7c5b8e746b8d928751e1006b0c8728122e378d7f312035`
 
-## 5. tm-judge — `services/judge` (private: `127.0.0.1:5010`, `Authorization: Bearer $JUDGE_TOKEN`)
+## 5. tm-judge — `services/judge` (private: `127.0.0.1:5010`, or the runner host's WireGuard address `10.66.0.2:5010`; `Authorization: Bearer $JUDGE_TOKEN`)
 
 | Method / path | Purpose |
 |---|---|
@@ -123,9 +123,10 @@ hmac_0     = ""   (the chain is per session, across questions)
 | `GET /v1/catalog` | The Runtime Catalog (`@nga/runtimes`) filtered to the kinds this runner can run |
 | `POST /v1/detect` | `{ files: [{ path, content? }], language? }` → ranked kinds with entry files |
 | `POST /v1/run` | Synchronous run. Two request shapes: a **language profile** (§5.1, unchanged) or a **catalog project** (§5.2) |
-| `/v1/sessions…` | Interactive runs with live stdin/stdout (§5.6) |
+| `/v1/sessions…` | Interactive runs with live stdin/stdout (§5.6); a real terminal with `pty: true` (tier 3) |
+| `/v1/previews…`, `/p/…` | Server previews (tier 3, §5.8) |
 
-Errors: HTTP status + `{ "error": "Human text", "code": "..." }` with `code` one of `INVALID_REQUEST` (400), `NOT_FOUND` (404), `KIND_UNSUPPORTED` (409: unknown kind, a tier this runner doesn't run, or a missing run/test step), `RUNTIME_UNAVAILABLE` (503: the kind's toolchain isn't installed), `BUSY` (503 + `Retry-After`; queue full), `INTERNAL` (500). Older clients that only read `error` keep working.
+Errors: HTTP status + `{ "error": "Human text", "code": "..." }` with `code` one of `INVALID_REQUEST` (400), `NOT_FOUND` (404), `KIND_UNSUPPORTED` (409: unknown kind, a tier this runner doesn't run (e.g. containers off), or a missing run/test step), `RUNTIME_UNAVAILABLE` (503: the kind's toolchain isn't installed), `BUSY` (503 + `Retry-After`; queue full), `INTERNAL` (500). Older clients that only read `error` keep working.
 
 ### 5.1 Language profile (unchanged; what Task Mentor sends today)
 
@@ -174,6 +175,7 @@ Used when the body has `kind`, or has no profile `language` (then the kind is de
 | `actions` | Any of `build`, `run`, `test`. Default: `["build","run"]` when `tests` is given, else `["build","test"]` (or `["build","run"]` when the kind has no test step). `run` builds first; `test` alone runs the restore step and the test step only (the build tool compiles what it needs). |
 | `tests` | I/O tests for `run`: `{ id, input, expected_output? (alias expected), checker? }`, at most 60, input ≤ 256 KB. `run` without tests runs once with empty input (verdict `ok`). |
 | `checker` | `{ type, tolerance? }`, default `whitespace`. See below. |
+| `services` | Optional, tier 3: `["postgres"]` or `["mysql"]`, a per-run database (§5.9). A kind's own `services` (`sql/postgres`, `sql/mysql`) are always added. A non-container kind with `services` runs in a container from its runtime's image (409 when the runner has none). |
 | `test_filter` | Optional: only these unit tests, in the framework's own syntax (a class, method or pattern). Letters, digits, `. * # : / $ - [ ]` and spaces. |
 | `limits` | The **run** step's limits, capped (cpu ≤ max(kind, 20 s), wall ≤ max(kind, 30 s), memory ≤ max(kind, 1024 MB); the kind's memory is a floor). Build and test steps use the kind's catalog limits. |
 
@@ -228,7 +230,14 @@ Response:
 ```
 Content is optional; it improves `contains` rules (frameworks) and entry detection (`main` declarations).
 
-`GET /v1/health` → `{ ok, sandbox, features: ["run", "projects", "catalog", "detect", "checkers", "sessions"], languages: { "<profile>": version|null }, catalog: "2026.10.1", runtimes: { "<runtime>": version|null }, caches: { "<id>": bool }, queue: { running, waiting, concurrency }, sessions: { running, max } }`.
+`kinds` also lists tier-3 (`container`) kinds when Docker is reachable, the container runtime (gVisor `runsc`) is registered and the kind runtime's image is built; those entries carry `image`. Otherwise they are in `unavailable` with the reason (`containers are off on this runner (JUDGE_CONTAINERS is not 1)`, `Docker is not reachable (...)`, `the container runtime 'runsc' is not registered with Docker`, `image nga-runner/dotnet-8:2026.10.1 is not built on this runner`, `the postgres database image (postgres:16) is not available on this runner`).
+
+`GET /v1/health` → `{ ok, sandbox, features, languages: { "<profile>": version|null }, catalog: "2026.10.3", runtimes: { "<runtime>": version|null }, caches: { "<id>": bool }, queue: { running, waiting, concurrency }, sessions: { running, max }, containers: { enabled, usable, runtime, runtime_registered, arch, reason, images: { "<image>": bool } }, previews: { running, max } }`.
+
+`features` is `["run", "projects", "catalog", "detect", "checkers", "sessions"]` plus, **only when actually usable** (Docker reachable + runtime registered + at least one runner image built):
+- `containers`, `pty`: tier-3 kinds and terminal sessions;
+- `previews`: also needs `JUDGE_PREVIEW_SECRET` (32+ characters) and a built image for a kind with a server;
+- `databases`: the `postgres:16` and/or `mysql:8.4` sidecar image is present.
 
 ### 5.5 Toolchains and offline caches (runner configuration)
 
@@ -246,6 +255,7 @@ A program run with live pipes (no PTY): output streams as server-sent events whi
 | `POST /v1/sessions/:id/stdin` | `{ "data": "Ada\n" }` (≤ 64 KB per call) | `204` |
 | `POST /v1/sessions/:id/eof` | — | `204` (closes the program's stdin) |
 | `POST /v1/sessions/:id/signal` | `{ "name": "SIGINT" \| "SIGTERM" }` | `204` |
+| `POST /v1/sessions/:id/resize` | `{ "cols": 100, "rows": 40 }` (PTY sessions; cols 10–500, rows 2–200) | `204`; `409 NOT_A_TERMINAL` without `pty` |
 | `DELETE /v1/sessions/:id` | — | `204` (kills the program, frees the box) |
 
 Events, each written as `event: <name>\ndata: <json>\n\n` (plus `: ping` comments every 20 s):
@@ -264,6 +274,59 @@ Events, each written as `event: <name>\ndata: <json>\n\n` (plus `: ping` comment
 - stdin sent before the program starts (during the build) is queued. `stdin`/`eof`/`signal` after the end → `409 { code: "SESSION_ENDED" }`; an unknown id → `404`.
 - **Signals under isolate:** isolate does not forward signals to the program; `SIGINT`/`SIGTERM` end the box (the program stops; `exit.signal` is the name sent). A program's own Ctrl-C handler only runs with the local development sandbox.
 - Programs see pipes, not a terminal: Python runs with `-u`, compiled profiles run under `stdbuf -oL`, catalog run steps already use `stdbuf` where needed; other programs should flush prompts.
+- Container kinds (tier 3) without `pty` also run on pipes, in a container instead of an isolate box.
+
+**PTY sessions (tier 3).** `POST /v1/sessions` with `"pty": true` (optional `"cols"`, `"rows"`; default **120×30**) gives the program a real terminal: a container with `Tty: true`, attached through the Docker Engine API. Only when `/v1/health` `features` has `"pty"`; otherwise `409 { code: "PTY_UNAVAILABLE" }`, also for a kind whose runtime has no container image (e.g. C with no gcc image). A profile `language` (`python-3`…) runs as its single-file kind in that runtime's image; any catalog kind with an image works, container kinds always do.
+- Output: the terminal's raw output as `stdout` events (`stderr` is merged into it by the terminal), **ANSI escape sequences included**, `\r\n` line ends. `data` is UTF-8 text decoded incrementally (a multi-byte character split across reads is kept whole; invalid bytes become U+FFFD). The terminal echoes what is typed.
+- Input: `stdin` writes keystrokes/lines as they are (`{ "data": "Ada\n" }`); `eof` sends Ctrl-D (`\x04`).
+- `signal` `SIGINT`/`SIGTERM` reach the program (Docker kill → `tini` as PID 1 → the program): a program's own Ctrl-C handler runs, a REPL survives SIGINT. `exit.signal` is the signal's name when the program died of it.
+- The environment has `TERM=xterm-256color`, `COLUMNS`, `LINES`. Limits, timeouts and verdicts as for pipes sessions.
+
+### 5.7 Container tier (tier 3)
+
+Kinds with `tier: "container"` in the catalog (C#/F#/VB, Kotlin Gradle, Spring Boot, Flutter, web-server kinds, `sql/postgres`, `sql/mysql`), PTY sessions, previews and per-run databases run in **Docker containers under gVisor**. Off unless `JUDGE_CONTAINERS=1` (the shared host leaves it off). Requests and responses are the same as §5.2 (`build`/`run`/`test`, I/O tests with fresh state per test, unit reports through the same parsers, `compile`, verdicts); the response has `"sandbox": "container"`.
+
+- **One container per step or test**, from the runtime's image `nga-runner/<image>:<tag>` (`services/judge/images/`; `typescript` shares `node-22`, `kotlin-2` shares `jdk-21`, `dart-3` shares `flutter-3`). Images provide every tool at the catalog's absolute path, so steps are the catalog's argv exactly.
+- **Isolation of every container:** `--runtime runsc` (gVisor; `runc` only with `JUDGE_ALLOW_RUNC=1`, otherwise tm-judge refuses to start), `--network none` (a per-run internal network only for databases and previews), `--read-only` root, the box folder bound at `/box` (a host tmpfs), `--tmpfs /tmp`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `--pids-limit`, `--memory` = `--memory-swap` (no swap), `--cpus`, the judge's own non-root uid:gid, `--init`, `fsize`/`nofile`/`core` ulimits, cache layers bound read-only at `/caches/<id>`, no logging driver, optional `JUDGE_CONTAINER_CGROUP_PARENT` slice for all containers together. Wall-clock kill and output caps as with isolate.
+- **Exit mapping:** OOM-killed or an unexplained SIGKILL → `memory-limit`; our wall-clock kill → `time-limit`; stdout over the cap → `output-limit`; exit `128+n` → killed by signal n (`runtime-error`); other non-zero → `runtime-error`.
+- **Settings:** `JUDGE_CONTAINER_RUNTIME` (`runsc`), `JUDGE_CONTAINER_WORKDIR` (box folders), `JUDGE_CONTAINER_CONCURRENCY` (2 steps at once), `JUDGE_CONTAINER_CPUS` (1), `JUDGE_CONTAINER_MEMORY_MB` (1536, ceiling), `JUDGE_CONTAINER_TMP_MB` (256), `JUDGE_CONTAINER_IMAGES` (JSON overrides `{ "<runtime id>": "<image>" }`), `JUDGE_IMAGE_PREFIX`/`JUDGE_IMAGE_TAG`, `JUDGE_DOCKER_SOCKET`, `JUDGE_CONTAINER_PROBE_S` (300: images built later are picked up without a restart).
+
+### 5.8 Server previews (tier 3)
+
+A project's web server (kinds with a `serve` step: `js/express`, `ts/nest`, `python/flask|fastapi|django`, `java/spring-boot`, `csharp/aspnet`, `php/web|laravel`, `ruby/sinatra|rails`, `go/web`, `rust/web`) built and started in a container on its **own internal Docker network** (`Internal: true`: no route out), reachable only through tm-judge's proxy.
+
+| Method / path | Auth | Body / answer |
+|---|---|---|
+| `POST /v1/previews` | bearer | `{ kind?, language?, files: [{ path, content }], entry?, services? }` → `201 { "id": "<uuid>" }`; `429 BUSY` over `JUDGE_PREVIEWS` (4); `409 KIND_UNSUPPORTED` for a kind without a server |
+| `GET /v1/previews/:id/events` | bearer | `text/event-stream` (below); closing it does **not** stop the preview |
+| `DELETE /v1/previews/:id` | bearer | `204` |
+| `ANY /v1/previews/:id/http/<path>` | bearer | the server's answer for `/<path>` (the bearer is not forwarded) |
+| `ANY /p/:id/:token/<path>` | **token** | the same, for browsers: serve this from a **separate preview origin** (e.g. `https://preview.<domain>`, the app host's nginx proxying `/p/` to tm-judge) so student code never runs on Task Mentor's origin |
+
+- **Start-up:** the kind's `restore`/`build` steps (as in §5.2), then the `serve` step with `PORT=<the kind's port>` and `HOST=0.0.0.0`; ready when the port accepts connections (up to `JUDGE_PREVIEW_READY_S`, 120 s).
+- **Events:** `stage { name: "build" | "start" }`, `log { stream: "stdout" | "stderr", data }` (256 KB replayed at most), `ready { path: "/" }`, `error { message }`, `exit { code, signal, reason }` (always last). Before `ready` the proxy answers `409 PREVIEW_NOT_READY`; after `exit`, `410 PREVIEW_ENDED`.
+- **Token** (Task Mentor mints it; tm-judge checks it): `token = "<exp>.<sig>"`, `exp` = unix seconds (Task Mentor: now + 900), `sig = base64url(HMAC-SHA256(key = JUDGE_PREVIEW_SECRET, message = "<id>.<exp>"))` (Node `digest("base64url")`, no padding). Compared in constant time; expired → `403 PREVIEW_TOKEN`. Public URL: `${JUDGE_PREVIEW_BASE}/p/${encodeURIComponent(id)}/${exp}.${sig}/`. `/p/:id/:token` without the trailing slash redirects (308) to it, so relative links resolve under the prefix.
+- **Rewriting:** request `Host: localhost:<port>` (frameworks' development host checks pass), `X-Forwarded-Host/Proto/Prefix`; hop-by-hop headers dropped. Response: `Location` that is an absolute path (or points at the server itself) is kept under the prefix; `Set-Cookie` loses `Domain` and gets `Path=<prefix><path>`; `X-Frame-Options` removed; added `Content-Security-Policy: sandbox allow-scripts allow-forms allow-modals allow-popups allow-same-origin` (allow-same-origin = the preview origin, so the page can call its own API), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`. Absolute links to `/…` in HTML/JS are not rewritten: apps should use relative URLs or `X-Forwarded-Prefix`.
+- **WebSockets** (and other `Upgrade`s) are tunnelled on both proxy paths.
+- **Limits:** `JUDGE_PREVIEWS` (4) at once; **15-minute** lifetime (`JUDGE_PREVIEW_TTL_S`), **5-minute** idle timeout without proxied requests (`JUDGE_PREVIEW_IDLE_S`); memory `JUDGE_PREVIEW_MEMORY_MB` (768) and the container CPU cap; responses over `JUDGE_PREVIEW_RESPONSE_MB` (10 MB) are cut, request bodies over 10 MB refused; 30 s upstream timeout per request.
+
+### 5.9 Per-run databases (tier 3)
+
+`services: ["postgres"]` or `["mysql"]` on `/v1/run`, `/v1/sessions` or `/v1/previews` (or a kind's own `services`):
+- A sidecar from the pinned `postgres:16` / `mysql:8.4` image (`JUDGE_POSTGRES_IMAGE`, `JUDGE_MYSQL_IMAGE`) under gVisor, data on tmpfs, read-only root, capabilities dropped to what the image's entrypoint needs to switch users, on a **per-run internal network** that the program's containers join.
+- `schema.sql` then `seed.sql` from the project are loaded (a failure, or a database that doesn't start, becomes the run's `compile` output with verdict `compile-error`).
+- **Fresh per I/O test:** PostgreSQL copies the seeded template (`CREATE DATABASE app TEMPLATE seed`), MySQL drops `app` and replays schema + seed.
+- The program connects as user `student` (PostgreSQL: `NOSUPERUSER`; MySQL: privileges on `app` only) to database `app`: `DATABASE_URL` (`postgres://student:…@<ip>:5432/app`, `mysql://student:…@<ip>:3306/app`), plus `PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE` or `MYSQL_HOST MYSQL_TCP_PORT MYSQL_USER MYSQL_PWD MYSQL_PASSWORD MYSQL_DATABASE`. Passwords are random per run. PostgreSQL has `statement_timeout = 10s`, MySQL `max_execution_time = 10 s`.
+- The sidecar, network and seed folder are removed when the run (or session/preview) ends. At most one database per run.
+- Kinds `sql/postgres` (`psql -X -q -v ON_ERROR_STOP=1 -P border=2 -P footer=off -f <entry>`) and `sql/mysql` (`mysql --batch --table app < <entry>`) print boxed tables in the same layout:
+  ```
+  +-------+-------+
+  | name  | class |
+  +-------+-------+
+  | Grace | S4B   |
+  +-------+-------+
+  ```
+  Starters `sql-postgres-select` and `sql-mysql-select` (detected by a `-- dialect: postgres|mysql` comment).
 
 ## 6. Task Mentor v1 implementation notes (branch `feat/tmcode-phase3`)
 
