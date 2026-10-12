@@ -8,7 +8,13 @@
  *   POST   /v1/sessions/:id/stdin     {data} → 204
  *   POST   /v1/sessions/:id/eof       → 204
  *   POST   /v1/sessions/:id/signal    {name: "SIGINT"|"SIGTERM"} → 204
+ *   POST   /v1/sessions/:id/resize    {cols, rows} → 204 (PTY sessions)
  *   DELETE /v1/sessions/:id           → 204
+ *
+ * `pty: true` (tier 3) runs the program in a container with a real terminal
+ * (Docker attach, Tty): raw output (ANSI included) arrives as `stdout`
+ * events, signals reach the program, and the terminal can be resized.
+ * Without it, the isolate pipes path is unchanged.
  *
  * Limits: the batch run's (memory, processes, CPU time), a 10-minute wall
  * clock, a 2-minute idle timeout (no stdin and no output), 1 MB of
@@ -22,7 +28,9 @@ import { StringDecoder } from "node:string_decoder";
 import { capBytes, RequestError, STDERR_CAP, transpileTypeScript, validateFiles, VERDICT, type RunLimits, type SubmissionFile, type Verdict } from "./judge.ts";
 import { javaMainClass, languageById, type Ctx } from "./languages.ts";
 import { missingPackage, missingPackageMessage } from "./packages.ts";
-import { boxSetup, buildLimits, cacheFiles, isProfileRequest, mainClassOf, quiet, resolveProject, runLimits, stepArgv, stepFailureText, type ProjectRequest } from "./project.ts";
+import { boxSetup, buildLimits, cacheFiles, isProfileRequest, mainClassOf, placement, PROFILE_KINDS, quiet, resolveProject, runLimits, startServices, stepArgv, stepFailureText, type ProjectRequest } from "./project.ts";
+import { DEFAULT_TTY, type ContainerSandbox } from "./containers.ts";
+import { ServiceError, type ServiceHandle, type ServiceName } from "./services.ts";
 import type { AcquireOptions, Box, ExecResult, Limits, Proc, Sandbox, SessionSignal } from "./sandbox.ts";
 import { testFilterArgs, type TokenContext } from "./tokens.ts";
 import type { Toolchains } from "./toolchains.ts";
@@ -33,6 +41,13 @@ export interface SessionRequest {
   files: SubmissionFile[];
   entry?: string;
   limits?: Partial<RunLimits>;
+  /** A real terminal (tier 3): container kinds, or any kind whose runtime has a container image. */
+  pty?: boolean;
+  /** Initial terminal size (PTY), default 120×30. */
+  cols?: number;
+  rows?: number;
+  /** A database sidecar for the program (tier 3), as in /v1/run. */
+  services?: string[];
 }
 
 export type SessionEvent =
@@ -65,6 +80,10 @@ interface Plan {
   argv: (box: Box) => string[];
   env: Record<string, string>;
   limits: Limits;
+  /** Tier 3: the container sandbox (else the session sandbox). */
+  sandbox?: Sandbox;
+  services?: ServiceName[];
+  tty?: { cols: number; rows: number };
 }
 
 const STDBUF = "/usr/bin/stdbuf";
@@ -119,16 +138,30 @@ function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
   };
 }
 
+/** Terminal size from a request: whole numbers within sane bounds. */
+export function termSize(cols: unknown, rows: unknown, fallback = DEFAULT_TTY) {
+  const c = cols === undefined ? fallback.cols : Number(cols);
+  const r = rows === undefined ? fallback.rows : Number(rows);
+  if (!Number.isInteger(c) || !Number.isInteger(r) || c < 10 || c > 500 || r < 2 || r > 200) throw new RequestError("cols must be 10–500 and rows 2–200.");
+  return { cols: c, rows: r };
+}
+
 /** Catalog kinds: restore + build steps, then the kind's run step. */
-function kindPlan(req: SessionRequest, tc: Toolchains): Plan {
-  const { kind, entry } = resolveProject(tc, { ...(req as ProjectRequest), actions: ["run"], tests: [] });
+function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: ContainerSandbox): Plan {
+  const resolved = resolveProject(toolchains, { ...(req as ProjectRequest), actions: ["run"], tests: [] }, req.pty ? { container: "pty" } : {});
+  const { kind, entry } = resolved;
+  const where = placement(containers as unknown as Sandbox, { toolchains, containers }, resolved);
+  const tc = where.toolchains;
   const setup = boxSetup(tc, kind);
   const ctx: TokenContext = { entry: entry ?? "", files: req.files.map((f) => f.path), mainClass: mainClassOf(entry, req.files), testFilter: testFilterArgs("", null), reportPath: null };
   const exists = (p: string) => req.files.some((f) => f.path === p);
   const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => s && (!s.when || s.when.exists.every(exists)));
   const run = kind.steps.run!;
   return {
-    acquire: { mounts: setup.mounts, dirs: setup.dirs },
+    acquire: { mounts: setup.mounts, dirs: setup.dirs, image: where.image },
+    sandbox: where.image ? where.sandbox : undefined,
+    services: resolved.services,
+    tty: req.pty ? termSize(req.cols, req.rows) : undefined,
     files: req.files,
     build: steps.length
       ? async (box: Box) => {
@@ -165,6 +198,9 @@ class Session {
   pendingSignal: SessionSignal | null = null;
   /** A signal the client sent (SIGINT/SIGTERM). */
   userSignal: string | null = null;
+  /** PTY: the terminal size (a resize before the program starts is kept here). */
+  tty: { cols: number; rows: number } | null = null;
+  db: ServiceHandle | null = null;
   /** Why the judge stopped the program (decides the verdict). */
   stopped: { verdict: Verdict; signal: string | null } | null = null;
   outputBytes = 0;
@@ -189,9 +225,11 @@ export class SessionManager {
   private sandbox: Sandbox;
   private programs: Map<string, string>;
   private toolchains: Toolchains;
+  private containers?: ContainerSandbox;
 
-  constructor(sandbox: Sandbox, programs: Map<string, string>, toolchains: Toolchains, opts: SessionOptions = {}) {
+  constructor(sandbox: Sandbox, programs: Map<string, string>, toolchains: Toolchains, opts: SessionOptions = {}, containers?: ContainerSandbox) {
     this.sandbox = sandbox;
+    this.containers = containers;
     this.programs = programs;
     this.toolchains = toolchains;
     this.max = opts.max ?? 4;
@@ -210,8 +248,14 @@ export class SessionManager {
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new RequestError("Body must be a JSON object.");
     const req = body as SessionRequest;
     if (this.live >= this.max) throw sessionError(429, "BUSY", `At most ${this.max} interactive sessions at a time. Try again shortly.`);
-    const plan = isProfileRequest(req) ? profilePlan(req, this.programs) : kindPlan(req, this.toolchains);
+    if (req.pty !== undefined && typeof req.pty !== "boolean") throw new RequestError("pty must be true or false.");
+    const containerized = !!req.pty || (Array.isArray(req.services) && req.services.length > 0);
+    if (req.pty && (!this.containers || !this.toolchains.containers?.status.usable)) throw sessionError(409, "PTY_UNAVAILABLE", "This runner has no container tier, so sessions can't get a terminal; run without pty.");
+    // Terminals and databases run in a container: a profile request runs as its single-file kind there.
+    const asKind = containerized && isProfileRequest(req) ? { ...req, kind: PROFILE_KINDS[req.language!], language: undefined } : req;
+    const plan = isProfileRequest(asKind) ? profilePlan(asKind, this.programs) : kindPlan(asKind, this.toolchains, this.containers);
     const s = new Session();
+    s.tty = plan.tty ?? null;
     this.sessions.set(s.id, s);
     this.live++;
     s.timers.push(setTimeout(() => this.stop(s, "time-limit", `The session reached its ${Math.round(this.wallMs / 60_000)}-minute limit.`), this.wallMs));
@@ -228,7 +272,19 @@ export class SessionManager {
   private async start(s: Session, plan: Plan) {
     let done: ExecResult | null = null;
     try {
-      s.box = await this.sandbox.acquire(plan.acquire);
+      if (plan.services?.length) {
+        try {
+          s.db = await startServices({ containers: this.containers }, plan.services, plan.files);
+          await s.db?.fresh();
+        } catch (e) {
+          if (!(e instanceof ServiceError)) throw e;
+          s.emit({ event: "stderr", data: { data: `${[e.message, e.output].filter(Boolean).join("\n")}\n` } });
+          s.emit({ event: "exit", data: { code: null, signal: null, verdict: "compile-error", time_ms: 0, memory_kb: null } });
+          return;
+        }
+        if (s.ended) return;
+      }
+      s.box = await (plan.sandbox ?? this.sandbox).acquire({ ...plan.acquire, network: s.db?.network });
       if (s.ended) return;
       for (const f of plan.files) await s.box.write(f.path, f.content);
       if (plan.build) {
@@ -244,7 +300,7 @@ export class SessionManager {
       }
       if (s.ended) return;
       s.emit({ event: "stage", data: { name: "run" } });
-      const proc = s.box.spawn(plan.argv(s.box), { limits: { ...plan.limits, wallS: Math.ceil(this.wallMs / 1000) }, env: plan.env });
+      const proc = s.box.spawn(plan.argv(s.box), { limits: { ...plan.limits, wallS: Math.ceil(this.wallMs / 1000) }, env: { ...plan.env, ...(s.db?.env ?? {}), ...(s.tty ? { TERM: "xterm-256color", COLUMNS: String(s.tty.cols), LINES: String(s.tty.rows) } : {}) }, tty: s.tty ?? undefined });
       s.proc = proc;
       this.touch(s);
       const pipe = (event: "stdout" | "stderr") => {
@@ -312,6 +368,9 @@ export class SessionManager {
     const box = s.box;
     s.box = null;
     if (box) await box.dispose().catch(() => {});
+    const db = s.db;
+    s.db = null;
+    if (db) await db.dispose().catch(() => {});
     // Late subscribers can still read the events for a while.
     const t = setTimeout(() => this.sessions.delete(s.id), this.keepMs);
     t.unref();
@@ -344,6 +403,18 @@ export class SessionManager {
     s.userSignal = name;
     if (s.proc) s.proc.kill(name);
     else s.pendingSignal = name;
+  }
+
+  /** PTY sessions: the terminal's new size. */
+  resize(id: string, body: unknown) {
+    const s = this.get(id);
+    if (!s.tty) throw sessionError(409, "NOT_A_TERMINAL", "This session has no terminal (start it with pty: true).");
+    const b = (body ?? {}) as { cols?: unknown; rows?: unknown };
+    if (b.cols === undefined || b.rows === undefined) throw new RequestError("resize needs { cols, rows }.");
+    const size = termSize(b.cols, b.rows);
+    if (s.ended) throw sessionError(409, "SESSION_ENDED", "The program has ended.");
+    s.tty = size;
+    s.proc?.resize?.(size.cols, size.rows);
   }
 
   async remove(id: string) {
