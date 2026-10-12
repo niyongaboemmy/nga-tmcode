@@ -7,11 +7,13 @@ import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
 import { taskMentorHtml } from "../widgets/richHtml";
 import { Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
-import { api, autoSaveMode, compareConflict, useProjects } from "./service";
+import { api, autoSaveMode, compareConflict, recheck, useProjects } from "./service";
 import { changeCount } from "./plan";
 import { normalizeRubric, rubricResults, rubricTotal, type RubricResult } from "./rubric";
 import { SYNC_ICON, SYNC_TIP, SYNC_TONE, syncLineText } from "./syncLabels";
-import { acceptsSubmissions, dueLabel, handedInLate, isOpenWorkspaceOf, latePolicyText, loadAssignment, returnedForChanges, startAssignment, STUDENT_STATUS_LABEL, studentStatus, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
+import { acceptsSubmissions, dueLabel, handedInLate, isOpenWorkspaceOf, latePolicyText, loadAssignment, refreshAssignments, startAssignment, STUDENT_STATUS_LABEL, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
+import { deriveStatus } from "./status";
+import { useStatusSync } from "./useStatusSync";
 import { STATE_LABEL } from "./AssignmentsView";
 import { openAssignmentInTaskMentor } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
@@ -143,18 +145,37 @@ function BriefSyncLine() {
   const plan = useProjects((s) => s.plan);
   const savedAt = useProjects((s) => s.lastSyncAt ?? s.headAt ?? null);
   const message = useProjects((s) => s.syncMessage);
+  // An automatic save failed: say so here at once, in the warning colour (it clears on the next good save).
+  const autoError = useProjects((s) => s.autoSaveError ?? null);
   const changes = plan ? changeCount(plan.localChanges) : 0;
   const busy = sync === "saving" || sync === "pulling";
-  const text = syncLineText(sync, { changes, savedAt });
+  const failing = !!autoError && !busy && sync !== "synced" && sync !== "conflict";
+  const text = failing ? `Not saved to Task Mentor: ${autoError}` : syncLineText(sync, { changes, savedAt });
   return (
-    <p className={`tm-brief-sync is-${SYNC_TONE[sync]}`} data-testid="assignment-sync" data-state={sync} title={sync === "error" && message ? message : SYNC_TIP[sync]}>
-      <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
+    <p className={`tm-brief-sync is-${failing ? "attention" : SYNC_TONE[sync]}`} data-testid="assignment-sync" data-state={sync} data-failing={failing ? "true" : undefined} title={sync === "error" && message ? message : SYNC_TIP[sync]}>
+      <Codicon name={failing ? "warning" : SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
       <span>{text}</span>
+      {failing && (
+        <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.save")} data-testid="assignment-sync-retry">
+          Try Again
+        </button>
+      )}
       {sync === "conflict" && (
         <button type="button" className="tm-link-button" onClick={() => void compareConflict()}>
           Compare
         </button>
       )}
+    </p>
+  );
+}
+
+/** The teacher's note on returned work, in the next-step card. */
+function ReturnedNote({ at, message }: { at: string | null; message: string | null }) {
+  return (
+    <p className="tm-assignment-returned-note" role="status" data-testid="assignment-returned">
+      <b>Returned by your teacher</b>
+      {at ? ` on ${when(at)}` : ""}. Make the changes, then submit again.
+      {message && <q className="tm-assignment-returned-message">{message}</q>}
     </p>
   );
 }
@@ -168,9 +189,12 @@ export function AssignmentEditor({ input }: { input: Input }) {
   const sync = useProjects((s) => s.sync);
   // Saving starts with a scan of the folder: "Saving…" from the click (a hook: before the early return).
   const savingNow = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
-  // Task Mentor's project lifecycle (when the server has it): a submitted workspace is locked until withdrawn.
-  const projectStatus = useProjects((s) => s.current?.status);
+  // The open project (when it is this assignment's workspace) is the second source of the one status.
+  const current = useProjects((s) => s.current);
   useProjects((s) => s.binding);
+  const here = !!detail && isOpenWorkspaceOf(detail);
+  // The sources disagree for a moment ("Updating…"): refresh both once, quietly, then settle.
+  const view = useStatusSync(detail && !teaching ? deriveStatus(detail, current, { here }) : null, id, () => Promise.all([recheck(), refreshAssignments()]));
   const [, tick] = useState(0);
 
   useEffect(() => {
@@ -193,19 +217,32 @@ export function AssignmentEditor({ input }: { input: Input }) {
   }
   const due = dueLabel(detail.due_date);
   const my = detail.my;
-  const started = !!my?.project_id;
-  const here = isOpenWorkspaceOf(detail);
   const saving = savingNow || sync === "saving" || sync === "pulling";
   const autoSaving = here && autoSaveMode() !== "off";
   const criteria = normalizeRubric(detail.rubric);
   const graded = !teaching && my?.state === "graded" ? rubricResults(criteria, my) : null;
+  // One status for the whole page (W4): header chip, card and button all come from `view`.
+  // Teachers have no status of their own here (their page lists the students').
+  const status = view?.status ?? "not_started";
   // Handed in: the countdown is over (and "late" is about the submission, below).
-  const handedIn = my?.state === "submitted" || my?.state === "graded";
-  const returned = !teaching && returnedForChanges(detail);
-  // Shared words with Task Mentor: Not started · In progress · Submitted · Returned · Graded · Closed.
-  const status = studentStatus(detail);
+  const handedIn = status === "submitted" || status === "graded";
   const open = acceptsSubmissions(detail);
   const overdue = !teaching && open && !handedIn && due?.tone === "late";
+  const busyIcon = (b: typeof busy, icon: string) => <Codicon name={busy === b ? "loading" : icon} className={busy === b ? "codicon-modifier-spin" : ""} />;
+  const submittedLine = my?.submitted_at ? (
+    <p className="tm-muted tm-next-step-meta" data-testid="assignment-submitted-at">
+      Submitted {when(my.submitted_at)}
+      {my.revision_number ? ` (version ${my.revision_number})` : ""}
+      {handedInLate(detail) && (
+        <>
+          {" "}
+          <span className="tm-chip is-late" data-testid="assignment-result-late">
+            Late
+          </span>
+        </>
+      )}
+    </p>
+  ) : null;
 
   return (
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>
@@ -218,10 +255,16 @@ export function AssignmentEditor({ input }: { input: Input }) {
         <h1>{detail.title}</h1>
         <div className="tm-assignment-facts">
           {!teaching && (
-            <span className="tm-fact tm-fact--state" data-testid="assignment-state" data-status={status}>
-              <Codicon name="circle-filled" className={`tm-state-dot is-${detail.read_only || status === "closed" ? "readonly" : (my?.state ?? "not_started")}`} />
+            <span className="tm-fact tm-fact--state" data-testid="assignment-state" data-status={status} data-syncing={view!.syncing ? "true" : undefined}>
+              <Codicon name="circle-filled" className={`tm-state-dot is-${status === "closed" ? "readonly" : status === "returned" ? "in_progress" : status}`} />
               {STUDENT_STATUS_LABEL[status]}
               {detail.read_only && status === "closed" ? " — read-only" : ""}
+              {view!.syncing && (
+                <span className="tm-muted tm-fact-updating" role="status" data-testid="assignment-updating">
+                  {" "}
+                  · Updating…
+                </span>
+              )}
             </span>
           )}
           {detail.due_date && (
@@ -243,83 +286,112 @@ export function AssignmentEditor({ input }: { input: Input }) {
         </div>
       </header>
 
-      {detail.read_only && (
-        <div className="tm-assignment-banner" role="status" data-testid="assignment-readonly">
-          <Codicon name="lock" />
-          <span>Your teacher marked this assignment as completed. You can still read your work, but it can no longer be changed, saved or submitted.</span>
-        </div>
-      )}
-
-      {returned && (
-        <div className="tm-assignment-banner is-warning" role="status" data-testid="assignment-returned">
-          <Codicon name="reply" />
-          <span>
-            <b>Returned by your teacher</b> on {when(my!.returned_at!)}. Make the changes, then submit again.
-            {my!.returned_message && <q className="tm-assignment-returned-message">{my!.returned_message}</q>}
-          </span>
-        </div>
-      )}
-
       {!teaching && (
-        <section className={`tm-next-step is-${!started ? "start" : !here ? "open" : projectStatus === "submitted" || projectStatus === "graded" ? "done" : "working"}`} data-testid="assignment-next-step" aria-label="Next step">
-          {!started && !detail.read_only ? (
+        <section className={`tm-next-step is-${status === "not_started" ? "start" : status === "graded" ? "graded" : !here ? "open" : status === "submitted" || status === "closed" ? "done" : "working"}`} data-testid="assignment-next-step" data-status={status} aria-label="Next step">
+          {status === "not_started" ? (
             <>
               <div className="tm-next-step-text">
                 <h2>
-                  <Codicon name="rocket" /> Start this assignment
+                  <Codicon name="rocket" /> {view!.headline}
                 </h2>
                 <p>
                   TMCode creates your own project{detail.starter ? ` with your teacher's ${detail.starter.file_count} starter file${detail.starter.file_count === 1 ? "" : "s"}` : ""} and opens it in this window, with this brief beside your code.
                   {!detail.starter && " Your teacher gave no starter files: you can begin from a template."}
                 </p>
-                <small className="tm-muted">The folder open now stays on this computer; reopen it any time from Recent on the Welcome page (Help › Welcome).</small>
+                <small className="tm-muted">The folder open now stays on this computer; it's under Recent on Home.</small>
               </div>
               <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-start" autoFocus>
-                <Codicon name={busy === "starting" ? "loading" : "play"} className={busy === "starting" ? "codicon-modifier-spin" : ""} /> {busy === "starting" ? "Preparing your project…" : "Start Assignment"}
+                {busyIcon("starting", "play")} {busy === "starting" ? "Preparing your project…" : "Start Assignment"}
               </button>
             </>
-          ) : started && !here ? (
+          ) : status === "graded" ? (
+            // L8: the result is the next step, at the top: score, feedback, criteria.
+            <div className="tm-next-step-text tm-next-step-result" data-testid="assignment-result">
+              <h2>
+                <Codicon name="pass" /> {view!.headline}
+              </h2>
+              <div className="tm-assignment-grade">
+                <b>{my?.grade ?? "–"}</b>
+                <span>/ {my?.max_points ?? detail.points ?? "–"}</span>
+              </div>
+              {graded?.feedback && <p className="tm-assignment-feedback">{graded.feedback}</p>}
+              {graded?.results && <RubricTable results={graded.results} graded />}
+              {submittedLine}
+              {!here && my?.project_id && (
+                <button type="button" className="tm-button tm-button--secondary" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue">
+                  {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Open My Work"}
+                </button>
+              )}
+            </div>
+          ) : status === "closed" ? (
             <>
               <div className="tm-next-step-text">
                 <h2>
-                  <Codicon name="folder-opened" /> {detail.read_only ? "Your work" : "Continue your work"}
+                  <Codicon name="lock" /> {view!.headline}
                 </h2>
-                <p>
+                <p data-testid={detail.read_only ? "assignment-readonly" : "assignment-closed"}>
                   {detail.read_only
-                    ? "This assignment is completed. Open your project to read it."
-                    : `Your project is saved in Task Mentor${my?.state === "submitted" ? " and submitted" : my?.state === "graded" ? " and graded" : ""}. Open it in this window to keep working${my?.state === "in_progress" ? ", then Submit" : ""}.`}
+                    ? "Your teacher marked this assignment as completed. You can still read your work, but it can no longer be changed, saved or submitted."
+                    : "Your teacher closed this assignment: it no longer takes submissions. Your work is still saved to Task Mentor."}
                 </p>
+                {submittedLine}
+                {here && !detail.read_only && <BriefSyncLine />}
+              </div>
+              {view!.primary?.id === "open_work" && (
+                <button type="button" className="tm-button tm-button--secondary" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue">
+                  {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Open My Work"}
+                </button>
+              )}
+              {here && !detail.read_only && (
+                <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
+                  <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
+                </button>
+              )}
+            </>
+          ) : !here ? (
+            <>
+              <div className="tm-next-step-text">
+                <h2>
+                  <Codicon name={status === "returned" ? "reply" : status === "submitted" ? "lock" : "folder-opened"} /> {status === "in_progress" ? view!.headline : status === "returned" ? view!.headline : "Submitted"}
+                </h2>
+                {status === "returned" && <ReturnedNote at={my?.returned_at ?? null} message={my?.returned_message ?? null} />}
+                <p>
+                  {status === "submitted"
+                    ? "Your teacher sees the version you handed in. Continue opens your project; withdraw it there if you need to change something before it's graded."
+                    : `Your project is saved in Task Mentor. Continue opens it in this window${status === "returned" ? " to make the changes, then submit again" : ", then Submit"}.`}
+                </p>
+                {status === "submitted" && submittedLine}
               </div>
               <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue" autoFocus>
-                <Codicon name={busy === "starting" ? "loading" : "folder-opened"} className={busy === "starting" ? "codicon-modifier-spin" : ""} /> {busy === "starting" ? "Opening…" : detail.read_only ? "Open My Work" : "Open My Project"}
+                {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Continue"}
               </button>
             </>
-          ) : here && !detail.read_only && projectStatus === "submitted" ? (
+          ) : status === "submitted" ? (
             <>
               <div className="tm-next-step-text">
                 <h2>
-                  <Codicon name="lock" /> Submitted
+                  <Codicon name="lock" /> {view!.headline}
                 </h2>
                 <p>Your teacher sees the version you handed in. Withdraw it if you need to change something before it's graded.</p>
+                {submittedLine}
               </div>
               <button type="button" className="tm-button tm-button--secondary" onClick={() => executeCommand("projects.withdraw")} data-testid="assignment-withdraw">
                 <Codicon name="discard" /> Withdraw to Edit
               </button>
             </>
-          ) : here && !detail.read_only && projectStatus !== "graded" ? (
+          ) : (
             <>
               <div className="tm-next-step-text">
                 <h2>
-                  <Codicon name="edit" /> You're working on it in this window
+                  <Codicon name={status === "returned" ? "reply" : "edit"} /> {view!.headline}
                 </h2>
+                {status === "returned" && <ReturnedNote at={my?.returned_at ?? null} message={my?.returned_message ?? null} />}
                 <p>
-                  {!open
-                    ? "Your teacher closed this assignment: it no longer takes submissions. Your work is still saved to Task Mentor."
-                    : returned
-                      ? "Make the changes your teacher asked for, then submit again."
-                      : autoSaving
-                        ? "Your work saves to Task Mentor by itself as you go. Submit hands in your saved work; you can withdraw it until it's graded."
-                        : "Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded."}
+                  {status === "returned"
+                    ? "Make the changes your teacher asked for, then submit again."
+                    : autoSaving
+                      ? "Your work saves to Task Mentor by itself as you go. Submit hands in your saved work; you can withdraw it until it's graded."
+                      : "Save to Task Mentor as you go. Submit hands in your saved work; you can withdraw it until it's graded."}
                 </p>
                 {overdue && (
                   <p className="tm-brief-late" data-testid="assignment-late-policy">
@@ -332,54 +404,17 @@ export function AssignmentEditor({ input }: { input: Input }) {
                 <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
                   <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
                 </button>
-                <button type="button" className="tm-button" disabled={saving || !!busy || !open} onClick={() => void submitAssignment(id)} data-testid="assignment-submit" title={open ? undefined : "Closed: your teacher no longer takes submissions"}>
-                  <Codicon name={!open ? "lock" : busy === "submitting" ? "loading" : "send"} className={busy === "submitting" ? "codicon-modifier-spin" : ""} />{" "}
-                  {!open ? "Closed" : busy === "submitting" ? "Submitting…" : my?.state === "submitted" || my?.state === "graded" ? "Submit Again" : "Submit"}
+                <button type="button" className="tm-button" disabled={saving || !!busy || view!.syncing} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
+                  {busyIcon("submitting", "send")} {busy === "submitting" ? "Submitting…" : view!.primary?.label ?? "Submit"}
                 </button>
               </div>
             </>
-          ) : (
-            <div className="tm-next-step-text">
-              <h2>
-                <Codicon name={detail.read_only ? "lock" : "pass"} /> {detail.read_only ? "Completed" : "Graded"}
-              </h2>
-              <p>{detail.read_only ? "Your teacher marked this assignment as completed." : "Your grade and your teacher's feedback are below."}</p>
-            </div>
           )}
           <span className="tm-next-step-break" />
           <button type="button" className="tm-link-button tm-next-step-tm" onClick={() => openAssignmentInTaskMentor(id)}>
             <Codicon name="link-external" /> Open in Task Mentor
           </button>
         </section>
-      )}
-
-      {!teaching && my && (my.submitted_at || my.state === "graded") && (
-        <div className={`tm-assignment-card ${my.state === "graded" ? "is-graded" : ""}`} data-testid="assignment-result">
-          {my.state === "graded" ? (
-            <>
-              <div className="tm-assignment-grade">
-                <b>{my.grade ?? "–"}</b>
-                <span>/ {my.max_points ?? detail.points ?? "–"}</span>
-              </div>
-              {graded?.feedback && <p className="tm-assignment-feedback">{graded.feedback}</p>}
-              {graded?.results && <RubricTable results={graded.results} graded />}
-            </>
-          ) : null}
-          {my.submitted_at && (
-            <p className="tm-muted">
-              Submitted {when(my.submitted_at)}
-              {my.revision_number ? ` (version ${my.revision_number})` : ""}
-              {handedInLate(detail) && (
-                <>
-                  {" "}
-                  <span className="tm-chip is-late" data-testid="assignment-result-late">
-                    Late
-                  </span>
-                </>
-              )}
-            </p>
-          )}
-        </div>
       )}
 
       {teaching && (

@@ -3,7 +3,7 @@ import { onDocumentChanged, saveAll } from "../monaco/documents";
 import { onRunStarted } from "../run/runService";
 import { loadTests, setServerRunner, setVisibleTests, useServerRun } from "../run/testService";
 import type { ExamHost, JournalEntry, Toolchain } from "../platform/types";
-import { getPlatform, log, notify, onWorkspaceChanged, openFile, refreshExplorer, revealView, saveDirtyFiles, setPolicy, setTests, setWorkspace, showDialog, updateTest, useWorkbench } from "../state/store";
+import { dismissNotificationByKey, getPlatform, log, notify, onWorkspaceChanged, openFile, refreshExplorer, revealView, saveDirtyFiles, setPolicy, setTests, setWorkspace, showDialog, updateTest, useWorkbench } from "../state/store";
 import { PRACTICE_POLICY } from "@tmcode/protocol";
 import { ALLOWED_APIS, ApiError, TmApi, isAllowedApi, verdictLabel, type SessionGrant } from "./api";
 import { clockCheck, diskCheck, problemCount, reachabilityCheck, toolchainChecks, type CheckItem } from "./readiness";
@@ -406,7 +406,7 @@ async function prepareWorkspace(pkg: ExamPackage, sessionId: string, earlier: Jo
   }
   set({ tasks, sessionId });
   await refreshExplorer();
-  if (notes.length) notify("info", notes.join(" "));
+  if (notes.length) notify("info", notes.join(" "), undefined, { kind: "result", important: true, source: "exam" });
   return replay;
 }
 
@@ -547,6 +547,7 @@ async function runSync() {
       set({ sync: { ...get().sync, pending: journal.filter((j) => !j.synced).length, offline: false, lastSyncedAt: Date.now() } });
     }
     syncBackoff = 1000;
+    dismissNotificationByKey("exam-sync");
   } catch (e) {
     if (e instanceof ApiError) {
       if (e.offline || e.status >= 500) {
@@ -568,6 +569,8 @@ async function runSync() {
         } else timeUp();
       } else {
         log("Exam", `Sync failed: ${e.code} ${e.message}`, "error");
+        // Once, not per retry: the status bar is already red, the work is safe here.
+        notify("warning", "Saving to Task Mentor failed. Your work is safe on this computer; tell your teacher if this stays.", undefined, { kind: "failure", source: "exam", replaceKey: "exam-sync", details: `${e.code}: ${e.message}` });
       }
     }
   }
@@ -586,10 +589,10 @@ async function heartbeat() {
     clock.sync(hb.server_time);
     const deadline = Date.parse(hb.deadline);
     if (deadline !== get().deadline) {
-      if (get().deadline && deadline > get().deadline!) notify("info", `Your teacher extended the time. New end: ${new Date(deadline).toLocaleTimeString()}.`);
+      if (get().deadline && deadline > get().deadline!) notify("info", `Your teacher extended the time. New end: ${new Date(deadline).toLocaleTimeString()}.`, undefined, { kind: "external", important: true, source: "exam", replaceKey: "exam-time" });
       set({ deadline });
     }
-    if (hb.message && hb.message !== get().message) notify("warning", `Message from your teacher: ${hb.message}`);
+    if (hb.message && hb.message !== get().message) notify("warning", `Message from your teacher: ${hb.message}`, undefined, { kind: "external", source: "teacher", replaceKey: "exam-teacher-message" });
     set({ paused: hb.paused, message: hb.message, sync: { ...get().sync, offline: false } });
     if (hb.status !== "active") handleEnded(hb.status === "superseded" ? "SESSION_SUPERSEDED" : hb.status === "revoked" ? "SESSION_REVOKED" : "ENDED");
     if (get().sync.pending) void sync();
@@ -605,7 +608,8 @@ function tick() {
   for (const mins of [10, 5, 1]) {
     if (left <= mins * 60_000 && left > (mins - 1) * 60_000 && !warned.has(mins)) {
       warned.add(mins);
-      notify("warning", `${mins} minute${mins > 1 ? "s" : ""} left. Your work is saved automatically.`);
+      // One time warning on screen: 5 minutes replaces 10, 1 replaces 5. Never hidden by Do Not Disturb.
+      notify("warning", `${mins} minute${mins > 1 ? "s" : ""} left. Your work is saved automatically.`, undefined, { kind: "external", source: "exam", replaceKey: "exam-time" });
     }
   }
   if (left <= 0) timeUp();

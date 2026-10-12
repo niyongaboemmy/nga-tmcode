@@ -51,7 +51,11 @@ test("open editors come back when the folder is opened again", async ({ page }) 
   await page.locator('.tm-explorer [data-path="README.md"]').dblclick();
   await page.waitForTimeout(700); // the editor list is saved after a short debounce
   await page.reload();
-  await expect(page.locator(".tm-tab")).toHaveCount(2);
+  // 0.15: Home opens in front (workbench.startupEditor), the restored tabs behind it.
+  await expect(page.locator(".tm-tab")).toHaveCount(3);
+  await expect(page.locator(".tm-tab.is-active")).toContainText("Home");
+  await expect(page.locator(".tm-tab", { hasText: "main.py" })).toHaveCount(1);
+  await page.locator(".tm-tab", { hasText: "Home" }).getByRole("button", { name: /Close/ }).click();
   await expect(page.locator(".tm-tab.is-active")).toContainText("README.md");
 });
 

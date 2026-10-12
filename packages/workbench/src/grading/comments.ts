@@ -1,7 +1,7 @@
 import { pathOfUri } from "../monaco/documents";
 import { codeEditorFor, onCodeEditor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
-import { getPlatform, openFile, useWorkbench } from "../state/store";
+import { getPlatform, notify, openFile, useWorkbench } from "../state/store";
 import { formatKeybinding } from "../commands/registry";
 import { currentDraft, draftFrom, draftKey, putDraft, useDrafts } from "./drafts";
 import { useGrading, type Annotation, type Roster, type RosterRow } from "./service";
@@ -76,7 +76,23 @@ function deleteComment(index: number) {
   const t = reviewTarget();
   if (!t) return;
   if (editing?.index === index) editing = null;
-  writeAnnotations(t, (list) => list.filter((_, i) => i !== index));
+  let removed: Annotation | undefined;
+  writeAnnotations(t, (list) => {
+    removed = list[index];
+    return list.filter((_, i) => i !== index);
+  });
+  if (!removed) return;
+  const gone = removed;
+  // N2: no confirmation, but a way back.
+  notify("info", `Deleted the comment on ${gone.path}:${gone.line}`, undefined, {
+    kind: "hint",
+    undo: () => {
+      const now = reviewTarget();
+      if (!now || now.gkey !== t.gkey || now.studentId !== t.studentId) return;
+      writeAnnotations(now, (list) => [...list, gone].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line));
+      renderAll();
+    },
+  });
 }
 
 /** Shows a comment's line in the code group (from the grade panel's list). */

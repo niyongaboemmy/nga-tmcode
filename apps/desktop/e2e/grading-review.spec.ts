@@ -90,7 +90,7 @@ test("line comments: + in the gutter, Edit and Delete, listed in the panel and s
   await expect(panel.getByTestId("grade-comment-link")).toContainText("app.js:1");
   await page.getByTestId("grade-full-marks").click();
   await page.getByTestId("grade-save").click();
-  await expect(toast(page, "Grade saved: 20/20")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 20/20");
   const stored = await ben(page);
   expect(stored?.annotations).toEqual([{ path: "app.js", line: 1, text: "Use const for values that never change." }]);
   await expect(page.getByTestId("graded-by")).toContainText("Graded by Mr Teacher");
@@ -130,10 +130,10 @@ test("Save Draft keeps the grade from the student; Release N Drafts shows it; qu
   await gradeBen(page);
   await page.getByTestId("grade-full-marks").click();
   await page.getByTestId("grade-save-draft").click();
-  await expect(toast(page, "Draft saved: 20/20. The student doesn't see it until you release it.")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Draft saved: 20/20. The student doesn't see it until you release it.");
   expect((await ben(page))?.released).toBe(false);
   await expect(page.getByTestId("grade-draft-chip")).toBeVisible();
-  await expect(page.getByTestId("grade-status")).toHaveText("Draft saved. The student doesn't see it yet.");
+  // N4 (0.16): one channel, the panel's footer.
 
   // The roster marks it (still "To grade" for the student); the header releases every draft.
   await page.getByTestId("grade-switcher-toggle").click();
@@ -152,7 +152,7 @@ test("Save Draft keeps the grade from the student; Release N Drafts shows it; qu
   await page.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "6" }).click();
   await page.getByTestId("grade-criterion").nth(1).getByRole("button", { name: "4" }).click();
   await page.getByTestId("grade-save").click();
-  await expect(toast(page, "Grade saved: 10/10. The student sees it when the quiz results are released.")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 10/10. The student sees it when the quiz results are released.");
   // No "Return for changes" for quiz practicals.
   await expect(page.getByTestId("grade-return")).toHaveCount(0);
 });
@@ -177,7 +177,7 @@ test("graded work: Return answers PROJECT_GRADED, and Allow Resubmission takes t
   await gradeBen(page);
   await page.getByTestId("grade-full-marks").click();
   await page.getByTestId("grade-save").click();
-  await expect(toast(page, "Grade saved: 20/20")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 20/20");
   await page.getByTestId("grade-return").click();
   await page.getByTestId("grade-return-message").fill("Please add delete buttons.");
   await page.getByTestId("grade-return-send").click();
@@ -229,7 +229,7 @@ test("unsaved grades survive a restart; a failed save shows Retry and marks the 
   await expect(chloe.getByTestId("grade-row-unsaved")).toHaveAttribute("aria-label", "Not saved");
   await mock(page, "m.failGradeSaves(null)");
   await error.getByRole("button", { name: "Retry" }).click();
-  await expect(toast(page, "Grade saved: 20/20")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 20/20");
   await expect(error).toHaveCount(0);
   await expect(page.getByTestId("grade-row-unsaved")).toHaveCount(0);
 });
@@ -239,7 +239,7 @@ test("two teachers: a grade saved meanwhile is shown, with Use Theirs and Keep M
   await gradeBen(page);
   await page.getByTestId("grade-full-marks").click();
   await page.getByTestId("grade-save").click();
-  await expect(toast(page, "Grade saved: 20/20")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 20/20");
 
   // I lower a score; meanwhile another teacher saves 15.
   await page.getByTestId("grade-criterion").nth(1).getByLabel(/Code quality score/).fill("4");
@@ -250,7 +250,7 @@ test("two teachers: a grade saved meanwhile is shown, with Use Theirs and Keep M
   await expect(conflict).toContainText("while you were editing");
   await expect(conflict).toContainText("15/20");
   await conflict.getByRole("button", { name: "Keep Mine and Save" }).click();
-  await expect(toast(page, "Grade saved: 16/20")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 16/20");
   expect((await ben(page))?.score).toBe(16);
   await expect(conflict).toHaveCount(0);
 
@@ -331,7 +331,7 @@ test("an older Task Mentor (no draft grades): Save Draft goes away once a grade 
   await page.getByTestId("grade-row").filter({ hasText: "Ben Learner" }).click();
   await page.getByTestId("grade-full-marks").click();
   await page.getByTestId("grade-save").click();
-  await expect(toast(page, "Grade saved: 20/20")).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 20/20");
   await expect(page.getByTestId("grade-save-draft")).toHaveCount(0);
   await expect(page.getByTestId("graded-by")).toHaveCount(0);
 });

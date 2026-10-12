@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { revealView, useWorkbench } from "../state/store";
-import { SIGN_IN_EXPIRED, useAssignments, type AssignmentSummary } from "./assignments";
+import { isFirstRun, openSpecialEditor, revealView, useWorkbench } from "../state/store";
+import { SIGN_IN_EXPIRED, studentStatus, useAssignments, type AssignmentSummary } from "./assignments";
 import { signOut, useProjects } from "./service";
 import type { Link, LinkItem, Project } from "./types";
 
@@ -44,24 +44,51 @@ const writeFlag = () => {
   }
 };
 
+/** First run on this computer, already signed in: the side bar starts where the work is (Assignments or Grading), not the Explorer (W1). */
+function firstRunView() {
+  const at = useWorkbench.getState();
+  if (!isFirstRun() || inExam() || at.policy.mode !== "practice") return;
+  void import("../state/role").then(async ({ whenRoleResolved, isTeacherRole }) => {
+    const { role } = await whenRoleResolved(4000);
+    // The student may have chosen a view meanwhile: theirs wins.
+    if (role === "unknown" || inExam() || useWorkbench.getState().activeView !== "explorer") return;
+    revealView(isTeacherRole(role) ? "grading" : "assignments");
+  });
+}
+
 let wired = false;
 export function wireStudentHome() {
   if (wired) return;
   wired = true;
   let prev = useProjects.getState().account;
+  let startup = true;
+  const atStartup = (signed: boolean) => {
+    if (!startup) return;
+    startup = false;
+    if (signed) firstRunView();
+  };
+  if (prev) atStartup(!!prev.signed_in);
   useProjects.subscribe((s) => {
     const acc = s.account;
     if (acc === prev) return;
     const was = prev;
     prev = acc;
     if (!acc) return;
+    // The account's first answer at startup (not a sign-in now).
+    if (!was) atStartup(!!acc.signed_in);
     if (acc.signed_in) {
       intentional = false;
       if (useSession.getState().ended) useSession.setState({ ended: false });
-      // The first successful sign-in on this computer: show where the work is.
+      // The first successful sign-in on this computer: show where the work is. Teachers get
+      // Grading, students Assignments; if the role isn't known within 4 s, Home explains both (W2).
       if (was && !was.signed_in && !readFlag() && !inExam() && useWorkbench.getState().policy.mode === "practice") {
         writeFlag();
-        revealView("assignments");
+        void import("../state/role").then(async ({ whenRoleResolved, isTeacherRole }) => {
+          const { role, resolved } = await whenRoleResolved(4000);
+          if (inExam() || !useProjects.getState().account?.signed_in) return;
+          if (!resolved && role === "unknown") return openSpecialEditor("welcome");
+          revealView(isTeacherRole(role) ? "grading" : "assignments");
+        });
       }
       return;
     }
@@ -140,4 +167,38 @@ export function practicalStateOf(quizId: number, questionId: number, projects: P
     return { state: "in_progress", project: p };
   }
   return { state: "not_started", project: null };
+}
+
+const dueOf = (a: AssignmentSummary) => (a.due_date ? Date.parse(a.due_date) : Infinity);
+const bySoonest = (x: AssignmentSummary, y: AssignmentSummary) => dueOf(x) - dueOf(y) || x.id - y.id;
+
+/**
+ * Home's "Next up" (workflow plan 5.2): the ONE assignment to work on now.
+ * Returned work first (the teacher is waiting), then the open folder's
+ * assignment if it is in progress, then the soonest-due thing to do.
+ * Null: nothing to do.
+ */
+export function nextUp(list: AssignmentSummary[] | null, openAssignmentId: number | null = null): AssignmentSummary | null {
+  const active = (list ?? []).filter((a) => !a.read_only);
+  const returned = active.filter((a) => studentStatus(a) === "returned").sort(bySoonest);
+  if (returned.length) return returned[0];
+  const here = openAssignmentId !== null ? active.find((a) => a.id === openAssignmentId && studentStatus(a) === "in_progress") : undefined;
+  if (here) return here;
+  const todo = active.filter((a) => {
+    const s = studentStatus(a);
+    return s === "in_progress" || s === "not_started";
+  });
+  return todo.sort(bySoonest)[0] ?? null;
+}
+
+/** Home's counters: Returned (n) · To do (n) · Graded (n). */
+export function homeCounts(list: AssignmentSummary[] | null) {
+  const out = { returned: 0, todo: 0, graded: 0 };
+  for (const a of list ?? []) {
+    const s = studentStatus(a);
+    if (s === "returned") out.returned++;
+    if (s === "returned" || s === "in_progress" || s === "not_started") out.todo++;
+    if (s === "graded" && !a.read_only) out.graded++;
+  }
+  return out;
 }

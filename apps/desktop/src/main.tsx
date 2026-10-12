@@ -22,6 +22,7 @@ import {
   startedWorkers,
   watchCspViolations,
   journeyDebug,
+  showStartupEditor,
   type Platform,
 } from "@tmcode/workbench";
 
@@ -64,6 +65,10 @@ async function boot() {
   if (platform.kind === "web" && params.get("empty") !== "1" && !params.get("launch")) {
     await setWorkspace({ name: "practice-project", root: "memory://practice-project" });
   }
+  // Home in front of the restored tabs (workbench.startupEditor), unless an exam is launching.
+  // (Browser build: e2e specs about editor mechanics set "tmcode:e2e-no-home" so their tab counts stay their own.)
+  const noHome = platform.kind === "web" && localStorage.getItem("tmcode:e2e-no-home") === "1";
+  if (!params.get("launch") && !dev?.launch && !noHome) showStartupEditor();
   if (import.meta.env.DEV) {
     const { simulateExternalWrite, runUiProbe } = await import("@tmcode/workbench");
     if (!inTauri) watchCspViolations();

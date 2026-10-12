@@ -109,6 +109,12 @@ export interface Settings {
   "workbench.editor.languageDetection": boolean;
   /** Dropping or pasting files into Markdown inserts links / images (VS Code's markdown.editor.drop.enabled). */
   "markdown.editor.drop.enabled": "always" | "smart" | "never";
+  /**
+   * What opens at startup (VS Code's key): "home" (default) Home, your next assignment or what to
+   * grade, in front of the restored tabs; "homeIfNoFolder" only when no folder reopens; "none" nothing.
+   * Exams never show Home.
+   */
+  "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -168,6 +174,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "files.trimFinalNewlines": false,
   "workbench.editor.languageDetection": true,
   "markdown.editor.drop.enabled": "smart",
+  "workbench.startupEditor": "home",
 };
 
 /** One-time changes to saved settings, by id (kept in the saved UI state once applied). */
@@ -468,6 +475,17 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
   {
     title: "Application",
     settings: [
+      {
+        key: "workbench.startupEditor",
+        label: "Startup Editor",
+        description: "Controls which editor is shown at startup. Home shows your next assignment or what to grade; your last tabs stay open behind it.",
+        type: "enum",
+        options: [
+          { value: "home", label: "Home" },
+          { value: "homeIfNoFolder", label: "Home, only when no folder is open" },
+          { value: "none", label: "none" },
+        ],
+      },
       {
         key: "update.mode",
         label: "Update: Mode",

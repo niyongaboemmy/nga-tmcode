@@ -1,5 +1,5 @@
 import { getPlatform, loadDir, log, notify, showDialog, toggleDir, useWorkbench } from "../../state/store";
-import { join } from "../../util/paths";
+import { basename, join } from "../../util/paths";
 
 /**
  * Files dragged in from Finder / File Explorer: copied (never moved) into the
@@ -38,6 +38,8 @@ async function finish(dest: string, imported: string[]) {
   await loadDir(dest);
   if (imported.length) useWorkbench.setState({ selection: imported[imported.length - 1] });
   log("Explorer", `Copied ${imported.length} item${imported.length === 1 ? "" : "s"} into ${dest || "/"}`);
+  // N2: the copy is otherwise silent (the files may land in a collapsed folder).
+  if (imported.length) notify("info", `Copied ${imported.length === 1 ? basename(imported[0]) : `${imported.length} files`} into ${dest ? `${dest}/` : "the project"}`, undefined, { kind: "hint" });
 }
 
 /** Desktop: absolute paths from the OS drop. */

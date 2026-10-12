@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { finish, launch, mock, shot } from "./journeys";
+import { command, finish, launch, mock, shot, toast } from "./journeys";
 
 /**
  * Golden journey, student (workflow plan 0.1): launch → start → save →
@@ -13,13 +13,17 @@ const row = (page: import("@playwright/test").Page, id: number) => page.locator(
 test("student journey: launch → start → save → submit → returned → graded", async ({ page }, info) => {
   test.setTimeout(120_000);
   await launch(page);
+  // The overdue case study is out of the way (completed), so practical 51 is next up.
+  await mock(page, `m.setAssignmentStatus(52, "completed")`);
+  await command(page, "Assignments: Refresh Assignments");
+  // 0.15: Home in front, with the next assignment and its one button.
+  await expect(page.getByTestId("home-next-title")).toHaveText("Build a to-do list", { timeout: 10_000 });
   await shot(page, info, J, "launch");
 
-  // Find and start the next assignment.
-  await page.locator('.tm-activity[aria-label^="Assignments"]').click();
-  await expect(row(page, 51)).toBeVisible({ timeout: 10_000 });
-  await row(page, 51).getByRole("button", { name: "Start" }).click();
+  // Start the next assignment from Home: one click.
+  await page.getByTestId("home-next-action").click();
   await expect(page.getByTestId("assignment-page")).toBeVisible({ timeout: 15_000 });
+  await expect(row(page, 51)).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("assignment-save")).toBeVisible({ timeout: 15_000 });
   await shot(page, info, J, "started");
 
@@ -39,20 +43,31 @@ test("student journey: launch → start → save → submit → returned → gra
   await page.getByTestId("assignments-refresh").click();
   await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "returned", { timeout: 15_000 });
   await expect(page.getByTestId("assignment-returned")).toContainText("Add a delete button");
+  // N2: a notice that stays until read.
+  await expect(toast(page, /Your teacher returned "Build a to-do list"/)).toBeVisible();
+  // W4: one status on the whole screen, and the way back in is Submit Again.
+  await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "returned", { timeout: 15_000 });
+  await expect(row(page, 51)).toHaveAttribute("data-status", "returned");
+  await expect(page.getByTestId("project-student-status")).toHaveAttribute("data-status", "returned");
+  await expect(page.getByTestId("assignment-submit")).toHaveText(/Submit Again/);
   await shot(page, info, J, "returned");
 
-  // BASELINE (0.14, W4): the card below still follows the stale project status.
-  await expect(page.getByTestId("assignment-next-step")).toContainText("Withdraw to Edit");
-
-  // Graded.
+  // Submit again, then graded.
+  await page.getByTestId("assignment-submit").click();
+  await page.locator("[data-dialog-button=submit]").click();
+  await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
   await mock(page, `m.grade(51, 17, "Good work: the list adds and deletes.")`);
   await page.getByTestId("assignments-refresh").click();
   await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "graded", { timeout: 15_000 });
-  await expect(page.getByTestId("assignment-result")).toContainText("17");
-  // BASELINE (W4, L8): "Graded" above a "Submitted" card, the grade below it.
-  await expect(page.getByTestId("assignment-next-step")).toContainText("Submitted");
+  await expect(toast(page, /Build a to-do list was graded: 17\/20/)).toBeVisible();
+  // L8: the result is the next-step card, at the top; one status everywhere.
+  await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "graded", { timeout: 15_000 });
+  await expect(page.getByTestId("assignment-next-step").getByTestId("assignment-result")).toContainText("17");
+  await expect(row(page, 51)).toHaveAttribute("data-status", "graded");
   await shot(page, info, J, "graded");
 
   const r = await finish(page, info, J);
-  expect(r.marks.map((m) => m.name)).toEqual(expect.arrayContaining(["first-start", "submitted"]));
+  expect(r.marks.map((m) => m.name)).toEqual(expect.arrayContaining(["home-shown", "first-start", "submitted"]));
+  // §10: launch → working on the next assignment in 1 click.
+  expect(r.marks.find((m) => m.name === "first-start")?.clicks).toBe(1);
 });

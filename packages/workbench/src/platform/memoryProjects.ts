@@ -84,7 +84,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       return false;
     }
   })();
-  let latency = 0;
+  // e2e: localStorage "tmcode:mock-latency" slows Task Mentor from the first request (a cached role shows before the network answers).
+  let latency = Number(localStorage.getItem("tmcode:mock-latency") ?? 0) || 0;
   // Task Mentor's project lifecycle (live since 2026-10-07); setLifecycle(false) mimics an older server.
   let lifecycle = true;
   const day = 86_400_000;

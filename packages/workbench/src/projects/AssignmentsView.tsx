@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { create } from "zustand";
 import { notify, openContextMenu, revealView, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
-import { acceptsSubmissions, dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, returnedForChanges, showAssignment, startAssignment, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
+import { deriveStatus, type StatusView } from "./status";
+import { acceptsSubmissions, dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, studentStatus, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, refreshProjects, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
 import type { LinkableActivity, PracticalQuestion } from "./types";
@@ -36,61 +38,56 @@ export const STATE_LABEL = { not_started: "Not started", in_progress: "In progre
 
 const gradeText = (grade: number | null | undefined, max: number | null | undefined) => `${grade ?? "–"}/${max ?? "–"}`;
 
-function StateChip({ a }: { a: AssignmentSummary }) {
-  if (a.read_only) {
-    // Completed: the grade first (when there is one), then the lock.
-    return (
-      <>
-        {a.my?.state === "graded" && (
-          <span className="tm-chip is-success" data-testid="assignment-grade-chip">
-            {gradeText(a.my.grade, a.my.max_points ?? a.points)}
-          </span>
-        )}
-        <span className="tm-chip tm-chip--locked" data-testid="assignment-locked-chip" title="Completed: you can open your work, but not change or submit it">
-          <Codicon name="lock" /> Read-only
-        </span>
-      </>
-    );
-  }
-  const s = a.my?.state ?? "not_started";
+/** The row's chip: the same one status as the brief and the side bar (projects/status.ts). */
+function StateChip({ a, view }: { a: AssignmentSummary; view: StatusView }) {
+  const status = view.status;
   // Handed in after the due date (the submission's own flag, not "the due date has passed").
-  const late = (s === "submitted" || s === "graded") && handedInLate(a) && (
+  const late = (status === "submitted" || status === "graded") && handedInLate(a) && (
     <span className="tm-chip is-late" data-testid="assignment-late-chip">
       Late
     </span>
   );
-  if (s === "graded")
+  if (status === "graded")
     return (
       <>
         <span className="tm-chip is-success" data-testid="assignment-grade-chip">
           {gradeText(a.my?.grade, a.my?.max_points ?? a.points)}
         </span>
-        {late}
+        {a.read_only ? (
+          <span className="tm-chip tm-chip--locked" data-testid="assignment-locked-chip" title="Completed: you can open your work, but not change or submit it">
+            <Codicon name="lock" /> Read-only
+          </span>
+        ) : (
+          late
+        )}
       </>
     );
+  if (status === "closed")
+    return a.read_only ? (
+      <span className="tm-chip tm-chip--locked" data-testid="assignment-locked-chip" title="Completed: you can open your work, but not change or submit it">
+        <Codicon name="lock" /> Read-only
+      </span>
+    ) : (
+      // The teacher closed it before it was handed in: no more submissions.
+      <span className="tm-chip tm-chip--locked" data-testid="assignment-closed-chip" title="Your teacher closed this assignment: it no longer accepts work">
+        <Codicon name="lock" /> Closed
+      </span>
+    );
   // The same colours as project statuses: in progress grey, submitted blue, graded green; returned needs attention (orange).
-  if (s === "submitted")
+  if (status === "submitted")
     return (
       <>
         <span className="tm-chip tm-status-chip is-submitted">Submitted</span>
         {late}
       </>
     );
-  // The teacher closed it before it was handed in: no more submissions.
-  if (!acceptsSubmissions(a))
-    return (
-      <span className="tm-chip tm-chip--locked" data-testid="assignment-closed-chip" title="Your teacher closed this assignment: it no longer accepts work">
-        <Codicon name="lock" /> Closed
-      </span>
-    );
-  if (returnedForChanges(a)) {
+  if (status === "returned")
     return (
       <span className="tm-chip is-warning" data-testid="assignment-returned-chip" title={`Returned by your teacher${a.my?.returned_message ? `: ${a.my.returned_message}` : ""}`}>
         Returned
       </span>
     );
-  }
-  if (s === "in_progress") return <span className="tm-chip tm-status-chip is-draft">In progress</span>;
+  if (status === "in_progress") return <span className="tm-chip tm-status-chip is-draft">In progress</span>;
   return null;
 }
 
@@ -108,6 +105,8 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
   useProjects((s) => s.binding);
   const due = dueLabel(a.due_date);
   const open = !teaching && isOpenWorkspaceOf(a);
+  const current = useProjects((s) => (open ? s.current : null));
+  const view = deriveStatus(a, current, { here: open });
   const viewing = useViewingBrief(a.id);
   const started = !!a.my?.project_id;
   const canWork = !teaching && !open && (!a.read_only || started);
@@ -121,6 +120,7 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
       data-row-nav
       data-testid="assignment-row"
       data-assignment-id={a.id}
+      data-status={teaching ? undefined : view.status}
       title={`${a.title}\n${a.course_name ?? ""}${a.due_date ? ` · due ${new Date(a.due_date).toLocaleString()}` : ""}`}
       onClick={() => showAssignment(a.id)}
       // Double-click (as on a file) or Enter: the brief, and straight into the work (Start / Open).
@@ -143,7 +143,7 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, [
           { kind: "item", label: "Show Brief", run: () => showAssignment(a.id) },
-          ...(!teaching && (started || !a.read_only) ? [{ kind: "item" as const, label: started ? "Continue in TMCode" : "Start", run: () => void startAssignment(a.id) }] : []),
+          ...(!teaching && (started || !a.read_only) ? [{ kind: "item" as const, label: started ? "Continue" : "Start", run: () => void startAssignment(a.id) }] : []),
           ...(!teaching && started && acceptsSubmissions(a) ? [{ kind: "item" as const, label: "Submit…", run: () => void submitAssignment(a.id) }] : []),
           ...(teaching ? [{ kind: "item" as const, label: "Grade Submissions", run: () => openGrading(keyOf("assignment", a.id, null)) }] : []),
           { kind: "separator" },
@@ -155,7 +155,7 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
       <span className="tm-assignment-text">
         <span className="tm-project-name">{a.title}</span>
         <span className="tm-assignment-sub">
-          {!teaching && <StateChip a={a} />}
+          {!teaching && <StateChip a={a} view={view} />}
           {a.course_name && <span className="tm-assignment-course">{a.course_name}</span>}
           {teaching && (a.status as string) === "draft" ? (
             <span className="tm-due is-soon" title="Publish it in Task Mentor so students can start it">
@@ -190,7 +190,7 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
           }}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          {busy === "starting" ? (started ? "Opening…" : "Starting…") : started ? "Open" : "Start"}
+          {busy === "starting" ? (started ? "Opening…" : "Starting…") : started ? "Continue" : "Start"}
         </button>
       )}
     </div>
@@ -312,8 +312,25 @@ function SessionEndedBanner() {
 }
 
 /** The Assignments view: TMCode practicals and case studies from Task Mentor. The student's home. */
+/** A group Home's counters open the view on ("Returned (2)"): null shows everything. */
+export type AssignmentGroup = "returned" | "todo" | "graded";
+export const useAssignmentsGroup = create<{ group: AssignmentGroup | null }>(() => ({ group: null }));
+const GROUP_LABEL: Record<AssignmentGroup, string> = { returned: "Returned", todo: "To do", graded: "Graded" };
+
+/** Opens Assignments showing one group only (Home's counters). */
+export function showAssignmentsGroup(group: AssignmentGroup | null) {
+  useAssignmentsGroup.setState({ group });
+  revealView("assignments");
+}
+
+const inGroup = (a: AssignmentSummary, g: AssignmentGroup) => {
+  const s = studentStatus(a);
+  return g === "returned" ? s === "returned" : g === "graded" ? s === "graded" : s === "not_started" || s === "in_progress" || s === "returned";
+};
+
 export function AssignmentsView() {
   const account = useProjects((s) => s.account);
+  const group = useAssignmentsGroup((s) => s.group);
   const student = useAssignments((s) => s.student);
   const teaching = useAssignments((s) => s.teaching);
   const quizPracticals = useAssignments((s) => s.quizPracticals);
@@ -365,7 +382,7 @@ export function AssignmentsView() {
       </div>
     );
   }
-  const match = (a: AssignmentSummary) => !filter || `${a.title} ${a.course_name ?? ""} ${a.language ?? ""}`.toLowerCase().includes(filter.toLowerCase());
+  const match = (a: AssignmentSummary) => (!group || inGroup(a, group)) && (!filter || `${a.title} ${a.course_name ?? ""} ${a.language ?? ""}`.toLowerCase().includes(filter.toLowerCase()));
   const groups = groupAssignments((student ?? []).filter(match));
   // The one to do first: soonest due, not started yet. Its Start stays solid and visible.
   const urgentId = groups.todo.find((a) => !a.my?.project_id && !a.read_only)?.id ?? null;
@@ -393,6 +410,16 @@ export function AssignmentsView() {
         </div>
         <ActionButton icon="refresh" label="Refresh from Task Mentor" onClick={() => void refreshAssignments()} className={loading ? "is-busy" : ""} data-testid="assignments-refresh" />
       </div>
+      {group && (
+        <div className="tm-assignments-group" role="status" data-testid="assignments-group">
+          <span>
+            Showing: <b>{GROUP_LABEL[group]}</b>
+          </span>
+          <button type="button" className="tm-link-button" onClick={() => useAssignmentsGroup.setState({ group: null })} data-testid="assignments-group-clear">
+            Show All
+          </button>
+        </div>
+      )}
       {checkedAt && (
         <p className="tm-assignments-checked" data-testid="assignments-checked">
           {loading ? "Checking Task Mentor…" : `Checked ${checkedAgo(checkedAt)}`}

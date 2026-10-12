@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { toggleNotificationCenter, useNotificationCenter } from "../state/notificationCenter";
+import { toggleNotificationCenter, unreadCount, useNotificationCenter } from "../state/notificationCenter";
 import { currentActivity, useActivity } from "../state/activity";
 import { executeCommand } from "../commands/registry";
 import { languageLabel } from "../monaco/documents";
@@ -10,6 +10,8 @@ import { SyncStatus } from "../exam/ExamViews";
 import { showReleaseNotes, useUpdate } from "../update/updateService";
 // ── Task Mentor projects ──
 import { useProjects } from "../projects/service";
+import { showAssignment, STUDENT_STATUS_LABEL, useAssignments } from "../projects/assignments";
+import { deriveStatus } from "../projects/status";
 import { changeCount as planChanges } from "../projects/plan";
 import { SYNC_ICON, SYNC_LABEL, SYNC_TIP, SYNC_TONE } from "../projects/syncLabels";
 import type { SyncState } from "../projects/types";
@@ -118,7 +120,11 @@ function ProjectStatus() {
   // A quick re-check after each edit doesn't flash "Checking…": the last answer stays until the new one.
   const shown = useRef<SyncState>("synced");
   if (sync !== "checking" || shown.current === "unbound") shown.current = sync;
+  // An assignment workspace: the same one status as the brief and the side bar (W4), then the sync state.
+  const current = useProjects((s) => s.current);
+  const assignment = useAssignments((s) => (current?.assignment ? (s.student?.find((a) => a.id === current.assignment!.id) ?? null) : null));
   if (!binding || binding.kind !== "tm") return null;
+  const view = assignment && current?.id === binding.project_id ? deriveStatus(assignment, current, { here: true }) : null;
   const n = plan ? planChanges(plan.localChanges) : 0;
   const state = sync === "checking" ? shown.current : sync;
   const busy = sync === "saving" || sync === "pulling";
@@ -129,9 +135,23 @@ function ProjectStatus() {
     <Item
       className={`tm-status-project is-${state} tm-tone-${SYNC_TONE[state]}`}
       title={tip}
-      onClick={() => executeCommand(state === "remote-changes" ? "projects.pull" : state === "conflict" || state === "offline" || state === "error" ? "workbench.view.projects" : "projects.save")}
+      onClick={() =>
+        state === "remote-changes"
+          ? executeCommand("projects.pull")
+          : state === "conflict" || state === "offline" || state === "error"
+            ? // Students' home for an assignment is its brief (N6), not the Projects view.
+              view
+              ? showAssignment(assignment!.id, { toSide: true })
+              : executeCommand("workbench.view.projects")
+            : executeCommand("projects.save")
+      }
     >
       <Codicon name={SYNC_ICON[state]} className={busy ? "codicon-modifier-spin" : ""} />
+      {view && (
+        <span className="tm-status-student" data-testid="project-student-status" data-status={view.status}>
+          {view.syncing ? "Updating…" : STUDENT_STATUS_LABEL[view.status]} ·
+        </span>
+      )}
       <span data-testid="project-status" data-state={state}>
         {label}
       </span>
@@ -188,6 +208,8 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
   const notifications = useWorkbench((s) => s.notifications.length);
   const dnd = useNotificationCenter((s) => s.dnd);
+  // Things from outside (new work, grades, returned work) not seen yet.
+  const unread = useNotificationCenter((s) => unreadCount(s.history));
   const debugging = useDebug((s) => s.phase !== "inactive");
   const fileInfo = useActiveFileInfo();
   const screenReader = useWorkbench((s) => s.settings["editor.accessibilitySupport"] === "on");
@@ -250,10 +272,15 @@ export function StatusBar({ chord }: { chord: string | null }) {
         <UpdateItem />
         <Item
           className="tm-status-bell"
-          title={dnd ? "Do Not Disturb" : notifications ? `${notifications} notifications` : "No Notifications"}
+          title={`${dnd ? "Do Not Disturb" : notifications ? `${notifications} notifications` : "No Notifications"}${unread ? ` · ${unread} unread` : ""}`}
           onClick={toggleNotificationCenter}
         >
-          <Codicon name={dnd ? "bell-slash" : notifications ? "bell-dot" : "bell"} />
+          <Codicon name={dnd ? "bell-slash" : notifications || unread ? "bell-dot" : "bell"} />
+          {unread > 0 && (
+            <span className="tm-status-unread" data-testid="notifications-unread" aria-label={`${unread} unread`}>
+              {unread > 99 ? "99+" : unread}
+            </span>
+          )}
         </Item>
       </div>
       <RunMenuHost />

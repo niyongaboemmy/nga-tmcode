@@ -4,7 +4,10 @@ import type { Platform } from "../platform/types";
 import { useExam } from "../exam/state";
 import { beforeQuit, beforeReload } from "./quit";
 import {
+  beginExplorerEdit,
   initWorkbench,
+  renameEntry,
+  setExplorerEditError,
   notify,
   notifyProgress,
   openRecent,
@@ -167,5 +170,31 @@ describe("notifications", () => {
     expect(list.map((n) => n.message)).toEqual(expect.arrayContaining(["changed on disk", "Cloning…"]));
     // Plain info goes before warnings and errors; of those, the newest stay.
     expect(list.map((n) => n.message).slice(2)).toEqual(["n2", "n4", "n6"]);
+  });
+});
+
+describe("rename in the Explorer (N9)", () => {
+  beforeEach(async () => {
+    resetWorkbenchForTests();
+    useExam.setState({ phase: "idle" });
+    const { platform, a } = twoFolders();
+    await a.createFile("other.py");
+    await initWorkbench(platform);
+    await setWorkspace({ name: "a", root: "memory://a" });
+  });
+
+  it("a failed rename keeps the input open, so the error can show under it", async () => {
+    await beginExplorerEdit({ mode: "rename", target: "main.py" });
+    await expect(renameEntry("main.py", "other.py")).rejects.toThrow();
+    expect(useWorkbench.getState().explorerEdit).toMatchObject({ mode: "rename", target: "main.py" });
+    setExplorerEditError("A file or folder other.py already exists.");
+    expect(useWorkbench.getState().explorerEdit?.error).toMatch(/already exists/);
+  });
+
+  it("a rename that works closes the input", async () => {
+    await beginExplorerEdit({ mode: "rename", target: "main.py" });
+    await renameEntry("main.py", "app.py");
+    expect(useWorkbench.getState().explorerEdit).toBeNull();
+    expect(useWorkbench.getState().selection).toBe("app.py");
   });
 });

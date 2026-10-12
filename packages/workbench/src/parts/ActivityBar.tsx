@@ -12,6 +12,7 @@ import { useAssignments } from "../projects/assignments";
 import { signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
 import { useEffect } from "react";
 import { useGrading, progressOf } from "../grading/service";
+import { isTeacherRole, useIsTeacher, useRole, useRoleChecking } from "../state/role";
 import type { AccountStatus } from "../platform/types";
 // ── extension view containers (exthost/views) ──
 import { useViews, type ViewContainer } from "../exthost/views/model";
@@ -60,10 +61,13 @@ export function ActivityBar() {
   const toGrade = useGrading((s) => Object.values(s.rosters).reduce((n, r) => n + (progressOf(r)?.toGrade ?? 0), 0));
   // Assignments to start or finish (not submitted, not completed).
   const todo = useAssignments((s) => (s.student ?? []).filter((a) => !a.read_only && (!a.my || a.my.state === "not_started" || a.my.state === "in_progress")).length);
-  // Teachers keep Projects, Assignments, Grading; students get Assignments first.
-  const staff = useAssignments((s) => s.staff === true);
+  // Teachers keep Projects, Assignments, Grading; students get Assignments first. The role is
+  // remembered per account, so a teacher's layout is there on the first frame (W2); while nobody
+  // knows yet, only the shared Assignments view shows (never the student "All My Projects").
+  const teacher = useIsTeacher();
+  const checking = useRoleChecking();
   useEffect(() => wireStudentHome(), []);
-  const accountViews = staff || grader ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW, ...(grader ? [GRADING_VIEW] : [])] : [ASSIGNMENTS_VIEW, MY_PROJECTS_VIEW];
+  const accountViews = teacher || grader ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW, GRADING_VIEW] : checking ? [ASSIGNMENTS_VIEW] : [ASSIGNMENTS_VIEW, MY_PROJECTS_VIEW];
   const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? accountViews : []), EXTENSIONS_VIEW] : VIEWS;
   const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
   // Extensions never run in exams, so their containers only exist in practice mode.
@@ -191,8 +195,9 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
             ? [
                 { kind: "item", label: `${user.name ?? user.email}${user.role ? ` · ${user.role}` : ""}`, disabled: true, run: () => {} },
                 { kind: "separator" },
+                ...(isTeacherRole(useRole.getState().role) || useGrading.getState().grader ? [{ kind: "item" as const, label: "Grading", run: () => executeCommand("workbench.view.grading") }] : []),
                 { kind: "item", label: "Assignments", run: () => executeCommand("workbench.view.assignments") },
-                { kind: "item", label: useAssignments.getState().staff ? "Task Mentor Projects" : "All My Projects", run: () => executeCommand("workbench.view.projects") },
+                { kind: "item", label: isTeacherRole(useRole.getState().role) ? "Task Mentor Projects" : "All My Projects", run: () => executeCommand("workbench.view.projects") },
                 { kind: "item", label: "Refresh Projects", run: () => void refreshProjects() },
                 { kind: "separator" },
                 { kind: "item", label: "Sign Out", run: () => void signOutOnPurpose() },

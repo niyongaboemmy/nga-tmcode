@@ -99,7 +99,8 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "sqlResults") return `SQL: ${basename(e.path)}`;
   if (e.kind === "logic") return `Truth Tables: ${basename(e.path)}`;
   if (e.kind === "api") return "API Tester";
-  return "Welcome";
+  // VS Code's Welcome; for TMCode users, Home (the id stays "welcome" so tabs and commands keep working).
+  return "Home";
 }
 
 function iconOf(e: EditorInput) {

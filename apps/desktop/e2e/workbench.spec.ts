@@ -22,20 +22,23 @@ const tab = (page: Page, name: string) => page.locator(".tm-tab", { hasText: nam
 
 test.beforeEach(async ({ page }) => {
   // Each test starts from default settings.
-  await page.addInitScript(() => localStorage.clear());
+  // Editor mechanics: no Home tab in front at startup (start-here.spec covers Home).
+  await page.addInitScript(() => {
+    localStorage.clear();
+    localStorage.setItem("tmcode:e2e-no-home", "1");
+  });
 });
 
-test("welcome page when no folder is open", async ({ page }) => {
+test("Home when no folder is open", async ({ page }) => {
   await boot(page, "?empty=1");
-  await expect(page.locator(".tm-welcome h1")).toHaveText("TMCode");
+  await expect(page.locator(".tm-welcome h1")).toHaveText("Home");
   await expect(page.getByRole("button", { name: "Open Folder" }).first()).toBeVisible();
   await expect(page.locator(".tm-status-mode")).toContainText("Practice");
-  // The main job first: "Your assignments", with sign-in; the other cards are actions too.
-  const cards = page.locator(".tm-welcome-col").nth(1).locator(".tm-welcome-card");
-  await expect(cards.first()).toContainText("Your assignments");
-  await expect(cards.first().getByRole("button", { name: "Sign in with NGA" })).toBeVisible();
-  await expect(page.getByTestId("welcome-exam-card")).toHaveClass(/is-action/);
-  await expect(page.getByTestId("welcome-practice-card").getByRole("button", { name: "New Project from Template..." })).toBeVisible();
+  // The main job first: one card to sign in; practising on your own and help below.
+  await expect(page.getByTestId("home-signin-card")).toContainText("Sign in to see your assignments");
+  await expect(page.getByTestId("home-signin-card").getByRole("button", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByTestId("welcome-exam-card")).toContainText("Taking an exam? Open it from Task Mentor.");
+  await expect(page.getByTestId("home-practise").getByRole("button", { name: "New Project from Template..." })).toBeVisible();
 });
 
 test("single click opens a preview tab, double click pins it", async ({ page }) => {

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { saveAll } from "../monaco/documents";
 import { inExam } from "../exam/state";
 import type { UpdateInfo } from "../platform/types";
-import { dismissNotification, getPlatform, log, notify, showDialog, useWorkbench } from "../state/store";
+import { getPlatform, log, notify, notifyProgress, showDialog, useWorkbench } from "../state/store";
 
 /**
  * When TMCode looks for and installs updates (plan §18). Checks are automatic
@@ -92,17 +92,25 @@ export async function installUpdate() {
     return;
   }
   set({ status: "downloading", progress: 0 });
-  const progressId = notify("info", "Downloading the update…");
+  // A real progress notification: it stays while the download runs, with the percentage.
+  const toast = notifyProgress("Downloading the update…");
   try {
     await updater.install((p) => {
-      if (p.type === "chunk" && p.total) set({ progress: Math.round((p.downloaded / p.total) * 100) });
-      if (p.type === "installing") set({ status: "installing", progress: 100 });
+      if (p.type === "chunk" && p.total) {
+        const pct = Math.round((p.downloaded / p.total) * 100);
+        set({ progress: pct });
+        toast.update({ progress: pct, message: `Downloading the update ${pct}%` });
+      }
+      if (p.type === "installing") {
+        set({ status: "installing", progress: 100 });
+        toast.update({ progress: null, message: "Installing the update…" });
+      }
     });
   } catch (e) {
     set({ status: "error", error: String((e as Error)?.message ?? e) });
     notify("error", String((e as Error)?.message ?? e));
   } finally {
-    dismissNotification(progressId);
+    toast.close();
   }
 }
 

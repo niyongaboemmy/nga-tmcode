@@ -17,6 +17,7 @@ import {
   openContextMenu,
   openFile,
   renameEntry,
+  revealView,
   select,
   setExplorerEditError,
   toggleDir,
@@ -206,6 +207,8 @@ export function ExplorerView() {
   const problems = useWorkbench((s) => s.problems);
   const activePath = useWorkbench((s) => activeFilePath(s));
   const autoReveal = useWorkbench((s) => s.settings["explorer.autoReveal"] ?? true);
+  const practice = useWorkbench((s) => s.policy.mode === "practice");
+  const hasAccount = !!getPlatform().account;
   const exclude = useExclude();
   const gitAllowed = useGitAllowed();
   const gitDecorations = useGit((s) => s.decorations);
@@ -282,9 +285,17 @@ export function ExplorerView() {
         <button className="tm-button tm-button--block" onClick={() => executeCommand("workbench.action.files.openFolder")}>
           Open Folder
         </button>
-        <p className="tm-muted">
-          Exams and assigned tasks open here automatically when you start them from Task Mentor.
-        </p>
+        {/* W1: the work lives in Assignments; say so, with the way there. */}
+        {practice && hasAccount && (
+          <div className="tm-explorer-empty-assignments" data-testid="explorer-empty-assignments">
+            <p className="tm-muted">
+              Your assignments are in <b>Assignments</b>.
+            </p>
+            <button type="button" className="tm-button tm-button--secondary tm-button--block" onClick={() => revealView("assignments")} data-testid="explorer-open-assignments">
+              Open Assignments
+            </button>
+          </div>
+        )}
       </div>
     );
   }

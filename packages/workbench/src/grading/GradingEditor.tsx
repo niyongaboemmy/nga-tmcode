@@ -234,14 +234,15 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
     setJustSaved(null);
     // The version this draft was edited from; unchanged forms answer the grade as it is.
     const ifVersion = ifVersionOverride !== undefined ? ifVersionOverride : stored ? (stored.base ?? null) : (row.grade?.version ?? null);
-    const r = await saveGrade(gkey, row.student.id, inputFromDraft(roster, draft), { release, ifVersion });
+    // N4: the footer says it (the panel is on screen); Save & Next also tells it in a short toast, since the panel moves on.
+    const r = await saveGrade(gkey, row.student.id, inputFromDraft(roster, draft), { release, ifVersion, quiet: !next });
     setSaving(null);
     setFailCode(r.ok ? null : (r.code ?? null));
     if (r.ok) {
       dropDraft(dkey);
       setFailed(dkey, null);
       setConflict(null);
-      setJustSaved(r.released ? (quiz ? "Saved. Shown with the quiz results." : "Saved and released.") : "Draft saved. The student doesn't see it yet.");
+      setJustSaved(r.message);
       if (next) onNext();
     } else if (r.conflict) {
       setConflict(r.conflict);

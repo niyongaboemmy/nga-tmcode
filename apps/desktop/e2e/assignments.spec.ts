@@ -123,7 +123,7 @@ test("starting again continues the same workspace instead of copying the starter
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await command(page, "View: Show Assignments");
   await row(page, 51).click({ button: "right" });
-  await page.locator(".tm-menu").getByText("Continue in TMCode").click();
+  await page.locator(".tm-menu").getByText("Continue", { exact: true }).click();
   await expect(page.getByTestId("assignment-submit")).toBeVisible();
   expect(await mock(page, (m) => m.state().projects.filter((p) => p.assignment_id === 51).length)).toBe(1);
 });
@@ -412,7 +412,7 @@ test("an assignment without starter files offers starters, saves the choice and 
   expect(revs).toBeGreaterThan(0);
 });
 
-test("a started assignment offers Open on its row (and double-click), and its project opens with the brief from Projects too", async ({ page }) => {
+test("a started assignment offers Continue on its row (and double-click), and its project opens with the brief from Projects too", async ({ page }) => {
   await fresh(page);
   await startPractical(page);
   // Leave it: open another folder.
@@ -421,7 +421,7 @@ test("a started assignment offers Open on its row (and double-click), and its pr
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Start with an empty project" }).click();
   await expect(row(page, 52)).toContainText("Open here", { timeout: 15_000 });
   const practical = row(page, 51);
-  await expect(practical.getByRole("button", { name: "Open" })).toBeVisible();
+  await expect(practical.getByRole("button", { name: "Continue" })).toBeVisible();
   await practical.dblclick();
   await expect(practical).toContainText("Open here", { timeout: 15_000 });
   await expect(page.getByTestId("assignment-next-step")).toContainText("You're working on it");
@@ -487,8 +487,10 @@ test("work returned for changes shows the teacher's message on the brief and the
   const banner = page.getByTestId("assignment-returned");
   await expect(banner).toContainText("Returned by your teacher", { timeout: 10_000 });
   await expect(banner).toContainText("Add a Delete button to each item.");
-  // Attention (orange), not an error.
-  expect(await banner.evaluate((el) => el.className)).toContain("is-warning");
+  // Attention (orange), not an error: the one status is Returned, in the card that holds Submit Again (0.15, W4).
+  await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "returned");
+  await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "returned");
+  await expect(page.getByTestId("assignment-submit")).toHaveText(/Submit Again/);
   await expect(page.getByTestId("assignment-submit")).toBeVisible();
   await command(page, "View: Show Assignments");
   const chip = row(page, 51).getByTestId("assignment-returned-chip");
@@ -513,7 +515,7 @@ test("late is the submission's: on time stays on time after the due date, a late
   await mock(page, (m) => m.setDueDate(51, new Date(Date.now() - 3_600_000).toISOString()));
   await command(page, "Assignments: Refresh Assignments");
   await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
-  await expect(page.getByTestId("assignment-result")).toContainText("Submitted");
+  await expect(page.getByTestId("assignment-submitted-at")).toContainText("Submitted");
   await expect(page.getByTestId("assignment-result-late")).toHaveCount(0);
   await expect(page.getByTestId("assignment-due")).not.toContainText("late");
   await expect(page.getByTestId("assignment-due")).not.toHaveClass(/is-late/);

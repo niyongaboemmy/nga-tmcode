@@ -7,8 +7,10 @@ import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
 import { SYNC_ICON, SYNC_LABEL, SYNC_TIP } from "./syncLabels";
-import { loadRemoved, lockReason, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, compareConflict, setSharePresence, signIn, useProjects } from "./service";
+import { loadRemoved, lockReason, recheck, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, compareConflict, setSharePresence, signIn, useProjects } from "./service";
 import { showAssignment, useAssignments } from "./assignments";
+import { deriveStatus, STATUS_LABEL as STUDENT_LABEL, type StudentStatus } from "./status";
+import { useStatusSync } from "./useStatusSync";
 import type { Link, Project } from "./types";
 import { openInTaskMentor } from "./commands";
 import { SignInWaiting } from "./SignInWaiting";
@@ -229,16 +231,22 @@ const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleSt
  * read the grade.
  */
 function AssessmentCard({ project, links, busy }: { project: Project; links: Link[]; busy: boolean }) {
-  const status: Status = project.status ?? "draft";
+  const projectStatus: Status = project.status ?? "draft";
   const link = links.find((l) => l.activity_type === "assignment") ?? links[0] ?? null;
   const assignment = useAssignments((s) => (project.assignment ? s.student?.find((a) => a.id === project.assignment!.id) : undefined));
-  const steps: Status[] = ["draft", "submitted", "graded"];
-  const at = steps.indexOf(status);
+  // An assignment workspace: the one derived status (W4), the same as the brief's. Other links: the project's.
+  const view = useStatusSync(assignment ? deriveStatus(assignment, project, { here: true }) : null, project.id, () => Promise.all([recheck(), import("./assignments").then((m) => m.refreshAssignments())]));
+  const derived: StudentStatus = view?.status ?? (projectStatus === "draft" ? "in_progress" : projectStatus === "removed" ? "in_progress" : projectStatus);
+  // Draft-like: work can go on and be handed in.
+  const status: Status = projectStatus === "removed" ? "removed" : derived === "submitted" ? "submitted" : derived === "graded" ? "graded" : "draft";
+  // The stepper gains Returned when the teacher sent the work back: In progress → Submitted → Returned → Graded.
+  const steps: StudentStatus[] = derived === "returned" ? ["in_progress", "submitted", "returned", "graded"] : ["in_progress", "submitted", "graded"];
+  const at = steps.indexOf(derived === "closed" || derived === "not_started" ? "in_progress" : derived);
   const title = link?.activity?.title ?? project.assignment?.title ?? (link ? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}` : null);
   const kind = link ? (link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one) : project.assignment ? "Assignment" : null;
   // Handed in: no countdown (late or not is the submission's, not the date's).
   const due = status === "submitted" || status === "graded" ? "" : dueText(link?.activity?.due_date ?? assignment?.due_date, link?.activity?.open !== false && !project.read_only);
-  const closed = link?.activity?.open === false;
+  const closed = link?.activity?.open === false || derived === "closed";
   const openBrief = project.assignment ? () => showAssignment(project.assignment!.id, { toSide: true }) : undefined;
 
   if (status === "removed") {
@@ -272,7 +280,7 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
     );
   }
   return (
-    <div className={`tm-assess-card is-${status}`} data-testid="project-status-panel" data-status={status}>
+    <div className={`tm-assess-card is-${status}`} data-testid="project-status-panel" data-status={status} data-student-status={derived} data-syncing={view?.syncing ? "true" : undefined}>
       <div className="tm-assess-head">
         <Codicon name={link ? (link.question_id ? "beaker" : TYPE_LABEL[link.activity_type].icon) : "notebook"} className="tm-assess-icon" />
         <span className="tm-assess-title-wrap">
@@ -294,9 +302,9 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
       </div>
       <ol className="tm-status-steps" aria-label="Project status" data-testid="project-steps">
         {steps.map((st, i) => (
-          <li key={st} className={`${i < at ? "is-done" : ""} ${i === at ? "is-current" : ""}`} aria-current={i === at ? "step" : undefined}>
+          <li key={st} className={`${i < at ? "is-done" : ""} ${i === at ? "is-current" : ""} ${st === "returned" ? "is-returned" : ""}`} aria-current={i === at ? "step" : undefined}>
             <span className="tm-status-dot">{i < at ? <Codicon name="check" /> : null}</span>
-            <span>{STATUS_LABEL[st]}</span>
+            <span>{STUDENT_LABEL[st]}</span>
           </li>
         ))}
       </ol>
@@ -311,7 +319,7 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
             title={closed ? "This assessment is closed" : "Save, then hand in this exact version"}
           >
             <Codicon name="send" />
-            <span className="tm-button-label">{closed ? "Closed for Submissions" : "Submit Project"}</span>
+            <span className="tm-button-label">{closed ? "Closed for Submissions" : derived === "returned" ? "Submit Again" : "Submit"}</span>
           </button>
           <button type="button" className="tm-link-button tm-assess-change" onClick={() => executeCommand("projects.linkActivity")} data-testid="change-assessment">
             Change assessment…
@@ -328,6 +336,11 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
             Withdraw to Edit
           </button>
         </div>
+      )}
+      {view?.syncing && (
+        <p className="tm-muted tm-assess-updating" role="status" data-testid="project-updating">
+          Updating…
+        </p>
       )}
       {status === "graded" &&
         (assignment?.my?.grade != null ? (

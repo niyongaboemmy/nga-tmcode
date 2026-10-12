@@ -95,7 +95,7 @@ test("a quiz practical question is graded the same way", async ({ page }) => {
   await page.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "6" }).click();
   await page.getByTestId("grade-criterion").nth(1).getByRole("button", { name: "2" }).click();
   await page.getByTestId("grade-save").click();
-  await expect(page.locator(".tm-toast", { hasText: "Grade saved: 8/10" })).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 8/10");
   await expect(page.getByTestId("grading-progress")).toContainText("100%");
 });
 
@@ -194,7 +194,7 @@ test("notes per criterion survive a re-save, from servers that keep them and fro
   await panel.locator(".tm-grade-note").fill("Adding works, even with an empty box.");
   await page.getByTestId("grade-feedback").fill("Nice and tidy.");
   await page.getByTestId("grade-save").click();
-  await expect(page.locator(".tm-toast", { hasText: "Grade saved: 18/20" })).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 18/20");
   let stored = await storedBen(page);
   expect(stored?.rubric_scores?.[0].comment).toBe("Adding works, even with an empty box.");
   expect(stored?.feedback).toBe("Nice and tidy.\n\nCriteria notes:\n• Adding items works: Adding works, even with an empty box.");
@@ -215,7 +215,7 @@ test("notes per criterion survive a re-save, from servers that keep them and fro
   // Re-saved with another score: the note is kept, and written once.
   await page.getByTestId("grade-panel").getByTestId("grade-criterion").nth(1).getByLabel(/Code quality score/).fill("7");
   await page.getByTestId("grade-save").click();
-  await expect(page.locator(".tm-toast", { hasText: "Grade saved: 19/20" })).toBeVisible();
+  await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 19/20");
   stored = await storedBen(page);
   expect(stored?.feedback).toBe("Nice and tidy.\n\nCriteria notes:\n• Adding items works: Adding works, even with an empty box.");
   expect(stored?.rubric_scores?.[0].comment).toBe("Adding works, even with an empty box.");

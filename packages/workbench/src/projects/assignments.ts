@@ -7,6 +7,7 @@ import { api, offerSaveBeforeSwitch, openProject, projectsSupported, refreshProj
 import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { LinkableActivity, Project } from "./types";
 import { markJourney } from "../util/journey";
+import { resolveStatus, STATUS_LABEL, type StudentStatus } from "./status";
 
 /**
  * TMCode practicals (docs/ASSIGNMENTS_PLAN.md): Task Mentor assignments and
@@ -147,8 +148,9 @@ export async function refreshAssignments() {
 export const SIGN_IN_EXPIRED = "Your sign-in has expired.";
 
 /**
- * What changed for the student since the last check (S9): new assignments and
- * new grades, as info toasts with a way to the brief. Never on the first load.
+ * What changed for the student since the last check (S9): new assignments,
+ * work returned for changes and new grades, as toasts with a way to the brief
+ * (unread in the notification centre). Never on the first load.
  */
 const announced = new Set<string>();
 export function announceChanges(before: AssignmentSummary[] | null, after: AssignmentSummary[]) {
@@ -159,13 +161,18 @@ export function announceChanges(before: AssignmentSummary[] | null, after: Assig
   for (const a of after) {
     const was = old.get(a.id);
     if (!was) {
-      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id) }]);
+      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id) }], { kind: "external" });
       continue;
+    }
+    // Returned for changes (N2): never hidden by Do Not Disturb, the teacher's words in the message.
+    if (returnedForChanges(a) && a.my!.returned_at !== was.my?.returned_at && once(`returned:${a.id}:${a.my!.returned_at}`)) {
+      const note = a.my!.returned_message?.trim();
+      notify("info", `Your teacher returned "${a.title}"${note ? `: "${note.length > 120 ? `${note.slice(0, 117)}…` : note}"` : " for changes"}`, [{ label: "Open", run: () => showAssignment(a.id) }], { kind: "external", bypassDnd: true, source: "teacher" });
     }
     if (a.my?.state === "graded" && was.my?.state !== "graded" && once(`graded:${a.id}:${a.my.submitted_at ?? ""}:${a.my.grade ?? ""}`)) {
       const max = a.my.max_points ?? a.points;
       const score = a.my.grade != null ? `: ${a.my.grade}${max != null ? `/${max}` : ""}` : "";
-      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id) }]);
+      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id) }], { kind: "external" });
     }
   }
 }
@@ -263,7 +270,7 @@ async function startAssignmentNow(id: number) {
     // No starter files from the teacher (and nothing written yet): offer a way to begin instead of an empty folder.
     const began = (await isEmptyWorkspace()) ? await offerStarter(a ?? null) : false;
     if (!began) await revealStarterFile();
-    if (created && !began) notify("info", `Your workspace for "${a?.title ?? project.name}" is ready${a?.starter ? ` with ${a.starter.file_count} starter file${a.starter.file_count === 1 ? "" : "s"}` : ""}. Save to Task Mentor as you go, then Submit.`);
+    if (created && !began) notify("info", `Your workspace for "${a?.title ?? project.name}" is ready${a?.starter ? ` with ${a.starter.file_count} starter file${a.starter.file_count === 1 ? "" : "s"}` : ""}. Save to Task Mentor as you go, then Submit.`, undefined, { kind: "result" });
     void refreshAssignments();
     void refreshProjects();
   } catch (e) {
@@ -453,16 +460,9 @@ export function handedInLate(a: AssignmentSummary): boolean {
   return v === undefined ? a.late : !!v;
 }
 
-/** One status vocabulary across Task Mentor and TMCode (student-facing). */
-export type StudentStatus = "not_started" | "in_progress" | "submitted" | "returned" | "graded" | "closed";
-export const STUDENT_STATUS_LABEL: Record<StudentStatus, string> = {
-  not_started: "Not started",
-  in_progress: "In progress",
-  submitted: "Submitted",
-  returned: "Returned",
-  graded: "Graded",
-  closed: "Closed",
-};
+/** One status vocabulary across Task Mentor and TMCode (student-facing): projects/status.ts. */
+export type { StudentStatus } from "./status";
+export const STUDENT_STATUS_LABEL = STATUS_LABEL;
 
 /** Task Mentor still takes submissions (false once the teacher closes it; older servers: open unless completed). */
 export function acceptsSubmissions(a: AssignmentSummary): boolean {
@@ -470,14 +470,12 @@ export function acceptsSubmissions(a: AssignmentSummary): boolean {
   return a.accepts_submissions !== false;
 }
 
-/** The student's status in the shared words: Not started · In progress · Submitted · Returned · Graded · Closed. */
+/**
+ * The student's status in the shared words (Not started · In progress · Submitted · Returned · Graded ·
+ * Closed) from the assignment alone. Where the open project is known, use deriveStatus (projects/status.ts).
+ */
 export function studentStatus(a: AssignmentSummary): StudentStatus {
-  const s = a.my?.state ?? "not_started";
-  if (s === "graded") return "graded";
-  if (s === "submitted") return "submitted";
-  if (!acceptsSubmissions(a)) return "closed";
-  if (returnedForChanges(a)) return "returned";
-  return s;
+  return resolveStatus(a, null).status;
 }
 
 /**

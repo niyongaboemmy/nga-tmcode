@@ -50,6 +50,8 @@ const opacity = (_page: Page, sel: ReturnType<Page["locator"]>) => sel.evaluate(
 
 test("#4 students: Assignments comes first, Projects is the secondary All My Projects list", async ({ page }) => {
   await fresh(page);
+  // 0.15: until the role is known only Assignments shows; then the student layout.
+  await expect(page.locator('.tm-activity[aria-label^="All My Projects"]')).toBeVisible({ timeout: 10_000 });
   const labels = await page.locator(".tm-activitybar-top .tm-activity").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
   const a = labels.findIndex((l) => l.startsWith("Assignments"));
   const p = labels.findIndex((l) => l.startsWith("All My Projects"));
@@ -90,35 +92,36 @@ test("#4 an open assignment workspace shows This Folder (sync, Save, status, Sub
   expect(top!.y).toBeLessThan(list!.y);
 });
 
-test("#10 Welcome: sign in from the Your assignments card, then Assignments opens once", async ({ page }) => {
+test("#10 Home: sign in from the one card, then Assignments opens once", async ({ page }) => {
   await fresh(page, false, "?empty=1");
-  const card = page.getByTestId("welcome-assignments-card");
-  await expect(card).toContainText("Your assignments");
+  const card = page.getByTestId("home-signin-card");
+  await expect(card).toContainText("Sign in to see your assignments");
   await card.getByTestId("welcome-signin").click();
-  // After the first sign-in the Assignments view opens by itself.
+  // After the first sign-in the Assignments view opens by itself (students; 0.15 waits for the role).
   await expect(page.getByTestId("assignments-view")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("welcome-assignments-summary")).toHaveText(/^2 to do · next due \S+/, { timeout: 10_000 });
-  await expect(card.getByTestId("welcome-open-assignments")).toBeVisible();
+  await expect(page.getByTestId("home-next-up")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("home-count-todo")).toContainText("2 To do");
 
   // Only once: sign out on purpose and in again, the view stays where it is.
   await command(page, "View: Show Explorer");
   await page.getByTestId("account-button").click();
   await page.locator(".tm-menu-item", { hasText: "Sign Out" }).click();
   await page.locator(".tm-dialog").getByRole("button", { name: "Sign Out" }).click();
-  await expect(card.getByTestId("welcome-signin")).toBeVisible();
-  await card.getByTestId("welcome-signin").click();
-  await expect(page.getByTestId("welcome-assignments-summary")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("welcome-signin")).toBeVisible();
+  await page.getByTestId("welcome-signin").click();
+  await expect(page.getByTestId("home-next-up")).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(500);
   await expect(page.getByTestId("assignments-view")).toHaveCount(0);
-  // Open Assignments from the card.
-  await card.getByTestId("welcome-open-assignments").click();
+  // Open Assignments from a counter.
+  await page.getByTestId("home-count-todo").click();
   await expect(page.getByTestId("assignments-view")).toBeVisible();
 });
 
-test("#10 Welcome: nothing due, and the exam and practice cards do something", async ({ page }) => {
+test("#10 Home: nothing to do, and the exam and practice links do something", async ({ page }) => {
   await fresh(page, true, "?empty=1");
   await mock(page, (m) => m.clearAssignments());
   await command(page, "Assignments: Refresh");
-  await expect(page.getByTestId("welcome-assignments-summary")).toHaveText("Nothing due", { timeout: 10_000 });
+  await expect(page.getByTestId("home-nothing")).toContainText("Nothing to do right now", { timeout: 10_000 });
 
   await page.evaluate(() => {
     const w = window as unknown as { __opened: string[] };
@@ -131,7 +134,7 @@ test("#10 Welcome: nothing due, and the exam and practice cards do something", a
   await page.getByTestId("welcome-exam-card").click();
   expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual([expect.stringMatching(/\/quizzes$/)]);
 
-  const practice = page.getByTestId("welcome-practice-card");
+  const practice = page.getByTestId("home-practise");
   await expect(practice.getByRole("button", { name: "Open Folder..." })).toBeVisible();
   await practice.getByRole("button", { name: "New Project from Template..." }).click();
   await expect(page.locator(".tm-quick-pick")).toBeVisible();

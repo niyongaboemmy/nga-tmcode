@@ -396,9 +396,13 @@ export async function commit(kind: CommitKind = "commit") {
     window.dispatchEvent(new CustomEvent("tmcode:scm-focus-input"));
     return;
   }
+  const count = all ? fresh.staged.length + fresh.changes.length : fresh.staged.length;
   const ok = await op("Committing", (git) => git.commit({ message, amend: kind === "amend", all }).then(() => true));
   if (!ok) return;
   set({ message: "" });
+  // N2: a commit changes nothing visible but the list emptying.
+  if (kind === "amend") notify("info", "Amended the last commit", undefined, { kind: "hint" });
+  else if (kind !== "commitPush" && kind !== "commitSync") notify("info", count > 0 ? `Committed ${count} file${count === 1 ? "" : "s"}` : "Committed", undefined, { kind: "hint" });
   if (kind === "commitPush") await runRemote("push");
   if (kind === "commitSync") await runRemote("sync");
 }
@@ -452,7 +456,11 @@ export async function runRemote(kind: RemoteOp): Promise<boolean> {
       }
     });
     await task.done;
+    const target = status.upstream ?? (options.remote ? `${options.remote}/${options.branch ?? status.branch}` : "the remote");
     if (kind === "publish") notify("info", `Published branch '${status.branch}' to ${options.remote}.`);
+    else if (kind === "push") notify("info", `Pushed to ${target}`, undefined, { kind: "hint" });
+    else if (kind === "pull") notify("info", `Pulled from ${target}`, undefined, { kind: "hint" });
+    else if (kind === "sync") notify("info", `Synced with ${target}`, undefined, { kind: "hint" });
     return true;
   } catch (e) {
     showGitError(e);

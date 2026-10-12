@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, migrateSettings, type SettingKey, type Settings } fro
 import { isExamRoot } from "../exam/roots";
 import { MAX_GROUPS, groupOrder as groupOrderOf, leaf, mapGroups, neighbour, readSavedLayout, reconcile as reconcileTree, removeNode, serializeLayout, splitNode, type GridNode, type SplitDirection } from "./layout";
 import { editorMemento } from "./viewStates";
+import { lifetimeOf, withPolicy, type NotifyKind, type NotifyOptions } from "./notifications";
 import { resolveSettings, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
@@ -104,6 +105,14 @@ export interface Notification {
   progress?: number | null;
   /** Shows a Cancel button on a progress notification. */
   cancel?: () => void;
+  /** The notification policy (state/notifications.ts): kind, persistence, Undo, Details, DND. */
+  kind?: NotifyKind;
+  important?: boolean;
+  replaceKey?: string;
+  undo?: () => void;
+  details?: string;
+  bypassDnd?: boolean;
+  source?: "exam" | "teacher";
 }
 
 export interface DialogButton {
@@ -260,7 +269,7 @@ interface PersistedUi {
   languageSettings?: LanguageOverrides;
   otherSettings?: Record<string, unknown>;
   recent?: { name: string; root: string }[];
-  layout?: { sidebarVisible: boolean; panelVisible: boolean; activePanel: PanelId };
+  layout?: { sidebarVisible: boolean; panelVisible: boolean; activePanel: PanelId; activeView?: ViewId };
   /** One-time settings migrations already applied (state/settings.ts SETTINGS_MIGRATIONS). */
   migrations?: string[];
 }
@@ -277,7 +286,7 @@ function persist() {
     ...(Object.keys(s.languageSettings).length ? { languageSettings: s.languageSettings } : {}),
     ...(Object.keys(s.otherSettings).length ? { otherSettings: s.otherSettings } : {}),
     recent: s.recent,
-    layout: { sidebarVisible: s.sidebarVisible, panelVisible: s.panelVisible, activePanel: s.activePanel },
+    layout: { sidebarVisible: s.sidebarVisible, panelVisible: s.panelVisible, activePanel: s.activePanel, ...(RESTORABLE_VIEWS.has(s.activeView) ? { activeView: s.activeView } : {}) },
     migrations: appliedMigrations,
   };
   void platform?.store.set("ui", ui);
@@ -285,9 +294,18 @@ function persist() {
 
 // ───────────────────────────── lifecycle ─────────────────────────────
 
+/** Side-bar views restored at the next launch (not the exam's Task view, not extension views that may be gone). */
+const RESTORABLE_VIEWS = new Set<ViewId>(["explorer", "search", "scm", "debug", "testing", "extensions", "projects", "assignments", "grading"]);
+
+/** No saved UI state: TMCode's first run on this computer (the side bar then starts where the work is). */
+let firstRun = false;
+export const isFirstRun = () => firstRun;
+
 export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean } = {}) {
   platform = p;
-  const ui = (await p.store.get<PersistedUi>("ui")) ?? {};
+  const saved = await p.store.get<PersistedUi>("ui");
+  firstRun = !saved;
+  const ui = saved ?? {};
   const migrated = migrateSettings(ui.settings, ui.migrations);
   appliedMigrations = migrated.done;
   const user = { ...DEFAULT_SETTINGS, ...migrated.settings };
@@ -301,6 +319,8 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
     sidebarVisible: ui.layout?.sidebarVisible ?? true,
     panelVisible: ui.layout?.panelVisible ?? false,
     activePanel: ui.layout?.activePanel ?? "terminal",
+    // W1: the side bar comes back where it was (VS Code restores the last view).
+    activeView: ui.layout?.activeView && RESTORABLE_VIEWS.has(ui.layout.activeView) ? ui.layout.activeView : "explorer",
   });
   // The colour theme is ready before the first paint (no flash of the default theme).
   await startupHooks.beforeReady();
@@ -309,8 +329,25 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
     const ws = await p.reopenFolder(last.root).catch(() => null);
     if (ws) await setWorkspace(ws);
   }
-  if (!get().workspace) openSpecialEditor("welcome");
+  // "home" puts Home in front once startup has settled (showStartupEditor); the others: Home only with no folder.
+  if (!get().workspace && get().settings["workbench.startupEditor"] !== "none") openSpecialEditor("welcome");
   set({ ready: true });
+}
+
+/**
+ * After startup (the last folder reopened and its tabs restored): Home in front, as VS Code's
+ * Welcome page (W1). The restored tabs stay open behind it. Never in exams; "none" and
+ * "homeIfNoFolder" (with a folder) keep the editors as they were.
+ */
+export function showStartupEditor() {
+  const s = get();
+  if (s.policy.mode !== "practice") return;
+  const mode = s.settings["workbench.startupEditor"] ?? "home";
+  if (mode === "none" || (mode === "homeIfNoFolder" && s.workspace)) return;
+  // Home goes in the first group (the code's), in front.
+  const first = s.groups[0]?.id ?? s.activeGroup;
+  if (s.activeGroup !== first) set({ activeGroup: first });
+  openSpecialEditor("welcome");
 }
 
 /** Set by modules the store must not import (themes, extensions), run during initWorkbench. */
@@ -636,13 +673,16 @@ export async function createEntry(parent: string, name: string, kind: "file" | "
 }
 
 export async function renameEntry(from: string, newName: string) {
-  set({ explorerEdit: null });
   // F2 reaches here without the menu: the .git folder keeps its name, as it is never deleted.
   if (isProtectedEntry(from)) {
+    set({ explorerEdit: null });
     notify("warning", "TMCode doesn't rename the .git folder: it holds this project's history.");
     return;
   }
+  // The inline box closes only once the move worked: a failure (name taken, no permission) is
+  // thrown back to it and shown under the name, with the box still open to fix it (N9).
   await moveEntry(from, join(dirname(from), newName.trim()));
+  set({ explorerEdit: null });
 }
 
 /** Renames or moves a file/folder and keeps editors, dirty flags and the tree in step. */
@@ -683,6 +723,8 @@ export async function moveEntry(from: string, to: string) {
 
 /** Run before an explorer delete (Local History keeps a copy of the files). Never blocks the delete. */
 export const beforeDeleteHooks: ((path: string) => Promise<void>)[] = [];
+/** Set by Local History: an Undo for a delete it kept a copy of (null: none). */
+export const deleteUndo: { for: (path: string) => (() => Promise<boolean>) | null } = { for: () => null };
 
 /** "Delete permanently?" with Cancel focused: Enter can't confirm it by accident. */
 function confirmPermanentDelete(message: string, detail: string) {
@@ -746,11 +788,40 @@ export async function deleteEntries(paths: string[]) {
     if (choice !== "delete") return false;
   }
   let any = false;
-  for (const path of list) if (await deleteOne(path)) any = true;
+  const undos: (() => Promise<boolean>)[] = [];
+  let trashedAll = true;
+  for (const path of list) {
+    const r = await deleteOne(path);
+    if (!r) continue;
+    any = true;
+    if (r === "deleted") trashedAll = false;
+    const undo = deleteUndo.for(path);
+    if (undo) undos.push(undo);
+  }
+  if (any) {
+    // N2: the result in words, with Undo from the copy Local History kept.
+    const what = list.length === 1 ? basename(list[0]) : `${list.length} items`;
+    const canUndo = undos.length === list.length;
+    notify("info", trashedAll ? `Moved ${what} to the Trash` : `Deleted ${what}`, undefined, {
+      kind: "hint",
+      ...(canUndo
+        ? {
+            undo: () =>
+              void (async () => {
+                let ok = true;
+                for (const u of undos) ok = (await u()) && ok;
+                for (const d of new Set(list.map(dirname))) await loadDir(d);
+                if (!ok) notify("warning", trashedAll ? "Some files couldn't be put back. Look for them in the Trash." : "Some files couldn't be put back.");
+              })(),
+          }
+        : {}),
+    });
+  }
   return any;
 }
 
-async function deleteOne(path: string) {
+/** "trashed" / "deleted" for good / false: kept. */
+async function deleteOne(path: string): Promise<"trashed" | "deleted" | false> {
   const fs = getPlatform().fs;
   const name = basename(path);
   for (const hook of beforeDeleteHooks) await hook(path).catch(() => {});
@@ -782,7 +853,7 @@ async function deleteOne(path: string) {
   deleteListeners.forEach((l) => l(path));
   await loadDir(dirname(path));
   log("Explorer", trashed ? `Moved ${path} to the Trash` : `Deleted ${path}`);
-  return true;
+  return trashed ? "trashed" : "deleted";
 }
 
 type RenameListener = (from: string, to: string) => void;
@@ -1254,7 +1325,7 @@ export function clearOutput() {
 
 const MAX_NOTIFICATIONS = 5;
 /** Notifications the student still has to act on: buttons, or a running operation's progress / Cancel. */
-const needsAction = (n: Notification) => !!n.actions?.length || n.progress !== undefined || !!n.cancel;
+const needsAction = (n: Notification) => !!n.actions?.length || n.progress !== undefined || !!n.cancel || !!n.important;
 
 /**
  * Keeps at most five toasts without ever pushing out one with buttons ("changed
@@ -1272,12 +1343,56 @@ function capNotifications(list: Notification[]): Notification[] {
   return out;
 }
 
-export function notify(severity: Notification["severity"], message: string, actions?: Notification["actions"]) {
-  const id = ++notificationSeq;
-  set({ notifications: capNotifications([...get().notifications, { id, severity, message, actions }]) });
-  log("Notifications", message, severity === "error" ? "error" : severity === "warning" ? "warn" : "info");
-  if (severity === "info" && !actions?.length) setTimeout(() => dismissNotification(id), 6000);
+/**
+ * A toast. The 4th argument follows the notification policy (§3.3 of the
+ * workflow plan): `kind` sets how long it stays, `important` keeps it until
+ * dismissed, `replaceKey` replaces an earlier one, `undo` adds Undo, `details`
+ * hides technical text behind a link, `bypassDnd` / `source` get it through
+ * Do Not Disturb. Calls without it behave as they always did.
+ */
+export function notify(severity: Notification["severity"], message: string, actions?: Notification["actions"], opts?: NotifyOptions) {
+  const base = withPolicy({ severity, message, actions }, opts);
+  const old = opts?.replaceKey ? get().notifications.find((n) => n.replaceKey === opts.replaceKey) : undefined;
+  const id = old?.id ?? ++notificationSeq;
+  const n: Notification = { id, ...base };
+  if (old) {
+    clearToastTimer(id);
+    set({ notifications: get().notifications.map((x) => (x.id === id ? n : x)) });
+  } else set({ notifications: capNotifications([...get().notifications, n]) });
+  log("Notifications", opts?.details ? `${message} (${opts.details})` : message, severity === "error" ? "error" : severity === "warning" ? "warn" : "info");
+  startToastTimer(id, lifetimeOf(n));
   return id;
+}
+
+// ── toast lifetimes, paused while the pointer is over the toast ──
+const toastTimers = new Map<number, { handle: ReturnType<typeof setTimeout> | null; remaining: number; startedAt: number }>();
+
+function startToastTimer(id: number, ms: number | null) {
+  if (ms === null) return;
+  toastTimers.set(id, { handle: setTimeout(() => dismissNotification(id), ms), remaining: ms, startedAt: Date.now() });
+}
+
+function clearToastTimer(id: number) {
+  const t = toastTimers.get(id);
+  if (t?.handle) clearTimeout(t.handle);
+  toastTimers.delete(id);
+}
+
+/** The pointer is over the toast (or it has the focus): its time stops. */
+export function pauseToast(id: number) {
+  const t = toastTimers.get(id);
+  if (!t?.handle) return;
+  clearTimeout(t.handle);
+  t.handle = null;
+  t.remaining = Math.max(1000, t.remaining - (Date.now() - t.startedAt));
+}
+
+/** The pointer left: the toast's remaining time runs again. */
+export function resumeToast(id: number) {
+  const t = toastTimers.get(id);
+  if (!t || t.handle) return;
+  t.startedAt = Date.now();
+  t.handle = setTimeout(() => dismissNotification(id), t.remaining);
 }
 
 /**
@@ -1296,7 +1411,14 @@ export function notifyProgress(message: string, opts: { cancel?: () => void } = 
   };
 }
 
+/** Closes the toast raised with this replaceKey, if one is up (a failure that has since recovered). */
+export function dismissNotificationByKey(key: string) {
+  const n = get().notifications.find((x) => x.replaceKey === key);
+  if (n) dismissNotification(n.id);
+}
+
 export function dismissNotification(id: number) {
+  clearToastTimer(id);
   set({ notifications: get().notifications.filter((n) => n.id !== id) });
 }
 

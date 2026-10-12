@@ -50,6 +50,8 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     if (sessionStorage.getItem("tmcode:e2e-cleared")) return;
     localStorage.clear();
+    // Editor commands, not Home (start-here.spec covers Home).
+    localStorage.setItem("tmcode:e2e-no-home", "1");
     sessionStorage.setItem("tmcode:e2e-cleared", "1");
   });
 });

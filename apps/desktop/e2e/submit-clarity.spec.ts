@@ -165,8 +165,10 @@ test("a closed assignment says Closed and can't be submitted; late work is expla
   await mock(page, (m) => m.closeAssignment(51));
   await command(page, "Assignments: Refresh Assignments");
   await expect(page.getByTestId("assignment-state")).toHaveText("Closed");
-  await expect(page.getByTestId("assignment-submit")).toBeDisabled();
-  await expect(page.getByTestId("assignment-submit")).toHaveText(/Closed/);
+  // 0.15 (one door per step): no Submit at all on a closed assignment; the card says why, and Save still works.
+  await expect(page.getByTestId("assignment-submit")).toHaveCount(0);
+  await expect(page.getByTestId("assignment-closed")).toContainText("no longer takes submissions");
+  await expect(page.getByTestId("assignment-save")).toBeVisible();
 });
 
 test("opening another assignment offers to save this one first", async ({ page }) => {

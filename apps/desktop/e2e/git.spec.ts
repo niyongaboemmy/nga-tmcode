@@ -29,7 +29,11 @@ async function palette(page: Page, command: string) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => {
+    localStorage.clear();
+    // Tab counts are about diffs, not Home (start-here.spec covers Home).
+    localStorage.setItem("tmcode:e2e-no-home", "1");
+  });
 });
 
 test("Source Control lists staged changes and changes with VS Code's letters", async ({ page }) => {

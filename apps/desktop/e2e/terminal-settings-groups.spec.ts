@@ -56,6 +56,8 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     if (!sessionStorage.getItem("tmcode:e2e-started")) {
       localStorage.clear();
+      // Tabs and groups, not Home (start-here.spec covers Home).
+      localStorage.setItem("tmcode:e2e-no-home", "1");
       sessionStorage.setItem("tmcode:e2e-started", "1");
     }
   });

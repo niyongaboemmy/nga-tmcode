@@ -287,7 +287,7 @@ export interface GradeInput {
 }
 
 export type SaveResult =
-  | { ok: true; score: number; max_points: number; released: boolean; locksStudent: boolean }
+  | { ok: true; score: number; max_points: number; released: boolean; locksStudent: boolean; message: string; severity: "info" | "warning" }
   /** `conflict`: another teacher saved first (409 GRADE_CHANGED); their grade. `code`: Task Mentor's error code. */
   | { ok: false; error: string; conflict?: RowGrade; code?: string };
 
@@ -331,11 +331,11 @@ async function saveGradeNow(key: string, studentId: number, input: GradeInput, o
     const known = typeof res.released === "boolean" || (!!row?.grade && "released" in row.grade);
     const released = typeof res.released === "boolean" ? res.released : opts.release || !known || row?.grade?.released !== false;
     const locksStudent = res.locks_student === true;
-    if (!opts.quiet) {
-      const m = savedMessage(type, res.score, res.max_points, released, known);
-      notify(m.severity, locksStudent ? `${m.text} The student's project is now read-only.` : m.text);
-    }
-    return { ok: true, score: res.score, max_points: res.max_points, released, locksStudent };
+    const m = savedMessage(type, res.score, res.max_points, released, known);
+    const message = locksStudent ? `${m.text} The student's project is now read-only.` : m.text;
+    // N4: the grade panel shows it inline; a toast only when asked (Save & Next: the panel moves on).
+    if (!opts.quiet) notify(m.severity, message, undefined, { kind: m.severity === "warning" ? "result" : "hint" });
+    return { ok: true, score: res.score, max_points: res.max_points, released, locksStudent, message, severity: m.severity };
   } catch (e) {
     if (e instanceof TmError && e.status === 409 && e.code === "GRADE_CHANGED") {
       void loadRoster(key, { quiet: true });
@@ -388,8 +388,8 @@ export async function releaseDrafts(key: string, toInput: (roster: Roster, row: 
   await loadRoster(key, { quiet: true });
   const what = type === "quiz" ? " Students see them when the quiz results are released." : " Students see them in Task Mentor now.";
   const locks = locked ? ` ${locked === 1 ? "1 student's project is" : `${locked} students' projects are`} now read-only.` : "";
-  if (failed.length) notify("warning", `Released ${done} of ${done + failed.length} grades. Not released: ${failed.join("; ")}.${locks}`);
-  else notify("info", `Released ${done} grade${done === 1 ? "" : "s"}.${what}${locks}`);
+  if (failed.length) notify("warning", `Released ${done} of ${done + failed.length} grades. Not released: ${failed.join("; ")}.${locks}`, undefined, { kind: "result", important: true });
+  else notify("info", `Released ${done} grade${done === 1 ? "" : "s"}.${what}${locks}`, undefined, { kind: "result", important: true });
 }
 
 /**
@@ -402,7 +402,7 @@ export async function returnForChanges(key: string, row: RosterRow, message: str
   try {
     await api("POST", `/projects/${row.project.id}/return`, { message: message.trim() || null, ...(allowResubmission ? { allow_resubmission: true } : {}) });
     await loadRoster(key, { quiet: true });
-    notify("info", allowResubmission ? `${row.student?.name ?? "The student"} can change their work and submit again. Their grade was taken back.` : `Returned to ${row.student?.name ?? "the student"} for changes. They can edit and submit again.`);
+    notify("info", allowResubmission ? `${row.student?.name ?? "The student"} can change their work and submit again. Their grade was taken back.` : `Returned to ${row.student?.name ?? "the student"} for changes. They can edit and submit again.`, undefined, { kind: "result", important: true });
     return { ok: true };
   } catch (e) {
     if (e instanceof TmError && e.code === "RETURN_NOT_SUPPORTED") return { ok: false, unsupported: true, error: "Quiz practicals can't be returned for changes. Grade the answer as it is." };

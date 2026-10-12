@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { useWorkbench } from "../state/store";
 import { announceChanges, type AssignmentSummary } from "./assignments";
-import { dayLabel, isAssessmentWorkspace, practicalStateOf, todoSummary } from "./studentHome";
+import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, practicalStateOf, todoSummary } from "./studentHome";
 import type { Project } from "./types";
 
 const a = (id: number, over: Partial<AssignmentSummary> = {}): AssignmentSummary => ({
@@ -78,5 +78,34 @@ describe("announceChanges", () => {
     announceChanges([a(901)], [graded]);
     announceChanges([a(901)], [graded]);
     expect(toasts().filter((m) => m === "Calc was graded: 17/20")).toHaveLength(1);
+  });
+});
+
+describe("nextUp (Home)", () => {
+  const state = (s: "not_started" | "in_progress" | "submitted" | "graded", over: Partial<NonNullable<AssignmentSummary["my"]>> = {}) => ({ my: { ...a(0).my!, state: s, project_id: s === "not_started" ? null : 140, ...over } });
+  it("returned work comes first", () => {
+    const list = [a(1, { due_date: at(1) }), a(2, { ...state("in_progress", { returned_at: at(-1) }), due_date: at(5) }), a(3, state("in_progress"))];
+    expect(nextUp(list, 3)?.id).toBe(2);
+  });
+  it("then the open folder's assignment when it is in progress", () => {
+    const list = [a(1, { due_date: at(1) }), a(3, { ...state("in_progress"), due_date: at(9) })];
+    expect(nextUp(list, 3)?.id).toBe(3);
+    // A submitted one open here is not "next".
+    expect(nextUp([a(1, { due_date: at(1) }), a(3, state("submitted"))], 3)?.id).toBe(1);
+  });
+  it("then the soonest due to-do (overdue first, no date last)", () => {
+    const list = [a(1), a(2, { due_date: at(3) }), a(4, { due_date: at(-1) }), a(5, { ...state("in_progress"), due_date: at(2) })];
+    expect(nextUp(list)?.id).toBe(4);
+    expect(nextUp([a(1), a(2, { due_date: at(3) })])?.id).toBe(2);
+  });
+  it("is null when there is nothing to do", () => {
+    expect(nextUp(null)).toBeNull();
+    expect(nextUp([a(1, state("submitted")), a(2, state("graded")), a(3, { read_only: true })])).toBeNull();
+    // Closed by the teacher: not something to do.
+    expect(nextUp([a(1, { accepts_submissions: false })])).toBeNull();
+  });
+  it("counts Returned · To do · Graded", () => {
+    const list = [a(1), a(2, state("in_progress", { returned_at: at(-1) })), a(3, state("graded")), a(4, { ...state("graded"), read_only: true }), a(5, state("submitted"))];
+    expect(homeCounts(list)).toEqual({ returned: 1, todo: 2, graded: 1 });
   });
 });

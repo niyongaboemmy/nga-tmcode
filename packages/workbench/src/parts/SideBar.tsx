@@ -14,7 +14,7 @@ import { RunDebugView } from "../debug/RunDebugView";
 import { ProjectsView } from "../projects/ProjectsView";
 import { AssignmentsView, showAllMyProjects } from "../projects/AssignmentsView";
 import { signOutOnPurpose } from "../projects/studentHome";
-import { useAssignments } from "../projects/assignments";
+import { isTeacherRole, useRole, useRoleChecking } from "../state/role";
 import { GradingView } from "../grading/GradingView";
 import { TimelinePane } from "../history/TimelinePane";
 import { OutlinePane } from "../outline/OutlinePane";
@@ -52,9 +52,9 @@ function moreActions(view: ViewId): ContextMenuItem[] {
     return [
       { kind: "item", label: "Refresh", run: () => executeCommand("assignments.refresh") },
       // Projects are secondary for students: every project (for an assignment or not) is one click away.
-      { kind: "item", label: useAssignments.getState().staff ? "Show Task Mentor Projects" : "Show All My Projects", run: showAllMyProjects },
+      { kind: "item", label: isTeacherRole(useRole.getState().role) ? "Show Task Mentor Projects" : "Show All My Projects", run: showAllMyProjects },
       // A teacher action: students never see it.
-      ...(useAssignments.getState().staff ? [{ kind: "item" as const, label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") }] : []),
+      ...(isTeacherRole(useRole.getState().role) ? [{ kind: "item" as const, label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") }] : []),
       { kind: "separator" },
       { kind: "item", label: "Hide Primary Side Bar", run: () => executeCommand("workbench.action.toggleSidebarVisibility") },
     ];
@@ -96,8 +96,11 @@ export function SideBar() {
   const view = useWorkbench((s) => s.activeView);
   const extTitle = useViews((s) => s.containers.find((c) => c.key === view)?.title);
   // Students: Projects is the secondary "All My Projects" list (Assignments is their home).
-  const staff = useAssignments((s) => s.staff === true);
-  const title = view.startsWith("ext:") ? (extTitle ?? "") : view === "projects" && !staff ? "All My Projects" : TITLES[view as keyof typeof TITLES];
+  // While the role is unknown, neither audience's name: just "Projects".
+  const role = useRole((s) => s.role);
+  const checking = useRoleChecking();
+  const projectsTitle = isTeacherRole(role) ? TITLES.projects : checking ? "Projects" : "All My Projects";
+  const title = view.startsWith("ext:") ? (extTitle ?? "") : view === "projects" ? projectsTitle : TITLES[view as keyof typeof TITLES];
   return (
     <aside className="tm-sidebar" aria-label={title}>
       <header className="tm-sidebar-title">

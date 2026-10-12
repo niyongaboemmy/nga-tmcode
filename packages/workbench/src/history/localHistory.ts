@@ -77,19 +77,65 @@ export async function recordSave(path: string, content: string) {
  * when the Trash is emptied or there is none.
  */
 export async function snapshotBeforeDelete(path: string) {
+  deletedCopies.delete(path);
   if (inExam() || SKIP.test(path) || !useWorkbench.getState().workspace) return;
   const fs = getPlatform().fs;
   let budget = 200;
+  let complete = true;
+  const copies: DeletedCopy[] = [];
   const visit = async (p: string): Promise<void> => {
-    if (budget <= 0 || SKIP.test(p)) return;
+    if (SKIP.test(p)) return;
+    if (budget <= 0) {
+      complete = false;
+      return;
+    }
     const entries = await fs.readDir(p).catch(() => null);
     if (entries) {
+      copies.push({ path: p, content: null });
       for (const e of entries) await visit(e.path);
       return;
     }
     budget--;
     const content = await fs.readFile(p).catch(() => null);
-    if (content !== null) await recordSave(p, content);
+    if (content === null) {
+      complete = false;
+      return;
+    }
+    copies.push({ path: p, content });
+    await recordSave(p, content);
   };
   await visit(path);
+  // Undo puts back exactly what was there; a partial copy would restore half a folder, so none is offered.
+  if (complete && copies.length) deletedCopies.set(path, copies);
+}
+
+/** What the last delete of a path held (folders: content null), for Undo. */
+interface DeletedCopy {
+  path: string;
+  content: string | null;
+}
+const deletedCopies = new Map<string, DeletedCopy[]>();
+
+/** An Undo for the delete of this path, while its copy is known (never in exams, never for huge folders). */
+export function undoDeleteFor(path: string): (() => Promise<boolean>) | null {
+  const copies = deletedCopies.get(path);
+  if (!copies) return null;
+  return async () => {
+    if (deletedCopies.get(path) !== copies) return false;
+    deletedCopies.delete(path);
+    const fs = getPlatform().fs;
+    try {
+      for (const c of copies) {
+        if (c.content === null) await fs.createDir(c.path).catch(() => {});
+        else {
+          await fs.createFile(c.path).catch(() => {});
+          await fs.writeFile(c.path, c.content);
+        }
+      }
+      return true;
+    } catch (e) {
+      log("Local History", `Could not restore ${path}: ${String((e as Error)?.message ?? e)}`, "warn");
+      return false;
+    }
+  };
 }

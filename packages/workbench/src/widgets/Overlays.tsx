@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { closeContextMenu, dismissNotification, useWorkbench } from "../state/store";
+import { closeContextMenu, dismissNotification, pauseToast, resumeToast, useWorkbench, type Notification } from "../state/store";
 import { Codicon } from "./icons";
-import { useNotificationCenter, visibleToasts } from "../state/notificationCenter";
+import { markRead, showNotificationCenter, useNotificationCenter, visibleToasts } from "../state/notificationCenter";
+import { MAX_VISIBLE_TOASTS } from "../state/notifications";
+import { useExam } from "../exam/state";
 
 export function ContextMenu() {
   const menu = useWorkbench((s) => s.contextMenu);
@@ -168,63 +170,121 @@ export function Notifications() {
   const all = useWorkbench((s) => s.notifications);
   const dnd = useNotificationCenter((s) => s.dnd);
   const centreOpen = useNotificationCenter((s) => s.open);
-  const list = visibleToasts(all, dnd);
+  const examActive = useExam((s) => !!s.quiz && (s.phase === "active" || s.phase === "locked" || s.phase === "submitting"));
+  const list = visibleToasts(all, dnd, examActive);
   // The centre shows them while it is open, as VS Code's does.
   if (!list.length || centreOpen) return null;
+  // The newest few; the rest wait in the centre ("+2 more").
+  const shown = list.slice(-MAX_VISIBLE_TOASTS);
+  const hidden = list.length - shown.length;
   return (
     <div className="tm-toasts" role="region" aria-label="Notifications" aria-live="polite">
-      {list.map((n) => (
-        <div key={n.id} className={`tm-toast is-${n.severity}`} role={n.severity === "error" ? "alert" : "status"}>
-          <Codicon name={n.severity === "error" ? "error" : n.severity === "warning" ? "warning" : "info"} className={`tm-toast-icon is-${n.severity}`} />
-          <div className="tm-toast-message">{n.message}</div>
-          <button type="button" className="tm-action" aria-label="Clear Notification" title="Clear Notification" onClick={() => dismissNotification(n.id)}>
-            <Codicon name="close" />
-          </button>
-          {n.progress !== undefined && (
-            <div
-              className={`tm-toast-progress ${n.progress === null ? "is-infinite" : ""}`}
-              role="progressbar"
-              aria-label={n.message}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={n.progress ?? undefined}
-            >
-              <span style={n.progress === null ? undefined : { width: `${n.progress}%` }} />
-            </div>
-          )}
-          {n.cancel && (
-            <div className="tm-toast-actions">
-              <button
-                type="button"
-                className="tm-button tm-button--secondary"
-                onClick={() => {
-                  n.cancel?.();
-                  dismissNotification(n.id);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          {n.actions?.length ? (
-            <div className="tm-toast-actions">
-              {n.actions.map((a) => (
-                <button
-                  key={a.label}
-                  type="button"
-                  className="tm-button"
-                  onClick={() => {
-                    dismissNotification(n.id);
-                    a.run();
-                  }}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+      {hidden > 0 && (
+        <button type="button" className="tm-toast-more" onClick={() => showNotificationCenter(true)} data-testid="toast-more">
+          +{hidden} more
+        </button>
+      )}
+      {shown.map((n) => (
+        <Toast key={n.id} n={n} />
       ))}
+    </div>
+  );
+}
+
+/** One toast: its time stops while the pointer is over it or it has the focus. */
+function Toast({ n }: { n: Notification }) {
+  const [details, setDetails] = useState(false);
+  const close = () => {
+    markRead(n.id);
+    dismissNotification(n.id);
+  };
+  return (
+    <div
+      className={`tm-toast is-${n.severity}`}
+      role={n.severity === "error" ? "alert" : "status"}
+      data-kind={n.kind}
+      data-important={n.important ? "true" : undefined}
+      onMouseEnter={() => pauseToast(n.id)}
+      onMouseLeave={() => resumeToast(n.id)}
+      onFocus={() => pauseToast(n.id)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && resumeToast(n.id)}
+    >
+      <Codicon name={n.severity === "error" ? "error" : n.severity === "warning" ? "warning" : "info"} className={`tm-toast-icon is-${n.severity}`} />
+      <div className="tm-toast-message">
+        {n.message}
+        {n.details && (
+          <>
+            {" "}
+            <button type="button" className="tm-link-button tm-toast-details-toggle" aria-expanded={details} onClick={() => setDetails(!details)} data-testid="toast-details-toggle">
+              {details ? "Hide Details" : "Details"}
+            </button>
+            {details && (
+              <pre className="tm-toast-details" data-testid="toast-details">
+                {n.details}
+              </pre>
+            )}
+          </>
+        )}
+      </div>
+      <button type="button" className="tm-action" aria-label="Clear Notification" title="Clear Notification" onClick={close}>
+        <Codicon name="close" />
+      </button>
+      {n.progress !== undefined && (
+        <div
+          className={`tm-toast-progress ${n.progress === null ? "is-infinite" : ""}`}
+          role="progressbar"
+          aria-label={n.message}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={n.progress ?? undefined}
+        >
+          <span style={n.progress === null ? undefined : { width: `${n.progress}%` }} />
+        </div>
+      )}
+      {n.cancel && (
+        <div className="tm-toast-actions">
+          <button
+            type="button"
+            className="tm-button tm-button--secondary"
+            onClick={() => {
+              n.cancel?.();
+              dismissNotification(n.id);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {n.actions?.length || n.undo ? (
+        <div className="tm-toast-actions">
+          {n.undo && (
+            <button
+              type="button"
+              className="tm-button tm-button--secondary"
+              data-testid="toast-undo"
+              onClick={() => {
+                close();
+                n.undo?.();
+              }}
+            >
+              Undo
+            </button>
+          )}
+          {n.actions?.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              className="tm-button"
+              onClick={() => {
+                close();
+                a.run();
+              }}
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

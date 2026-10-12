@@ -120,7 +120,7 @@ export async function confirmSubmit(opts: { message: string; late?: boolean; qui
 export function notifySubmitted(what: string, submission: unknown) {
   const late = (submission as { is_late?: boolean } | null)?.is_late;
   markJourney("submitted");
-  notify("info", `Submitted ${what}${late ? " (late)" : ""}. Your teacher sees exactly this version.`);
+  notify("info", `Submitted ${what}${late ? " (late)" : ""}. Your teacher sees exactly this version.`, undefined, { kind: "result", important: true });
 }
 
 /** The student's quiz page in Task Mentor (where the attempt is opened). */

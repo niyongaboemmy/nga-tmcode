@@ -8,6 +8,7 @@ import {
   onEntryRenamed,
   onWorkspaceChanged,
   beforeDeleteHooks,
+  deleteUndo,
   saveHandlers,
   setDirty,
   setProblems,
@@ -16,7 +17,7 @@ import {
 } from "../state/store";
 import { basename, extname, isWithin, rebase } from "../util/paths";
 import { setIconLanguageResolver } from "../themes/iconThemes";
-import { recordSave, snapshotBeforeDelete } from "../history/localHistory";
+import { recordSave, snapshotBeforeDelete, undoDeleteFor } from "../history/localHistory";
 import { isUntitled, untitledName, UNTITLED_SCHEME } from "../util/untitled";
 
 /**
@@ -347,6 +348,7 @@ export function wireDocuments() {
   });
 
   beforeDeleteHooks.push(snapshotBeforeDelete);
+  deleteUndo.for = undoDeleteFor;
 
   onEditorsClosed((paths) => {
     for (const p of paths) disposeDoc(p);

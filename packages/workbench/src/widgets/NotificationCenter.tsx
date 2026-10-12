@@ -49,7 +49,7 @@ export function NotificationCenter() {
         {history.map((h) => {
           const n = live.find((x) => x.id === h.id);
           return (
-            <div key={h.id} className={`tm-nc-item is-${h.severity} ${n ? "" : "is-closed"}`} data-testid="notification-entry">
+            <div key={h.id} className={`tm-nc-item is-${h.severity} ${n ? "" : "is-closed"} ${h.unread ? "is-unread" : ""}`} data-testid="notification-entry">
               <Codicon name={h.severity === "error" ? "error" : h.severity === "warning" ? "warning" : "info"} className={`tm-toast-icon is-${h.severity}`} />
               <div className="tm-nc-message">
                 {h.message}

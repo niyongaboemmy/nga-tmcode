@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
 import { useGit } from "../scm/gitService";
-import { activeFilePath, confirmLeaveWorkspace, getPlatform, log, notify, notifyProgress, openEditorInput, openPathFromOs, openRecent, revealView, showDialog, useWorkbench } from "../state/store";
+import { activeFilePath, confirmLeaveWorkspace, dismissNotificationByKey, getPlatform, log, notify, notifyProgress, openEditorInput, openPathFromOs, openRecent, revealView, showDialog, useWorkbench } from "../state/store";
 import { applyExternalChanges } from "../monaco/external";
 import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
 import type { Binding, Link, Project, ProjectKind, Revision, SyncState } from "./types";
@@ -36,6 +36,8 @@ export interface ProjectsState {
   headAt?: number | null;
   /** Automatic saves that failed in a row (a toast says why after two). */
   autoSaveFailures?: number;
+  /** Why the last automatic save failed (the brief's sync line shows it at once, in warning colour). */
+  autoSaveError?: string | null;
 }
 
 export const useProjects = create<ProjectsState>(() => ({
@@ -147,6 +149,7 @@ export function wireProjects() {
   void bindWorkspace();
   void import("./assignments").then((m) => m.wireAssignments());
   void import("../grading/service").then((m) => m.wireGrading());
+  void import("../state/role").then((m) => m.wireRole());
 }
 
 export async function signIn() {
@@ -279,20 +282,21 @@ function applyReadOnly(project: Project | null) {
 export async function bindWorkspace() {
   const binding = await readBinding();
   if (!binding) applyReadOnly(null);
-  set({ binding, current: null, plan: null, sync: binding ? "checking" : "unbound", syncMessage: null, lastSyncAt: null, headAt: null, autoSaveFailures: 0 });
+  set({ binding, current: null, plan: null, sync: binding ? "checking" : "unbound", syncMessage: null, lastSyncAt: null, headAt: null, autoSaveFailures: 0, autoSaveError: null });
   if (!binding || !signedIn()) {
     if (binding) set({ sync: "offline", syncMessage: "Sign in to sync this project." });
     return;
   }
   await rememberFolder(binding.project_id);
-  await checkSync();
+  // A check already in flight began before `current` was cleared above: a fresh one, after it.
+  await recheck();
 }
 
 /** Makes the open folder a new project's working copy (first save uploads it). */
 export async function connectFolder(project: Project) {
   await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: project.kind, name: project.name, base_revision_id: null, base: null });
   await rememberFolder(project.id);
-  await checkSync();
+  await recheck();
 }
 
 // ── Sync ─────────────────────────────────────────────────────────────────
@@ -1027,14 +1031,29 @@ async function autoSaveNow() {
   const rev = await saveToTaskMentor({ source: "auto", quiet: true });
   const failed = !rev && (lastSaveError !== null || get().sync === "conflict" || get().sync === "error");
   if (!failed) {
-    if (rev || get().sync === "synced") set({ autoSaveFailures: 0 });
+    if (rev || get().sync === "synced") {
+      set({ autoSaveFailures: 0, autoSaveError: null });
+      dismissNotificationByKey("auto-save");
+    }
     return;
   }
   const failures = (get().autoSaveFailures ?? 0) + 1;
-  set({ autoSaveFailures: failures });
-  if (failures !== 2) return;
-  if (get().sync === "conflict") return notifyConflicts(get().plan?.conflicts ?? []);
-  notify("warning", `Automatic saving to Task Mentor isn't working: ${saveFailureMessage(lastSaveError, "save")}`, [{ label: "Save to Task Mentor", run: () => void saveToTaskMentor() }]);
+  const why = saveFailureMessage(lastSaveError, "save");
+  // The brief's sync line turns to the warning colour with the reason at once (N2).
+  set({ autoSaveFailures: failures, autoSaveError: get().sync === "conflict" ? null : why });
+  if (get().sync === "conflict") {
+    if (failures === 2 || (failures === 1 && !briefVisible())) notifyConflicts(get().plan?.conflicts ?? []);
+    return;
+  }
+  // First failure: the inline line is enough while the brief is on screen; otherwise a toast now.
+  if (failures === 1 && briefVisible()) return;
+  if (failures > 2) return;
+  notify("warning", `Automatic saving to Task Mentor isn't working: ${why}`, [{ label: "Save to Task Mentor", run: () => void saveToTaskMentor() }], { kind: "failure", replaceKey: "auto-save" });
+}
+
+/** A brief (assignment page) is the active tab of some editor group: its sync line is on screen. */
+function briefVisible() {
+  return useWorkbench.getState().groups.some((g) => g.editors.some((e) => e.id === g.activeId && e.kind === "assignment"));
 }
 
 let checkTimer: ReturnType<typeof setTimeout> | null = null;

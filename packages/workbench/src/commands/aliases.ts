@@ -34,6 +34,7 @@ export const COMMAND_ALIASES: Record<string, string[]> = {
   "workbench.action.debug.start": ["debug", "run with debugger"],
   "editor.action.toggleInlayHints": ["inlay hints", "parameter hints inline", "type hints"],
   "workbench.action.editor.changeLanguageMode": ["language", "syntax", "file type"],
+  "workbench.action.openWelcome": ["welcome", "help: welcome", "start page", "home page", "getting started"],
 };
 
 const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, " ");

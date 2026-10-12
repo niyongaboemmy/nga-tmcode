@@ -14,10 +14,9 @@ test("teacher journey: launch → grade → draft → release → return", async
   await launch(page, { teacher: true });
   await shot(page, info, J, "launch");
 
-  // Find grading and the first submission.
-  const grading = page.locator('.tm-activity[aria-label^="Grading"]');
-  await expect(grading).toBeVisible({ timeout: 15_000 });
-  await grading.click();
+  // 0.15: Home says what waits, with Start Grading.
+  await expect(page.getByTestId("home-to-grade-summary")).toContainText(/submissions? to grade/, { timeout: 15_000 });
+  await page.getByTestId("home-start-grading").click();
   await page.locator('[data-testid="grading-activity"][data-key="assignment:51:"]').click();
   await page.getByTestId("grade-start").click();
   const panel = page.getByTestId("grade-panel");
@@ -28,7 +27,7 @@ test("teacher journey: launch → grade → draft → release → return", async
   // A draft grade.
   await page.getByTestId("grade-full-marks").click();
   await page.getByTestId("grade-save-draft").click();
-  await expect(toast(page, /Draft saved: 20\/20/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("grade-status")).toContainText("Draft saved: 20/20", { timeout: 10_000 });
   await expect(page.getByTestId("grade-draft-chip")).toBeVisible();
   await shot(page, info, J, "draft");
 
