@@ -9,7 +9,7 @@ import { Codicon } from "../widgets/icons";
 import { SyncStatus } from "../exam/ExamViews";
 import { showReleaseNotes, useUpdate } from "../update/updateService";
 // ── Task Mentor projects ──
-import { useProjects } from "../projects/service";
+import { isAssignmentWorkspace, useProjects } from "../projects/service";
 import { showAssignment, STUDENT_STATUS_LABEL, useAssignments } from "../projects/assignments";
 import { deriveStatus } from "../projects/status";
 import { changeCount as planChanges } from "../projects/plan";
@@ -206,6 +206,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const hasFile = useWorkbench((s) => !!activeFilePath(s));
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
   const autoSave = useWorkbench((s) => s.settings["files.autoSave"]);
+  const assignmentWork = useProjects((s) => isAssignmentWorkspace(s.current));
   const notifications = useWorkbench((s) => s.notifications.length);
   const dnd = useNotificationCenter((s) => s.dnd);
   // Things from outside (new work, grades, returned work) not seen yet.
@@ -264,10 +265,13 @@ export function StatusBar({ chord }: { chord: string | null }) {
             Screen Reader Optimized
           </Item>
         )}
-        <Item className="tm-prio-low" title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
-          <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />
-          {autoSave === "off" ? "Auto Save Off" : "Auto Save"}
-        </Item>
+        {/* Assignment work has one saving story (the brief's line); the disk Auto Save item would be a second one. */}
+        {!assignmentWork && (
+          <Item className="tm-prio-low" title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
+            <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />
+            {autoSave === "off" ? "Auto Save Off" : "Auto Save"}
+          </Item>
+        )}
         <ExtensionStatusItems side="right" />
         <UpdateItem />
         <Item

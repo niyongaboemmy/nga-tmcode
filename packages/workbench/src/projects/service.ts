@@ -1054,8 +1054,8 @@ function startHeartbeats() {
   window.addEventListener("beforeunload", () => void sendPresence(false));
 }
 
-/** Assignment workspaces save to Task Mentor this long after the last file save (projects.autoSave "assignments"). */
-export const ASSIGNMENT_AUTO_SAVE_MS = 30_000;
+/** Assignment workspaces save to Task Mentor this long after the last file save (projects.autoSave "assignments"): one saving story, Ctrl+S is enough. */
+export const ASSIGNMENT_AUTO_SAVE_MS = 3_000;
 
 /** An assignment's or a quiz practical's workspace (not a personal project). */
 export function isAssignmentWorkspace(project: Project | null | undefined = get().current) {

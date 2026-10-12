@@ -39,7 +39,7 @@ export interface Settings {
   "update.mode": "default" | "manual" | "none";
   /**
    * Task Mentor projects: save automatically. "assignments" (default): assignment and
-   * quiz-practical workspaces 30 s after the last file save and on leaving the window,
+   * quiz-practical workspaces a few seconds after the last file save and on leaving the window,
    * personal projects never; "onSave"/"interval": every project; "off": never.
    */
   "projects.autoSave": "off" | "assignments" | "onSave" | "interval";
@@ -437,7 +437,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Save Task Mentor projects automatically. GitHub projects always use git push.",
         type: "enum",
         options: [
-          { value: "assignments", label: "assignments (assignment work 30 s after each file save and when you leave the window; personal projects yourself)" },
+          { value: "assignments", label: "assignments (assignment work a few seconds after each file save and when you leave the window; personal projects yourself)" },
           { value: "off", label: "off (Save to Task Mentor yourself)" },
           { value: "onSave", label: "onSave (after each file save)" },
           { value: "interval", label: "interval (every 5 minutes)" },

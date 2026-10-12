@@ -1,7 +1,7 @@
 import { useActivity } from "../state/activity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { executeCommand } from "../commands/registry";
-import type { EditorInput } from "../state/store";
+import { useWorkbench, type EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
 import { taskMentorHtml } from "../widgets/richHtml";
@@ -138,6 +138,8 @@ function RubricTable({ results, graded }: { results: RubricResult[]; graded?: bo
   );
 }
 
+const saveKey = () => (navigator.platform.toLowerCase().includes("mac") ? "⌘S" : "Ctrl+S");
+
 /** The brief's working card says where the work is: "Saved online · 2 min ago", "Not saved yet · 3 changes"… (the Projects view's words). */
 export function BriefSyncLine() {
   const live = useProjects((s) => s.sync);
@@ -151,12 +153,30 @@ export function BriefSyncLine() {
   // An automatic save failed: say so here at once, in the warning colour (it clears on the next good save).
   const autoError = useProjects((s) => s.autoSaveError ?? null);
   const changes = plan ? changeCount(plan.localChanges) : 0;
+  // One saving story: unsaved editors count at once (the editor saves them, then Task Mentor gets them).
+  const unsaved = useWorkbench((s) => Object.keys(s.dirty).length);
+  const editorAutoSave = useWorkbench((s) => s.settings["files.autoSave"] !== "off");
+  const autoOn = autoSaveMode() !== "off";
   const busy = sync === "saving" || sync === "pulling";
   const failing = !!autoError && !busy && sync !== "synced" && sync !== "conflict";
-  const text = failing ? `Not saved to Task Mentor: ${autoError}` : syncLineText(sync, { changes, savedAt });
+  const pending = autoOn && !failing && sync !== "conflict" && sync !== "error" && (unsaved > 0 || sync === "local-changes" || sync === "both");
+  const files = `${unsaved} file${unsaved === 1 ? "" : "s"}`;
+  const text = failing
+    ? `Not saved to Task Mentor: ${autoError}`
+    : pending && unsaved > 0 && !editorAutoSave
+      ? `${files} not saved yet: press ${saveKey()} to save`
+      : pending
+        ? `Saving…${unsaved > 0 ? ` · ${files} with changes` : ""}`
+        : syncLineText(sync, { changes, savedAt });
   return (
-    <p className={`tm-brief-sync is-${failing ? "attention" : SYNC_TONE[sync]}`} data-testid="assignment-sync" data-state={sync} data-failing={failing ? "true" : undefined} title={sync === "error" && message ? message : SYNC_TIP[sync]}>
-      <Codicon name={failing ? "warning" : SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
+    <p
+      className={`tm-brief-sync is-${failing ? "attention" : pending ? "info" : SYNC_TONE[sync]}`}
+      data-testid="assignment-sync"
+      data-state={pending ? "pending" : sync}
+      data-failing={failing ? "true" : undefined}
+      title={sync === "error" && message ? message : pending ? "Your files save by themselves, then go to Task Mentor a few seconds later." : SYNC_TIP[sync]}
+    >
+      <Codicon name={failing ? "warning" : pending ? "sync" : SYNC_ICON[sync]} className={busy || (pending && editorAutoSave) ? "codicon-modifier-spin" : ""} />
       <span>{text}</span>
       {failing && (
         <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.save")} data-testid="assignment-sync-retry">
@@ -352,7 +372,7 @@ function AssignmentBrief({ input }: { input: Input }) {
                   {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Open My Work"}
                 </button>
               )}
-              {here && !detail.read_only && (
+              {here && !detail.read_only && !autoSaving && (
                 <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
                   <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
                 </button>
@@ -412,9 +432,11 @@ function AssignmentBrief({ input }: { input: Input }) {
                 <ConflictList testId="brief-conflicts" />
               </div>
               <div className="tm-next-step-actions">
-                <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
-                  <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
-                </button>
+                {!autoSaving && (
+                  <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
+                    <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
+                  </button>
+                )}
                 <button type="button" className="tm-button" disabled={saving || !!busy || view!.syncing} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
                   {busyIcon("submitting", "send")} {busy === "submitting" ? "Submitting…" : view!.primary?.label ?? "Submit"}
                 </button>

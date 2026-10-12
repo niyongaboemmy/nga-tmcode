@@ -6,7 +6,7 @@ import { BriefSyncLine } from "./AssignmentEditor";
 import { dueLabel, STUDENT_STATUS_LABEL, useAssignments } from "./assignments";
 import { startQuizPractical } from "./matching";
 import { findPractical, practicalState, practicalSummary, submitQuizPractical } from "./quizPractical";
-import { recheck, useProjects } from "./service";
+import { autoSaveMode, recheck, useProjects } from "./service";
 import { deriveStatus } from "./status";
 import { StatusSteps } from "./StatusSteps";
 import { opensLabel } from "./studentHome";
@@ -188,9 +188,11 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
               <BriefSyncLine />
             </div>
             <div className="tm-next-step-actions">
-              <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
-                <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
-              </button>
+              {autoSaveMode() === "off" && (
+                <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">
+                  <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
+                </button>
+              )}
               <button type="button" className={`tm-button ${quizFirst ? "tm-button--secondary" : ""}`} disabled={saving || !!busy || view.syncing} onClick={() => void submit()} data-testid="assignment-submit">
                 {spin("submitting", "send")} {busy === "submitting" ? "Submitting…" : "Submit"}
               </button>
