@@ -2,7 +2,8 @@
 import { kind, LIMITS, mainClass, MANAGED_RUN, out, sources, testFilter, reportTo } from "./kit";
 
 const JVM_RUN = ["-Xmx256m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1"];
-const M2 = ["-o", "-q", "-B", "-Dmaven.repo.local=/caches/m2"];
+/** Offline; the school repository (cache layer m2-school) is a read-only "tail" behind a writable per-run local repo (Maven 3.9+). */
+const M2 = ["-o", "-q", "-B", "-Dmaven.repo.local=/tmp/m2", "-Dmaven.repo.local.tail=/caches/m2-school"];
 const GRADLE = ["--offline", "--no-daemon", "-q"];
 const JVM_PROJECT_LIMITS = { ...LIMITS["isolate-build"], run: MANAGED_RUN };
 const BUILD_FILES = ["pom.xml", "build.gradle", "build.gradle.kts"];

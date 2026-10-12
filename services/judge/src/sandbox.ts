@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 
 /**
  * Where submissions run.
@@ -17,6 +17,29 @@ export interface Limits {
   memoryMb: number;
   processes: number;
   outputKb: number;
+  /** Largest file a program may write (isolate --fsize); default max(2 × outputKb, 1 MB). Builds need more. */
+  fileKb?: number;
+}
+
+export interface ExecOptions {
+  stdin: string;
+  limits: Limits;
+  env?: Record<string, string>;
+  /** Working folder relative to the box root (default: the root, /box). */
+  cwd?: string;
+}
+
+/** A host folder visible read-only inside the box at `inside` (cache layers: /caches/<id>). */
+export interface Mount {
+  inside: string;
+  host: string;
+}
+
+export interface AcquireOptions {
+  /** Read-only mounts at another path (cache layers). */
+  mounts?: Mount[];
+  /** Host folders bound read-only at the same path (toolchains outside /usr, e.g. /opt/maven). */
+  dirs?: string[];
 }
 
 export interface ExecResult {
@@ -36,11 +59,23 @@ export interface BoxFile {
   path: string;
   data: Buffer;
   mode: number;
+  /** Kept so build tools that compare timestamps (make, cargo) see the build as up to date. */
+  mtimeMs?: number;
+  /** A relative symlink inside the box (node_modules/.bin/*); `data` is empty. */
+  link?: string;
 }
 
 export interface Box {
-  write(path: string, content: string | Buffer, mode?: number): Promise<void>;
-  exec(argv: string[], opts: { stdin: string; limits: Limits; env?: Record<string, string> }): Promise<ExecResult>;
+  write(path: string, content: string | Buffer, mode?: number, mtimeMs?: number): Promise<void>;
+  /** A relative symlink inside the box. */
+  link(path: string, target: string): Promise<void>;
+  exec(argv: string[], opts: ExecOptions): Promise<ExecResult>;
+  /** A box file's bytes, or null when it doesn't exist (reports). */
+  read(path: string): Promise<Buffer | null>;
+  /** Regular files directly in a box folder (names), [] when it doesn't exist. */
+  list(dir: string): Promise<string[]>;
+  /** The path a program in this box sees for a sandbox path ("/caches/m2-school" → itself under isolate, the host folder locally). */
+  visible(path: string): string;
   /** Every regular file in the box (sources and build outputs), minus the judge's own stdio files. */
   snapshot(): Promise<BoxFile[]>;
   /** Empties the box, keeping the same box (no new acquire): the next test starts clean. */
@@ -66,25 +101,72 @@ async function listFiles(root: string): Promise<BoxFile[]> {
         const [data, st] = await Promise.all([readFile(full), lstat(full)]);
         total += data.length;
         if (total > SNAPSHOT_MAX_BYTES) throw new Error("Build output is larger than 64 MB.");
-        out.push({ path, data, mode: st.mode & 0o777 });
+        out.push({ path, data, mode: st.mode & 0o777, mtimeMs: st.mtimeMs });
+      } else if (e.isSymbolicLink()) {
+        // Relative links that stay inside the box (npm's node_modules/.bin) are carried over; others are not.
+        const target = await readlink(join(root, path));
+        const resolved = normalize(join(dirname(path), target));
+        if (!target.startsWith("/") && resolved !== ".." && !resolved.startsWith("../")) out.push({ path, data: Buffer.alloc(0), mode: 0o777, link: target });
       }
-      // Symlinks and special files are not carried over.
+      // Special files are not carried over.
     }
   };
   await walk("");
   return out;
 }
 
-async function writeInto(root: string, path: string, content: string | Buffer, mode?: number) {
+async function writeInto(root: string, path: string, content: string | Buffer, mode?: number, mtimeMs?: number) {
   const full = safeJoin(root, path);
   await mkdir(dirname(full), { recursive: true });
   await writeFile(full, content);
   if (mode !== undefined) await chmod(full, mode);
+  if (mtimeMs !== undefined) await utimes(full, mtimeMs / 1000, mtimeMs / 1000);
+}
+
+async function linkInto(root: string, path: string, target: string) {
+  const full = safeJoin(root, path);
+  const resolved = normalize(join(dirname(path), target));
+  if (target.startsWith("/") || resolved === ".." || resolved.startsWith("../")) throw new Error(`Link '${path}' points outside the box.`);
+  await mkdir(dirname(full), { recursive: true });
+  await rm(full, { force: true });
+  await symlink(target, full);
+}
+
+/** Refills a (reset) box from a snapshot. */
+export async function restoreSnapshot(box: Box, files: BoxFile[]) {
+  for (const f of files) {
+    if (f.link !== undefined) await box.link(f.path, f.link);
+    else await box.write(f.path, f.data, f.mode, f.mtimeMs);
+  }
+}
+
+async function readFrom(root: string, path: string): Promise<Buffer | null> {
+  try {
+    return await readFile(safeJoin(root, path));
+  } catch {
+    return null;
+  }
+}
+
+async function listIn(root: string, dir: string): Promise<string[]> {
+  try {
+    const full = dir && dir !== "." ? safeJoin(root, dir.replace(/\/+$/, "")) : root;
+    if (!(await stat(full)).isDirectory()) return [];
+    return (await readdir(full, { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name).sort();
+  } catch {
+    return [];
+  }
+}
+
+/** Folders to bind: drops duplicates and folders inside another one in the list. */
+export function topDirs(dirs: string[]): string[] {
+  const sorted = [...new Set(dirs.map((d) => d.replace(/\/+$/, "")).filter(Boolean))].sort();
+  return sorted.filter((d) => !sorted.some((o) => o !== d && d.startsWith(`${o}/`)));
 }
 
 export interface Sandbox {
   kind: "isolate" | "none";
-  acquire(): Promise<Box>;
+  acquire(opts?: AcquireOptions): Promise<Box>;
 }
 
 async function readCapped(path: string, limitBytes: number) {
@@ -187,8 +269,10 @@ export class IsolateSandbox implements Sandbox {
     else this.free.push(id);
   }
 
-  async acquire(): Promise<Box> {
+  async acquire(opts: AcquireOptions = {}): Promise<Box> {
     const id = await this.take();
+    const mounts = opts.mounts ?? [];
+    const dirs = topDirs((opts.dirs ?? []).filter((d) => !DEFAULT_MOUNTS.some((m) => `${d}/`.startsWith(m))));
     const iso = this.isolate;
     await run(iso, ["--cg", `--box-id=${id}`, "--cleanup"]);
     const init = await run(iso, ["--cg", `--box-id=${id}`, "--init"]);
@@ -202,7 +286,11 @@ export class IsolateSandbox implements Sandbox {
     let disposed = false;
 
     return {
-      write: (path, content, mode) => writeInto(boxDir, path, content, mode),
+      write: (path, content, mode, mtimeMs) => writeInto(boxDir, path, content, mode, mtimeMs),
+      link: (path, target) => linkInto(boxDir, path, target),
+      read: (path) => readFrom(boxDir, path),
+      list: (dir) => listIn(boxDir, dir),
+      visible: (path) => path,
       snapshot: () => listFiles(boxDir),
       async reset() {
         // Same box id: cleanup kills anything left running and wipes the folder.
@@ -211,9 +299,11 @@ export class IsolateSandbox implements Sandbox {
         if (again.code !== 0) throw new Error(`isolate --init failed: ${again.stderr.trim()}`);
         boxDir = join(again.stdout.trim(), "box");
       },
-      async exec(argv, { stdin, limits, env = {} }) {
+      async exec(argv, { stdin, limits, env = {}, cwd }) {
         await writeFile(join(boxDir, ".stdin"), stdin);
         await rm(metaFile, { force: true });
+        // One value per variable (PATH may be the step's own).
+        const vars = { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/box", LANG: "C.UTF-8", ...env };
         const args = [
           "--cg",
           `--box-id=${id}`,
@@ -223,17 +313,17 @@ export class IsolateSandbox implements Sandbox {
           "--extra-time=0.5",
           `--cg-mem=${limits.memoryMb * 1024}`,
           `--processes=${limits.processes}`,
-          `--fsize=${Math.max(limits.outputKb * 2, 1024)}`,
+          `--fsize=${limits.fileKb ?? Math.max(limits.outputKb * 2, 1024)}`,
           "--stdin=.stdin",
           "--stdout=.stdout",
           "--stderr=.stderr",
-          "--env=PATH=/usr/local/bin:/usr/bin:/bin",
-          "--env=HOME=/box",
-          "--env=LANG=C.UTF-8",
-          ...Object.entries(env).map(([k, v]) => `--env=${k}=${v}`),
+          ...Object.entries(vars).map(([k, v]) => `--env=${k}=${v}`),
           // Read-only system config (the JVM reads /etc/java-*); the sandbox user can't read root-only files.
           "--dir=/etc:noexec",
-          ...extraMounts(argv[0]).map((d) => `--dir=${d}`),
+          // Toolchains and cache layers: read-only (isolate's default for --dir).
+          ...topDirs([...dirs, ...extraMounts(argv[0])]).map((d) => `--dir=${d}`),
+          ...mounts.map((m) => `--dir=${m.inside}=${m.host}`),
+          ...(cwd && cwd !== "." ? [`--chdir=/box/${cwd}`] : []),
           "--run",
           "--",
           ...argv,
@@ -267,24 +357,49 @@ export class IsolateSandbox implements Sandbox {
 
 // ───────────────────────── local (development only) ─────────────────────────
 
+/** rm -rf that also removes read-only trees (a Go module cache, chmod'ed npm files). */
+async function removeTree(path: string) {
+  try {
+    await rm(path, { recursive: true, force: true });
+  } catch {
+    await run("chmod", ["-R", "u+w", path]);
+    await rm(path, { recursive: true, force: true });
+  }
+}
+
 export class LocalSandbox implements Sandbox {
   kind = "none" as const;
 
-  async acquire(): Promise<Box> {
+  async acquire(opts: AcquireOptions = {}): Promise<Box> {
     const dir = await mkdtemp(join(tmpdir(), "tm-judge-"));
+    // The box's /tmp lives next to the box (not in it: it is never part of a snapshot).
+    const tmp = `${dir}-tmp`;
+    await mkdir(tmp, { recursive: true });
+    const mounts = opts.mounts ?? [];
+    const visible = (s: string) => localPath(s, dir, tmp, mounts);
     return {
-      write: (path, content, mode) => writeInto(dir, path, content, mode),
+      write: (path, content, mode, mtimeMs) => writeInto(dir, path, content, mode, mtimeMs),
+      link: (path, target) => linkInto(dir, path, target),
+      read: (path) => readFrom(dir, path),
+      list: (d) => listIn(dir, d),
+      visible,
       snapshot: () => listFiles(dir),
       async reset() {
-        await rm(dir, { recursive: true, force: true });
+        await removeTree(dir);
+        await removeTree(tmp);
         await mkdir(dir, { recursive: true });
+        await mkdir(tmp, { recursive: true });
       },
-      exec(argv, { stdin, limits, env = {} }) {
+      exec(argv, { stdin, limits, env = {}, cwd }) {
         return new Promise((resolve) => {
           const started = Date.now();
           // A minimal environment, like isolate's: nothing inherited may change a program's output.
           const clean = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, LANG: "C.UTF-8", NO_COLOR: "1" };
-          const child = spawn(argv[0], argv.slice(1), { cwd: dir, env: { ...clean, ...env }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+          // Sandbox paths (/box, /tmp, /caches/<id>) in arguments and variables point at this box's folders.
+          const vars: Record<string, string> = { ...clean };
+          for (const [k, v] of Object.entries(env)) vars[k] = k === "PATH" ? v : visible(v);
+          const args = argv.slice(1).map(visible);
+          const child = spawn(argv[0], args, { cwd: cwd && cwd !== "." ? safeJoin(dir, cwd) : dir, env: vars, detached: true, stdio: ["pipe", "pipe", "pipe"] });
           let stdout = "";
           let stderr = "";
           let over = false;
@@ -332,10 +447,24 @@ export class LocalSandbox implements Sandbox {
         });
       },
       async dispose() {
-        await rm(dir, { recursive: true, force: true });
+        await removeTree(dir);
+        await removeTree(tmp);
       },
     };
   }
+}
+
+/**
+ * LocalSandbox only: maps the paths a program would see inside an isolate box
+ * to this box's folders. `/box` and `/tmp` match at the start of a value or
+ * after `=`, `:` or `,` (so `-Dx=/tmp/m2` and `a:/box/b` work); cache mounts
+ * match anywhere (`file:///caches/go-mod-school/...`). An unmounted cache path
+ * stays as it is (and doesn't exist), like a missing layer under isolate.
+ */
+export function localPath(s: string, box: string, tmp: string, mounts: Mount[]): string {
+  let out = s;
+  for (const m of mounts) out = out.split(m.inside).join(m.host);
+  return out.replace(/(^|[=:,])\/(box|tmp)(?=\/|$|[:,])/g, (_, pre: string, which: string) => `${pre}${which === "box" ? box : tmp}`);
 }
 
 export async function isolateAvailable(bin: string) {

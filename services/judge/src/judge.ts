@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { check, checkerProblem, normalizeOutput, type CheckerSpec } from "./checkers.ts";
 import { javaMainClass, languageById, LANGUAGES, type Ctx, type Language } from "./languages.ts";
-import type { ExecResult, Limits, Sandbox } from "./sandbox.ts";
+import { restoreSnapshot, type ExecResult, type Limits, type Sandbox } from "./sandbox.ts";
 
 /**
  * Compile once, then run every test (plan §8.3). The judge only executes and
@@ -17,6 +18,17 @@ export interface TestCase {
   input: string;
   /** Omit to just run (status "ok" instead of a verdict). */
   expected_output?: string;
+  /** Alias of expected_output (CODE_RUNNER_PLAN §15.1). */
+  expected?: string;
+  /** Overrides the request's checker for this test. */
+  checker?: CheckerSpec;
+}
+
+export interface RunLimits {
+  time_s: number;
+  wall_s: number;
+  memory_mb: number;
+  output_kb: number;
 }
 
 export interface RunRequest {
@@ -25,7 +37,9 @@ export interface RunRequest {
   /** Entry file path, e.g. "main.py" or "Main.java". */
   entry: string;
   tests: TestCase[];
-  limits?: Partial<{ time_s: number; wall_s: number; memory_mb: number; output_kb: number }>;
+  limits?: Partial<RunLimits>;
+  /** How stdout is compared with expected_output (default whitespace). */
+  checker?: CheckerSpec;
 }
 
 export type Verdict =
@@ -37,6 +51,7 @@ export type Verdict =
   | "time-limit"
   | "memory-limit"
   | "output-limit"
+  | "package-not-available"
   | "internal-error";
 
 export interface TestResult {
@@ -59,35 +74,69 @@ export interface RunResponse {
   tests: TestResult[];
 }
 
-/** Same rule as @tmcode/protocol `normalizeOutput` (asserted in tests). */
-export function normalizeOutput(s: string | null | undefined): string {
-  return (s ?? "").replace(/\r\n/g, "\n").trimEnd();
-}
+export { normalizeOutput };
 
+/** Typed HTTP errors (§15.1): 400 INVALID_REQUEST, 409 KIND_UNSUPPORTED, 503 RUNTIME_UNAVAILABLE. */
 export class RequestError extends Error {
   status = 400;
+  code = "INVALID_REQUEST";
+}
+
+export function kindUnsupported(message: string) {
+  return Object.assign(new RequestError(message), { status: 409, code: "KIND_UNSUPPORTED" });
+}
+
+export function runtimeUnavailable(message: string) {
+  return Object.assign(new RequestError(message), { status: 503, code: "RUNTIME_UNAVAILABLE" });
 }
 
 const LIMITS = { files: 100, bytes: 1024 * 1024, tests: 60, inputBytes: 256 * 1024 };
+/** Projects (kind requests) may carry more files. */
+export const PROJECT_LIMITS = { files: 400, bytes: 1536 * 1024 };
+
+/** `strict` (projects): no "." segments and no duplicate paths; the profile path keeps its original rules. */
+export function validateFiles(files: SubmissionFile[], max = LIMITS, strict = false) {
+  if (!Array.isArray(files) || files.length === 0) throw new RequestError("No files.");
+  if (files.length > max.files) throw new RequestError(`At most ${max.files} files.`);
+  const total = files.reduce((n, f) => n + Buffer.byteLength(String(f?.content ?? "")), 0);
+  if (total > max.bytes) throw new RequestError(`Submission is larger than ${Math.round(max.bytes / 1024 / 1024 * 10) / 10} MB.`);
+  const seen = new Set<string>();
+  for (const f of files) {
+    if (!f || typeof f.path !== "string" || !/^[\w.\-/ @+]+$/.test(f.path) || f.path.startsWith("/") || f.path.split("/").some((p) => !p || p === ".." || (strict && p === "."))) {
+      throw new RequestError(`Invalid file path '${f?.path}'.`);
+    }
+    if (f.content === undefined || f.content === null) f.content = "";
+    if (typeof f.content !== "string") throw new RequestError(`File '${f.path}': content must be a string.`);
+    if (strict && seen.has(f.path)) throw new RequestError(`File '${f.path}' is listed twice.`);
+    seen.add(f.path);
+  }
+}
+
+export function validateTests(tests: TestCase[], checker: unknown, required: boolean) {
+  if (tests === undefined && !required) return;
+  if (!Array.isArray(tests) || (required && tests.length === 0)) throw new RequestError("No tests.");
+  if (tests.length > LIMITS.tests) throw new RequestError(`At most ${LIMITS.tests} tests.`);
+  const problem = checkerProblem(checker);
+  if (problem) throw new RequestError(problem);
+  for (const t of tests) {
+    if (!t || typeof t !== "object") throw new RequestError("Each test must be an object { id, input, expected_output? }.");
+    if (Buffer.byteLength(String(t.input ?? "")) > LIMITS.inputBytes) throw new RequestError(`Test ${t.id}: input larger than 256 KB.`);
+    const p = checkerProblem(t.checker);
+    if (p) throw new RequestError(`Test ${t.id}: ${p}`);
+  }
+}
+
+/** expected_output, or its alias expected. */
+export function expectedOf(t: TestCase): string | undefined {
+  return t.expected_output ?? t.expected ?? undefined;
+}
 
 export function validate(req: RunRequest): Language {
   const lang = languageById(req.language);
   if (!lang) throw new RequestError(`Unsupported language '${req.language}'.`);
-  if (!Array.isArray(req.files) || req.files.length === 0) throw new RequestError("No files.");
-  if (req.files.length > LIMITS.files) throw new RequestError(`At most ${LIMITS.files} files.`);
-  const total = req.files.reduce((n, f) => n + Buffer.byteLength(String(f.content ?? "")), 0);
-  if (total > LIMITS.bytes) throw new RequestError("Submission is larger than 1 MB.");
-  for (const f of req.files) {
-    if (typeof f.path !== "string" || !/^[\w.\-/ ]+$/.test(f.path) || f.path.startsWith("/") || f.path.split("/").some((p) => !p || p === "..")) {
-      throw new RequestError(`Invalid file path '${f.path}'.`);
-    }
-  }
+  validateFiles(req.files);
   if (!req.files.some((f) => f.path === req.entry)) throw new RequestError(`Entry '${req.entry}' is not among the files.`);
-  if (!Array.isArray(req.tests) || req.tests.length === 0) throw new RequestError("No tests.");
-  if (req.tests.length > LIMITS.tests) throw new RequestError(`At most ${LIMITS.tests} tests.`);
-  for (const t of req.tests) {
-    if (Buffer.byteLength(String(t.input ?? "")) > LIMITS.inputBytes) throw new RequestError(`Test ${t.id}: input larger than 256 KB.`);
-  }
+  validateTests(req.tests, req.checker, true);
   return lang;
 }
 
@@ -117,8 +166,8 @@ export function languageVersions(programs: Map<string, string>) {
 }
 
 /** Response caps: stdout up to the request's output limit (at most 1 MB), stderr and compiler output 64 KB. */
-const STDOUT_CAP_KB = 1024;
-const STDERR_CAP = 64 * 1024;
+export const STDOUT_CAP_KB = 1024;
+export const STDERR_CAP = 64 * 1024;
 
 /** Cuts a string to at most `bytes` UTF-8 bytes (never splitting a character). */
 export function capBytes(s: string, bytes: number): { text: string; cut: boolean } {
@@ -172,7 +221,7 @@ async function transpileTypeScript(files: SubmissionFile[]) {
   return { files: out, errors, timeMs: Date.now() - started };
 }
 
-const VERDICT: Record<ExecResult["status"], Verdict> = {
+export const VERDICT: Record<ExecResult["status"], Verdict> = {
   ok: "ok",
   "runtime-error": "runtime-error",
   signal: "runtime-error",
@@ -232,14 +281,15 @@ export async function judge(sandbox: Sandbox, programs: Map<string, string>, req
     for (const [i, t] of req.tests.entries()) {
       if (i > 0) {
         await box.reset();
-        for (const f of snapshot) await box.write(f.path, f.data, f.mode);
+        await restoreSnapshot(box, snapshot);
       }
       const r = await box.exec(lang.run(ctx), { stdin: t.input ?? "", limits, env: lang.env });
       let verdict = VERDICT[r.status];
       if (verdict === "ok" && r.exitCode !== 0) verdict = "runtime-error";
       let passed: boolean | null = null;
-      if (t.expected_output !== undefined) {
-        passed = verdict === "ok" && normalizeOutput(r.stdout) === normalizeOutput(t.expected_output);
+      const expected = expectedOf(t);
+      if (expected !== undefined) {
+        passed = verdict === "ok" && check(t.checker ?? req.checker, expected, r.stdout);
         if (verdict === "ok") verdict = passed ? "accepted" : "wrong-answer";
         else passed = false;
       }

@@ -36,7 +36,8 @@ export const RUNTIMES: RuntimeDef[] = [
       mvn: "/opt/maven/bin/mvn",
       gradle: "/opt/gradle/bin/gradle",
     },
-    env: { ...BOX_ENV, JAVA_TOOL_OPTIONS: "-XX:+UseSerialGC -Xss16m -Dfile.encoding=UTF-8" },
+    // Gradle's own home is per run (/tmp); dependencies come from the read-only cache layer gradle-school.
+    env: { ...BOX_ENV, JAVA_TOOL_OPTIONS: "-XX:+UseSerialGC -Xss16m -Dfile.encoding=UTF-8", GRADLE_USER_HOME: "/tmp/gradle-home", GRADLE_RO_DEP_CACHE: "/caches/gradle-school" },
   },
   {
     id: "python-3.12",
@@ -44,7 +45,8 @@ export const RUNTIMES: RuntimeDef[] = [
     install: { apt: ["python3.12", "python3.12-venv"], script: "install-uv-and-site-packages.sh" },
     version: ["python3", "--version"],
     tools: { python3: "/usr/bin/python3.12", uv: "/opt/uv/uv" },
-    env: { ...BOX_ENV, PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1", MPLBACKEND: "Agg", OPENBLAS_NUM_THREADS: "1" },
+    // .pydeps: packages a restore step installed from the wheelhouse; site-packages-school: the prebuilt shared layer (pytest, numpy…).
+    env: { ...BOX_ENV, PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1", MPLBACKEND: "Agg", OPENBLAS_NUM_THREADS: "1", PYTHONPATH: "/box/.pydeps:/caches/site-packages-school" },
   },
   {
     id: "node-22",
@@ -52,7 +54,7 @@ export const RUNTIMES: RuntimeDef[] = [
     install: { script: "install-node-22.sh" },
     version: ["node", "--version"],
     tools: { node: "/opt/node-22/bin/node", npm: "/opt/node-22/bin/npm" },
-    env: { ...BOX_ENV, NODE_OPTIONS: "--max-old-space-size=256", npm_config_update_notifier: "false", NO_UPDATE_NOTIFIER: "1" },
+    env: { ...BOX_ENV, NODE_OPTIONS: "--max-old-space-size=256", npm_config_update_notifier: "false", NO_UPDATE_NOTIFIER: "1", npm_config_cache: "/tmp/.npm", npm_config_logs_max: "0", npm_config_audit: "false", npm_config_fund: "false" },
   },
   {
     id: "typescript",
@@ -74,7 +76,8 @@ export const RUNTIMES: RuntimeDef[] = [
     install: { script: "install-go.sh" },
     version: ["go", "version"],
     tools: { go: "/opt/go/bin/go", gotestsum: "/opt/go-tools/bin/gotestsum", ...STDBUF },
-    env: { ...BOX_ENV, GOCACHE: "/tmp/go-build", GOPATH: "/tmp/go", GOMODCACHE: "/caches/go-mod", GOPROXY: "off", GOTOOLCHAIN: "local", GOFLAGS: "-mod=mod", GOMAXPROCS: "1", CGO_ENABLED: "0" },
+    // Modules come from the read-only cache layer go-mod-school used as a file proxy (a GOMODCACHE's cache/download), else nowhere.
+    env: { ...BOX_ENV, GOCACHE: "/tmp/go-build", GOPATH: "/tmp/go", GOMODCACHE: "/tmp/go-mod", GOPROXY: "file:///caches/go-mod-school/cache/download,off", GOSUMDB: "off", GOTOOLCHAIN: "local", GOFLAGS: "-mod=mod -modcacherw", GOMAXPROCS: "1", CGO_ENABLED: "0" },
   },
   {
     id: "rust-stable",
@@ -82,7 +85,9 @@ export const RUNTIMES: RuntimeDef[] = [
     install: { script: "install-rustup.sh" },
     version: ["rustc", "--version"],
     tools: { rustc: "/opt/rust/bin/rustc", cargo: "/opt/rust/bin/cargo", ...STDBUF },
-    env: { ...BOX_ENV, CARGO_HOME: "/caches/cargo", CARGO_TARGET_DIR: "/tmp/target", CARGO_NET_OFFLINE: "true", CARGO_TERM_COLOR: "never" },
+    // CARGO_HOME is per run; crates come from the cache layer cargo-registry-school (a `cargo vendor` folder the runner
+    // points crates-io at). The target folder stays in the project so build outputs carry over to the run boxes.
+    env: { ...BOX_ENV, CARGO_HOME: "/tmp/cargo-home", CARGO_TARGET_DIR: "/box/target", CARGO_NET_OFFLINE: "true", CARGO_TERM_COLOR: "never", CARGO_INCREMENTAL: "0" },
   },
   {
     id: "sqlite-3",
