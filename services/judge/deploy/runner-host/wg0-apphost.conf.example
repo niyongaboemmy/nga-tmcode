@@ -1,0 +1,13 @@
+# /etc/wireguard/wg0.conf on the APP HOST (AWS eu-north-1: Task Mentor + nginx).
+# Keys: umask 077; wg genkey | tee /etc/wireguard/app.key | wg pubkey > /etc/wireguard/app.pub
+# The app host dials out to the runner (UDP 51820), so its AWS security group needs no inbound rule.
+[Interface]
+Address = 10.66.0.1/24
+PrivateKey = <contents of /etc/wireguard/app.key>
+
+[Peer]
+# the tm-judge runner host (Oracle Cloud eu-stockholm-1)
+PublicKey = <runner public key printed by bootstrap.sh (/etc/wireguard/runner.pub)>
+Endpoint = <runner public IP>:51820
+AllowedIPs = 10.66.0.2/32
+PersistentKeepalive = 25

@@ -17,6 +17,8 @@
 #   6. (re)starts the pm2 process "tm-judge" on 127.0.0.1:5010
 # Cache layers are filled separately (needs network): deploy/build-caches.sh.
 # Skip the toolchains with SKIP_TOOLCHAINS=1 (e.g. a quick code update).
+# SKIP_PM2=1 stops after building (the dedicated runner host runs tm-judge under systemd:
+# deploy/runner-host/bootstrap.sh).
 # Wave D (the long tail, CODE_RUNNER_PLAN phase 7) is opt-in: INSTALL_WAVE_D=1 installs every
 # wave D toolchain, WAVE_D="perl tcl prolog" only those. Each language installs on its own; a
 # failure skips that language (its kinds then show in /v1/catalog `unavailable`), never the install.
@@ -375,6 +377,11 @@ fi
 
 echo "   building"
 (cd "$APP_DIR/services/judge" && npm install --no-save --no-package-lock --workspaces=false --omit=dev --no-audit --no-fund --silent && node scripts/build.mjs --log-level=warning)
+
+if [ "${SKIP_PM2:-}" = "1" ]; then
+  echo "== 6/6 pm2: skipped (SKIP_PM2=1; systemd runs tm-judge on this host)"
+  exit 0
+fi
 
 echo "== 6/6 pm2"
 # delete + start (not reload): a reload keeps an old script path.

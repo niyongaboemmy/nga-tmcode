@@ -1,0 +1,30 @@
+# /etc/nginx/sites-available/preview on the APP HOST: the public preview origin.
+# Only /p/<id>/<token>/... is forwarded (signed by Task Mentor, checked by tm-judge) over the
+# WireGuard tunnel; nothing else of tm-judge is reachable from here. certbot --nginx adds TLS.
+map $http_upgrade $preview_connection {
+  default upgrade;
+  ""      close;
+}
+
+server {
+  listen 80;
+  server_name preview.amashuri.com;   # your preview subdomain
+
+  client_max_body_size 10m;
+
+  location /p/ {
+    proxy_pass http://10.66.0.2:5010;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $preview_connection;
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+  }
+
+  location / {
+    return 404;
+  }
+}
