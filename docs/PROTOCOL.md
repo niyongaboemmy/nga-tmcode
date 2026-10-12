@@ -129,10 +129,13 @@ Response:
 { "language": "python-3", "sandbox": "isolate",
   "compile": null,
   "tests": [{ "id": "t1", "verdict": "accepted", "passed": true, "stdout": "5\n", "stderr": "",
-              "exit_code": 0, "time_ms": 23, "memory_kb": 7400 }] }
+              "exit_code": 0, "time_ms": 23, "memory_kb": 7400, "truncated": false }] }
 ```
-- Verdicts: `accepted`, `wrong-answer`, `ok` (no expected output), `runtime-error`, `time-limit`, `memory-limit`, `output-limit`, `internal-error`.
-- `compile` is `{ ok, output, time_ms }` for compiled languages. On a failed compile every test fails.
+- Verdicts: `accepted`, `wrong-answer`, `ok` (no expected output), `compile-error`, `runtime-error`, `time-limit`, `memory-limit`, `output-limit`, `internal-error`.
+- `compile` is `{ ok, output, time_ms }` for compiled languages (and TypeScript's transpile). On a failed compile it is `{ ok: false, output }` and every test gets `compile-error`, `passed: false`, with the compiler output (64 KB max) as its `stderr`.
+- **Fresh state per test:** the submission is compiled once, then every test starts from the files as they were right after the compile (sources + build outputs). Files a test writes are gone in the next test.
+- **Java:** all `.java` files are compiled with `-d .`; the program runs the entry's fully-qualified class (its `package` declaration + file stem), so `src/rw/ac/nga/Main.java` with `package rw.ac.nga;` runs `rw.ac.nga.Main`.
+- **Output in the response:** `stdout` up to `min(output_kb, 1024)` KB, `stderr` up to 64 KB. `truncated: true` when either was cut (including an `output-limit` stop).
 - `GET /v1/health` returns `{ ok, sandbox, languages: { id: version|null }, queue }`.
 - Output comparison: `normalizeOutput` (CRLF→LF, trim trailing whitespace at the end only), the same rule as `packages/protocol/src/output.ts`.
 

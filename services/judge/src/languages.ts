@@ -22,6 +22,8 @@ export interface Language {
 export interface Ctx {
   entry: string;
   entryStem: string;
+  /** Java: the entry's fully-qualified class (`package` declaration + file stem), e.g. "rw.ac.nga.Main". */
+  mainClass: string;
   /** Submission files with this extension (for compilers). */
   sources: (ext: string) => string[];
   bin: (program: string) => string;
@@ -70,12 +72,23 @@ export const LANGUAGES: Language[] = [
     programs: ["javac", "java"],
     version: ["java", "-version"],
     compile: (c) => [c.bin("javac"), "-d", ".", "-encoding", "UTF-8", ...c.sources("java")],
-    run: (c) => [c.bin("java"), "-Xmx256m", "-Xss64m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-cp", ".", c.entryStem],
+    run: (c) => [c.bin("java"), "-Xmx256m", "-Xss64m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-cp", ".", c.mainClass],
     // The JVM needs threads and headroom above its heap.
     processes: 64,
     memoryMb: 512,
   },
 ];
+
+/**
+ * The fully-qualified class a Java entry file defines: its `package x.y;`
+ * declaration (comments ignored) plus the file stem. Classes are compiled with
+ * `-d .`, so `java -cp . x.y.Main` finds them wherever the source sat.
+ */
+export function javaMainClass(entryStem: string, source: string): string {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  const m = /^\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*package\s+([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*;/m.exec(code);
+  return m ? `${m[1].replace(/\s+/g, "")}.${entryStem}` : entryStem;
+}
 
 export function languageById(id: string) {
   return LANGUAGES.find((l) => l.id === id);
