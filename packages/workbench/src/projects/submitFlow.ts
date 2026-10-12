@@ -3,6 +3,7 @@ import { getPlatform, log, notify, showDialog } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { taskMentorWeb } from "./commands";
 import { TmError, useProjects } from "./service";
+import { markJourney } from "../util/journey";
 
 /**
  * The words both submit flows share (Assignments › Submit and Projects ›
@@ -118,6 +119,7 @@ export async function confirmSubmit(opts: { message: string; late?: boolean; qui
 /** Only once Task Mentor accepted the submission. `what`: `"Name"` or `"Name" for "Assessment"`. */
 export function notifySubmitted(what: string, submission: unknown) {
   const late = (submission as { is_late?: boolean } | null)?.is_late;
+  markJourney("submitted");
   notify("info", `Submitted ${what}${late ? " (late)" : ""}. Your teacher sees exactly this version.`);
 }
 

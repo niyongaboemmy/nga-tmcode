@@ -6,6 +6,7 @@ import { showQuickPick } from "../widgets/QuickPick";
 import { api, offerSaveBeforeSwitch, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
 import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { LinkableActivity, Project } from "./types";
+import { markJourney } from "../util/journey";
 
 /**
  * TMCode practicals (docs/ASSIGNMENTS_PLAN.md): Task Mentor assignments and
@@ -257,6 +258,7 @@ async function startAssignmentNow(id: number) {
     const folder = slug(`${a?.course_name ?? ""}-${a?.title ?? project.name}`);
     const opened = await openProject(project.id, { folderName: folder });
     if (!opened) return;
+    markJourney("first-start");
     showAssignment(id, { toSide: true });
     // No starter files from the teacher (and nothing written yet): offer a way to begin instead of an empty folder.
     const began = (await isEmptyWorkspace()) ? await offerStarter(a ?? null) : false;

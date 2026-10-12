@@ -5,6 +5,17 @@ const PORT = Number(process.env.TMCODE_DEV_PORT ?? 1430);
 const MOCK_PORT = Number(process.env.MOCK_TM_PORT ?? 5099);
 
 /**
+ * "Desktop Safari" claims to be a Mac. On a Linux CI runner that makes Monaco
+ * use ⌘ while Playwright's ControlOrMeta presses Ctrl, so key tests failed
+ * there only. Off macOS, WebKit tells the truth about the host instead.
+ */
+const WEBKIT_UA: Record<string, string> = {
+  linux: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+  win32: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+};
+const webkitUa = WEBKIT_UA[process.platform];
+
+/**
  * The workbench runs in a plain browser with the in-memory platform, so the
  * UI is tested on Chromium (≈ WebView2 on Windows) and WebKit (≈ WKWebView on macOS).
  */
@@ -34,6 +45,6 @@ export default defineConfig({
   ],
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1360, height: 820 } } },
-    { name: "webkit", use: { ...devices["Desktop Safari"], viewport: { width: 1360, height: 820 } } },
+    { name: "webkit", use: { ...devices["Desktop Safari"], viewport: { width: 1360, height: 820 }, ...(webkitUa ? { userAgent: webkitUa } : {}) } },
   ],
 });

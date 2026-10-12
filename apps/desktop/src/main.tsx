@@ -21,6 +21,7 @@ import {
   setWorkspace,
   startedWorkers,
   watchCspViolations,
+  journeyDebug,
   type Platform,
 } from "@tmcode/workbench";
 
@@ -45,6 +46,8 @@ async function choosePlatform(): Promise<Platform> {
 }
 
 async function boot() {
+  // Dev builds: a golden-journey test (or a usability session) counts from the very first frame.
+  if (import.meta.env.DEV && (window as unknown as { __TMCODE_JOURNEY__?: boolean }).__TMCODE_JOURNEY__) journeyDebug.start();
   const desktopLog = inTauri ? await wireDesktopLogging() : null;
   const platform = await choosePlatform();
   const params = new URLSearchParams(location.search);
@@ -70,6 +73,8 @@ async function boot() {
       uiProbe: runUiProbe,
       // e2e: the close / quit guard the desktop window runs (Tauri close events don't exist in a browser).
       beforeQuit,
+      // Golden journeys and usability sessions: clicks and time between milestones (never sent anywhere).
+      journey: journeyDebug,
     };
   }
   createRoot(document.getElementById("root")!).render(

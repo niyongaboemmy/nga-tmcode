@@ -20,6 +20,7 @@ export { runUiProbe, watchCspViolations, type UiCheck } from "./selftest/uiProbe
 export { parseProjectLink, openProjectLink } from "./projects/service";
 export { parseAssignmentLink, openAssignmentLink } from "./projects/assignments";
 export { parseGradingLink, openGradingLink } from "./grading/link";
+export { journeyDebug } from "./util/journey";
 // Native self-test (apps/desktop/src/selftest.ts, TMCODE_DEV_SELFTEST=projects).
 export * as projectsForSelfTest from "./projects/service";
 export * as assignmentsForSelfTest from "./projects/assignments";

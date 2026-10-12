@@ -437,6 +437,8 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       proj.status = "draft";
       for (const l of ls) if (l.status === "submitted") l.status = "linked";
       returnedProjects.set(proj.id as number, { at: now(), message: (body.message as string | null) ?? null });
+      // As Task Mentor: the student's assignment says "returned" too (my.returned_at / returned_message).
+      if (proj.assignment_id && (proj.owner as { id: number }).id === user.id) returned.set(proj.assignment_id as number, { at: now(), message: (body.message as string | null) ?? null });
       return { status: 200, body: { status: "draft", project: projectOut(proj) } };
     }
     if ((m = p.match(/^\/projects\/(\d+)\/revisions\/(\d+)\/manifest$/))) {

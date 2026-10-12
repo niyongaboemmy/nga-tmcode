@@ -5,6 +5,7 @@ import { confirmLeaveWorkspace, getPlatform, notify, notifyProgress, openEditorI
 import { api, projectsSupported, signedIn, TmError, useProjects } from "../projects/service";
 import { linkableActivities } from "../projects/matching";
 import type { Manifest } from "../projects/plan";
+import { markJourney } from "../util/journey";
 
 /**
  * Grading TMCode practicals in TMCode (teachers): the assignments and quiz
@@ -530,6 +531,7 @@ async function openSubmissionNow(key: string, row: RosterRow): Promise<boolean> 
 }
 
 async function afterOpen(key: string) {
+  markJourney("first-student-open");
   await revealEntry();
   openGrading(key, { toSide: true });
 }
