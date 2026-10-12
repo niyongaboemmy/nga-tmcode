@@ -73,7 +73,7 @@ test("connect the folder, save, edit, save again, then get changes from another 
   await expect(page.getByTestId("sync-state")).toContainText("Saved online");
   // What came down, by name.
   await expect(page.locator(".tm-toast", { hasText: "Got 1 change from Task Mentor: todo.md." })).toBeVisible();
-  await page.locator('.tm-activity[aria-label^="Explorer"]').click();
+  await page.locator('.tm-activity[data-view="explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="notes"]')).toBeVisible();
 });
 
@@ -92,7 +92,7 @@ test("a file changed here and in Task Mentor is a conflict the user resolves", a
   await expect(page.getByTestId("conflicts")).toContainText("main.py");
   await page.getByTestId("conflicts").getByLabel("Take Task Mentor's").click();
   await expect(page.getByTestId("sync-state")).toContainText("Saved online");
-  await page.locator('.tm-activity[aria-label^="Explorer"]').click();
+  await page.locator('.tm-activity[data-view="explorer"]').click();
   await page.locator('.tm-explorer [data-path="main.py"]').dblclick();
   await expect(page.locator(".monaco-editor .view-lines")).toContainText("theirs");
 });

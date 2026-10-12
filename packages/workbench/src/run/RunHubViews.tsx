@@ -370,18 +370,20 @@ function buildRows(): Row[] {
     rows.push({ kind: "sep" });
   }
   const path = activeFilePath();
+  const target = currentTarget(hub);
+  // One Run: when Run's target is the file's own action, its row is marked current (never listed twice).
+  const fileIsTarget = !!target && hub.fileActions.some((a) => a.id === target.id);
   if (path && hub.fileActions.length) {
     rows.push({ kind: "header", label: basename(path) });
-    for (const a of hub.fileActions) rows.push(asRow(a));
+    for (const a of hub.fileActions) rows.push(asRow(a, a.id === target?.id ? { current: true, keybinding: runProjectKeybinding() } : {}));
   }
-  const target = currentTarget(hub);
   const project = hub.projects.find((p) => p.actions.some((a) => a.id === target?.id)) ?? hub.projects[0];
   const runLabel = (a: RunAction) => ({ current: true, keybinding: runProjectKeybinding(), label: `Run Project: ${a.label}` });
   if (project) {
     rows.push({ kind: "header", label: `${project.label}${project.dir ? ` · ${project.dir}` : ""}` });
     const list = [...project.actions].sort((a, b) => (a.id === target?.id ? -1 : b.id === target?.id ? 1 : 0)).slice(0, 7);
     for (const a of list) rows.push(asRow(a, a.id === target?.id ? runLabel(a) : {}));
-  } else if (target) {
+  } else if (target && !fileIsTarget) {
     rows.push({ kind: "header", label: "Project" });
     rows.push(asRow(target, runLabel(target)));
   }

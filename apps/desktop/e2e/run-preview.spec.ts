@@ -44,7 +44,7 @@ test("visible tests run locally and failures open a diff", async ({ page }) => {
   await expect(page.locator(".tm-test-summary")).toContainText("3/3 passed");
 
   // Break the program: every test now fails, and the diff shows expected vs actual.
-  await page.locator('.tm-activity[aria-label^="Explorer"]').click();
+  await page.locator('.tm-activity[data-view="explorer"]').click();
   await open(page, "js", "js/sum.js");
   await page.locator(".monaco-editor .view-lines").click();
   await page.keyboard.press("F1");

@@ -102,12 +102,19 @@ function taskInFront(): { entry: string; actions: RunAction[] } | null {
   if (!inExam()) return null;
   const e = useExam.getState();
   const task = e.tasks.find((t) => t.question_id === e.activeTask) ?? null;
-  return task ? { entry: task.entry, actions: fileActionsFor(task.entry, { webRoot: null }) } : null;
+  if (!task) return null;
+  // The entry's own actions know its source (a program reading input runs in the Run panel, not the console).
+  if (activeFilePath() === task.entry && get().fileActions.length) return { entry: task.entry, actions: get().fileActions };
+  return { entry: task.entry, actions: fileActionsFor(task.entry, { webRoot: null, source: getDocument(task.entry)?.getValue() }) };
 }
 
 /** What Run runs right now, and why (one answer for the status bar, the editor ▶, F5 and Ctrl+F5). */
 export function currentRun(s: RunHubState = get()): RunChoice {
-  return resolveRun({ projects: s.projects, file: s.fileActions, activePath: activeFilePath(), pins: s.pins, task: taskInFront(), ctx: targetContext() });
+  const path = activeFilePath();
+  // The student's last choice for this kind of file (Run ▾ › "in JavaScript Console") comes first.
+  const chosen = path ? s.fileChoice[extname(path)] : undefined;
+  const file = chosen ? [...s.fileActions].sort((a, b) => (a.kind === chosen ? -1 : 0) - (b.kind === chosen ? -1 : 0)) : s.fileActions;
+  return resolveRun({ projects: s.projects, file, activePath: path, pins: s.pins, task: taskInFront(), ctx: targetContext() });
 }
 
 /** The Run target right now. */
@@ -219,7 +226,9 @@ export function setRunTarget(id: string | null) {
   const s = get();
   const a = id ? [...s.projects.flatMap((p) => p.actions), ...s.fileActions].find((x) => x.id === id) : null;
   const path = activeFilePath();
-  const dir = a ? projectDirOf(s.projects, a.kind === "runFile" || a.kind === "jsConsole" || a.kind === "debug" ? (a.entry ?? path ?? "") : a) : path ? projectDirOf(s.projects, path) : "";
+  // Remembered for where the choice was made: the open file's project folder, or the whole folder when nothing is open.
+  void a;
+  const dir = path ? projectDirOf(s.projects, path) : "";
   const pins = { ...s.pins };
   if (id) pins[dir] = id;
   else delete pins[dir];

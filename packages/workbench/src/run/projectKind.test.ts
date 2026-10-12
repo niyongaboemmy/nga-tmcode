@@ -366,6 +366,13 @@ describe("one Run: resolveRun", () => {
     expect(resolveRun({ projects: php, file: fileActions("calc.php", { webRoot: null }), activePath: "calc.php", pins: {}, ctx: DESKTOP }).reason).toBe("it's the file you're editing");
   });
 
+  it("a web page previews itself, not the site's index", () => {
+    const site = detectProjects([folder({ "index.html": "", "about.html": "" }, { dir: "web" })]);
+    const r = resolveRun({ projects: site, file: fileActions("web/about.html", { webRoot: "web" }), activePath: "web/about.html", pins: {}, ctx: DESKTOP });
+    expect(r.reason).toBe("it's the page you're editing");
+    expect(r.action?.entry ?? r.action?.label).toMatch(/about\.html/);
+  });
+
   it("a .js file previews its page only when the page loads it", () => {
     expect(fileActions("site/app.js", { webRoot: "site", pageLoadsFile: true })[0].kind).toBe("livePreview");
     expect(fileActions("site/app.js", { webRoot: "site", pageLoadsFile: false })[0].kind).not.toBe("livePreview");

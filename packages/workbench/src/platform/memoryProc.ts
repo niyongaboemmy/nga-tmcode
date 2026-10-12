@@ -25,6 +25,11 @@ export function createSimulatedProc(fs: FileSystem): ProcHost {
     async run(command, cwd, onEvent) {
       const id = ++next;
       setTimeout(async () => {
+        // The Testing view asks whether pytest is installed (else it uses unittest): it is, here.
+        if (/-c "import pytest"/.test(command)) {
+          onEvent({ type: "exit", code: 0 });
+          return;
+        }
         if (!/pytest/.test(command)) {
           onEvent({ type: "stderr", data: `zsh: command not found: ${command.split(" ")[0]}\n` });
           onEvent({ type: "exit", code: 127 });

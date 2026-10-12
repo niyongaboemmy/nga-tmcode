@@ -9382,14 +9382,10 @@ button.tm-setting-badge {
   background: transparent;
 }
 
-/* Two-line rows (guided plan J, U12): title, then status · due; the course wraps instead of squeezing. */
-.tm-assignment-row .tm-assignment-sub {
-  flex-wrap: wrap;
-  row-gap: 2px;
-  white-space: normal;
-}
-.tm-assignment-row .tm-assignment-sub > * {
-  white-space: nowrap;
+/* Two-line rows (guided plan J, U12): title, then status · due; the status and due never shrink, the course gives way. */
+.tm-assignment-row .tm-assignment-sub > .tm-chip,
+.tm-assignment-row .tm-assignment-sub > .tm-due {
+  flex: none;
 }
 .tm-projects-view.is-one-course [data-testid="assignment-row"] .tm-assignment-course {
   display: none;

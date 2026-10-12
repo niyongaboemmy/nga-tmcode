@@ -999,6 +999,12 @@ export function resolveRun(i: ResolveInput): RunChoice {
     }
   }
 
+  // A web page: Run previews the page being edited (not the site's index).
+  if (i.activePath && /\.html?$/i.test(i.activePath)) {
+    const page = i.file.find((a) => a.kind === "livePreview" && ok(a));
+    if (page) return { action: page, reason: "it's the page you're editing" };
+  }
+
   const fam = i.activePath ? fileFamily(i.activePath) : null;
   if (i.activePath && fam && fam !== "doc") {
     const own = i.projects
