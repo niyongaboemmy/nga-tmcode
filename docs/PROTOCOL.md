@@ -301,7 +301,7 @@ A project's web server (kinds with a `serve` step: `js/express`, `ts/nest`, `pyt
 | `GET /v1/previews/:id/events` | bearer | `text/event-stream` (below); closing it does **not** stop the preview |
 | `DELETE /v1/previews/:id` | bearer | `204` |
 | `ANY /v1/previews/:id/http/<path>` | bearer | the server's answer for `/<path>` (the bearer is not forwarded) |
-| `ANY /p/:id/:token/<path>` | **token** | the same, for browsers: serve this from a **separate preview origin** (e.g. `https://preview.<domain>`, the app host's nginx proxying `/p/` to tm-judge) so student code never runs on Task Mentor's origin |
+| `ANY /p/:id/:token/<path>` | **token** | the same, for browsers: serve this from a **separate site** (e.g. `https://preview.<ip-with-dashes>.sslip.io` or `https://nga-preview.duckdns.org`, never a subdomain of the apps' domain, whose cookies would ride along; the app host's nginx proxies `/p/` to tm-judge) |
 
 - **Start-up:** the kind's `restore`/`build` steps (as in §5.2), then the `serve` step with `PORT=<the kind's port>` and `HOST=0.0.0.0`; ready when the port accepts connections (up to `JUDGE_PREVIEW_READY_S`, 120 s).
 - **Events:** `stage { name: "build" | "start" }`, `log { stream: "stdout" | "stderr", data }` (256 KB replayed at most), `ready { path: "/" }`, `error { message }`, `exit { code, signal, reason }` (always last). Before `ready` the proxy answers `409 PREVIEW_NOT_READY`; after `exit`, `410 PREVIEW_ENDED`.

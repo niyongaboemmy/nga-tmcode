@@ -1,4 +1,7 @@
 # /etc/nginx/sites-available/preview on the APP HOST: the public preview origin.
+# PREVIEW_HOST must be a SEPARATE SITE (preview.<ip-with-dashes>.sslip.io or <name>.duckdns.org),
+# never a subdomain of amashuri.com: .amashuri.com cookies would reach student code.
+# Same as Task Mentor's deploy/nginx-preview.conf.example.
 # Only /p/<id>/<token>/... is forwarded (signed by Task Mentor, checked by tm-judge) over the
 # WireGuard tunnel; nothing else of tm-judge is reachable from here. certbot --nginx adds TLS.
 map $http_upgrade $preview_connection {
@@ -8,7 +11,7 @@ map $http_upgrade $preview_connection {
 
 server {
   listen 80;
-  server_name preview.amashuri.com;   # your preview subdomain
+  server_name PREVIEW_HOST;   # e.g. preview.13-48-1-2.sslip.io or nga-preview.duckdns.org
 
   client_max_body_size 10m;
 

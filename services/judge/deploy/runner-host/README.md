@@ -7,7 +7,7 @@ A dedicated machine for tm-judge: isolate (tiers 1–2) **and** Docker + gVisor 
 | **Primary target** | Oracle Cloud **Always Free** Ampere A1 (`VM.Standard.A1.Flex`, arm64), up to 4 OCPU / 24 GB, region **eu-stockholm-1** (closest to the app host in AWS eu-north-1). Cost: 0 while it stays inside the Always Free limits. |
 | **Link to the app host** | A **WireGuard** tunnel (free, private): app host `10.66.0.1` ↔ runner `10.66.0.2`. tm-judge listens on `10.66.0.2:5010` only. |
 | **Public ports on the runner** | `51820/udp` from the app host's public IP, `22/tcp` from your admin IP. Nothing else. |
-| **Previews** | Public at `https://preview.<domain>/p/<id>/<token>/`, served by the **app host's nginx**, proxied over the tunnel. |
+| **Previews** | Public at `https://<PREVIEW_HOST>/p/<id>/<token>/` on a **separate site** (free: `preview.<app-ip-with-dashes>.sslip.io` or `nga-preview.duckdns.org`), served by the **app host's nginx**, proxied over the tunnel. |
 | **Fallback (no new machine)** | The existing shared AWS host keeps running tm-judge with the isolate tiers only (below). |
 
 Nothing here has been run. Every command below is for you to run after approval.
@@ -134,15 +134,22 @@ curl -s -H "Authorization: Bearer $TOKEN" http://10.66.0.2:5010/v1/health | jq '
 ```
 `features` should include `containers`, `pty`, `previews` and `databases`.
 
-## 7. The preview subdomain (free)
+## 7. The preview host: a separate site (free)
 
-Previews are served from **their own origin** so student code never runs on Task Mentor's origin.
+Previews are served from **their own site** (a different registrable domain), so student code never runs on, or next to, Task Mentor's origin.
 
-1. DNS: an `A` record `preview.<domain>` → **the app host's** public IP (free in the existing DNS zone). The runner exposes no web port.
-2. nginx on the app host: `nginx-preview.conf.example` → `/etc/nginx/sites-available/preview`, link it into `sites-enabled`, `sudo nginx -t && sudo systemctl reload nginx`. Only `/p/…` is proxied, over the tunnel, with WebSocket upgrades.
-3. TLS: `sudo certbot --nginx -d preview.<domain>` (Let's Encrypt, free; renews itself).
+> **Not `preview.amashuri.com`:** a subdomain is the *same site* as the apps, so `.amashuri.com` cookies (`nga_did`, `nga_inst_*`) and the apps' `SameSite=Lax` cookies would ride along on preview requests and be reachable from student code.
 
-**Cookies.** A sibling subdomain (`preview.amashuri.com`) is the same *site* as `taskmentor.amashuri.com`: cookies set for `Domain=.amashuri.com` are sent to it and are readable by preview JavaScript unless they are `HttpOnly`. Before turning previews on, make sure no session or SSO cookie is set on `.amashuri.com` without `HttpOnly`, or (better, if a domain ever becomes affordable) use a separate registrable domain for previews. tm-judge strips `Domain` from the preview's own cookies and scopes them to the preview's path.
+Pick one free name (`PREVIEW_HOST`):
+- **sslip.io**, no sign-up: `preview.<app-host-ip-with-dashes>.sslip.io` (e.g. `preview.13-48-1-2.sslip.io`) resolves to the app host's IP by itself.
+- **DuckDNS**, free sign-up: e.g. `nga-preview.duckdns.org`, an `A` record pointing at the app host's public IP (set once in the DuckDNS page).
+
+Then, on the app host (the runner exposes no web port):
+1. nginx: Task Mentor's template `deploy/nginx-preview.conf.example` (in the Task Mentor repo; same as `nginx-preview.conf.example` here). Replace `PREVIEW_HOST`, copy it to `/etc/nginx/sites-available/preview`, link it into `sites-enabled`, then `sudo nginx -t && sudo systemctl reload nginx`. Only `/p/…` is proxied over the tunnel, with WebSocket upgrades.
+2. TLS: `sudo certbot --nginx -d <PREVIEW_HOST>` (Let's Encrypt, free; renews itself). Port 80/443 on the app host must be open, as they already are for the apps.
+3. Task Mentor: `JUDGE_PREVIEW_BASE=https://<PREVIEW_HOST>`.
+
+tm-judge also strips `Domain` from the preview's own cookies and scopes them to the preview's path.
 
 ## 8. Cut-over
 
@@ -153,7 +160,7 @@ Previews are served from **their own origin** so student code never runs on Task
    TMJUDGE_URL=http://10.66.0.2:5010
    TMJUDGE_TOKEN=<runner JUDGE_TOKEN>
    JUDGE_PREVIEW_SECRET=<runner JUDGE_PREVIEW_SECRET, 32+ characters>
-   JUDGE_PREVIEW_BASE=https://preview.<domain>
+   JUDGE_PREVIEW_BASE=https://<PREVIEW_HOST>        # sslip.io or DuckDNS name, never *.amashuri.com
    ```
 3. Keep the **old shared-host tm-judge** (pm2, `127.0.0.1:5010`, isolate only) running for one release as the fallback. Note its token.
 4. Deploy Task Mentor; run a Python, a Java and a C# question, an interactive session, an Express preview and an `sql/postgres` exercise.
