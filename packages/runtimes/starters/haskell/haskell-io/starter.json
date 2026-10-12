@@ -1,0 +1,24 @@
+{
+  "id": "haskell-io",
+  "language": "haskell",
+  "kind": "haskell/single",
+  "title": "Haskell – Sum of two numbers (input/output)",
+  "description": "Reads two whole numbers on one line and prints their sum",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "Main.hs",
+  "open": [
+    "Main.hs"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "ghc"
+  ]
+}

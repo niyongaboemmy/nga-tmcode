@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Runs the wave A starters with the toolchains on THIS computer (not the
-// sandbox): every single-file hello must run, and every starter with
+// Runs the starters with the toolchains on THIS computer (not the sandbox):
+// every single-file hello (and every wave B–D hello) must run, and every starter with
 // .nga/tests.json must pass its stdin → stdout cases (whitespace-normalised).
 // With --projects it also runs each new project/api/data starter's unit tests
 // (make test, mvn test, gradle test, pytest, npm test, go test, cargo test).
@@ -42,6 +42,60 @@ const env = { ...process.env, PATH, NO_COLOR: "1", CARGO_TERM_COLOR: "never" };
 const PY = process.env.PYTHON ?? "python3";
 const has = (cmd) => spawnSync("sh", ["-c", `command -v ${cmd}`], { env }).status === 0;
 const TOOLS = { c: "cc", cpp: "c++", java: "javac", python: PY, javascript: "node", typescript: "node", go: "go", rust: "rustc", sql: "sqlite3" };
+const MAC = process.platform === "darwin";
+
+/**
+ * Waves B–D: [tool that must be installed, build commands (may be empty), run command].
+ * `entry` is the program file; builds write ./verify-bin. Local equivalents of the
+ * catalog's steps (the runner uses its own pinned paths and flags).
+ */
+const LOCAL = {
+  kotlin: (e) => ["kotlinc", [["kotlinc", [e, "-include-runtime", "-d", "verify.jar"]]], ["java", ["-jar", "verify.jar"]]],
+  scala: (e) => ["scala-cli", [], ["scala-cli", ["--server=false", "run", e]]],
+  csharp: () => ["dotnet", [["dotnet", ["build", "-nologo", "-v", "q"]]], ["dotnet", ["run", "--no-build"]]],
+  fsharp: (e) => ["dotnet", [], ["dotnet", ["fsi", "--quiet", "--exec", e]]],
+  vb: () => ["dotnet", [["dotnet", ["build", "-nologo", "-v", "q"]]], ["dotnet", ["run", "--no-build"]]],
+  swift: (e) => ["swiftc", [["swiftc", ["-O", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  dart: (e) => ["dart", [], ["dart", ["run", e]]],
+  haskell: (e) => ["ghc", [["ghc", ["-O", "-outputdir", "verify-ghc", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  elixir: (e) => ["elixir", [], ["elixir", [e]]],
+  julia: (e) => ["julia", [], ["julia", ["--startup-file=no", e]]],
+  php: (e) => ["php", [], ["php", [e]]],
+  ruby: (e) => ["ruby", [], ["ruby", [e]]],
+  lua: (e) => ["lua", [], ["lua", [e]]],
+  bash: (e) => ["bash", [], ["bash", [e]]],
+  r: (e) => ["Rscript", [], ["Rscript", ["--vanilla", e]]],
+  zig: (e) => ["zig", [["zig", ["build-exe", "-O", "ReleaseSafe", e, "-femit-bin=verify-bin"]]], ["./verify-bin", []]],
+  nim: (e) => ["nim", [["nim", ["c", "-d:release", "--hints:off", "--nimcache:verify-nimcache", "-o:verify-bin", e]]], ["./verify-bin", []]],
+  fortran: (e) => ["gfortran", [["gfortran", ["-O2", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  pascal: (e) => ["fpc", [["fpc", ["-O2", "-v0", "-overify-bin", e]]], ["./verify-bin", []]],
+  cobol: (e) => ["cobc", [["cobc", ["-x", "-free", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  // Linux x86-64 only (ELF, System V); macOS uses Mach-O and leading underscores.
+  asm: (e) => (MAC || process.arch !== "x64" ? null : ["nasm", [["nasm", ["-f", "elf64", e, "-o", "verify.o"]], ["cc", ["-no-pie", "verify.o", "-o", "verify-bin"]]], ["./verify-bin", []]]),
+  d: (e) => ["ldc2", [["ldc2", ["-O", "-od=verify-obj", "-of=verify-bin", e]]], ["./verify-bin", []]],
+  crystal: (e) => ["crystal", [["crystal", ["build", "--no-debug", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  v: (e) => ["v", [["v", ["-o", "verify-bin", e]]], ["./verify-bin", []]],
+  ada: (e) => ["gnatmake", [["gnatmake", ["-q", "-O2", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  objc: (e) =>
+    MAC
+      ? ["clang", [["clang", ["-O2", "-w", e, "-framework", "Foundation", "-o", "verify-bin"]]], ["./verify-bin", []]]
+      : ["gnustep-config", [["sh", ["-c", `cc $(gnustep-config --objc-flags) -w ${e} -o verify-bin -lgnustep-base -lobjc`]]], ["./verify-bin", []]],
+  groovy: (e) => ["groovy", [], ["groovy", [e]]],
+  clojure: (e) => ["bb", [], ["bb", [e]]],
+  pwsh: (e) => ["pwsh", [], ["pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", e]]],
+  perl: (e) => ["perl", [], ["perl", [e]]],
+  tcl: (e) => ["tclsh", [], ["tclsh", [e]]],
+  octave: (e) => ["octave-cli", [], ["octave-cli", ["--quiet", "--norc", "--no-window-system", e]]],
+  ocaml: (e) => ["ocamlfind", [["ocamlfind", ["ocamlopt", "-package", "str", "-linkpkg", e, "-o", "verify-bin"]]], ["./verify-bin", []]],
+  erlang: (e) => ["escript", [], ["escript", [e]]],
+  gleam: () => ["gleam", [], ["gleam", ["run", "--no-print-progress"]]],
+  racket: (e) => ["racket", [], ["racket", [e]]],
+  scheme: (e) => ["guile", [], ["guile", ["--no-auto-compile", "-s", e]]],
+  lisp: (e) => ["sbcl", [], ["sbcl", ["--script", e]]],
+  prolog: (e) => ["swipl", [], ["swipl", ["-q", "-g", "main", "-t", "halt", e]]],
+  verilog: (e) => ["iverilog", [["iverilog", ["-g2012", "-o", "verify-sim", e]]], ["vvp", ["-n", "verify-sim"]]],
+  vhdl: (e) => ["ghdl", [["ghdl", ["-a", "--std=08", e]]], ["ghdl", ["-r", "--std=08", e.split("/").pop().replace(/\.[^.]+$/, "")]]],
+};
 const esbuildBin = join(pkg, "../../node_modules/.bin/esbuild");
 
 const norm = (s) => s.replace(/\r\n/g, "\n").split("\n").map((l) => l.replace(/\s+$/, "")).join("\n").replace(/\n+$/, "");
@@ -102,8 +156,16 @@ function prepare(s, dir) {
       }
       return { run: ["sqlite3", ["-bail", "-header", "-box", "verify.db"]], stdinFile: entry };
     }
-    default:
-      return { skip: `no local runner for ${m.language}` };
+    default: {
+      const recipe = LOCAL[m.language]?.(entry);
+      if (!recipe) return { skip: `no local runner for ${m.language} on this computer` };
+      const [, builds, run] = recipe;
+      for (const [c, a] of builds) {
+        const r = sh(c, a, { cwd: dir, timeout: 600_000 });
+        if (!r.ok) return fail(`${c} ${a[0]}`, r);
+      }
+      return { run };
+    }
   }
 }
 
@@ -139,15 +201,22 @@ for (const s of loadStarters(join(pkg, "starters"))) {
   if (only && !m.id.includes(only)) continue;
   const kind = kindById(m.kind);
   const lang = m.language;
-  if (!kind || !TOOLS[lang]) continue; // wave A program languages only
-  const single = kind.id.endsWith("/single") || kind.id === "sql/sqlite";
+  const recipe = TOOLS[lang] ? null : LOCAL[lang] ? LOCAL[lang](m.entry) : undefined;
+  if (!kind || recipe === undefined) continue; // languages with no local recipe (web, logic)
+  const tool = TOOLS[lang] ?? recipe?.[0];
+  // Wave A: single-file hellos; later waves: every hello (VB, Gleam and asm hellos are projects or wrappers).
+  const single = kind.id.endsWith("/single") || kind.id === "sql/sqlite" || !TOOLS[lang];
   const wantHello = m.purpose === "hello" && single;
   if (m.tests?.io && m.tags.includes("unsolved")) record(m.id, "skip", "unsolved exercise: its tests pass once a student solves it");
   const wantIo = !!m.tests?.io && !m.tags.includes("unsolved");
   const wantUnit = projects && m.tests?.unit && UNIT[m.kind] && !m.id.startsWith("tmcode-");
   if (!wantHello && !wantIo && !wantUnit) continue;
-  if (!has(TOOLS[lang])) {
-    record(m.id, "skip", `${TOOLS[lang]} not installed`);
+  if (!tool) {
+    record(m.id, "skip", `no local runner for ${lang} on this computer`);
+    continue;
+  }
+  if (!has(tool)) {
+    record(m.id, "skip", `${tool} not installed`);
     continue;
   }
   const dir = mkdtempSync(join(tmpdir(), `nga-starter-${m.id}-`));

@@ -1,0 +1,20 @@
+{
+  "id": "vhdl-hello",
+  "language": "vhdl",
+  "kind": "vhdl/ghdl",
+  "title": "VHDL – Hello, world",
+  "description": "The smallest VHDL program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.vhd",
+  "open": [
+    "main.vhd"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "ghdl"
+  ]
+}

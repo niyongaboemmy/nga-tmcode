@@ -1,0 +1,21 @@
+{
+  "id": "verilog-hello",
+  "language": "verilog",
+  "kind": "verilog/iverilog",
+  "title": "Verilog – Hello, world",
+  "description": "The smallest Verilog program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.v",
+  "open": [
+    "main.v"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "iverilog",
+    "vvp"
+  ]
+}

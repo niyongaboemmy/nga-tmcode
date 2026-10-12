@@ -53,6 +53,34 @@ describe("runtime catalog", () => {
     for (const k of KINDS.filter((x) => x.tier === "container")) expect(k.enabled, k.id).toBe(false);
   });
 
+  it("has the wave C and D languages as data, each with at least one kind", () => {
+    const later = ["scala", "csharp", "julia", "haskell", "elixir", "swift", "dart", "zig", "nim", "fortran", "pascal", "cobol", "asm", "d", "crystal", "v", "ada", "objc", "groovy", "clojure", "fsharp", "vb", "pwsh", "perl", "tcl", "octave", "ocaml", "erlang", "gleam", "racket", "scheme", "lisp", "prolog", "verilog", "vhdl"];
+    for (const key of later) {
+      const lang = LANGUAGES.find((l) => l.key === key);
+      expect(lang, key).toBeDefined();
+      expect(["C", "D"]).toContain(lang!.wave);
+      expect(KINDS.some((k) => k.language === key), `${key} kind`).toBe(true);
+    }
+    expect(LANGUAGES.length).toBeGreaterThanOrEqual(50);
+    for (const k of KINDS.filter((x) => x.wave === "D")) expect(k.enabled, k.id).toBe(false);
+  });
+
+  it("runs .NET builds and Gradle (Kotlin) in tier 3, Flutter too", () => {
+    for (const id of ["csharp/single", "csharp/console", "csharp/xunit", "csharp/aspnet", "fsharp/script", "fsharp/console", "fsharp/test", "vb/console", "kotlin/gradle", "flutter/app"]) {
+      expect(kindById(id)!.tier, id).toBe("container");
+    }
+    for (const id of ["csharp/console", "fsharp/console", "vb/console", "kotlin/gradle"]) expect(kindById(id)!.interactive, id).toBe("pty");
+    // A run step in tier 3 still gets run limits.
+    for (const k of KINDS.filter((x) => x.tier === "container" && x.steps.run)) expect(k.limits.run, k.id).toBeDefined();
+  });
+
+  it("every compiled wave D single file builds into the project (so run boxes get the binary)", () => {
+    for (const k of KINDS.filter((x) => x.wave === "D" && x.steps.build && x.tier !== "container")) {
+      const outs = k.steps.build!.args.filter((a) => typeof a === "object" && "out" in a);
+      if (k.id.endsWith("/single") || k.id === "asm/nasm" || k.id === "verilog/iverilog") expect(outs.length, k.id).toBeGreaterThan(0);
+    }
+  });
+
   it("pins the wave A runtimes", () => {
     for (const id of ["gcc-13", "gxx-13", "jdk-21", "python-3.12", "node-22", "typescript", "go-1.25", "rust-stable", "sqlite-3"]) {
       expect(RUNTIMES.some((r) => r.id === id), id).toBe(true);

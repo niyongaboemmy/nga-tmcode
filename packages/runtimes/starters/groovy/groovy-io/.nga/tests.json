@@ -1,0 +1,26 @@
+{
+  "entry": "main.groovy",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "two small numbers",
+      "input": "3 4\n",
+      "expected_output": "Sum: 7\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "a negative number",
+      "input": "-10 4\n",
+      "expected_output": "Sum: -6\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "big numbers",
+      "input": "1000000 2345678\n",
+      "expected_output": "Sum: 3345678\n",
+      "points": 1
+    }
+  ]
+}

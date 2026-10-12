@@ -1,0 +1,20 @@
+{
+  "id": "ada-hello",
+  "language": "ada",
+  "kind": "ada/single",
+  "title": "Ada – Hello, world",
+  "description": "The smallest Ada program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.adb",
+  "open": [
+    "main.adb"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "gnatmake"
+  ]
+}

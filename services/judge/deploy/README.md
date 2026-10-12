@@ -18,6 +18,8 @@ The script is idempotent.
 ## Project toolchains and offline caches
 `install.sh` also installs the wave-A project toolchains of the Runtime Catalog (`packages/runtimes`): Go → `/opt/go`, Rust (rustup minimal, pinned; `/opt/rust` is the toolchain itself), Maven → `/opt/maven`, Gradle → `/opt/gradle`, Node.js 22 → `/opt/node-22` (+ esbuild, tsc), uv → `/opt/uv`, the JUnit console launcher → `/opt/junit`; gcc/g++ 13, make, cmake, GoogleTest, Python 3.12, SQLite and OpenJDK 21 come from apt. Versions are pinned at the top of the script and every download is checksum-verified. `SKIP_TOOLCHAINS=1` skips this part.
 
+Wave D (the long tail) is opt-in: `INSTALL_WAVE_D=1 bash install.sh` installs all of it, `WAVE_D="perl tcl prolog" bash install.sh` only those languages. apt packages from Ubuntu 24.04 where they are recent enough, pinned tarballs otherwise (versions at the top of the script). Each language installs in its own subshell: a failure prints `wave D <lang>: FAILED, skipped` and the install carries on; tm-judge then lists that language's kinds under `/v1/catalog` `unavailable`.
+
 It creates the cache-layer folders under `/opt/tm-judge/caches/<id>` and adds `JUDGE_CACHES` to `.judge.env`. Fill them (needs network, runs package managers outside the sandbox; takes a while and a few GB):
 ```sh
 bash /opt/apps/tm-judge/services/judge/deploy/build-caches.sh          # all layers

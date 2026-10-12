@@ -267,14 +267,14 @@ describe("requests and the catalog view", () => {
   });
   it("refuses unknown kinds, kinds this tier can't run, and bad actions", () => {
     const files = [{ path: "main.c", content: "int main(){}" }];
-    expect(() => resolveProject(tc, { kind: "cobol/x", files })).toThrow(/Unknown project kind/);
+    expect(() => resolveProject(tc, { kind: "snobol/x", files })).toThrow(/Unknown project kind/);
     expect(() => resolveProject(tc, { kind: "java/spring-boot", files: [{ path: "pom.xml", content: "" }] })).toThrow(/tier container/);
     expect(() => resolveProject(tc, { kind: "c/single", files, actions: ["deploy" as never] })).toThrow(/actions/);
     expect(() => resolveProject(tc, { kind: "c/single", files, actions: ["test"] })).toThrow(/no unit-test step/);
     expect(() => resolveProject(tc, { kind: "c/single", files, test_filter: "x; rm -rf /" })).toThrow(/test_filter/);
     expect(() => resolveProject(tc, { kind: "c/single", files, tests: [{ id: "1", input: "", checker: { type: "nope" as never } }] })).toThrow(/Unknown checker/);
     expect(() => resolveProject(tc, { files: [{ path: "notes.txt", content: "" }] })).toThrow(/Could not tell/);
-    expect(() => resolveProject(tc, { language: "cobol", files })).toThrow(/Unsupported language/);
+    expect(() => resolveProject(tc, { language: "snobol", files })).toThrow(/Unsupported language/);
   });
   it("detects the kind and entry, and defaults the actions", () => {
     if (!can("c/single")) return;

@@ -1,7 +1,9 @@
 /** .NET, functional languages, Swift, Dart and Flutter (§13.3, §13.5, §13.6). */
-import { entry, kind, reportTo } from "./kit";
+import { entry, kind, LIMITS, MANAGED_RUN, reportTo } from "./kit";
 
 const DOTNET_ENV = { DOTNET_CLI_TELEMETRY_OPTOUT: "1", MSBUILDDISABLENODEREUSE: "1", UseSharedCompilation: "false" };
+/** .NET builds (MSBuild worker nodes, many threads) run in tier 3; console programs get a PTY there. */
+const DOTNET_LIMITS = { ...LIMITS.container, run: MANAGED_RUN };
 
 export const OTHER_KINDS = [
   kind({
@@ -13,7 +15,8 @@ export const OTHER_KINDS = [
     detect: { anyOf: ["*.cs"], none: ["*.csproj", "*.sln"], priority: 10 },
     entry: { default: "Program.cs", find: "main-decl" },
     steps: { run: { tool: "dotnet", args: ["run", entry], env: DOTNET_ENV } },
-    tier: "isolate-build",
+    tier: "container",
+    limits: DOTNET_LIMITS,
     notes: ".NET 10 file-based `dotnet run app.cs`, or a pre-restored template csproj with Program.cs swapped in.",
   }),
   kind({
@@ -28,7 +31,8 @@ export const OTHER_KINDS = [
       build: { tool: "dotnet", args: ["build", "--no-restore", "-p:UseSharedCompilation=false", "-nologo"], env: DOTNET_ENV, runsProjectScripts: true },
       run: { tool: "dotnet", args: ["run", "--no-build"], env: DOTNET_ENV, runsProjectScripts: true },
     },
-    tier: "isolate-build",
+    tier: "container",
+    limits: DOTNET_LIMITS,
     caches: ["nuget-school"],
   }),
   kind({
@@ -40,7 +44,8 @@ export const OTHER_KINDS = [
     detect: { anyOf: ["*.csproj"], contains: [{ file: "*.csproj", text: "Microsoft\\.NET\\.Test\\.Sdk" }], priority: 60 },
     entry: { default: "src/App/Program.cs", find: "main-decl" },
     steps: { test: { tool: "dotnet", args: ["test", "--no-restore", "--logger", "trx", reportTo("--results-directory=")], env: DOTNET_ENV, runsProjectScripts: true, report: "trx", path: "TestResults" } },
-    tier: "isolate-build",
+    tier: "container",
+    limits: DOTNET_LIMITS,
     interactive: "none",
     caches: ["nuget-school"],
   }),

@@ -57,6 +57,18 @@ describe("starters", () => {
     }
   });
 
+  it("give every wave C and D language a hello and a two-number io-exercise", () => {
+    for (const lang of LANGUAGES.filter((l) => l.wave === "C" || l.wave === "D")) {
+      const hello = STARTERS.find((s) => s.manifest.id === `${lang.key}-hello`);
+      const io = STARTERS.find((s) => s.manifest.id === `${lang.key}-io`);
+      expect(hello?.manifest.purpose, `${lang.key}-hello`).toBe("hello");
+      expect(io?.manifest.purpose, `${lang.key}-io`).toBe("io-exercise");
+      const tests = IoTestsSchema.parse(JSON.parse(io!.files.find((f) => f.path === ".nga/tests.json")!.content));
+      expect(tests.entry).toBe(io!.manifest.entry);
+      for (const t of tests.tests) expect(t.expected_output, `${lang.key}-io ${t.id}`).toMatch(/^Sum: -?\d+\n$/);
+    }
+  });
+
   it("io-exercises have 1–4 visible tests", () => {
     for (const s of STARTERS.filter((x) => x.manifest.purpose === "io-exercise" && !x.manifest.id.startsWith("tmcode-"))) {
       const io = IoTestsSchema.parse(JSON.parse(s.files.find((f) => f.path === ".nga/tests.json")!.content));

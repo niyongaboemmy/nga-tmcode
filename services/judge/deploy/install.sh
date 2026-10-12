@@ -17,6 +17,9 @@
 #   6. (re)starts the pm2 process "tm-judge" on 127.0.0.1:5010
 # Cache layers are filled separately (needs network): deploy/build-caches.sh.
 # Skip the toolchains with SKIP_TOOLCHAINS=1 (e.g. a quick code update).
+# Wave D (the long tail, CODE_RUNNER_PLAN phase 7) is opt-in: INSTALL_WAVE_D=1 installs every
+# wave D toolchain, WAVE_D="perl tcl prolog" only those. Each language installs on its own; a
+# failure skips that language (its kinds then show in /v1/catalog `unavailable`), never the install.
 set -euo pipefail
 
 ISOLATE_VERSION="${ISOLATE_VERSION:-v2.7}"
@@ -35,6 +38,19 @@ UV_VERSION="${UV_VERSION:-0.8.22}"
 JUNIT_CONSOLE_VERSION="${JUNIT_CONSOLE_VERSION:-1.11.3}"
 ESBUILD_VERSION="${ESBUILD_VERSION:-0.28.2}"
 TYPESCRIPT_VERSION="${TYPESCRIPT_VERSION:-5.9.2}"
+# Wave D pins (tarballs; apt packages come from Ubuntu 24.04). Confirm each when the image is built.
+ZIG_VERSION="${ZIG_VERSION:-0.14.0}"
+NIM_VERSION="${NIM_VERSION:-2.2.0}"
+FPM_VERSION="${FPM_VERSION:-0.10.1}"
+CRYSTAL_VERSION="${CRYSTAL_VERSION:-1.14.0}"
+V_VERSION="${V_VERSION:-0.4.8}"
+GROOVY_VERSION="${GROOVY_VERSION:-4.0.24}"
+BABASHKA_VERSION="${BABASHKA_VERSION:-1.12.196}"
+CLOJURE_CLI_VERSION="${CLOJURE_CLI_VERSION:-1.12.0.1530}"
+PWSH_VERSION="${PWSH_VERSION:-7.4.6}"
+PESTER_VERSION="${PESTER_VERSION:-5.6.1}"
+REBAR3_VERSION="${REBAR3_VERSION:-3.24.0}"
+GLEAM_VERSION="${GLEAM_VERSION:-1.6.3}"
 
 # Update the code first and re-run the updated copy of this script (bash reads
 # scripts incrementally, so updating the file under a running bash is unsafe).
@@ -149,6 +165,153 @@ if [ "${SKIP_TOOLCHAINS:-}" != "1" ]; then
     sudo mkdir -p /opt/junit
     sudo install -m 0644 "$dl/junit.jar" "$jar"
     sudo touch "/opt/junit/.v${JUNIT_CONSOLE_VERSION}"
+  fi
+
+  # ── Wave D: one function per language (catalog runtime in brackets). Each runs in its own
+  # subshell with `set -e`, so the first failing command ends that language only.
+  apt_d() { sudo apt-get install -y -qq --no-install-recommends "$@" >/dev/null; }
+  install_d_perl() { apt_d perl; }                                                  # [perl-5.38]
+  install_d_tcl() { apt_d tcl8.6; }                                                 # [tcl-8.6]
+  install_d_pascal() { apt_d fp-compiler-3.2.2 fp-units-rtl-3.2.2 fp-units-base-3.2.2 fp-units-fcl-3.2.2; }  # [fpc-3.2]
+  install_d_cobol() { apt_d gnucobol3; }                                            # [gnucobol-3]
+  install_d_d() { apt_d ldc dub; }                                                  # [ldc-1]
+  install_d_ada() { apt_d gnat-13; }                                                # [gnat-13]
+  install_d_objc() { apt_d gobjc-13 libgnustep-base-dev; }                          # [gobjc-13]
+  install_d_ocaml() { apt_d ocaml-nox ocaml-findlib ocaml-dune libalcotest-ocaml-dev; }  # [ocaml-4.14]
+  install_d_racket() { apt_d racket; }                                              # [racket-8]
+  install_d_scheme() { apt_d guile-3.0; }                                           # [guile-3]
+  install_d_lisp() { apt_d sbcl; }                                                  # [sbcl-2]
+  install_d_prolog() { apt_d swi-prolog-nox; }                                      # [swipl-9]
+  install_d_octave() { apt_d octave; }                                              # [octave-8]
+  install_d_verilog() { apt_d iverilog; }                                           # [iverilog-12]
+  install_d_vhdl() { apt_d ghdl; }                                                  # [ghdl-4]
+  install_d_fortran() {                                                             # [gfortran-13]
+    apt_d gfortran-13
+    [ "$ARCH" = x86_64 ] || return 0 # fpm publishes x86-64 Linux binaries only
+    local f="fpm-${FPM_VERSION}-linux-x86_64"
+    fetch "https://github.com/fortran-lang/fpm/releases/download/v${FPM_VERSION}/$f" "$dl/$f"
+    fetch "https://github.com/fortran-lang/fpm/releases/download/v${FPM_VERSION}/$f.sha256" "$dl/$f.sha256"
+    check_sum sha256 "$dl/$f" "$(cut -d' ' -f1 "$dl/$f.sha256")"
+    sudo install -m 0755 "$dl/$f" /usr/local/bin/fpm
+  }
+  install_d_asm() {                                                                 # [nasm-2]
+    apt_d nasm binutils gcc-13
+    sudo mkdir -p /usr/local/lib/nga
+    printf '%s\n' '#!/bin/sh' \
+      '# nasm-link <file.asm> <output>: x86-64 ELF, linked with the C library (programs start at main).' \
+      'set -e' '/usr/bin/nasm -f elf64 -o "$2.o" "$1"' 'exec /usr/bin/gcc-13 -no-pie -o "$2" "$2.o"' |
+      sudo tee /usr/local/lib/nga/nasm-link >/dev/null
+    sudo chmod 0755 /usr/local/lib/nga/nasm-link
+  }
+  install_d_zig() {                                                                 # [zig-0.14]
+    local meta url sum
+    meta="$(curl -fsSL https://ziglang.org/download/index.json)"
+    url="$(printf '%s' "$meta" | python3 -c "import json,sys; print(json.load(sys.stdin)['${ZIG_VERSION}']['${RUSTARCH}-linux']['tarball'])")"
+    sum="$(printf '%s' "$meta" | python3 -c "import json,sys; print(json.load(sys.stdin)['${ZIG_VERSION}']['${RUSTARCH}-linux']['shasum'])")"
+    fetch "$url" "$dl/zig.tar.xz"
+    check_sum sha256 "$dl/zig.tar.xz" "$sum"
+    sudo rm -rf "/opt/zig-${ZIG_VERSION}" && sudo mkdir -p "/opt/zig-${ZIG_VERSION}"
+    sudo tar -xJf "$dl/zig.tar.xz" -C "/opt/zig-${ZIG_VERSION}" --strip-components=1
+    sudo ln -sfn "/opt/zig-${ZIG_VERSION}" /opt/zig
+  }
+  install_d_nim() {                                                                 # [nim-2]
+    [ "$ARCH" = x86_64 ] || { echo "nim: no prebuilt $ARCH tarball" >&2; return 1; }
+    local f="nim-${NIM_VERSION}-linux_x64.tar.xz"
+    fetch "https://nim-lang.org/download/$f" "$dl/$f"
+    fetch "https://nim-lang.org/download/$f.sha256" "$dl/$f.sha256"
+    check_sum sha256 "$dl/$f" "$(cut -d' ' -f1 "$dl/$f.sha256")"
+    sudo rm -rf "/opt/nim-${NIM_VERSION}" && sudo mkdir -p "/opt/nim-${NIM_VERSION}"
+    sudo tar -xJf "$dl/$f" -C "/opt/nim-${NIM_VERSION}" --strip-components=1
+    sudo ln -sfn "/opt/nim-${NIM_VERSION}" /opt/nim
+  }
+  install_d_crystal() {                                                             # [crystal-1]
+    [ "$ARCH" = x86_64 ] || { echo "crystal: no prebuilt $ARCH tarball" >&2; return 1; }
+    apt_d gcc pkg-config libpcre2-dev libevent-dev libgc-dev libssl-dev zlib1g-dev libyaml-dev
+    local f="crystal-${CRYSTAL_VERSION}-1-linux-x86_64.tar.gz"
+    fetch "https://github.com/crystal-lang/crystal/releases/download/${CRYSTAL_VERSION}/$f" "$dl/$f"
+    sudo rm -rf "/opt/crystal-${CRYSTAL_VERSION}" && sudo mkdir -p "/opt/crystal-${CRYSTAL_VERSION}"
+    sudo tar -xzf "$dl/$f" -C "/opt/crystal-${CRYSTAL_VERSION}" --strip-components=1
+    sudo ln -sfn "/opt/crystal-${CRYSTAL_VERSION}" /opt/crystal
+  }
+  install_d_v() {                                                                   # [v-0.4]
+    [ "$ARCH" = x86_64 ] || { echo "v: no prebuilt $ARCH zip" >&2; return 1; }
+    fetch "https://github.com/vlang/v/releases/download/${V_VERSION}/v_linux.zip" "$dl/v.zip"
+    sudo rm -rf "/opt/v-${V_VERSION}" && sudo mkdir -p "/opt/v-${V_VERSION}"
+    sudo unzip -q "$dl/v.zip" -d "$dl/v-unzip"
+    sudo cp -a "$dl/v-unzip/v/." "/opt/v-${V_VERSION}/"
+    sudo ln -sfn "/opt/v-${V_VERSION}" /opt/v
+    /opt/v/v version
+  }
+  install_d_groovy() {                                                              # [groovy-4], needs jdk-21
+    local f="apache-groovy-binary-${GROOVY_VERSION}.zip"
+    local base="https://archive.apache.org/dist/groovy/${GROOVY_VERSION}/distribution"
+    fetch "$base/$f" "$dl/$f"
+    fetch "$base/$f.sha256" "$dl/$f.sha256"
+    check_sum sha256 "$dl/$f" "$(cut -d' ' -f1 "$dl/$f.sha256")"
+    sudo rm -rf "/opt/groovy-${GROOVY_VERSION}"
+    sudo unzip -q "$dl/$f" -d /opt
+    sudo ln -sfn "/opt/groovy-${GROOVY_VERSION}" /opt/groovy
+  }
+  install_d_clojure() {                                                             # [clojure-1.12], needs jdk-21
+    local f="babashka-${BABASHKA_VERSION}-linux-${GOARCH}-static.tar.gz"
+    [ "$GOARCH" = amd64 ] || f="babashka-${BABASHKA_VERSION}-linux-aarch64-static.tar.gz"
+    fetch "https://github.com/babashka/babashka/releases/download/v${BABASHKA_VERSION}/$f" "$dl/$f"
+    fetch "https://github.com/babashka/babashka/releases/download/v${BABASHKA_VERSION}/$f.sha256" "$dl/$f.sha256"
+    check_sum sha256 "$dl/$f" "$(cut -d' ' -f1 "$dl/$f.sha256")"
+    tar -xzf "$dl/$f" -C "$dl"
+    sudo install -m 0755 "$dl/bb" /usr/local/bin/bb
+    apt_d rlwrap
+    fetch "https://download.clojure.org/install/linux-install-${CLOJURE_CLI_VERSION}.sh" "$dl/clojure-install.sh"
+    sudo bash "$dl/clojure-install.sh" --prefix /usr/local >/dev/null
+  }
+  install_d_pwsh() {                                                                # [pwsh-7.4]
+    apt_d libicu74
+    local f="powershell-${PWSH_VERSION}-linux-${NODEARCH}.tar.gz"
+    fetch "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VERSION}/$f" "$dl/$f"
+    sudo rm -rf /opt/microsoft/powershell/7 && sudo mkdir -p /opt/microsoft/powershell/7
+    sudo tar -xzf "$dl/$f" -C /opt/microsoft/powershell/7
+    sudo chmod 0755 /opt/microsoft/powershell/7/pwsh
+    sudo /opt/microsoft/powershell/7/pwsh -NoLogo -NoProfile -NonInteractive -Command \
+      "Set-PSRepository PSGallery -InstallationPolicy Trusted; Install-Module Pester -RequiredVersion ${PESTER_VERSION} -Scope AllUsers -Force -SkipPublisherCheck"
+  }
+  install_d_erlang() {                                                              # [erlang-27]
+    apt_d software-properties-common
+    sudo add-apt-repository -y ppa:rabbitmq/rabbitmq-erlang >/dev/null
+    sudo apt-get update -qq
+    apt_d erlang-nox erlang-dev
+    fetch "https://github.com/erlang/rebar3/releases/download/${REBAR3_VERSION}/rebar3" "$dl/rebar3"
+    sudo install -m 0755 "$dl/rebar3" /usr/local/bin/rebar3
+  }
+  install_d_gleam() {                                                               # [gleam-1], needs erlang
+    command -v erl >/dev/null || install_d_erlang
+    local f="gleam-v${GLEAM_VERSION}-${RUSTARCH}-unknown-linux-musl.tar.gz"
+    fetch "https://github.com/gleam-lang/gleam/releases/download/v${GLEAM_VERSION}/$f" "$dl/$f"
+    fetch "https://github.com/gleam-lang/gleam/releases/download/v${GLEAM_VERSION}/$f.sha256" "$dl/$f.sha256"
+    check_sum sha256 "$dl/$f" "$(cut -d' ' -f1 "$dl/$f.sha256")"
+    sudo mkdir -p /opt/gleam
+    sudo tar -xzf "$dl/$f" -C /opt/gleam
+  }
+
+  WAVE_D_ALL="perl tcl pascal cobol d ada objc ocaml racket scheme lisp prolog octave verilog vhdl fortran asm zig nim crystal v groovy clojure pwsh erlang gleam"
+  if [ "${INSTALL_WAVE_D:-}" = "1" ] || [ -n "${WAVE_D:-}" ]; then
+    echo "   wave D toolchains"
+    wave_d_failed=""
+    for lang in ${WAVE_D:-$WAVE_D_ALL}; do
+      if ! declare -F "install_d_$lang" >/dev/null; then
+        echo "   wave D: unknown language $lang (one of: $WAVE_D_ALL)" >&2
+        continue
+      fi
+      # Not in an if/|| context, so `set -e` inside the subshell really stops at the first error.
+      set +e
+      (set -e; "install_d_$lang")
+      rc=$?
+      set -e
+      if [ "$rc" -eq 0 ]; then echo "   wave D $lang: ok"; else echo "   wave D $lang: FAILED, skipped" >&2; wave_d_failed="$wave_d_failed $lang"; fi
+    done
+    for d in /opt/zig/ /opt/nim/ /opt/crystal/ /opt/v/ /opt/groovy/ /opt/gleam /opt/microsoft/powershell/7; do
+      if [ -e "$d" ]; then sudo chmod -R a+rX "$d"; fi
+    done
+    [ -z "$wave_d_failed" ] || echo "   wave D not installed:$wave_d_failed (tm-judge lists their kinds as unavailable; F# and VB come with the .NET 8 SDK, wave C)" >&2
   fi
 
   # Everything under /opt is read by the sandbox user: world-readable, root-owned.

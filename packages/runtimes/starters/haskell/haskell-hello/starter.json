@@ -1,0 +1,20 @@
+{
+  "id": "haskell-hello",
+  "language": "haskell",
+  "kind": "haskell/single",
+  "title": "Haskell – Hello, world",
+  "description": "The smallest Haskell program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "Main.hs",
+  "open": [
+    "Main.hs"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "ghc"
+  ]
+}
