@@ -9,7 +9,7 @@ import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
 import { SYNC_ICON, SYNC_LABEL, SYNC_TIP, SYNC_TONE, syncLineText } from "./syncLabels";
 import { loadRemoved, lockReason, recheck, openProject, projectsSupported, refreshProjects, removeProject, restoreProject, setSharePresence, signIn, useProjects } from "./service";
-import { showAssignment, useAssignments, type AssignmentSummary } from "./assignments";
+import { showAssignment, startAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { deriveStatus, STATUS_LABEL as STUDENT_LABEL, type StudentStatus } from "./status";
 import { useStatusSync } from "./useStatusSync";
 import { StatusSteps } from "./StatusSteps";
@@ -18,7 +18,7 @@ import { findPractical, practicalState, practicalSummary, showQuizPractical } fr
 
 const linksOfProject = (p: Project): Link[] => (Array.isArray(p.links) ? (p.links as Link[]) : ((p.links?.items ?? []) as Link[]));
 import type { Link, Project } from "./types";
-import { openInTaskMentor } from "./commands";
+import { openInTaskMentor } from "./taskMentorLinks";
 import { SignInWaiting } from "./SignInWaiting";
 import { dueText, TYPE_LABEL } from "./matching";
 
@@ -56,7 +56,7 @@ function ago(iso: string | null | undefined) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-function ProjectRow({ p, current }: { p: Project; current: boolean }) {
+export function ProjectRow({ p, current }: { p: Project; current: boolean }) {
   const online = p.presence?.online;
   const status = p.status ?? "draft";
   return (
@@ -67,17 +67,22 @@ function ProjectRow({ p, current }: { p: Project; current: boolean }) {
       data-row-nav
       data-testid="project-row"
       title={`${p.name}${p.description ? ` — ${p.description}` : ""}\n${p.kind === "github" ? `GitHub: ${p.repo_full_name ?? p.repo_url}` : "Saved in Task Mentor"}`}
-      onClick={() => void openProject(p.id)}
+      // One row behaviour (guided plan H): an assignment's project is its brief on click/Space and
+      // Continue on double-click/Enter (through the assignment, so "save first?" is never skipped).
+      onClick={() => (p.assignment ? showAssignment(p.assignment.id) : void openProject(p.id))}
+      onDoubleClick={() => p.assignment && void startAssignment(p.assignment.id)}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
         e.preventDefault();
-        void openProject(p.id);
+        if (!p.assignment) return void openProject(p.id);
+        showAssignment(p.assignment.id);
+        if (e.key === "Enter") void startAssignment(p.assignment.id);
       }}
       onContextMenu={(e) => {
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, [
-          { kind: "item", label: "Open in TMCode", run: () => void openProject(p.id) },
-          { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor(p.id) },
+          { kind: "item", label: p.assignment ? "Continue" : "Open", run: () => (p.assignment ? void startAssignment(p.assignment.id) : void openProject(p.id)) },
+          { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor({ kind: "project", id: p.id }) },
           ...(p.assignment ? [{ kind: "item" as const, label: "Show Assignment Brief", run: () => showAssignment(p.assignment!.id) }] : []),
           ...(current ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") }] : []),
           ...(p.my_role === "owner" && status === "draft" ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Remove Project…", run: () => void removeProject(p) }] : []),

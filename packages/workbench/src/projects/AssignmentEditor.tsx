@@ -18,7 +18,7 @@ import { StatusSteps } from "./StatusSteps";
 import { QuizPracticalBrief } from "./QuizPracticalBrief";
 import { ConflictList } from "./ConflictList";
 import { STATE_LABEL } from "./AssignmentsView";
-import { openAssignmentInTaskMentor } from "./commands";
+import { openInTaskMentor } from "./taskMentorLinks";
 import { keyOf, openGrading } from "../grading/service";
 
 type Input = Extract<EditorInput, { kind: "assignment" }>;
@@ -262,7 +262,7 @@ function AssignmentBrief({ input }: { input: Input }) {
   // The one main button of the next-step card, repeated by the sticky footer.
   const footerMain: { label: string; icon: string; run: () => void } | null =
     status === "not_started" && open
-      ? { label: "Start Assignment", icon: "play", run: () => void startAssignment(id) }
+      ? { label: "Start", icon: "play", run: () => void startAssignment(id) }
       : !here && (status === "in_progress" || status === "returned" || status === "submitted")
         ? { label: "Continue", icon: "folder-opened", run: () => void startAssignment(id) }
         : here && (status === "in_progress" || status === "returned") && !detail.read_only && hasFiles
@@ -344,7 +344,7 @@ function AssignmentBrief({ input }: { input: Input }) {
                 <small className="tm-muted">The folder open now stays on this computer; it's under Recent on Home.</small>
               </div>
               <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-start" autoFocus>
-                {busyIcon("starting", "play")} {busy === "starting" ? "Preparing your project…" : "Start Assignment"}
+                {busyIcon("starting", "play")} {busy === "starting" ? "Preparing your project…" : "Start"}
               </button>
             </>
           ) : status === "graded" ? (
@@ -362,7 +362,7 @@ function AssignmentBrief({ input }: { input: Input }) {
               {submittedLine}
               {!here && my?.project_id && (
                 <button type="button" className="tm-button tm-button--secondary" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue">
-                  {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Open My Work"}
+                  {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Continue"}
                 </button>
               )}
             </div>
@@ -382,7 +382,7 @@ function AssignmentBrief({ input }: { input: Input }) {
               </div>
               {view!.primary?.id === "open_work" && (
                 <button type="button" className="tm-button tm-button--secondary" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue">
-                  {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Open My Work"}
+                  {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Continue"}
                 </button>
               )}
               {here && !detail.read_only && !autoSaving && (
@@ -469,7 +469,7 @@ function AssignmentBrief({ input }: { input: Input }) {
             </>
           )}
           <span className="tm-next-step-break" />
-          <button type="button" className="tm-link-button tm-next-step-tm" onClick={() => openAssignmentInTaskMentor(id)}>
+          <button type="button" className="tm-link-button tm-next-step-tm" onClick={() => openInTaskMentor({ kind: "assignment", id: id })}>
             <Codicon name="link-external" /> Open in Task Mentor
           </button>
         </section>
@@ -484,7 +484,7 @@ function AssignmentBrief({ input }: { input: Input }) {
             <button type="button" className="tm-button tm-button--secondary" onClick={() => openGrading(keyOf("assignment", id, null))} data-testid="assignment-grade">
               <Codicon name="tasklist" /> Grade Submissions
             </button>
-            <button type="button" className="tm-button tm-button--secondary" onClick={() => openAssignmentInTaskMentor(id)}>
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => openInTaskMentor({ kind: "assignment", id: id })}>
               <Codicon name="link-external" /> Open in Task Mentor
             </button>
           </div>

@@ -1,9 +1,9 @@
-import { executeCommand, formatKeybinding } from "../../commands/registry";
+import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import { useEffect, useState, type ReactNode } from "react";
 import { getPlatform, openRecent, revealView, useWorkbench } from "../../state/store";
 import { dueLabel, isOpenWorkspaceOf, refreshAssignments, showAssignment, startAssignment, useAssignments, type AssignmentSummary } from "../../projects/assignments";
 import { showAssignmentsGroup, type AssignmentGroup } from "../../projects/AssignmentsView";
-import { openTaskMentorPage } from "../../projects/commands";
+import { openInTaskMentor } from "../../projects/taskMentorLinks";
 import { projectsSupported, signIn, useProjects } from "../../projects/service";
 import { SignInWaiting } from "../../projects/SignInWaiting";
 import { deriveStatus } from "../../projects/status";
@@ -33,6 +33,9 @@ function openExternal(url: string) {
 
 function HomeLink({ icon, label, command, kb, testId }: { icon: string; label: string; command: string; kb?: string; testId?: string }) {
   const os = getPlatform().os;
+  // The real binding on this OS (Open Folder is Ctrl+K Ctrl+O on Windows and Linux, not Ctrl+O).
+  const cmd = getCommand(command);
+  if (kb && cmd) kb = keybindingFor(cmd, os) || kb;
   return (
     <button type="button" className="tm-welcome-link" onClick={() => executeCommand(command)} data-testid={testId}>
       <Codicon name={icon} />
@@ -227,7 +230,7 @@ function TeacherHome() {
               <Codicon name="tasklist" /> Open Grading
             </button>
           ) : (
-            <button type="button" className="tm-button" onClick={() => openTaskMentorPage("/assignments/create")} data-testid="home-create">
+            <button type="button" className="tm-button" onClick={() => openInTaskMentor({ kind: "page", path: "/assignments/create" })} data-testid="home-create">
               <Codicon name="add" /> Create in Task Mentor
             </button>
           )}
@@ -252,7 +255,7 @@ function TeacherHome() {
         <button type="button" className="tm-link-button" onClick={() => revealView("assignments")} data-testid="home-class-assignments">
           <Codicon name="mortar-board" /> Your classes' assignments
         </button>
-        <button type="button" className="tm-link-button" onClick={() => openTaskMentorPage("/assignments/create")}>
+        <button type="button" className="tm-link-button" onClick={() => openInTaskMentor({ kind: "page", path: "/assignments/create" })}>
           <Codicon name="link-external" /> Create in Task Mentor
         </button>
       </div>
@@ -386,10 +389,12 @@ export function WelcomePage() {
               {practice && <HomeLink icon="tools" label="Check My Computer" command="tmcode.checkMyComputer" testId="welcome-check-computer" />}
               <HomeLink icon="keyboard" label="Keyboard Shortcuts" command="workbench.action.keybindingsReference" />
               <HomeLink icon="symbol-color" label="Choose a Color Theme" command="workbench.action.selectTheme" kb="mod+k mod+t" />
-              <button type="button" className="tm-welcome-link" data-testid="welcome-exam-card" onClick={() => practice && openTaskMentorPage("/quizzes")} title="Open your quizzes in Task Mentor">
-                <Codicon name="checklist" />
-                <span>Taking an exam? Open it from Task Mentor.</span>
-              </button>
+              {practice && (
+                <button type="button" className="tm-welcome-link" data-testid="welcome-exam-card" onClick={() => openInTaskMentor({ kind: "page", path: "/quizzes" })} title="Open your quizzes in Task Mentor">
+                  <Codicon name="checklist" />
+                  <span>Taking an exam? Open it from Task Mentor.</span>
+                </button>
+              )}
             </section>
           </div>
         </div>

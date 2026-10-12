@@ -58,7 +58,7 @@ const A = {
   submitAgain: { id: "submit", label: "Submit Again" },
   withdraw: { id: "withdraw", label: "Withdraw to Edit" },
   feedback: { id: "view_feedback", label: "View Feedback" },
-  openWork: { id: "open_work", label: "Open My Work" },
+  openWork: { id: "open_work", label: "Continue" },
   openTm: { id: "open_in_tm", label: "Open in Task Mentor" },
 } as const satisfies Record<string, Action>;
 

@@ -4,7 +4,7 @@ import { showQuickPick } from "../widgets/QuickPick";
 import { addCommentAtCursor, canAddCommentHere, reviewTarget, typingComment } from "./comments";
 import { changesAgainst, entryOf, starterOf, versionLabel, versionsOf, type Version } from "./diff";
 import { draftFrom, inputFromDraft } from "./drafts";
-import { isDraftGrade, releaseDrafts, useGrading } from "./service";
+import { isDraftGrade, releaseDrafts, startGrading, useGrading } from "./service";
 
 /**
  * Grading commands (G10): Save & Next, next / previous student and focus the
@@ -19,6 +19,8 @@ export interface GradingController {
   previous(): void;
   saveAndNext(): void;
   focusPanel(): void;
+  /** Opens the panel's "Return for Changes" form (false: not possible for this student). */
+  returnForChanges(): boolean;
 }
 const controllers = new Map<string, GradingController>();
 
@@ -144,6 +146,17 @@ export function registerGradingCommands() {
   registerCommand({ id: "grading.next", title: "Next Student", category: "Grading", keybinding: "alt+down", enabled: can, run: () => controller()?.next() });
   registerCommand({ id: "grading.previous", title: "Previous Student", category: "Grading", keybinding: "alt+up", enabled: can, run: () => controller()?.previous() });
   registerCommand({ id: "grading.focusPanel", title: "Focus Grade Panel", category: "Grading", keybinding: "mod+alt+g", enabled: () => !!controller(), run: () => controller()?.focusPanel() });
+  // Palette doors to the one home of each grading action (guided plan H).
+  registerCommand({ id: "grading.start", title: "Start Grading", category: "Grading", aliases: ["grade next", "oldest submission"], enabled: () => !!useGrading.getState().grader, run: () => startGrading() });
+  registerCommand({
+    id: "grading.returnForChanges",
+    title: "Return for Changes…",
+    category: "Grading",
+    enabled: () => !!controller(),
+    run: () => {
+      if (!controller()?.returnForChanges()) notify("info", "Only submitted work can be returned for changes. Choose a student who handed in.");
+    },
+  });
   registerCommand({ id: "grading.addComment", title: "Add Line Comment", category: "Grading", enabled: canAddCommentHere, run: addCommentAtCursor });
   registerCommand({ id: "grading.diffStarter", title: "Changes vs Starter", category: "Grading", enabled: () => !!reviewTarget()?.row.project, run: () => diffWithStarter() });
   registerCommand({ id: "grading.compareVersion", title: "Compare with Version…", category: "Grading", enabled: () => !!reviewTarget()?.row.project, run: () => compareWithVersion() });

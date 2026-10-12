@@ -5,14 +5,15 @@ import { notify, openContextMenu, revealView, useWorkbench } from "../state/stor
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { deriveStatus, type StatusView } from "./status";
-import { acceptsSubmissions, dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, studentStatus, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
+import { dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, studentStatus, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, refreshProjects, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
 import { showQuizPractical } from "./quizPractical";
 import type { LinkableActivity, PracticalQuestion } from "./types";
-import { openAssignmentInTaskMentor, openTaskMentorPage } from "./commands";
+import { openInTaskMentor } from "./taskMentorLinks";
 import { keyOf, openGrading, progressOf, useGrading } from "../grading/service";
-import { ThisFolder } from "./ProjectsView";
+import { ProjectRow, ThisFolder } from "./ProjectsView";
+import { executeCommand } from "../commands/registry";
 import { useRowNav } from "./rowNav";
 import { SignInWaiting } from "./SignInWaiting";
 import { isAssessmentWorkspace, opensLabel, practicalStateOf, useSessionEnded, type PracticalState } from "./studentHome";
@@ -148,10 +149,9 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
         openContextMenu(e.clientX, e.clientY, [
           { kind: "item", label: "Show Brief", run: () => showAssignment(a.id) },
           ...(!teaching && (started || !a.read_only) ? [{ kind: "item" as const, label: started ? "Continue" : "Start", run: () => void startAssignment(a.id) }] : []),
-          ...(!teaching && started && acceptsSubmissions(a) ? [{ kind: "item" as const, label: "Submit…", run: () => void submitAssignment(a.id) }] : []),
           ...(teaching ? [{ kind: "item" as const, label: "Grade Submissions", run: () => openGrading(keyOf("assignment", a.id, null)) }] : []),
           { kind: "separator" },
-          { kind: "item", label: "Open in Task Mentor", run: () => openAssignmentInTaskMentor(a.id) },
+          { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor({ kind: "assignment", id: a.id }) },
         ]);
       }}
     >
@@ -274,6 +274,16 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
           void start();
         }
       }}
+      onContextMenu={(e) => {
+        // The same menu as an assignment row (one row behaviour everywhere).
+        e.preventDefault();
+        openContextMenu(e.clientX, e.clientY, [
+          { kind: "item", label: "Show Brief", run: () => showQuizPractical(quiz.activity_id, q.question_id) },
+          ...(!notYet && state !== "graded" ? [{ kind: "item" as const, label: state === "not_started" ? "Start" : "Continue", run: () => void start() }] : []),
+          { kind: "separator" },
+          { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor({ kind: "quiz", id: quiz.activity_id }) },
+        ]);
+      }}
     >
       <Codicon name="beaker" className="tm-project-kind" />
       <span className="tm-assignment-text">
@@ -335,7 +345,7 @@ function SessionEndedBanner() {
       <Codicon name="warning" />
       <span>Your NGA session ended. Sign in to keep saving.</span>
       <button type="button" className="tm-button tm-button--small" onClick={() => void signIn()} data-testid="session-ended-signin">
-        Sign In
+        Sign in
       </button>
     </div>
   );
@@ -487,7 +497,7 @@ export function AssignmentsView() {
                 In Task Mentor, create an assignment and choose <b>TMCode</b> as the way students hand it in. Once it's published, it appears here with each student's progress, and you grade it in TMCode.
               </p>
               <div className="tm-assignments-empty-actions">
-                <button type="button" className="tm-button" onClick={() => openTaskMentorPage("/assignments/create")} data-testid="assignments-create">
+                <button type="button" className="tm-button" onClick={() => openInTaskMentor({ kind: "page", path: "/assignments/create" })} data-testid="assignments-create">
                   <Codicon name="add" /> Create in Task Mentor
                 </button>
                 <button type="button" className="tm-button tm-button--secondary" disabled={loading} onClick={() => void refreshAssignments()}>
@@ -503,7 +513,7 @@ export function AssignmentsView() {
                 <button type="button" className="tm-button" disabled={loading} onClick={() => void refreshAssignments()}>
                   <Codicon name="refresh" className={loading ? "codicon-modifier-spin" : ""} /> Refresh
                 </button>
-                <button type="button" className="tm-button tm-button--secondary" onClick={() => openTaskMentorPage("/assignments")}>
+                <button type="button" className="tm-button tm-button--secondary" onClick={() => openInTaskMentor({ kind: "page", path: "/assignments" })}>
                   <Codicon name="link-external" /> Open Task Mentor
                 </button>
               </div>
@@ -551,10 +561,34 @@ export function AssignmentsView() {
               {quizzes.flatMap((quiz) => (quiz.practical_questions ?? []).map((q) => <QuizPracticalRow key={`${quiz.activity_id}:${q.question_id}`} quiz={quiz} q={q} />))}
             </Section>
           )}
+          {/* One home for a student's work (guided plan H): their own projects fold in here, not a second view. */}
+          {staff !== true && <OtherProjects />}
 
         </>
       )}
     </div>
+  );
+}
+
+/** A student's personal projects (not an assignment's or a quiz's): folded at the bottom of Assignments. */
+function OtherProjects() {
+  const mine = useProjects((s) => s.mine);
+  const binding = useProjects((s) => s.binding);
+  const signedIn = useProjects((s) => !!s.account?.signed_in);
+  useEffect(() => {
+    if (signedIn && mine === null) void refreshProjects();
+  }, [signedIn, mine]);
+  const own = (mine ?? []).filter((p) => !p.assignment && !(Array.isArray(p.links) ? p.links : (p.links?.items ?? [])).length && p.status !== "removed");
+  return (
+    <Section
+      title="Other projects"
+      count={own.length}
+      defaultOpen={false}
+      testId="assignments-other-projects"
+      actions={<ActionButton icon="add" label="New Project..." onClick={() => void executeCommand("projects.new")} />}
+    >
+      {own.length ? own.map((p) => <ProjectRow key={p.id} p={p} current={binding?.project_id === p.id} />) : <p className="tm-view-hint">Your own practice projects saved in Task Mentor appear here.</p>}
+    </Section>
   );
 }
 

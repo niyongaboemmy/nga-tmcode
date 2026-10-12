@@ -2,8 +2,8 @@ import type { ProjectScan, SkippedFile } from "../platform/types";
 import { msg } from "../messages/catalog";
 import { getPlatform, log, notify, showDialog } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
-import { taskMentorWeb } from "./commands";
-import { notifyError, TmError, useProjects } from "./service";
+import { openInTaskMentor } from "./taskMentorLinks";
+import { notifyError, TmError } from "./service";
 import { markJourney } from "../util/journey";
 
 /**
@@ -124,15 +124,6 @@ export function notifySubmitted(what: string, submission: unknown, owner?: strin
   notify("info", msg("submit.done", { what, late: !!late }), undefined, { kind: "result", important: true, owner });
 }
 
-/** The student's quiz page in Task Mentor (where the attempt is opened). */
-export function openQuizInTaskMentor(quizId: number) {
-  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
-  const url = `${taskMentorWeb(api)}/quizzes/${quizId}/take`;
-  const p = getPlatform();
-  if (p.openExternal) void p.openExternal(url);
-  else window.open(url, "_blank", "noopener,noreferrer");
-}
-
 /** A refused submit, explained: a closed quiz attempt gets a way to open it. */
 export async function explainSubmitError(e: unknown, target?: { activity_type: string; activity_id: number }) {
   if (e instanceof TmError && e.code === "QUIZ_NOT_OPEN") {
@@ -146,7 +137,7 @@ export async function explainSubmitError(e: unknown, target?: { activity_type: s
       ],
       cancelId: "cancel",
     });
-    if (choice === "open" && target?.activity_type === "quiz") openQuizInTaskMentor(target.activity_id);
+    if (choice === "open" && target?.activity_type === "quiz") openInTaskMentor({ kind: "quiz", id: target.activity_id });
     return;
   }
   notifyError(e);

@@ -10,7 +10,7 @@ import { autoSaveMode, recheck, useProjects } from "./service";
 import { deriveStatus } from "./status";
 import { StatusSteps } from "./StatusSteps";
 import { opensLabel } from "./studentHome";
-import { openQuizInTaskMentor } from "./submitFlow";
+import { openInTaskMentor } from "./taskMentorLinks";
 import { useStatusSync } from "./useStatusSync";
 
 type Input = Extract<EditorInput, { kind: "assignment" }>;
@@ -73,7 +73,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
   };
   const spin = (b: typeof busy, icon: string) => <Codicon name={busy === b ? "loading" : icon} className={busy === b ? "codicon-modifier-spin" : ""} />;
   const quizButton = (
-    <button type="button" className={`tm-button ${quizFirst ? "tm-button--large" : "tm-button--secondary"}`} onClick={() => openQuizInTaskMentor(quizId)} data-testid="quiz-open-attempt">
+    <button type="button" className={`tm-button ${quizFirst ? "tm-button--large" : "tm-button--secondary"}`} onClick={() => openInTaskMentor({ kind: "quiz", id: quizId })} data-testid="quiz-open-attempt">
       <Codicon name="link-external" /> Open Quiz
     </button>
   );
@@ -202,7 +202,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
         )}
         <span className="tm-next-step-break" />
         {!quizFirst && (
-          <button type="button" className="tm-link-button tm-next-step-tm" onClick={() => openQuizInTaskMentor(quizId)}>
+          <button type="button" className="tm-link-button tm-next-step-tm" onClick={() => openInTaskMentor({ kind: "quiz", id: quizId })}>
             <Codicon name="link-external" /> Open the Quiz in Task Mentor
           </button>
         )}

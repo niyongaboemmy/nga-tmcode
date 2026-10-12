@@ -107,24 +107,6 @@ export function useSessionEnded() {
   return (!signedIn && (ended || accountError)) || (signedIn && expired);
 }
 
-/** What a student has to do now: how many, the next due date still ahead, and how many are overdue. */
-export function todoOf(list: AssignmentSummary[] | null, now = Date.now()) {
-  const todo = (list ?? []).filter((a) => !a.read_only && (!a.my || a.my.state === "not_started" || a.my.state === "in_progress"));
-  const dues = todo.map((a) => (a.due_date ? Date.parse(a.due_date) : NaN)).filter((t) => !Number.isNaN(t));
-  const ahead = dues.filter((t) => t >= now).sort((a, b) => a - b);
-  return { count: todo.length, nextDue: ahead[0] ?? null, overdue: dues.length - ahead.length };
-}
-
-/** "2 to do · next due Fri", "1 to do · 1 overdue", "Nothing due". */
-export function todoSummary(list: AssignmentSummary[] | null, now = Date.now()) {
-  const { count, nextDue, overdue } = todoOf(list, now);
-  if (count === 0) return "Nothing due";
-  const parts = [`${count} to do`];
-  if (nextDue !== null) parts.push(`next due ${dayLabel(nextDue, now)}`);
-  else if (overdue > 0) parts.push(`${overdue} overdue`);
-  return parts.join(" · ");
-}
-
 /** "today", "tomorrow", "Fri", "12 Oct" (and "was due Fri" is the caller's). */
 export function dayLabel(t: number, now = Date.now()) {
   const d = new Date(t);

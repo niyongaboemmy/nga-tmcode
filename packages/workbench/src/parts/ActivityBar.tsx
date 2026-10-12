@@ -34,8 +34,6 @@ const VIEWS: { id: ViewId; icon: string; label: string; command: string }[] = [
 // ── extensions (feat/extensions): hidden during exams ──
 // ── Task Mentor projects: practice mode with an NGA account host ──
 const PROJECTS_VIEW = { id: "projects" as ViewId, icon: "folder-library", label: "Task Mentor Projects", command: "workbench.view.projects" };
-// Students: Assignments is home; every project is the secondary "All My Projects" list after it.
-const MY_PROJECTS_VIEW = { ...PROJECTS_VIEW, label: "All My Projects" };
 const ASSIGNMENTS_VIEW = { id: "assignments" as ViewId, icon: "mortar-board", label: "Assignments", command: "workbench.view.assignments" };
 const GRADING_VIEW = { id: "grading" as ViewId, icon: "tasklist", label: "Grading", command: "workbench.view.grading" };
 const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
@@ -71,7 +69,8 @@ export function ActivityBar() {
   // L10 (0.17): where the work is comes first: Grading, Assignments for teachers; Assignments for students.
   const isTeacher = teacher || grader;
   const lead = isTeacher ? [GRADING_VIEW, ASSIGNMENTS_VIEW] : [ASSIGNMENTS_VIEW];
-  const tail = isTeacher ? [PROJECTS_VIEW] : checking ? [] : [MY_PROJECTS_VIEW];
+  // Students: their own projects live in Assignments › Other projects (one home), not a second view.
+  const tail = isTeacher ? [PROJECTS_VIEW] : [];
   const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...(hasAccount ? lead : []), ...VIEWS, ...(hasAccount ? tail : []), EXTENSIONS_VIEW] : VIEWS;
   // L7 (0.17): a student's assignment workspace saves to Task Mentor; git is noise there unless asked for.
   const scmInAssignments = useWorkbench((s) => s.settings["scm.showInAssignments"] === true);
@@ -213,7 +212,7 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
               ]
             : [
                 busy
-                  ? { kind: "item", label: "Cancel Sign In", run: () => void getPlatform().account?.cancel() }
+                  ? { kind: "item", label: "Cancel Sign-in", run: () => void getPlatform().account?.cancel() }
                   : { kind: "item", label: msg("signin.button"), run: () => void signIn() },
               ],
         );

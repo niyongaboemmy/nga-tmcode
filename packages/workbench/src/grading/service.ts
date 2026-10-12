@@ -293,7 +293,8 @@ export function oldestWaiting(rosters: Record<string, Roster>, keys: string[]): 
 /** Home's Start Grading: straight to the oldest waiting submission across all practicals (the tab opens it). */
 export function startGrading() {
   const s = get();
-  const key = oldestWaiting(s.rosters, (s.activities ?? []).map((a) => a.key));
+  // Nothing waiting: the first practical with unreleased drafts (Home's "Review Drafts"), else the list.
+  const key = oldestWaiting(s.rosters, (s.activities ?? []).map((a) => a.key)) ?? (s.activities ?? []).map((a) => a.key).find((k) => (s.rosters[k]?.counts.drafts ?? 0) > 0) ?? null;
   if (!key) return revealViewFn("grading");
   // The tab picks that student itself, also when it is already open on someone else.
   set({ startFirst: { ...s.startFirst, [key]: (s.startFirst[key] ?? 0) + 1 } });

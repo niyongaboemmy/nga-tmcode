@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { executeCommand, formatKeybinding } from "../../commands/registry";
+import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import {
   activateEditor,
   closeEditors,
@@ -266,7 +266,7 @@ function Watermark() {
           <div key={cmd} className="tm-watermark-row" onClick={() => executeCommand(cmd)}>
             <dt>{label}</dt>
             <dd>
-              {formatKeybinding(kb, os)
+              {formatKeybinding((getCommand(cmd) && keybindingFor(getCommand(cmd)!, os)) || kb, os)
                 .split(" ")
                 .map((k) => (
                   <kbd key={k}>{k}</kbd>

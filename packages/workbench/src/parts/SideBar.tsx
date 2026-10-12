@@ -51,8 +51,8 @@ function moreActions(view: ViewId): ContextMenuItem[] {
   if (view === "assignments") {
     return [
       { kind: "item", label: "Refresh", run: () => executeCommand("assignments.refresh") },
-      // Projects are secondary for students: every project (for an assignment or not) is one click away.
-      { kind: "item", label: isTeacherRole(useRole.getState().role) ? "Show Task Mentor Projects" : "Show All My Projects", run: showAllMyProjects },
+      // Teachers keep the Projects view; a student's own projects are in Assignments › Other projects.
+      ...(isTeacherRole(useRole.getState().role) ? [{ kind: "item" as const, label: "Show Task Mentor Projects", run: showAllMyProjects }] : []),
       // A teacher action: students never see it.
       ...(isTeacherRole(useRole.getState().role) ? [{ kind: "item" as const, label: "Use Open Project as Starter…", run: () => executeCommand("assignments.useAsStarter") }] : []),
       { kind: "separator" },

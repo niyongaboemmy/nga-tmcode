@@ -4,7 +4,7 @@ import { getPlatform, openContextMenu, openFile, showDialog, useWorkbench, type 
 import { openExternalUrl } from "../terminal/browser";
 import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
-import { taskMentorWeb } from "../projects/commands";
+import { taskMentorWeb } from "../projects/taskMentorLinks";
 import { useProjects } from "../projects/service";
 import { showAssignment } from "../projects/assignments";
 import { revealComment } from "./comments";
@@ -174,6 +174,7 @@ function LineComments({ draft, loaded, canEdit }: { draft: Draft; loaded: boolea
 interface PanelApi {
   saveAndNext(): void;
   focus(): void;
+  returnForChanges(): boolean;
 }
 
 /** Task Mentor's grading page for this practical (and student). */
@@ -319,6 +320,11 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       else focusPanel();
     },
     focus: focusPanel,
+    returnForChanges: () => {
+      if (!canReturn) return false;
+      setReturning({ message: "", error: null, busy: false });
+      return true;
+    },
   };
   // The grading tab's commands reach the panel on screen (and nothing once it's gone).
   useEffect(() => {
@@ -818,6 +824,7 @@ export function GradingEditor({ input }: { input: Input }) {
         previous: () => live.current.step(-1),
         saveAndNext: () => panelApi.current?.saveAndNext(),
         focusPanel: () => live.current.focus(),
+        returnForChanges: () => panelApi.current?.returnForChanges() ?? false,
       }),
     [key],
   );
@@ -1120,11 +1127,6 @@ export function GradingEditor({ input }: { input: Input }) {
             <div className="tm-view-empty tm-grade-empty">
               <Codicon name="person" className="tm-projects-hero" />
               <p>{roster.counts.to_grade ? `Select a student to grade. ${roster.counts.to_grade} submission${roster.counts.to_grade === 1 ? " is" : "s are"} waiting.` : "Select a student to see their work."}</p>
-              {roster.counts.to_grade > 0 && (
-                <button type="button" className="tm-button" onClick={() => choose(roster.rows.find((r) => r.state === "submitted")!)} data-testid="grade-start">
-                  <Codicon name="play" /> Start Grading
-                </button>
-              )}
             </div>
           )}
         </main>

@@ -5,7 +5,7 @@ import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { projectsSupported, signIn, useProjects } from "../projects/service";
 import { dueLabel } from "../projects/assignments";
-import { openTaskMentorPage } from "../projects/commands";
+import { openInTaskMentor } from "../projects/taskMentorLinks";
 import { closeReview, openGrading, progressOf, refreshGrading, useGrading, type Gradable } from "./service";
 
 /** Graded / to grade / in progress, as one bar. */
@@ -170,7 +170,7 @@ export function GradingView() {
           <Codicon name="tasklist" className="tm-projects-hero" />
           <p>No TMCode practicals to grade yet. Turn on "TMCode practical" for an assignment, or add a practical question to a quiz, in Task Mentor.</p>
           {/* W6: every empty state has one action. */}
-          <button type="button" className="tm-button" onClick={() => openTaskMentorPage("/assignments/create")} data-testid="grading-create">
+          <button type="button" className="tm-button" onClick={() => openInTaskMentor({ kind: "page", path: "/assignments/create" })} data-testid="grading-create">
             <Codicon name="add" /> Create in Task Mentor
           </button>
         </div>

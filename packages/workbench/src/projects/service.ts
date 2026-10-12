@@ -234,7 +234,7 @@ async function requireSignIn(then?: PendingAction): Promise<boolean> {
     message: msg("signin.prompt"),
     detail: msg("signin.promptDetail"),
     buttons: [
-      { id: "in", label: "Sign In", primary: true },
+      { id: "in", label: "Sign in", primary: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",
@@ -887,6 +887,10 @@ export async function openProjectLink(link: { id: number; api: string }) {
     return notify("error", `This project belongs to ${link.api}, but TMCode is signed in to ${account.tm_api}.`);
   }
   if (inExam()) return notify("info", "Finish your exam first: projects open outside exams.");
+  // One behaviour for both deep links (guided plan H): an assignment's project shows its brief,
+  // whose Continue opens the work (and asks to save another assignment's work first).
+  const known = get().mine?.find((p) => p.id === link.id) ?? (await api<{ project: Project }>("GET", `/projects/${link.id}`).then((r) => r.project).catch(() => null));
+  if (known?.assignment) return (await import("./assignments")).showAssignment(known.assignment.id);
   await openProject(link.id);
 }
 
@@ -1109,7 +1113,7 @@ async function autoSaveNow() {
   // First failure: the inline line is enough while the brief is on screen; otherwise a toast now.
   if (failures === 1 && briefVisible()) return;
   if (failures > 2) return;
-  notify("warning", `Automatic saving to Task Mentor isn't working: ${why}`, [{ label: "Save to Task Mentor", run: () => void saveToTaskMentor() }], { kind: "failure", replaceKey: "auto-save" });
+  notify("warning", msg("save.autoFailed", { why }), [{ label: "Save to Task Mentor", run: () => void saveToTaskMentor() }], { kind: "failure", replaceKey: "auto-save" });
 }
 
 /** A brief (assignment page) is the active tab of some editor group: its sync line is on screen. */

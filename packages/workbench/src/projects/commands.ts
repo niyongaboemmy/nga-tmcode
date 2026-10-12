@@ -1,6 +1,7 @@
 import { registerCommand } from "../commands/registry";
 import { msg } from "../messages/catalog";
 import { inExam } from "../exam/state";
+import { openInTaskMentor } from "./taskMentorLinks";
 import { confirmLeaveWorkspace, getPlatform, notify, openFile, openPathFromOs, openRecent, revealView, showDialog, showPanel, useWorkbench } from "../state/store";
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import {
@@ -20,61 +21,39 @@ import {
   signIn,
   resumeAfterSignIn,
   signedIn,
-  submitLink,
   useProjects,
   notifyError,
 } from "./service";
 import { CATEGORY_ORDER, TEMPLATES, templateById, type Template } from "./templates";
-import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
+import { publishAsStarter, refreshAssignments, startAssignment, submitAssignment, useAssignments } from "./assignments";
 import { closeReview, refreshGrading, useGrading } from "../grading/service";
 import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject } from "./matching";
-import { explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { ProjectKind } from "./types";
+
+/** The open folder's quiz-practical link (its brief is the practical's). */
+function practicalOfCurrent() {
+  const cur = useProjects.getState().current;
+  const links = cur ? (Array.isArray(cur.links) ? cur.links : (cur.links?.items ?? [])) : [];
+  return links.find((l) => l.activity_type === "quiz" && !!l.question_id) ?? null;
+}
 
 const usable = () => projectsSupported() && useWorkbench.getState().policy.mode === "practice";
 const bound = () => usable() && !!useProjects.getState().binding;
 
-/** Task Mentor's web app for an API origin (taskmentor-api.x → taskmentor.x). */
-export function taskMentorWeb(api: string) {
-  if (/^https:\/\/taskmentor-api\./.test(api)) return api.replace("://taskmentor-api.", "://taskmentor.");
-  return "http://localhost:5173/taskmentor";
-}
+export { taskMentorWeb } from "./taskMentorLinks";
 
-export function openInTaskMentor(projectId: number) {
-  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
-  const url = `${taskMentorWeb(api)}/projects/${projectId}`;
-  const p = getPlatform();
-  if (p.openExternal) void p.openExternal(url);
-  else window.open(url, "_blank", "noopener,noreferrer");
-}
-
-/** A Task Mentor web page (`/assignments/create`, `/assignments`) in the system browser. */
-export function openTaskMentorPage(path: string) {
-  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
-  const url = `${taskMentorWeb(api)}${path}`;
-  const p = getPlatform();
-  if (p.openExternal) void p.openExternal(url);
-  else window.open(url, "_blank", "noopener");
-}
-
-export function openAssignmentInTaskMentor(assignmentId: number) {
-  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
-  const url = `${taskMentorWeb(api)}/assignments/${assignmentId}`;
-  const p = getPlatform();
-  if (p.openExternal) void p.openExternal(url);
-  else window.open(url, "_blank", "noopener,noreferrer");
-}
-
-export async function submitFromView(linkId: number) {
-  const b = useProjects.getState().binding;
-  if (!b) return;
-  try {
-    const res = await submitLink(b.project_id, linkId);
-    notifySubmitted(`"${b.name}"`, res.submission);
-  } catch (e) {
-    const link = useProjects.getState().current?.links;
-    await explainSubmitError(e, Array.isArray(link) ? link.find((l) => l.id === linkId) : undefined);
-  }
+/**
+ * One Submit (guided plan H): the palette, the brief and the menus all hand in the open folder
+ * the same way — its assignment, its quiz practical, or the assessment it is matched with.
+ */
+export async function submit() {
+  const { binding, current } = useProjects.getState();
+  if (!binding || !current) return notify("info", "Open your project first, then Submit.");
+  if (current.assignment) return submitAssignment(current.assignment.id);
+  const links = Array.isArray(current.links) ? current.links : (current.links?.items ?? []);
+  const practical = links.find((l) => l.activity_type === "quiz" && !!l.question_id);
+  if (practical) return (await import("./quizPractical")).submitQuizPractical(practical.activity_id, practical.question_id!);
+  return submitProject();
 }
 
 const slugify = (s: string) =>
@@ -319,7 +298,7 @@ export function registerProjectCommands() {
     category: "Projects",
     aliases: ["submit project", "hand in"],
     enabled: () => bound() && !["submitted", "graded", "removed"].includes(useProjects.getState().current?.status ?? "draft"),
-    run: submitProject,
+    run: submit,
   });
   registerCommand({
     id: "projects.remove",
@@ -340,7 +319,7 @@ export function registerProjectCommands() {
     title: "Open Project in Task Mentor",
     category: "Projects",
     enabled: bound,
-    run: () => openInTaskMentor(useProjects.getState().binding!.project_id),
+    run: () => openInTaskMentor({ kind: "project", id: useProjects.getState().binding!.project_id }),
   });
   registerCommand({ id: "projects.disconnect", title: "Disconnect This Folder from Task Mentor…", category: "Projects", enabled: bound, run: disconnectFolder });
   registerCommand({
@@ -365,6 +344,36 @@ export function registerProjectCommands() {
   registerCommand({ id: "grading.refresh", title: "Refresh Grading", category: "Grading", enabled: () => usable() && signedIn(), run: () => refreshGrading() });
   registerCommand({ id: "grading.closeReview", title: "Close Review", aliases: ["back to my folder"], category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
   registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
+  // Palette doors to the brief's one main button (guided plan H): the same functions, the same words.
+  registerCommand({
+    id: "assignments.showBrief",
+    title: "Show Brief",
+    category: "Assignments",
+    aliases: ["assignment brief", "instructions"],
+    enabled: () => !!useProjects.getState().current?.assignment || !!practicalOfCurrent(),
+    run: async () => {
+      const cur = useProjects.getState().current;
+      if (cur?.assignment) return (await import("./assignments")).showAssignment(cur.assignment.id, { toSide: true });
+      const q = practicalOfCurrent();
+      if (q) (await import("./quizPractical")).showQuizPractical(q.activity_id, q.question_id!, { toSide: true });
+    },
+  });
+  registerCommand({
+    id: "assignments.startOrContinue",
+    title: "Start or Continue an Assignment…",
+    category: "Assignments",
+    enabled: () => usable() && signedIn() && (useAssignments.getState().student?.length ?? 0) > 0,
+    run: async () => {
+      const { studentStatus } = await import("./assignments");
+      const list = (useAssignments.getState().student ?? []).filter((a) => !a.read_only && ["not_started", "in_progress", "returned"].includes(studentStatus(a)));
+      if (!list.length) return notify("info", "Nothing to start or continue. Well done!");
+      const pick = await showQuickPick({
+        placeholder: "Choose an assignment",
+        items: list.map((a) => ({ id: String(a.id), label: a.title, description: `${studentStatus(a) === "not_started" ? "Start" : "Continue"}${a.course_name ? ` · ${a.course_name}` : ""}`, icon: studentStatus(a) === "not_started" ? "play" : "arrow-right" })),
+      });
+      if (pick) void startAssignment(Number(pick.id));
+    },
+  });
   registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });
   registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm" && useAssignments.getState().staff === true, run: publishAsStarter });
   // A reminder for exam safety: nothing here runs during an exam (projectsSupported checks inExam()).

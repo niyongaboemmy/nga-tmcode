@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { useWorkbench } from "../state/store";
 import { announceChanges, type AssignmentSummary } from "./assignments";
-import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, nextUpReason, practicalStateOf, todoSummary } from "./studentHome";
+import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, nextUpReason, practicalStateOf } from "./studentHome";
 import type { Project } from "./types";
 
 const a = (id: number, over: Partial<AssignmentSummary> = {}): AssignmentSummary => ({
@@ -22,14 +22,7 @@ const a = (id: number, over: Partial<AssignmentSummary> = {}): AssignmentSummary
 const NOW = new Date(2026, 9, 7, 12, 0).getTime(); // Wed 7 Oct 2026
 const at = (days: number) => new Date(NOW + days * 86_400_000).toISOString();
 
-describe("todoSummary", () => {
-  it("counts what is left and names the next due day", () => {
-    expect(todoSummary([a(1, { due_date: at(2) }), a(2, { due_date: at(-1) })], NOW)).toMatch(/^2 to do · next due \S+$/);
-    expect(todoSummary([a(1, { due_date: at(1) })], NOW)).toBe("1 to do · next due tomorrow");
-    expect(todoSummary([a(1, { due_date: at(-1) })], NOW)).toBe("1 to do · 1 overdue");
-    expect(todoSummary([a(1, { read_only: true }), a(2, { my: { ...a(0).my!, state: "submitted" } })], NOW)).toBe("Nothing due");
-    expect(todoSummary(null, NOW)).toBe("Nothing due");
-  });
+describe("dayLabel", () => {
   it("says today, tomorrow, a weekday, then a date", () => {
     expect(dayLabel(NOW + 3_600_000, NOW)).toBe("today");
     expect(dayLabel(NOW + 86_400_000, NOW)).toBe("tomorrow");
