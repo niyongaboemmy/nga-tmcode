@@ -8,7 +8,7 @@ import { openStudent, saveGradeAs, showRoster } from "./journeys";
  * 501 has Ben's submission.
  */
 
-type Mock = { setTeacher(on: boolean): void; setGradingList(on: boolean): void };
+type Mock = { setTeacher(on: boolean): void; setGradingList(on: boolean): void; setRubric(id: number, rubric: null): void; gradeOf(type: string, id: number, q: null, student: number): { score: number } | null };
 const mock = <T>(page: Page, fn: (m: Mock) => T | Promise<T>) => page.evaluate(`(${fn.toString()})(window.__TMCODE_PROJECTS__)`) as Promise<T>;
 
 async function command(page: Page, name: string) {
@@ -87,6 +87,23 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
   await showRoster(page);
   await page.getByTestId("grade-filter-graded").click();
   await expect(page.getByTestId("grade-row")).toContainText("18/20");
+});
+
+test("an assignment without criteria is graded with one final grade", async ({ page }) => {
+  await teacher(page);
+  await mock(page, (m) => m.setRubric(51, null));
+  await page.keyboard.press("F1");
+  await page.keyboard.type("Grading: Refresh Grading");
+  await page.keyboard.press("Enter");
+  await activity(page, "assignment:51:").click();
+  await openStudent(page, "Ben Learner");
+  await expect(page.getByTestId("grade-criterion")).toHaveCount(0);
+  await expect(page.getByTestId("grade-final-hint")).toHaveText("No criteria for this assignment: give one final grade out of 20.");
+  await page.getByTestId("grade-final-score").fill("17");
+  await page.getByTestId("grade-feedback").fill("Works well.");
+  await saveGradeAs(page, "release");
+  await expect(page.getByTestId("grade-status")).toContainText("17/20");
+  expect((await mock(page, (m) => m.gradeOf("assignment", 51, null, 21)))?.score).toBe(17);
 });
 
 test("a quiz practical question is graded the same way", async ({ page }) => {

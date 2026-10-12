@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareManifests } from "./diff";
-import { clampScore, quickScores, rubricMismatch } from "./scoring";
+import { clampScore, normaliseGrading, quickScores, rubricMismatch } from "./scoring";
 
 describe("quick scores", () => {
   it("lists every value for a small whole maximum", () => {
@@ -41,5 +41,24 @@ describe("changed files", () => {
       { path: "gone.txt", status: "deleted" },
       { path: "new.css", status: "added" },
     ]);
+  });
+});
+
+describe("no criteria: one final grade", () => {
+  it("drops unusable criteria, so the activity is graded with one final grade", () => {
+    expect(normaliseGrading({ rubric: null, max_points: 20 })).toMatchObject({ rubric: [], max_points: 20 });
+    expect(normaliseGrading({ rubric: [{ criteria: " ", max_score: 5 }, { criteria: "Works", max_score: 0 }], max_points: 10 }).rubric).toEqual([]);
+    expect(normaliseGrading({ rubric: [{ criteria: "Works", max_score: 6 }], max_points: 6 }).rubric).toHaveLength(1);
+  });
+
+  it("the maximum falls back to the criteria's sum; 0 means no maximum", () => {
+    expect(normaliseGrading({ rubric: [{ criteria: "A", max_score: 4 }, { criteria: "B", max_score: 6 }], max_points: 0 }).max_points).toBe(10);
+    expect(normaliseGrading({ rubric: [], max_points: null }).max_points).toBe(0);
+  });
+
+  it("with no maximum, a score is only kept at 0 or more", () => {
+    expect(clampScore("87", 0)).toEqual({ value: 87, clamped: false });
+    expect(clampScore("-3", 0)).toEqual({ value: 0, clamped: true });
+    expect(clampScore("25", 20)).toEqual({ value: 20, clamped: true });
   });
 });

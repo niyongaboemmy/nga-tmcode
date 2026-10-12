@@ -629,6 +629,11 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       }
       revisions.push({ id: ++seq, project_id: projectId, number: (h?.number ?? 0) + 1, parent_id: h?.id ?? null, author_id: user.id, message: "Saved on another computer", files: [...map.values()], source: "save", created_at: now() });
     },
+    /** An assignment's grading criteria (null or []: none, graded with one final grade). */
+    setRubric(id: number, rubric: { criteria: string; description: string | null; max_score: number }[] | null) {
+      const a = assignments.find((x) => x.id === id);
+      if (a) a.rubric = rubric;
+    },
     setAssignmentStatus(id: number, status: string) {
       const a = assignments.find((x) => x.id === id);
       if (a) a.status = status;

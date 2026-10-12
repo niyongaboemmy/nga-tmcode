@@ -9390,3 +9390,9 @@ button.tm-setting-badge {
 .tm-projects-view.is-one-course [data-testid="assignment-row"] .tm-assignment-course {
   display: none;
 }
+
+/* No criteria: one final grade (its hint sits above the score). */
+.tm-grade-final-hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+}

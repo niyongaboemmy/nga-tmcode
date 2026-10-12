@@ -1,3 +1,4 @@
+import { normaliseGrading } from "./scoring";
 import { track } from "../state/activity";
 import { msg, releaseSkipReason } from "../messages/catalog";
 import { create } from "zustand";
@@ -248,7 +249,8 @@ export async function loadRoster(key: string, opts: { quiet?: boolean } = {}): P
   const { type, id, question_id } = parseKey(key);
   try {
     const res = await api<Omit<Roster, "loadedAt">>("GET", `/grading/${type}/${id}${question_id ? `?question_id=${question_id}` : ""}`);
-    const roster = { ...res, loadedAt: Date.now() };
+    // No (usable) criteria: one final grade (normaliseGrading).
+    const roster = { ...res, activity: normaliseGrading(res.activity) as Roster["activity"], loadedAt: Date.now() };
     const errors = { ...get().rosterErrors };
     delete errors[key];
     set({ rosters: { ...get().rosters, [key]: roster }, rosterErrors: errors });

@@ -290,7 +290,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       setConflict(null);
       setJustSaved(r.message);
       if (next) {
-        carried = { key: gkey, from: row.student.id, text: `Saved ${row.student.name}: ${r.score}/${r.max_points}${r.released ? "" : " (draft)"}.`, at: Date.now() };
+        carried = { key: gkey, from: row.student.id, text: `Saved ${row.student.name}: ${r.max_points > 0 ? `${r.score}/${r.max_points}` : r.score}${r.released ? "" : " (draft)"}.`, at: Date.now() };
         onNext();
       }
     } else if (r.conflict) {
@@ -530,7 +530,14 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
 
       <section className="tm-grade-criteria" aria-label="Criteria">
         <div className="tm-grade-criteria-head">
-          <h3>{rubric.length ? "Criteria" : "Score"}</h3>
+          <h3>{rubric.length ? "Criteria" : "Final grade"}</h3>
+          {gradable && rubric.length === 0 && max > 0 && (
+            <span className="tm-grade-bulk">
+              <button type="button" className="tm-link-button" onClick={() => setDraft({ ...draft, score: max })} data-testid="grade-full-marks" title="Give the full grade, then lower it if something was missed">
+                Full marks
+              </button>
+            </span>
+          )}
           {gradable && rubric.length > 0 && (
             <span className="tm-grade-bulk">
               <button type="button" className="tm-link-button" onClick={() => setDraft({ ...draft, scores: rubric.map((c) => c.max_score) })} data-testid="grade-full-marks" title="Give every criterion its full score, then lower what was missed">
@@ -545,7 +552,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
           )}
           <span className={`tm-grade-total ${complete ? "" : "is-incomplete"}`} data-testid="grade-total" title={complete ? "Total of the criteria" : "Score every criterion"}>
             {total}
-            <small> / {max}</small>
+            {max > 0 && <small> / {max}</small>}
           </span>
         </div>
         {row.grade?.graded_by && (
@@ -609,16 +616,31 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
           })
         ) : (
           <>
+            {/* No criteria for this activity: one final grade (out of its points, when it has them). */}
+            <p className="tm-muted tm-grade-final-hint" data-testid="grade-final-hint">
+              {max > 0 ? `No criteria for this ${quiz ? "question" : "assignment"}: give one final grade out of ${max}.` : `No criteria or maximum for this ${quiz ? "question" : "assignment"}: give one final grade.`}
+            </p>
             <div className="tm-grade-criterion-row">
               <div className="tm-grade-quick" role="group" aria-label="Quick scores">
-                {quickScores(max).map((q) => (
+                {(max > 0 ? quickScores(max) : []).map((q) => (
                   <button key={q.value} type="button" aria-pressed={draft.score === q.value} className={`tm-filter-chip ${draft.score === q.value ? "is-active" : ""}`} disabled={!gradable} onClick={() => setScore(-1, String(q.value), max)} title={q.title}>
                     {q.label}
                   </button>
                 ))}
               </div>
-              <input className="tm-input tm-grade-score" type="number" min={0} max={max} step={0.5} value={draft.score ?? ""} disabled={!gradable} aria-label={`Score out of ${max}`} onChange={(e) => setScore(-1, e.target.value, max)} />
-              <span className="tm-grade-max">/ {max}</span>
+              <input
+                className="tm-input tm-grade-score"
+                type="number"
+                min={0}
+                max={max > 0 ? max : undefined}
+                step={0.5}
+                value={draft.score ?? ""}
+                disabled={!gradable}
+                aria-label={max > 0 ? `Final grade out of ${max}` : "Final grade"}
+                onChange={(e) => setScore(-1, e.target.value, max)}
+                data-testid="grade-final-score"
+              />
+              {max > 0 && <span className="tm-grade-max">/ {max}</span>}
             </div>
             {warn[-1] && (
               <p className="tm-grade-warn" role="status" data-testid="grade-clamped">
@@ -886,7 +908,7 @@ export function GradingEditor({ input }: { input: Input }) {
           <Codicon name={a.type === "quiz" ? "checklist" : "notebook"} />
           <span>{a.type === "quiz" ? `Quiz practical · ${a.title}` : "Assignment practical"}</span>
           {a.due_date && <span>· due {when(a.due_date)}</span>}
-          <span>· {a.max_points} points</span>
+          {a.max_points > 0 && <span>· {a.max_points} points</span>}
         </div>
         <div className="tm-grade-title-row">
           <h1>{a.question ? a.question.text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : a.title}</h1>
@@ -1073,7 +1095,7 @@ export function GradingEditor({ input }: { input: Input }) {
                   )}
                   {r.state === "graded" && r.grade?.score != null && (
                     <span className="tm-chip is-success">
-                      {r.grade.score}/{a.max_points}
+                      {a.max_points > 0 ? `${r.grade.score}/${a.max_points}` : r.grade.score}
                     </span>
                   )}
                   {failedSave ? (

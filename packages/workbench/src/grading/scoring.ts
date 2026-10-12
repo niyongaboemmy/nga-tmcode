@@ -42,8 +42,24 @@ export function clampScore(raw: string, max: number): { value: number | null; cl
   if (raw.trim() === "") return { value: null, clamped: false };
   const n = Number(raw);
   if (!Number.isFinite(n)) return { value: null, clamped: true };
-  const v = Math.max(0, Math.min(max, n));
+  // No maximum (0): only the lower bound applies.
+  const v = Math.max(0, max > 0 ? Math.min(max, n) : n);
   return { value: v, clamped: v !== n };
+}
+
+/**
+ * The grading form's criteria and maximum, as Task Mentor sent them but usable: criteria without a
+ * name or marks are dropped, so an assignment with no (real) criteria is graded with one final grade.
+ * The maximum falls back to the criteria's sum; 0 means "no maximum given".
+ */
+export function normaliseGrading<A extends { rubric?: unknown; max_points?: unknown }>(a: A): Omit<A, "rubric" | "max_points"> & { rubric: { criteria: string; max_score: number }[]; max_points: number } {
+  const raw = Array.isArray(a.rubric) ? (a.rubric as { criteria?: unknown; max_score?: unknown }[]) : [];
+  const rubric = raw
+    .map((c) => ({ ...c, criteria: String(c?.criteria ?? "").trim(), max_score: Number(c?.max_score) || 0 }))
+    .filter((c) => c.criteria && c.max_score > 0);
+  const given = Number(a.max_points);
+  const max_points = given > 0 ? given : rubric.reduce((n, c) => n + c.max_score, 0);
+  return { ...a, rubric, max_points };
 }
 
 /** "The criteria add up to 18, but the practical is worth 20 points." (null when they match). */
