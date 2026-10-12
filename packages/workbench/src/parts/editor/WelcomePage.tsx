@@ -8,7 +8,7 @@ import { projectsSupported, signIn, useProjects } from "../../projects/service";
 import { SignInWaiting } from "../../projects/SignInWaiting";
 import { deriveStatus } from "../../projects/status";
 import { homeCounts, nextUp } from "../../projects/studentHome";
-import { openGrading, progressOf, useGrading, type Gradable, type Roster } from "../../grading/service";
+import { openGrading, progressOf, startGrading, useGrading, type Gradable, type Roster } from "../../grading/service";
 import { isTeacherRole, useRole, useRoleChecking } from "../../state/role";
 import { markJourney } from "../../util/journey";
 import { Codicon } from "../../widgets/icons";
@@ -189,8 +189,6 @@ function gradingSummary(activities: Gradable[] | null, rosters: Record<string, R
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** Start grading: the Grading view (workflow plan 6.5 makes it open the first waiting submission). */
-export const homeGradingStart: { run: () => void } = { run: () => revealView("grading") };
 
 function TeacherHome() {
   const activities = useGrading((s) => s.activities);
@@ -218,7 +216,7 @@ function TeacherHome() {
         </h2>
         <div className="tm-home-actions">
           {toGrade > 0 || drafts > 0 ? (
-            <button type="button" className="tm-button tm-button--large" onClick={() => homeGradingStart.run()} data-testid="home-start-grading">
+            <button type="button" className="tm-button tm-button--large" onClick={() => startGrading()} data-testid="home-start-grading">
               <Codicon name="arrow-right" /> {toGrade ? "Start Grading" : "Review Drafts"}
             </button>
           ) : activities.length ? (

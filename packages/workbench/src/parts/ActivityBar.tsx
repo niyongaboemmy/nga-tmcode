@@ -1,4 +1,5 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
+import { msg } from "../messages/catalog";
 import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
@@ -177,7 +178,7 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("");
-  const title = user ? `${user.name ?? user.email} (NGA)` : busy ? "Signing in… (continue in your browser)" : "Accounts: Sign in with NGA";
+  const title = user ? `${user.name ?? user.email} (NGA)` : busy ? "Signing in… (continue in your browser)" : msg("signin.account");
   return (
     <button
       type="button"
@@ -205,7 +206,7 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
             : [
                 busy
                   ? { kind: "item", label: "Cancel Sign In", run: () => void getPlatform().account?.cancel() }
-                  : { kind: "item", label: "Sign in with NGA (Central MIS + Task Mentor)", run: () => void signIn() },
+                  : { kind: "item", label: msg("signin.button"), run: () => void signIn() },
               ],
         );
       }}

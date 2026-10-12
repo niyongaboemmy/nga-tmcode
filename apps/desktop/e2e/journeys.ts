@@ -74,3 +74,55 @@ export async function command(page: Page, name: string) {
 }
 
 export const toast = (page: Page, text: string | RegExp) => page.locator(".tm-toast", { hasText: text });
+
+/** 0.16 grading footer: one split button. Clicks its main part when it already does `mode`, else picks `mode` from its menu. */
+export async function saveGradeAs(page: Page, mode: "next" | "draft" | "release") {
+  const id = { next: "grade-save-next", draft: "grade-save-draft", release: "grade-save" }[mode];
+  const main = page.getByTestId(id);
+  if (await main.count()) return main.click();
+  await page.getByTestId("grade-save-menu").click();
+  const label = { next: /^Save & Next/, draft: /^Save Draft/, release: /^Save( & Release)?( \(default\))?$/ }[mode];
+  await page.locator(".tm-menu-item").filter({ has: page.locator(".tm-menu-label", { hasText: label }) }).click();
+}
+
+/** 0.16 grade panel: Preview, Compare, Return for Changes and Shortcuts are in "More Actions". */
+export async function gradeMoreAction(page: Page, label: string | RegExp) {
+  await page.getByTestId("grade-more").click();
+  await page.locator(".tm-menu-item", { hasText: label }).click();
+}
+
+/** 0.16 "one door per step": how many Submit and Save buttons are visible right now. */
+export async function visibleDoors(page: Page) {
+  return page.evaluate(() => {
+    const visible = (el: Element) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+    };
+    const buttons = [...document.querySelectorAll("button")].filter(visible).map((b) => (b.textContent ?? "").trim());
+    return {
+      submit: buttons.filter((t) => /^(Submit|Submit Again|Submit…|Save and Submit)$/.test(t)).length,
+      save: buttons.filter((t) => /^(Save|Save to Task Mentor)$/.test(t)).length,
+    };
+  });
+}
+
+/** 0.16 review focus: the student list folds behind the switcher while a submission is open. Shows it. */
+export async function showRoster(page: Page) {
+  const list = page.locator(".tm-grade-list");
+  if (await list.isVisible()) return;
+  const toggle = page.getByTestId("grade-switcher-toggle");
+  if (await toggle.isVisible()) await toggle.click();
+  await expect(list).toBeVisible();
+}
+
+/** Opens one student in the grading tab (0.16 opens the oldest waiting one by itself; this picks another). */
+export async function openStudent(page: Page, name: string) {
+  const panel = page.getByTestId("grade-panel");
+  await expect(page.getByTestId("grade-row").first()).toBeAttached({ timeout: 15_000 });
+  if ((await panel.count()) && ((await panel.locator("h2").first().textContent()) ?? "").includes(name)) return;
+  await showRoster(page);
+  const row = page.getByTestId("grade-row").filter({ hasText: name });
+  if (!(await row.count())) await page.getByTestId("grade-filter-all").click();
+  await row.first().click();
+  await expect(panel).toContainText(name);
+}

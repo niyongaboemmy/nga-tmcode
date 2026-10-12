@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
 import { useGit } from "../scm/gitService";
+import { msg } from "../messages/catalog";
 import { activeFilePath, confirmLeaveWorkspace, dismissNotificationByKey, getPlatform, log, notify, notifyProgress, openEditorInput, openPathFromOs, openRecent, revealView, showDialog, useWorkbench } from "../state/store";
 import { applyExternalChanges } from "../monaco/external";
 import { changeCount, planSync, type Manifest, type SyncPlan } from "./plan";
@@ -71,6 +72,8 @@ export const signedIn = () => !!get().account?.signed_in;
 // ── API ──────────────────────────────────────────────────────────────────
 
 export class TmError extends Error {
+  /** The technical part (method, path, status, code, request id): behind a notification's Details link. */
+  details?: string;
   constructor(
     public status: number,
     public code: string,
@@ -81,9 +84,15 @@ export class TmError extends Error {
   }
 }
 
+/** An error as a failure notification: the words in the message, the codes behind Details (N5). */
+export function notifyError(e: unknown, prefix = "") {
+  const text = String((e as Error)?.message ?? e);
+  notify("error", prefix ? `${prefix}${text}` : text, undefined, { kind: "failure", details: e instanceof TmError ? e.details : undefined });
+}
+
 export async function api<T>(method: TmRequest["method"], path: string, json?: unknown, extra: Partial<TmRequest> = {}): Promise<T> {
   const host = getPlatform().account;
-  if (!host) throw new TmError(0, "UNSUPPORTED", "Task Mentor projects are available in the TMCode desktop app.");
+  if (!host) throw new TmError(0, "UNSUPPORTED", msg("api.unsupported"));
   // Every request shows as activity at once (progress line, status bar), whoever made it.
   const end = beginActivity("Task Mentor…");
   let res;
@@ -95,7 +104,12 @@ export async function api<T>(method: TmRequest["method"], path: string, json?: u
   if (res.status >= 200 && res.status < 300) return res.body as T;
   const body = (res.body ?? {}) as Record<string, unknown>;
   // Task Mentor answers `error_code`; some newer answers (QUIZ_NOT_OPEN, MIS_SCOPE_UNAVAILABLE) say `code`.
-  throw new TmError(res.status, String(body.error_code ?? body.code ?? `HTTP_${res.status}`), String(body.message ?? `Task Mentor answered ${res.status}.`), body);
+  const code = String(body.error_code ?? body.code ?? `HTTP_${res.status}`);
+  // Its own words when it has some; else plain words, never "Task Mentor answered 500." (N5).
+  const text = typeof body.message === "string" && body.message.trim() ? body.message : res.status === 0 ? msg("api.offline") : msg("api.server");
+  const err = new TmError(res.status, code, text, body);
+  err.details = msg("api.details", { method, path, status: res.status, code, requestId: (body.request_id ?? body.requestId) as string | undefined });
+  throw err;
 }
 
 // ── Account ──────────────────────────────────────────────────────────────
@@ -158,9 +172,9 @@ export async function signIn() {
   if (inExam()) return notify("info", "Signing in is not available during an exam.");
   try {
     await host.signIn();
-    notify("info", "Continue in your browser to sign in with your NGA account.");
+    notify("info", msg("signin.browser"));
   } catch (e) {
-    notify("error", String((e as Error)?.message ?? e));
+    notifyError(e);
   }
 }
 
@@ -182,20 +196,50 @@ export async function signOut() {
   set({ account: await host.status(false), mine: null, shared: null });
 }
 
-/** Projects need both sessions: asks to sign in otherwise. */
-async function requireSignIn(): Promise<boolean> {
+/** An action the student started while signed out: it runs once the sign-in completes (W5). */
+export interface PendingAction {
+  /** What it opens or does, in the student's words: "Build a to-do list", "your project". */
+  label: string;
+  run: () => void | Promise<unknown>;
+  /** The notice instead of "Signed in. Opening <label>…". */
+  notice?: string;
+}
+const PENDING_MS = 5 * 60_000;
+let pending: { action: PendingAction; until: number } | null = null;
+let pendingWired = false;
+
+/** Remembers the action and runs it when the account signs in (dropped after 5 minutes or a newer one). */
+export function resumeAfterSignIn(action: PendingAction) {
+  pending = { action, until: Date.now() + PENDING_MS };
+  if (pendingWired) return;
+  pendingWired = true;
+  useProjects.subscribe((s, prev) => {
+    if (!s.account?.signed_in || prev.account?.signed_in || !pending) return;
+    const p = pending;
+    pending = null;
+    if (Date.now() > p.until) return;
+    notify("info", p.action.notice ?? msg("signin.resume", { what: p.action.label }), undefined, { kind: "result" });
+    void Promise.resolve(p.action.run()).catch((e) => notifyError(e));
+  });
+}
+
+/** Projects need both sessions: asks to sign in otherwise, and carries on with `then` once signed in. */
+async function requireSignIn(then?: PendingAction): Promise<boolean> {
   if (signedIn()) return true;
   const choice = await showDialog({
     severity: "info",
-    message: "Sign in with your NGA account",
-    detail: "Task Mentor projects need you to be signed in to Central MIS and Task Mentor. One sign-in does both.",
+    message: msg("signin.prompt"),
+    detail: msg("signin.promptDetail"),
     buttons: [
       { id: "in", label: "Sign In", primary: true },
       { id: "cancel", label: "Cancel" },
     ],
     cancelId: "cancel",
   });
-  if (choice === "in") await signIn();
+  if (choice === "in") {
+    if (then) resumeAfterSignIn(then);
+    await signIn();
+  }
   return false;
 }
 
@@ -216,7 +260,7 @@ export async function refreshProjects() {
 }
 
 export async function createProject(input: { name: string; description?: string; language?: string; kind: ProjectKind; repo_url?: string }): Promise<Project | null> {
-  if (!(await requireSignIn())) return null;
+  if (!(await requireSignIn({ label: `"${input.name}"`, run: () => createProject(input) }))) return null;
   const res = await api<{ project: Project }>("POST", "/projects", input);
   void refreshProjects();
   return res.project;
@@ -261,9 +305,9 @@ export function lockReason(project: Project | null | undefined): string | null {
   if (project.my_role && project.my_role !== "owner" && (project.status === "submitted" || project.status === "graded")) {
     return `Reviewing ${project.owner?.name ?? "a student"}'s submission: ${project.name} (read-only).`;
   }
-  if (project.status === "submitted") return `${name} is submitted: use Withdraw to Edit (Projects view) to keep editing.`;
+  if (project.status === "submitted") return msg("lock.submitted", { name });
   if (project.status === "graded") return `${name} is graded: this workspace is read-only.`;
-  if (project.status === "removed") return `${name} was removed: restore it (Task Mentor Projects › Removed) to edit it again.`;
+  if (project.status === "removed") return msg("lock.removed", { name });
   return null;
 }
 
@@ -359,12 +403,13 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
   const binding = get().binding;
   const host = getPlatform().account;
   if (!binding || !host) {
-    if (!opts.quiet) notify("info", "This folder is not a Task Mentor project. Use Projects › Connect This Folder first.");
+    // W9: the way there is a button, not a menu path.
+    if (!opts.quiet) notify("info", msg("save.notConnected"), [{ label: msg("save.connect"), run: () => void import("../commands/registry").then((m) => m.executeCommand("projects.connectFolder")) }]);
     return null;
   }
-  if (!(await requireSignIn())) return null;
+  if (!(await requireSignIn(opts.quiet ? undefined : { label: "Task Mentor", notice: "Signed in. Saving to Task Mentor…", run: () => saveToTaskMentor(opts) }))) return null;
   if (binding.kind === "github") {
-    if (!opts.quiet) notify("info", "This is a GitHub project: commit and push in Source Control. Task Mentor follows your pushes.");
+    if (!opts.quiet) notify("info", msg("save.github"));
     return null;
   }
   const locked = lockReason(get().current);
@@ -459,7 +504,7 @@ export function saveFailureMessage(e: unknown, doing: "save" | "submit"): string
   }
   if (e instanceof TmError && ["PROJECT_LOCKED", "PROJECT_GRADED", "PROJECT_REMOVED", "ASSIGNMENT_READ_ONLY"].includes(e.code)) return lockReason(get().current) ?? e.message;
   const conflicts = get().plan?.conflicts.length ?? 0;
-  if (conflicts) return `${conflicts} file${conflicts === 1 ? "" : "s"} changed both here and in Task Mentor. Resolve ${conflicts === 1 ? "it" : "them"} under Conflicts in the Task Mentor Projects view, then ${doing} again.`;
+  if (conflicts) return msg("save.conflictsBlock", { n: conflicts, doing });
   if (e instanceof Error && e.message) return e.message;
   if (get().sync === "error" && get().syncMessage) return get().syncMessage!;
   return doing === "submit" ? "Your work couldn't be saved to Task Mentor, so nothing was submitted. Try again." : "Your work couldn't be saved to Task Mentor. Try again.";
@@ -538,7 +583,7 @@ async function pullFromTaskMentorNow(opts: { quiet?: boolean; announce?: boolean
       log("Projects", `${pulledSummary(toWrite, plan.remoteChanges.deleted, 50)} Earlier copies are in Local History (Timeline).`);
     } else if (!opts.quiet) notify("info", "This folder already has Task Mentor's latest files.");
   } catch (e) {
-    if (!opts.quiet) notify("error", (e as Error).message);
+    if (!opts.quiet) notifyError(e);
   } finally {
     progress?.close();
     await checkSync();
@@ -625,10 +670,23 @@ export async function compareConflict(path?: string) {
 /** Conflicts block saving: say so, with a way to compare (and the view where Keep Mine / Take Task Mentor's live). */
 export function notifyConflicts(conflicts: string[]) {
   const n = conflicts.length;
-  notify("warning", `${n} file${n === 1 ? "" : "s"} changed both here and in Task Mentor. Compare, then keep yours or take Task Mentor's under Conflicts in the Task Mentor Projects view.`, [
+  notify("warning", msg("save.conflicts", { n }), [
     { label: n === 1 ? "Compare" : "Compare…", run: () => void compareConflict(n === 1 ? conflicts[0] : undefined) },
-    { label: "Show Conflicts", run: () => revealView("projects") },
+    // N6: students resolve them where they work (the brief); others in the Projects view.
+    { label: msg("save.showConflicts"), run: () => void showConflicts() },
   ]);
+}
+
+/** Where Keep Mine / Take Task Mentor's live: the brief of an assignment workspace, else the Projects view. */
+async function showConflicts() {
+  const cur = get().current;
+  if (cur?.assignment && !(await import("./assignments")).useAssignments.getState().staff) {
+    const { showAssignment } = await import("./assignments");
+    showAssignment(cur.assignment.id, { toSide: true });
+    setTimeout(() => document.getElementById("tm-conflicts")?.scrollIntoView({ block: "center" }), 100);
+    return;
+  }
+  revealView("projects");
 }
 
 /**
@@ -667,7 +725,7 @@ export async function offerSaveBeforeSwitch(nextName: string, nextProjectId?: nu
 
 async function openProjectNow(projectId: number, opts: { folderName?: string } = {}): Promise<boolean> {
   if (!projectsSupported()) return false;
-  if (!(await requireSignIn())) return false;
+  if (!(await requireSignIn({ label: opts.folderName ? "your project" : "the project", run: () => openProject(projectId, opts) }))) return false;
   // Unsaved files first (Cancel keeps the open folder), not after cloning or downloading.
   if (!(await confirmLeaveWorkspace())) return false;
   const store = getPlatform().store;
@@ -782,12 +840,12 @@ async function withdrawSubmissionNow(projectId: number) {
       set({ current: { ...get().current!, ...project } });
       applyReadOnly(get().current);
     }
-    notify("info", "Submission withdrawn: you can edit again. Submit when you are ready.");
+    notify("info", msg("withdraw.done"), undefined, { kind: "result" });
     await recheck();
     void refreshProjects();
     return true;
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
     return false;
   }
 }
@@ -799,7 +857,7 @@ export async function setSharePresence(projectId: number, share: boolean) {
     if (get().current?.id === projectId) set({ current: project });
     notify("info", share ? "Live status is shared with your teachers again." : "Live status is no longer shared with teachers.");
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
   }
 }
 
@@ -846,13 +904,13 @@ export async function removeProject(project: Project) {
   if (choice !== "remove") return false;
   try {
     await api("DELETE", `/projects/${project.id}`);
-    notify("info", `"${project.name}" was removed. Restore it from Projects › Removed.`);
+    notify("info", msg("projects.removed", { name: project.name }), [{ label: msg("projects.restore"), run: () => void restoreProject(project.id) }], { kind: "result" });
     if (get().binding?.project_id === project.id) await recheck();
     await refreshProjects();
     if (get().removed !== null) await loadRemoved();
     return true;
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
     return false;
   }
 }
@@ -864,7 +922,7 @@ export async function restoreProject(projectId: number) {
     if (get().binding?.project_id === projectId) await recheck();
     await Promise.all([refreshProjects(), loadRemoved()]);
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
   }
 }
 

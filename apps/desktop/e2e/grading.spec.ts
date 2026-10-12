@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openStudent, saveGradeAs, showRoster } from "./journeys";
 
 /**
  * Teachers grade TMCode practicals in TMCode (grading/*) against the memory
@@ -53,9 +54,9 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
   await activity(page, "assignment:51:").click();
   const pageEl = page.getByTestId("grading-page");
   await expect(pageEl.getByTestId("grading-progress")).toContainText("2 to grade");
-  await expect(pageEl.getByTestId("grading-progress")).toContainText("1 working");
+  await expect(pageEl.getByTestId("grading-progress")).toContainText("1 in progress");
   await expect(pageEl.getByTestId("grade-row")).toHaveCount(2); // the "To grade" filter
-  await pageEl.getByTestId("grade-start").click();
+  await openStudent(page, "Ben Learner");
 
   // Ben's submitted version is loaded in this window, read-only, with the grading tab beside it.
   await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
@@ -80,9 +81,10 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
   // Next: Chloe, and the progress moved.
   await expect(page.getByTestId("grade-panel")).toContainText("Chloe Coder", { timeout: 15_000 });
   await expect(page.getByTestId("grading-progress")).toContainText("1 graded");
-  await expect(page.getByTestId("grading-progress")).toContainText("50%");
+  await expect(page.getByTestId("grading-progress")).toContainText("1 to grade");
   // Beside the code the roster is folded: the switcher unfolds it.
   await page.getByTestId("grade-switcher-toggle").click();
+  await showRoster(page);
   await page.getByTestId("grade-filter-graded").click();
   await expect(page.getByTestId("grade-row")).toContainText("18/20");
 });
@@ -90,23 +92,24 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
 test("a quiz practical question is graded the same way", async ({ page }) => {
   await teacher(page);
   await activity(page, "quiz:78:501").click();
-  await page.getByTestId("grade-start").click();
+  await openStudent(page, "Ben Learner");
   await expect(page.getByTestId("grade-panel")).toContainText("Ben Learner");
   await page.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "6" }).click();
   await page.getByTestId("grade-criterion").nth(1).getByRole("button", { name: "2" }).click();
-  await page.getByTestId("grade-save").click();
+  await saveGradeAs(page, "release");
   await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 8/10");
-  await expect(page.getByTestId("grading-progress")).toContainText("100%");
+  await expect(page.getByTestId("grading-progress")).toContainText("0 to grade");
 });
 
 test("students still working or not started can't be graded yet; Back to my folder ends the review", async ({ page }) => {
   await teacher(page);
   await activity(page, "assignment:51:").click();
+  await showRoster(page);
   await page.getByTestId("grade-filter-all").click();
-  await page.getByTestId("grade-row").filter({ hasText: "Dan Doer" }).click();
+  await openStudent(page, "Dan Doer");
   await expect(page.getByTestId("grade-hint")).toContainText("Still working");
   await expect(page.getByTestId("load-project")).toBeDisabled();
-  await page.getByTestId("grade-row").filter({ hasText: "Chloe Coder" }).click();
+  await openStudent(page, "Chloe Coder");
   await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
   await command(page, "View: Show Grading");
   await page.getByTestId("grading-reviewing").getByRole("button", { name: "Back to my folder" }).click();
@@ -138,7 +141,7 @@ test("icons show styled tooltips with their shortcut, and the title comes back a
 test("beside the code the roster folds into a switcher; Full marks, the save hint and the finish line", async ({ page }) => {
   await teacher(page);
   await activity(page, "assignment:51:").click();
-  await page.getByTestId("grade-start").click();
+  await openStudent(page, "Ben Learner");
   await expect(page.getByTestId("load-project")).toHaveText(/open in the editor/, { timeout: 15_000 });
   // The student's files are one click away.
   await expect(page.locator(".tm-grade-files")).toContainText("app.js");
@@ -155,9 +158,11 @@ test("beside the code the roster folds into a switcher; Full marks, the save hin
   await page.getByTestId("grade-switcher-toggle").click();
 
   // Save explains what's missing; Full marks fills every criterion.
-  await expect(page.getByTestId("grade-status")).toHaveText("Score every criterion to save");
+  // 0.16: the hint sits on the first criterion without a score, outlined.
+  await expect(page.getByTestId("grade-missing")).toHaveText("Score this and 1 more to save");
   await page.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "12" }).click();
-  await expect(page.getByTestId("grade-status")).toHaveText("Score 1 more criterion to save");
+  await expect(page.getByTestId("grade-missing")).toHaveText("Score this criterion to save");
+  await expect(page.getByTestId("grade-criterion").nth(1)).toHaveClass(/is-missing/);
   await page.getByTestId("grade-full-marks").click();
   await expect(page.getByTestId("grade-total")).toContainText("20");
   await page.getByTestId("grade-save-next").click();
@@ -185,7 +190,7 @@ const storedBen = (page: Page) => page.evaluate(`window.__TMCODE_PROJECTS__.grad
 test("notes per criterion survive a re-save, from servers that keep them and from older ones that only have the feedback text", async ({ page }) => {
   await teacher(page);
   await activity(page, "assignment:51:").click();
-  await page.getByTestId("grade-start").click();
+  await openStudent(page, "Ben Learner");
   const panel = page.getByTestId("grade-panel");
   await expect(panel).toContainText("Ben Learner", { timeout: 15_000 });
   await panel.getByTestId("grade-criterion").nth(0).getByRole("button", { name: "12" }).click();
@@ -193,7 +198,7 @@ test("notes per criterion survive a re-save, from servers that keep them and fro
   await panel.getByLabel("Note for Adding items works").click();
   await panel.locator(".tm-grade-note").fill("Adding works, even with an empty box.");
   await page.getByTestId("grade-feedback").fill("Nice and tidy.");
-  await page.getByTestId("grade-save").click();
+  await saveGradeAs(page, "release");
   await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 18/20");
   let stored = await storedBen(page);
   expect(stored?.rubric_scores?.[0].comment).toBe("Adding works, even with an empty box.");
@@ -204,8 +209,9 @@ test("notes per criterion survive a re-save, from servers that keep them and fro
   await command(page, "Grading: Refresh Grading");
   await page.locator(".tm-tab", { hasText: "Grade: Build a to-do list" }).click();
   await page.getByTestId("grade-switcher-toggle").click();
+  await showRoster(page);
   await page.getByTestId("grade-filter-graded").click();
-  await page.getByTestId("grade-row").filter({ hasText: "Ben Learner" }).click();
+  await openStudent(page, "Ben Learner");
   await expect(page.getByTestId("grade-panel")).toContainText("Ben Learner");
   await expect(page.getByTestId("grade-feedback")).toHaveValue("Nice and tidy.");
   const note = page.getByTestId("grade-panel").locator(".tm-grade-note");
@@ -214,7 +220,7 @@ test("notes per criterion survive a re-save, from servers that keep them and fro
 
   // Re-saved with another score: the note is kept, and written once.
   await page.getByTestId("grade-panel").getByTestId("grade-criterion").nth(1).getByLabel(/Code quality score/).fill("7");
-  await page.getByTestId("grade-save").click();
+  await saveGradeAs(page, "release");
   await expect(page.getByTestId("grade-status")).toContainText("Grade saved: 19/20");
   stored = await storedBen(page);
   expect(stored?.feedback).toBe("Nice and tidy.\n\nCriteria notes:\n• Adding items works: Adding works, even with an empty box.");

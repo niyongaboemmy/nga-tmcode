@@ -108,13 +108,11 @@ test("start copies the starter files, then save and submit reach the teacher", a
   await expect(page.getByTestId("assignment-result")).toContainText("Nice work");
   await command(page, "View: Show Assignments");
   await expect(row(page, 51)).toContainText("18/20");
-  // …and in the project's assessment card, without leaving TMCode.
+  // …and in the side bar's one line (0.16), the same one status.
   await page.evaluate(`window.__TMCODE_PROJECTS__.setProjectStatus(${ws}, "graded")`);
   await command(page, "Projects: Refresh Projects");
   await command(page, "View: Show Task Mentor Projects");
-  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "graded");
-  await expect(page.getByTestId("project-grade")).toContainText("18");
-  await expect(page.getByTestId("project-grade")).toContainText("Nice work");
+  await expect(page.getByTestId("this-folder-line")).toHaveAttribute("data-status", "graded");
 });
 
 test("starting again continues the same workspace instead of copying the starter twice", async ({ page }) => {
@@ -146,11 +144,12 @@ test("a completed assignment is read-only: no editing, saving or submitting", as
   await page.keyboard.type("x");
   await expect(page.locator(".monaco-editor-overlaymessage")).toContainText("is completed: this workspace is read-only");
 
-  // Save to Task Mentor is disabled in the Projects view.
+  // The side bar's one line says Closed (0.16: no Save button there at all).
   await page.locator('.tm-activity[aria-label^="All My Projects"]').click();
-  await expect(page.getByTestId("save-to-tm")).toBeDisabled();
+  await expect(page.getByTestId("this-folder-line")).toHaveAttribute("data-status", "closed");
+  await expect(page.getByTestId("save-to-tm")).toHaveCount(0);
   await command(page, "View: Show Assignments");
-  await page.locator(".tm-pane-title", { hasText: "Completed (Read-only)" }).click();
+  await page.locator(".tm-pane-title", { hasText: "Closed" }).click();
   await expect(row(page, 51)).toContainText("Read-only");
 });
 
@@ -158,12 +157,14 @@ test("disconnect stops syncing; live status sharing is locked on for open assign
   await fresh(page);
   await startPractical(page);
   await page.locator('.tm-activity[aria-label^="All My Projects"]').click();
-  const share = page.getByTestId("share-presence");
-  await expect(share).toBeChecked();
-  await expect(share).toBeDisabled();
-  // The assessment card names the assignment and opens its brief.
-  await expect(page.getByTestId("project-assessment")).toContainText("Build a to-do list");
-  await expect(page.getByTestId("project-status-panel")).toContainText("due");
+  // 0.16: the live-status switch is in the line's "…" menu, locked on while the assignment is open.
+  const line = page.getByTestId("this-folder-line");
+  await line.getByRole("button", { name: "More Project Actions…" }).click();
+  await expect(page.locator(".tm-menu-item", { hasText: "Share Live Status with Teachers: On" })).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Escape");
+  // The line opens the assignment's brief.
+  await line.getByTestId("project-assessment").click();
+  await expect(page.locator(".tm-tab.is-active", { hasText: "Build a to-do list" })).toBeVisible();
 
   await command(page, "Projects: Disconnect This Folder from Task Mentor");
   await page.locator(".tm-dialog").getByRole("button", { name: "Disconnect" }).click();
@@ -229,8 +230,7 @@ test("with Task Mentor's project lifecycle, a submitted workspace is locked unti
   await expect(page.getByTestId("assignment-withdraw")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("assignment-submit")).toHaveCount(0);
   await command(page, "View: Show Task Mentor Projects");
-  await expect(page.getByTestId("project-submitted")).toBeVisible();
-  await expect(page.getByTestId("save-to-tm")).toBeDisabled();
+  await expect(page.getByTestId("this-folder-line")).toHaveAttribute("data-status", "submitted");
 
   await page.locator(".tm-tab", { hasText: "Build a to-do list" }).click();
   await expect(page.getByTestId("assignment-withdraw")).toHaveText("Withdraw to Edit");
@@ -242,8 +242,7 @@ test("with Task Mentor's project lifecycle, a submitted workspace is locked unti
   await dialog.getByRole("button", { name: "Withdraw to Edit" }).click();
   await expect(page.locator(".tm-toast", { hasText: "Submission withdrawn" })).toBeVisible();
   await expect(page.getByTestId("assignment-submit")).toBeVisible();
-  await command(page, "View: Show Task Mentor Projects");
-  await expect(page.getByTestId("save-to-tm")).toBeEnabled();
+  await expect(page.getByTestId("assignment-save")).toBeEnabled();
 });
 
 test("a quiz's TMCode practical starts from the Assignments view, then is submitted as the quiz answer", async ({ page }) => {
@@ -257,20 +256,21 @@ test("a quiz's TMCode practical starts from the Assignments view, then is submit
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
 
-  await command(page, "View: Show Task Mentor Projects");
-  await expect(page.getByTestId("project-assessment")).toContainText("Web Quiz 3");
-  await expect(page.getByTestId("project-status-panel")).toContainText("Quiz practical");
-  await page.getByTestId("submit-project").click();
+  // 0.16 (6.3): its brief opened beside the code, with the same Submit as assignments.
+  const brief = page.getByTestId("assignment-page");
+  await expect(brief).toHaveAttribute("data-source", "quiz");
+  await expect(brief).toContainText("Web Quiz 3");
+  await page.getByTestId("assignment-submit").click();
   await expect(page.locator(".tm-dialog")).toContainText("keep the quiz open in Task Mentor");
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
-  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
+  await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
 
   // The row says so; opening it again opens the same workspace.
   await command(page, "View: Show Assignments");
   await expect(page.getByTestId("quiz-practical-state")).toHaveText("Submitted", { timeout: 10_000 });
   await expect(page.getByTestId("quiz-practical-row")).toContainText("Open here");
-  await page.getByTestId("quiz-practical-row").click();
-  await expect(page.locator(".tm-toast", { hasText: "Opened your work" })).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("quiz-practical-row").dblclick();
+  await expect(page.getByTestId("assignment-withdraw")).toBeVisible({ timeout: 15_000 });
   const state = await mock(page, (m) => m.state() as unknown as { links: { question_id: number | null }[] });
   expect(state.links.filter((l) => l.question_id === 501)).toHaveLength(1);
 });
@@ -285,7 +285,7 @@ test("the assessment list offers a quiz's practical questions directly and start
   await expect(navbar).toContainText("Quiz practical · Web Quiz 3");
   await navbar.click();
   await page.locator(".tm-dialog").getByRole("button", { name: "Start the Practical" }).click();
-  await expect(page.getByTestId("project-status-panel")).toContainText("Quiz practical", { timeout: 15_000 });
+  await expect(page.getByTestId("assignment-page")).toHaveAttribute("data-source", "quiz", { timeout: 15_000 });
   await page.locator('.tm-activity[aria-label^="Explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
 });
@@ -445,7 +445,6 @@ test("a quiz practical submitted while the quiz isn't open says so, offers the q
   await command(page, "View: Show Assignments");
   await page.getByTestId("quiz-practical-row").getByRole("button", { name: "Start" }).click();
   await expect(page.locator(".tm-toast", { hasText: "is ready" })).toBeVisible({ timeout: 15_000 });
-  await command(page, "View: Show Task Mentor Projects");
   await page.evaluate(() => {
     const w = window as unknown as { __opened: string[] };
     w.__opened = [];
@@ -454,7 +453,8 @@ test("a quiz practical submitted while the quiz isn't open says so, offers the q
       return null;
     }) as typeof window.open;
   });
-  await page.getByTestId("submit-project").click();
+  // 0.16: from the practical's brief.
+  await page.getByTestId("assignment-submit").click();
   await expect(page.locator(".tm-dialog")).toContainText("until the quiz closes");
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
 
@@ -463,15 +463,15 @@ test("a quiz practical submitted while the quiz isn't open says so, offers the q
   await expect(page.locator(".tm-toast", { hasText: "Your teacher sees exactly this version" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Open the Quiz in Task Mentor" }).click();
   expect(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toEqual([expect.stringContaining("/quizzes/78/take")]);
-  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "draft");
+  await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "in_progress");
   expect(await mock(page, (m) => m.state().links.find((l) => (l as unknown as { question_id: number | null }).question_id === 501)?.status)).toBe("linked");
 
   // With the quiz open, the same submit goes through.
   await mock(page, (m) => m.setQuizOpen(true));
-  await page.getByTestId("submit-project").click();
+  await page.getByTestId("assignment-submit").click();
   await page.locator(".tm-dialog").getByRole("button", { name: "Save and Submit" }).click();
   await expect(page.locator(".tm-toast", { hasText: "Your teacher sees exactly this version" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("project-status-panel")).toHaveAttribute("data-status", "submitted");
+  await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
 });
 
 test("work returned for changes shows the teacher's message on the brief and the row, until it is handed in again", async ({ page }) => {
@@ -553,7 +553,7 @@ test("when Task Mentor can't check the student's subjects, the view says so inst
   await expect(error).toContainText("Couldn't check your subjects in Task Mentor.", { timeout: 10_000 });
   await expect(error).toContainText("Central MIS");
   await expect(error.getByRole("button", { name: "Retry" })).toBeVisible();
-  await expect(error.getByRole("button", { name: "Sign in again" })).toBeVisible();
+  await expect(error.getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(page.getByTestId("assignments-empty")).toHaveCount(0);
 
   // An expired sign-in (401) too.

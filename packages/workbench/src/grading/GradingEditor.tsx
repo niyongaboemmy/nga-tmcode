@@ -1,12 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { formatKeybinding } from "../commands/registry";
-import { getPlatform, openFile, showDialog, useWorkbench, type EditorInput } from "../state/store";
+import { getPlatform, openContextMenu, openFile, showDialog, useWorkbench, type ContextMenuItem, type EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { taskMentorWeb } from "../projects/commands";
 import { useProjects } from "../projects/service";
-import { ProgressBar } from "./GradingView";
 import { revealComment } from "./comments";
 import { compareWithVersion, diffWithStarter, draftGradeCount, GRADING_SHORTCUTS, openGradingDiff, registerGradingController, releaseDraftGrades } from "./commands";
 import { changesAgainst, revisionFiles, starterOf, type Change, type Version } from "./diff";
@@ -17,6 +16,7 @@ import {
   draftsSupported,
   isDraftGrade,
   keyOf,
+  firstToGrade,
   loadRoster,
   openGrading,
   openSubmission,
@@ -40,7 +40,7 @@ type Filter = "to-grade" | "graded" | "working" | "not-started" | "all";
 const STATE: Record<RowState, { label: string; tone: string }> = {
   submitted: { label: "To grade", tone: "info" },
   graded: { label: "Graded", tone: "success" },
-  in_progress: { label: "Working", tone: "muted" },
+  in_progress: { label: "In progress", tone: "muted" },
   not_started: { label: "Not started", tone: "muted" },
 };
 const inFilter = (f: Filter, r: RosterRow) =>
@@ -175,6 +175,28 @@ interface PanelApi {
   focus(): void;
 }
 
+/** What the split button's main part does; the teacher's last choice from its menu (L3). */
+type SaveMode = "next" | "draft" | "release";
+let savedMode: SaveMode = "next";
+let modeLoaded = false;
+function loadSaveMode(set: (m: SaveMode) => void) {
+  if (modeLoaded) return;
+  modeLoaded = true;
+  void getPlatform()
+    .store.get<SaveMode>("grading.saveMode")
+    .then((m) => {
+      if (m === "next" || m === "draft" || m === "release") {
+        savedMode = m;
+        set(m);
+      }
+    })
+    .catch(() => {});
+}
+function rememberSaveMode(m: SaveMode) {
+  savedMode = m;
+  void getPlatform().store.set("grading.saveMode", m).catch(() => {});
+}
+
 function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roster: Roster; row: RosterRow; onNext: () => void; apiRef: MutableRefObject<PanelApi | null> }) {
   const rubric: Criterion[] = roster.activity.rubric;
   const max = roster.activity.max_points;
@@ -193,6 +215,8 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
   // Task Mentor's code for the last failed save (DRAFT_NEEDS_SUBMISSION offers Save & Release instead of Retry).
   const [failCode, setFailCode] = useState<string | null>(null);
   const [shortcuts, setShortcuts] = useState(false);
+  const [saveMode, setSaveMode] = useState<SaveMode>(savedMode);
+  useEffect(() => loadSaveMode(setSaveMode), []);
   const [hasHtml, setHasHtml] = useState<boolean | null>(null);
   const lastSave = useRef<{ release: boolean; next: boolean }>({ release: true, next: false });
   const panelRef = useRef<HTMLDivElement>(null);
@@ -296,7 +320,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       : "Saving…"
     : gradable && !complete
       ? rubric.length
-        ? `Score ${missing === rubric.length ? "every criterion" : `${missing} more criteri${missing === 1 ? "on" : "a"}`} to save`
+        ? "" // shown on the first criterion without a score
         : "Enter a score to save"
       : failed
         ? "Not saved"
@@ -312,6 +336,27 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
   const os = getPlatform().os;
   // Task Mentor says where Return works (not quiz practicals); graded work can be reopened with Allow Resubmission.
   const canReturn = (roster.activity.can_return ?? !quiz) && roster.activity.can_grade && (row.state === "submitted" || row.state === "graded") && row.project?.kind === "tm";
+  const openOnGitHub = () => row.project?.repo_url && void openExternalUrl(row.link?.git_commit ? `${row.project.repo_url.replace(/\.git$/, "")}/tree/${row.link.git_commit}` : row.project.repo_url);
+  const moreItems: ContextMenuItem[] = [
+    ...(row.project?.kind !== "github" && hasHtml !== false
+      ? [{ kind: "item" as const, label: "Preview the Website", disabled: !row.link?.revision_id || hasHtml === null, run: () => void previewSubmission(row) }]
+      : []),
+    ...(loaded && row.project?.kind === "tm" ? [{ kind: "item" as const, label: "Compare with Version…", run: () => void compareWithVersion() }] : []),
+    ...(canReturn && !returning ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Return for Changes…", run: () => setReturning({ message: "", error: null, busy: false }) }] : []),
+    { kind: "separator" },
+    { kind: "item", label: shortcuts ? "Hide Shortcuts" : "Shortcuts", run: () => setShortcuts(!shortcuts) },
+  ];
+  // The one primary button (L3): Save & Next by default; the menu's last choice is remembered.
+  const modeOf: Record<SaveMode, { label: string; testId: string; run: () => void; title: string }> = {
+    next: { label: "Save & Next", testId: "grade-save-next", run: () => void save(true, true), title: `Save, then the next one to grade (${formatKeybinding("mod+enter", getPlatform().os)})` },
+    draft: { label: "Save Draft", testId: "grade-save-draft", run: () => void save(false, false), title: "Save without showing it to the student yet. Release it later." },
+    release: { label: quiz ? "Save" : "Save & Release", testId: "grade-save", run: () => void save(true, false), title: quiz ? "Save the grade. The student sees it when the quiz results are released." : "Save the grade. The student sees it in Task Mentor." },
+  };
+  const modes: SaveMode[] = drafts !== false ? ["next", "draft", "release"] : ["next", "release"];
+  const primary = modes.includes(saveMode) ? saveMode : "next";
+  const disabledSave = !gradable || !complete || !!saving;
+  // The first criterion still without a score carries the hint (not the footer).
+  const firstMissing = gradable && !complete && rubric.length ? draft.scores.findIndex((x) => x === null) : -1;
 
   return (
     <div className="tm-grade-panel" data-testid="grade-panel" ref={panelRef} tabIndex={-1} aria-label={`Grade ${row.student?.name ?? "student"}`}>
@@ -345,7 +390,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
 
       <div className="tm-grade-actions">
         {row.project?.kind === "github" ? (
-          <button type="button" className="tm-button tm-button--secondary" onClick={() => row.project?.repo_url && void openExternalUrl(row.link?.git_commit ? `${row.project.repo_url.replace(/\.git$/, "")}/tree/${row.link.git_commit}` : row.project.repo_url)} title="The repository at the submitted commit">
+          <button type="button" className="tm-button tm-button--secondary" onClick={openOnGitHub} title="The repository at the submitted commit">
             <Codicon name="github" /> Open on GitHub
           </button>
         ) : loaded ? (
@@ -355,7 +400,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
         ) : (
           <button
             type="button"
-            className="tm-button"
+            className="tm-button tm-button--secondary"
             disabled={!row.link?.revision_id || loading}
             onClick={() => void openSubmission(gkey, row)}
             data-testid="load-project"
@@ -365,16 +410,19 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
             {loading ? "Opening…" : "Open Their Project"}
           </button>
         )}
-        {row.project?.kind !== "github" && hasHtml !== false && (
-          <button type="button" className="tm-button tm-button--secondary" disabled={!row.link?.revision_id || hasHtml === null} onClick={() => void previewSubmission(row)} title="Run the submitted website in the built-in browser" data-testid="grade-preview">
-            <Codicon name="globe" /> Preview
-          </button>
-        )}
-        {canReturn && !returning && (
-          <button type="button" className="tm-button tm-button--secondary" onClick={() => setReturning({ message: "", error: null, busy: false })} data-testid="grade-return" title="Send the project back to the student to change and submit again">
-            <Codicon name="reply" /> Return for Changes…
-          </button>
-        )}
+        {/* L3: the rare actions live in one menu, not as buttons above the work. */}
+        <button
+          type="button"
+          className="tm-button tm-button--secondary tm-grade-more"
+          aria-haspopup="menu"
+          data-testid="grade-more"
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            openContextMenu(r.left, r.bottom + 2, moreItems);
+          }}
+        >
+          More Actions <Codicon name="chevron-down" />
+        </button>
       </div>
 
       {returning && (
@@ -410,8 +458,6 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
         </div>
       )}
 
-      {loaded && <SubmissionFiles />}
-      {loaded && row.project?.kind === "tm" && <SubmissionChanges row={row} />}
 
       {!gradable && (
         <p className="tm-grade-hint" data-testid="grade-hint">
@@ -478,7 +524,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
           rubric.map((c, i) => {
             const v = draft.scores[i];
             return (
-              <div key={i} className="tm-grade-criterion" data-testid="grade-criterion">
+              <div key={i} className={`tm-grade-criterion ${i === firstMissing ? "is-missing" : ""}`} data-testid="grade-criterion">
                 <div className="tm-grade-criterion-name" title={c.description ? `${c.criteria}\n${c.description}` : c.criteria}>
                   {c.criteria}
                 </div>
@@ -497,6 +543,11 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
                     <Codicon name={draft.comments[i] ? "comment-discussion" : "comment"} />
                   </button>
                 </div>
+                {i === firstMissing && (
+                  <p className="tm-grade-missing" data-testid="grade-missing">
+                    Score {missing === 1 ? "this criterion" : `this and ${missing - 1} more`} to save
+                  </p>
+                )}
                 {warn[i] && (
                   <p className="tm-grade-warn" role="status" data-testid="grade-clamped">
                     <Codicon name="warning" /> {warn[i]}
@@ -538,14 +589,23 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
         )}
       </section>
 
-      <LineComments draft={draft} loaded={loaded} canEdit={gradable} />
-
       <section className="tm-grade-feedback">
         <h3>
           <label htmlFor={`${ids}-feedback`}>Feedback</label>
         </h3>
-        <textarea id={`${ids}-feedback`} className="tm-input" rows={4} placeholder="What went well, and what to improve" value={draft.feedback} disabled={!gradable} onChange={(e) => setDraft({ ...draft, feedback: e.target.value })} data-testid="grade-feedback" />
+        <textarea id={`${ids}-feedback`} className="tm-input" rows={3} placeholder="What went well, and what to improve" value={draft.feedback} disabled={!gradable} onChange={(e) => setDraft({ ...draft, feedback: e.target.value })} data-testid="grade-feedback" />
       </section>
+
+      <LineComments draft={draft} loaded={loaded} canEdit={gradable} />
+
+      {/* Files and changes: there when wanted, folded so the grade fits (L3). */}
+      {loaded && (
+        <details className="tm-grade-files-details" data-testid="grade-files">
+          <summary>Files and changes</summary>
+          <SubmissionFiles />
+          {row.project?.kind === "tm" && <SubmissionChanges row={row} />}
+        </details>
+      )}
 
       {failed && (
         <div className="tm-grade-save-error" role="alert" data-testid="grade-save-error">
@@ -583,21 +643,42 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       )}
 
       <footer className="tm-grade-footer">
-        <span className={`tm-muted ${(gradable && !complete) || failed ? "is-hint" : ""}`} data-testid="grade-status" role="status" aria-live="polite">
+        <span className={`tm-muted ${failed ? "is-hint" : ""}`} data-testid="grade-status" role="status" aria-live="polite">
           {status}
         </span>
-        <ActionButton icon="keyboard" label="Keyboard shortcuts" active={shortcuts} aria-expanded={shortcuts} onClick={() => setShortcuts(!shortcuts)} data-testid="grade-shortcuts-toggle" />
-        {drafts !== false && (
-          <button type="button" className="tm-button tm-button--secondary" disabled={!gradable || !complete || !!saving} onClick={() => void save(false, false)} data-testid="grade-save-draft" title="Save without showing it to the student yet. Release it later.">
-            Save Draft
+        <span className="tm-split-button" role="group" aria-label="Save">
+          <button type="button" className="tm-button" disabled={disabledSave} onClick={modeOf[primary].run} data-testid={modeOf[primary].testId} title={modeOf[primary].title}>
+            <Codicon name={saving ? "loading" : primary === "next" ? "arrow-right" : "save"} className={saving ? "codicon-modifier-spin" : ""} /> {modeOf[primary].label}
           </button>
-        )}
-        <button type="button" className="tm-button tm-button--secondary" disabled={!gradable || !complete || !!saving} onClick={() => void save(true, false)} data-testid="grade-save" title={quiz ? "Save the grade. The student sees it when the quiz results are released." : "Save the grade. The student sees it in Task Mentor."}>
-          {quiz ? "Save" : "Save & Release"}
-        </button>
-        <button type="button" className="tm-button" disabled={!gradable || !complete || !!saving} onClick={() => void save(true, true)} data-testid="grade-save-next" title={`Save, then the next one to grade (${formatKeybinding("mod+enter", os)})`}>
-          <Codicon name={saving ? "loading" : "arrow-right"} className={saving ? "codicon-modifier-spin" : ""} /> Save &amp; Next
-        </button>
+          <button
+            type="button"
+            className="tm-button tm-split-button-menu"
+            aria-label="More ways to save"
+            aria-haspopup="menu"
+            disabled={!gradable || !!saving}
+            data-testid="grade-save-menu"
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              openContextMenu(
+                r.left,
+                r.top,
+                modes.map((m) => ({
+                  kind: "item" as const,
+                  label: `${modeOf[m].label}${m === primary ? " (default)" : ""}`,
+                  keybinding: m === "next" ? formatKeybinding("mod+enter", getPlatform().os) : undefined,
+                  disabled: disabledSave,
+                  run: () => {
+                    rememberSaveMode(m);
+                    setSaveMode(m);
+                    modeOf[m].run();
+                  },
+                })),
+              );
+            }}
+          >
+            <Codicon name="chevron-down" />
+          </button>
+        </span>
       </footer>
     </div>
   );
@@ -621,6 +702,7 @@ export function GradingEditor({ input }: { input: Input }) {
   // The roster's keyboard focus (arrows move it; Enter loads that student).
   const [focusId, setFocusId] = useState<number | null>(null);
   const reviewing = useGrading((s) => s.review);
+  const focusMode = useWorkbench((s) => s.settings["grading.focusWhileReviewing"] !== false);
   const listRef = useRef<HTMLDivElement>(null);
   const panelApi = useRef<PanelApi | null>(null);
   const ids = useId();
@@ -642,6 +724,20 @@ export function GradingEditor({ input }: { input: Input }) {
   useEffect(() => {
     if (roster && filter === "to-grade" && roster.counts.to_grade === 0 && !selected) setFilter("all");
   }, [roster]); // eslint-disable-line react-hooks/exhaustive-deps
+  // W8 (0.16): with work waiting and nobody chosen yet, the first one to grade opens by itself
+  // (the oldest hand-in first), so opening a practical is one step, not two.
+  const startReq = useGrading((s) => s.startFirst[key] ?? 0);
+  const handledStart = useRef<number | null>(null);
+  useEffect(() => {
+    if (!roster || handledStart.current === startReq) return;
+    const asked = handledStart.current !== null || startReq > 0;
+    handledStart.current = startReq;
+    const current = roster.rows.find((r) => r.student?.id === selected);
+    // Opened plainly: only when nobody is chosen. Asked from Home: unless the one shown still waits.
+    if (current && (!asked || (current.state === "submitted" && !isDraftGrade(current)))) return;
+    const first = firstToGrade(roster);
+    if (first) choose(first);
+  }, [roster, startReq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo(() => (roster?.rows ?? []).filter((r) => inFilter(filter, r) && (!query || (r.student?.name ?? "").toLowerCase().includes(query.toLowerCase()))), [roster, filter, query]);
   const row = roster?.rows.find((r) => r.student?.id === selected) ?? null;
@@ -786,31 +882,36 @@ export function GradingEditor({ input }: { input: Input }) {
             <Codicon name="link-external" />
           </button>
         </div>
-        <div className="tm-grade-progress-row" data-testid="grading-progress">
-          <ProgressBar graded={p.graded} toGrade={p.toGrade} inProgress={p.inProgress} total={Math.max(p.total, 1)} />
-          <div className="tm-grade-legend">
-            <span className="is-graded">
-              <b>{p.graded}</b> graded
-            </span>
-            <span className="is-to-grade">
-              <b>{p.toGrade}</b> to grade
-            </span>
-            <span className="is-in-progress">
-              <b>{p.inProgress}</b> working
-            </span>
-            <span title="Graded ÷ handed in (students still working are not counted)">
-              <b>{p.pct}%</b> of submissions graded
-            </span>
-          </div>
-        </div>
+        {/* L4: progress once, in one line (the switcher and the side bar don't repeat it). */}
+        <p className="tm-grade-progress-line" data-testid="grading-progress" title={`${p.pct}% of submissions graded (students still working are not counted)`}>
+          <span className="is-to-grade">
+            <b>{p.toGrade}</b> to grade
+          </span>
+          {" · "}
+          <span className="is-graded">
+            <b>{p.graded}</b> graded
+          </span>
+          {" · "}
+          <span className="is-in-progress">
+            <b>{p.inProgress}</b> in progress
+          </span>
+          {draftCount > 0 && (
+            <>
+              {" · "}
+              <span>
+                <b>{draftCount}</b> draft{draftCount === 1 ? "" : "s"} not released
+              </span>
+            </>
+          )}
+        </p>
       </header>
 
-      <div className={`tm-grade-body ${row && !finished ? "has-selection" : ""} ${showList ? "show-list" : ""}`}>
+      <div className={`tm-grade-body ${row && !finished ? "has-selection" : ""} ${showList ? "show-list" : ""} ${focusMode && reviewing && row && !finished ? "is-focus" : ""}`}>
         <aside className="tm-grade-list" aria-label="Students">
           <div className="tm-grade-filters" role="tablist" aria-label="Show">
             {(["to-grade", "graded", "working", "not-started", "all"] as Filter[]).map((f) => (
               <button key={f} type="button" role="tab" aria-selected={filter === f} className={`tm-filter-chip ${filter === f ? "is-active" : ""}`} onClick={() => setFilter(f)} data-testid={`grade-filter-${f}`}>
-                {{ "to-grade": "To grade", graded: "Graded", working: "Working", "not-started": "Not started", all: "All" }[f]} <span>{counts[f]}</span>
+                {{ "to-grade": "To grade", graded: "Graded", working: "In progress", "not-started": "Not started", all: "All" }[f]} <span>{counts[f]}</span>
               </button>
             ))}
           </div>
@@ -836,13 +937,17 @@ export function GradingEditor({ input }: { input: Input }) {
             role="listbox"
             aria-label="Submissions"
             onKeyDown={(e) => {
+              // From the row that has the focus (not the student shown), as a list box does.
+              const focusedId = (e.target as HTMLElement).closest("[data-student]")?.getAttribute("data-student");
+              const at = focusedId ? rows.findIndex((r) => String(r.student?.id) === focusedId) : -1;
+              const from = at >= 0 ? at : focusIndex;
               const keys: Record<string, () => void> = {
-                ArrowDown: () => moveFocus(focusIndex + 1),
-                ArrowUp: () => moveFocus(focusIndex - 1),
+                ArrowDown: () => moveFocus(from + 1),
+                ArrowUp: () => moveFocus(from - 1),
                 Home: () => moveFocus(0),
                 End: () => moveFocus(rows.length - 1),
-                Enter: () => rows[focusIndex] && choose(rows[focusIndex]),
-                " ": () => rows[focusIndex] && choose(rows[focusIndex]),
+                Enter: () => rows[from] && choose(rows[from]),
+                " ": () => rows[from] && choose(rows[from]),
               };
               const run = keys[e.key];
               if (!run || e.altKey || e.metaKey || e.ctrlKey) return;
@@ -914,9 +1019,7 @@ export function GradingEditor({ input }: { input: Input }) {
                   {initials(row.student?.name ?? "?")}
                 </span>
                 <b>{row.student?.name ?? "Unknown"}</b>
-                <span className="tm-muted">
-                  {rows.some((r) => r.student?.id === selected) ? `${rows.findIndex((r) => r.student?.id === selected) + 1} of ${rows.length}` : ""} · {roster.counts.to_grade} to grade
-                </span>
+                <span className="tm-muted">{rows.some((r) => r.student?.id === selected) ? `${rows.findIndex((r) => r.student?.id === selected) + 1} of ${rows.length}` : ""}</span>
                 <Codicon name={showList ? "chevron-up" : "chevron-down"} />
               </button>
               <ActionButton

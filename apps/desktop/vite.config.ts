@@ -15,6 +15,8 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1431 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+    // A worktree that shares another checkout's node_modules serves files from there too.
+    ...(process.env.TMCODE_FS_ALLOW ? { fs: { allow: process.env.TMCODE_FS_ALLOW.split(",") } } : {}),
   },
   worker: { format: "es" },
   // Pre-bundle lazily imported deps so the dev server never reloads mid-session.

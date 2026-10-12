@@ -9101,3 +9101,108 @@ button.tm-setting-badge {
 .tm-explorer-empty-assignments {
   margin-top: 16px;
 }
+
+/* ───────────── workflow plan 0.16: grading layout (L3, L4) ───────────── */
+/* Review focus: the code gets the width; the roster folds behind the switcher. */
+.tm-grade-body.is-focus {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.tm-grade-body.is-focus:not(.show-list) > .tm-grade-list {
+  display: none;
+}
+.tm-grade-body.is-focus.show-list {
+  grid-template-rows: minmax(150px, 45%) 1fr;
+}
+.tm-grade-body.is-focus .tm-grade-switcher {
+  display: flex;
+}
+.tm-grade-progress-line {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-grade-progress-line b {
+  color: var(--foreground);
+}
+.tm-grade-progress-line .is-to-grade b {
+  color: var(--info);
+}
+.tm-grade-more {
+  margin-left: auto;
+}
+.tm-grade-files-details {
+  margin: 4px 0 12px;
+}
+.tm-grade-files-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--description);
+}
+.tm-grade-criterion.is-missing {
+  outline: 1px solid var(--error);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.tm-grade-missing {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--error);
+}
+.tm-split-button {
+  display: inline-flex;
+}
+.tm-split-button > .tm-button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.tm-split-button-menu {
+  padding: 0 6px;
+  border-left: 1px solid color-mix(in srgb, var(--accent-fg) 30%, transparent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* ───────────── workflow plan 0.16: one door per step (W3, L1, L2) ───────────── */
+.tm-folder-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px;
+}
+.tm-folder-line-status {
+  flex: none;
+  font-weight: 600;
+}
+.tm-folder-line-sync {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--description);
+}
+.tm-folder-line-sync-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-folder-line-brief {
+  flex: none;
+  font-size: 12px;
+}
+.tm-assignment-page > .tm-status-steps {
+  margin: -4px 0 12px;
+}
+.tm-folder-line-sync.tm-tone-attention {
+  color: var(--warning);
+}
+.tm-folder-line-sync.tm-tone-error {
+  color: var(--error);
+}
+.tm-folder-line-sync.tm-tone-success .codicon {
+  color: var(--success);
+}

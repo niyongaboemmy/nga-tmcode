@@ -1,7 +1,8 @@
 import { track } from "../state/activity";
+import { msg } from "../messages/catalog";
 import { notify, showDialog } from "../state/store";
 import { showQuickPick, type PickItem } from "../widgets/QuickPick";
-import { api, offerSaveBeforeSwitch, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
+import { api, notifyError, offerSaveBeforeSwitch, openProject, recheck as checkSync, refreshProjects, submitLink, TmError, useProjects } from "./service";
 import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { Link, LinkableActivity, PracticalQuestion, Project } from "./types";
 
@@ -154,7 +155,7 @@ export async function linkProject(projectId: number, a: Picked): Promise<Link | 
     return link;
   } catch (e) {
     if (e instanceof TmError && e.code === "ALREADY_LINKED") {
-      notify("warning", `"${a.question?.title ?? a.title}" is already matched with another of your projects. Unmatch it there first (Projects › Change Assessment…).`);
+      notify("warning", msg("match.unmatchFirst", { title: a.question?.title ?? a.title }));
       return null;
     }
     throw e;
@@ -169,7 +170,7 @@ export async function changeAssessment() {
   const { binding, current } = useProjects.getState();
   if (!binding || !current) return notify("info", "Open a Task Mentor project first.");
   if (current.status === "submitted" || current.status === "graded") {
-    return notify("info", current.status === "graded" ? "This project is graded: its assessment can't change." : "Withdraw the submission first (Projects › Withdraw Submission); then you can change its assessment.");
+    return notify("info", current.status === "graded" ? msg("lock.graded", { name: current.name }) : msg("withdraw.first"));
   }
   const links = currentLinks();
   const submitted = links.find((l) => l.status === "submitted");
@@ -199,7 +200,7 @@ export async function changeAssessment() {
       notify("info", `${current.name} is now for "${picked.question?.title ?? picked.title}"${picked.course_name ? ` (${picked.course_name})` : ""}. Submit it when your work is ready.`);
     }
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
   } finally {
     await checkSync();
     void refreshProjects();
@@ -214,9 +215,9 @@ export async function changeAssessment() {
 export async function submitProject() {
   const { binding, current } = useProjects.getState();
   if (!binding || !current) return notify("info", "Open a Task Mentor project first.");
-  if (current.status === "submitted") return notify("info", "This project is already submitted. Use Withdraw to Edit to change it.");
-  if (current.status === "graded") return notify("info", "This project is already graded.");
-  if (current.read_only) return notify("info", "This assignment is completed: it can no longer be submitted.");
+  if (current.status === "submitted") return notify("info", msg("submit.already"));
+  if (current.status === "graded") return notify("info", msg("submit.alreadyGraded"));
+  if (current.read_only) return notify("info", msg("submit.completed"));
   let links = currentLinks();
   if (links.length === 0) {
     const ok = await showDialog({
@@ -274,17 +275,15 @@ async function startQuizPracticalNow(quiz: { activity_id: number; title: string;
     const { project, created } = await api<{ project: Project; link_id: number; created: boolean }>("POST", `/quizzes/${quiz.activity_id}/questions/${q.question_id}/start`, {});
     const opened = await openProject(project.id, { folderName: slug(`${quiz.title}-${q.title}`) });
     if (!opened) return false;
-    notify(
-      "info",
-      created
-        ? `Your workspace for "${q.title}" is ready${project.head ? " with the starter files" : ""}. Keep the quiz "${quiz.title}" open in Task Mentor, then Submit Project when you finish.`
-        : `Opened your work for "${q.title}".`,
-    );
+    // 6.3: the practical's brief beside the code, as for assignments (Submit is there).
+    const { showQuizPractical } = await import("./quizPractical");
+    showQuizPractical(quiz.activity_id, q.question_id, { toSide: true });
+    if (created) notify("info", `Your workspace for "${q.title}" is ready${project.head ? " with the starter files" : ""}. Keep the quiz "${quiz.title}" open in Task Mentor, then Submit from the brief.`, undefined, { kind: "result" });
     void refreshProjects();
     return true;
   } catch (e) {
     if (e instanceof TmError && e.code === "ACTIVITY_CLOSED") notify("info", `"${quiz.title}" is closed: its practical can't be started.`);
-    else notify("error", (e as Error).message);
+    else notifyError(e);
     return false;
   }
 }

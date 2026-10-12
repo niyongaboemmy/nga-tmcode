@@ -40,7 +40,7 @@ type EditorInputBase =
   /** A language's user snippets file (snippets/SnippetsEditor). */
   | { kind: "snippets"; id: string; language: string; preview: false }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
-  | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
+  | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false; source?: "quiz"; quizId?: number; questionId?: number }
   /** Grading one assignment / quiz practical question (grading/GradingEditor). */
   | { kind: "grading"; id: string; gradingKey: string; title: string; preview: false }
   /** Results of running a .sql file (sql/SqlResultsEditor). */

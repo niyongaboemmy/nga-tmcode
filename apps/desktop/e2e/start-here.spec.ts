@@ -50,7 +50,8 @@ test.describe("Home", () => {
     await expect(page.getByTestId("home-to-grade-summary")).toContainText(/submissions? to grade/, { timeout: 10_000 });
     await expect(page.getByTestId("home-practical").first()).toBeVisible();
     await page.getByTestId("home-start-grading").click();
-    await expect(page.getByTestId("grading-view")).toBeVisible();
+    // 0.16 (W8): straight to the oldest waiting submission.
+    await expect(page.getByTestId("grade-panel")).toContainText("Chloe Coder", { timeout: 15_000 });
   });
 
   test('"none" keeps the folder\'s tabs as they were, without Home', async ({ page }) => {

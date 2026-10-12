@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { msg } from "../messages/catalog";
 import { create } from "zustand";
 import { notify, openContextMenu, revealView, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
@@ -7,6 +8,7 @@ import { deriveStatus, type StatusView } from "./status";
 import { acceptsSubmissions, dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, studentStatus, submitAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, refreshProjects, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
+import { showQuizPractical } from "./quizPractical";
 import type { LinkableActivity, PracticalQuestion } from "./types";
 import { openAssignmentInTaskMentor, openTaskMentorPage } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
@@ -225,7 +227,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
   };
   const label = state === "graded" ? (q.grade != null ? `${q.grade}/${q.points}` : "Graded") : STATE_LABEL[state];
   return (
-    // Its task is in the quiz (there is no brief tab): the row opens the workspace, as a project row does.
+    // 6.3: like an assignment row, a click shows the brief; double-click or Start goes straight into the work.
     <div
       className={`tm-list-row tm-assignment-row ${here ? "is-current" : ""}`}
       data-testid="quiz-practical-row"
@@ -236,11 +238,17 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
       aria-busy={busy || undefined}
       aria-disabled={notYet || undefined}
       title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}\n${opens ?? "Open its workspace (keep the quiz open in Task Mentor)"}`}
-      onClick={() => void start()}
+      data-status={state}
+      onClick={() => showQuizPractical(quiz.activity_id, q.question_id)}
+      onDoubleClick={() => void start()}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
-        if (e.key === "Enter" || e.key === " ") {
+        if (e.key === " ") {
           e.preventDefault();
+          showQuizPractical(quiz.activity_id, q.question_id);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          showQuizPractical(quiz.activity_id, q.question_id);
           void start();
         }
       }}
@@ -286,7 +294,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
             void start();
           }}
         >
-          {busy ? "Opening…" : state === "not_started" ? "Start" : "Open"}
+          {busy ? "Opening…" : state === "not_started" ? "Start" : "Continue"}
         </button>
       )}
     </div>
@@ -375,7 +383,7 @@ export function AssignmentsView() {
           <h3>Practicals and case studies</h3>
           <p>Sign in with your NGA account to see the coding assignments of your subjects, start them with your teacher's starter files, and submit from here.</p>
           <button type="button" className="tm-button tm-button--block" disabled={signInBusy} onClick={() => void signIn()}>
-            <Codicon name={signInBusy ? "loading" : "account"} className={signInBusy ? "codicon-modifier-spin" : ""} /> {signInBusy ? "Continue in your browser…" : "Sign in with NGA"}
+            <Codicon name={signInBusy ? "loading" : "account"} className={signInBusy ? "codicon-modifier-spin" : ""} /> {signInBusy ? msg("signin.waiting") : msg("signin.button")}
           </button>
           <SignInWaiting />
         </div>
@@ -438,7 +446,7 @@ export function AssignmentsView() {
               <Codicon name="refresh" className={loading ? "codicon-modifier-spin" : ""} /> Retry
             </button>
             <button type="button" className="tm-button tm-button--secondary" onClick={() => void signIn()}>
-              <Codicon name="account" /> Sign in again
+              <Codicon name="account" /> {msg("signin.button")}
             </button>
           </div>
         </div>
@@ -499,7 +507,7 @@ export function AssignmentsView() {
                 </Section>
               )}
               {groups.completed.length > 0 && (
-                <Section title="Completed (Read-only)" count={groups.completed.length} defaultOpen={false}>
+                <Section title="Closed" count={groups.completed.length} defaultOpen={false}>
                   {rows(groups.completed, "")}
                 </Section>
               )}
