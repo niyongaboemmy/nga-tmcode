@@ -120,6 +120,27 @@ export function toolchainChecks(profiles: Profile[], found: Toolchain[], os: OsK
   });
 }
 
+/** Languages that run in TMCode's terminal (toolchains.rs finds them too): only needed for work in them. */
+export const EXTRA_LANGUAGES: { id: string; label: string; tool: string; install: string; url: string }[] = [
+  { id: "php", label: "PHP", tool: "php", install: "Install PHP (macOS: brew install php; Windows: winget install PHP.PHP; Linux: sudo apt install php-cli).", url: "https://www.php.net/downloads" },
+  { id: "ruby", label: "Ruby", tool: "ruby", install: "Install Ruby (macOS: brew install ruby; Windows: RubyInstaller; Linux: sudo apt install ruby).", url: "https://www.ruby-lang.org/en/downloads/" },
+  { id: "kotlin", label: "Kotlin", tool: "kotlinc", install: "Install the Kotlin compiler (macOS: brew install kotlin; others: the kotlinc download) and a JDK.", url: "https://kotlinlang.org/docs/command-line.html" },
+  { id: "csharp", label: "C#", tool: "dotnet", install: "Install the .NET SDK 8.", url: "https://dotnet.microsoft.com/download" },
+  { id: "dart", label: "Dart", tool: "dart", install: "Install the Dart SDK (macOS: brew install dart-sdk; Windows: choco install dart-sdk).", url: "https://dart.dev/get-dart" },
+  { id: "swift", label: "Swift", tool: "swift", install: "Install Swift (macOS: xcode-select --install).", url: "https://www.swift.org/install/" },
+];
+
+/** One line per terminal language: found, or "not installed" (never a failure: only that language's work needs it). */
+export function extraLanguageChecks(found: Toolchain[]): CheckItem[] {
+  const have = new Map(found.map((t) => [t.tool, t]));
+  return EXTRA_LANGUAGES.map((l) => {
+    const t = have.get(l.tool);
+    return t
+      ? { id: `tool:${l.id}`, label: l.label, status: "ok" as const, detail: t.version || "Installed" }
+      : { id: `tool:${l.id}`, label: l.label, status: "skipped" as const, detail: `Not installed. Only needed for ${l.label} work.`, fix: `${l.install} Then choose Check Again.`, links: [{ label: `${l.label} downloads`, url: l.url }] };
+  });
+}
+
 /** Every language TMCode runs on this computer, once per toolset (TypeScript shares Node.js). */
 export function computerProfiles(): Profile[] {
   const seen = new Set<string>();
@@ -232,7 +253,7 @@ export async function checkMyComputer(apiBase?: string): Promise<CheckItem[]> {
   ]);
   const items = [
     ...(p.runner
-      ? toolchainChecks(profiles, found, p.os, { exam: false })
+      ? [...toolchainChecks(profiles, found, p.os, { exam: false }), ...extraLanguageChecks(found)]
       : [{ id: "tool:none", label: "Language tools", status: "skipped" as const, detail: "Running code needs the TMCode desktop app." }]),
     reachabilityCheck(ping),
     clockCheck(ping?.serverTime != null ? ping.serverTime - Date.now() : null, p.os),

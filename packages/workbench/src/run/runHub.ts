@@ -1,10 +1,12 @@
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, registerCommand } from "../commands/registry";
-import { debugAllowed, debugKindForPath, isDebugging, startDebugging, stopDebugging } from "../debug/debugService";
+import { debugAllowed, debugKindForPath, isDebugging, showInstallGuide, startDebugging, stopDebugging } from "../debug/debugService";
+import { guideById } from "../debug/installGuide";
+import { missingFor, toolsForAction } from "./preflight";
 import { inExam, useExam } from "../exam/state";
 import { getDocument, onDocumentChanged } from "../monaco/documents";
 import type { OwnedTerminal, TerminalOwner } from "../parts/panel/TerminalView";
-import { activateEditor, activeFilePath, getPlatform, log, notify, openEditorInput, openFile, showPanel, updateSetting, useWorkbench } from "../state/store";
+import { activateEditor, activeFilePath, dismissNotificationByKey, getPlatform, log, notify, openEditorInput, openFile, showPanel, updateSetting, useWorkbench } from "../state/store";
 import { pickAndRunTask } from "../tasks/service";
 import { openBrowser, openExternalUrl } from "../terminal/browser";
 import { claimServerPort } from "../terminal/enhance";
@@ -255,6 +257,7 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
     return;
   }
   if (opts.remember) rememberFileChoice(a);
+  if (!(await preflight(a, opts))) return;
   log("Run", `${a.kind}: ${a.label}${opts.reason ? ` (because ${opts.reason})` : ""}`);
   // One place to look: every run says in the Run panel what it is and why (terminal runs too).
   const note = opts.reason ? `Running ${a.label} because ${opts.reason}.` : `Running ${a.label}.`;
@@ -449,6 +452,37 @@ export function restartDevServer() {
 
 export function showDevServerTerminal() {
   terminal?.reveal();
+}
+
+// ───────────── preflight: is the language installed? ─────────────
+
+/**
+ * Before a run on the desktop: when the language's compiler or interpreter isn't on this computer,
+ * one card says so (How to Install, Check Again) instead of a compiler error in a terminal.
+ */
+async function preflight(a: RunAction, opts: { remember?: boolean; reason?: string }): Promise<boolean> {
+  const p = getPlatform();
+  if (p.kind !== "desktop" || !p.runner) return true;
+  if (!toolsForAction(a).length) return true;
+  const detected = await p.runner.detect(false).catch(() => null);
+  if (!detected) return true;
+  const missing = missingFor(a, detected.map((t) => t.tool));
+  if (!missing) {
+    dismissNotificationByKey("preflight");
+    return true;
+  }
+  const guide = guideById(missing.guide);
+  notify("warning", `${guide.language} isn't installed on this computer yet, so TMCode can't run ${a.label.replace(/^Run /, "")}. Install it once, then choose Check Again.`, [
+    { label: "How to Install", run: () => showInstallGuide(missing.guide) },
+    {
+      label: "Check Again",
+      run: async () => {
+        await p.runner!.detect(true).catch(() => null);
+        void executeAction(a, opts);
+      },
+    },
+  ], { owner: "preflight", kind: "failure" });
+  return false;
 }
 
 // ───────────── stop across every runner ─────────────

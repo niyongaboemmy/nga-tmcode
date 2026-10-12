@@ -154,7 +154,7 @@ const raw: Profile[] = [
     ],
     local: {
       build: [{ tool: "javac", args: ["-d", "{out}", "-encoding", "UTF-8", "{sources:java}"] }],
-      run: { tool: "java", args: ["-cp", "{out}", "{entry_stem}"] },
+      run: { tool: "java", args: ["-cp", "{out}", "{entry_class}"] },
       fallback: "server",
     },
     judge: { engine: "piston", language: "java", version: "21.*" },
@@ -172,7 +172,7 @@ const raw: Profile[] = [
     entry_point: "main.go",
     template: [{ path: "main.go", content: 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Hello, NGA!")\n}\n' }],
     local: {
-      build: [{ tool: "go", args: ["build", "-o", "{out}/main", "{entry}"] }],
+      build: [{ tool: "go", args: ["build", "-o", "{out}/main", "{program:go}"] }],
       run: { tool: "exe", args: ["{out}/main"] },
       fallback: "server",
     },

@@ -22,7 +22,7 @@ describe("built-in profiles", () => {
       for (const step of [...(p.local?.build ?? []), ...(p.local ? [p.local.run] : [])]) {
         for (const arg of step.args) {
           for (const token of arg.match(/\{[^}]+\}/g) ?? []) {
-            expect(["{entry}", "{entry_stem}", "{out}"].includes(token) || /^\{sources:[a-z]+\}$/.test(token), `${p.id}: ${token}`).toBe(true);
+            expect(["{entry}", "{entry_stem}", "{entry_class}", "{out}"].includes(token) || /^\{(sources|program):[a-z]+\}$/.test(token), `${p.id}: ${token}`).toBe(true);
           }
         }
         if (step.tool === "exe") expect(step.args[0].startsWith("{out}/")).toBe(true);

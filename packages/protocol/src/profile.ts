@@ -40,7 +40,7 @@ export const ProfileSchema = z.object({
    * How to build and run locally. Each step names a *tool* the desktop app
    * resolved itself ("python", "node", "cc", "cxx", "javac", "java", "go", "rustc", or "exe"
    * for a binary the build produced), so a profile can never run an arbitrary
-   * program. Argument tokens: {entry}, {entry_stem}, {out}, {sources:<ext>}.
+   * program. Argument tokens: {entry}, {entry_stem}, {entry_class} (Java: package.Class), {out}, {sources:<ext>} (C/C++: the entry's program; Java: the package tree), {program:go}.
    */
   local: z
     .object({

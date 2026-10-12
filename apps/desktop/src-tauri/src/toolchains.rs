@@ -46,7 +46,7 @@ impl Toolchains {
     }
 }
 
-pub const TOOLS: &[&str] = &["python", "node", "cc", "cxx", "javac", "java", "go", "rustc"];
+pub const TOOLS: &[&str] = &["python", "node", "cc", "cxx", "javac", "java", "go", "rustc", "php", "ruby", "kotlinc", "dotnet", "dart", "swift"];
 
 fn names(tool: &str) -> &'static [&'static str] {
     match tool {
@@ -67,6 +67,12 @@ fn names(tool: &str) -> &'static [&'static str] {
         "java" => &["java"],
         "go" => &["go"],
         "rustc" => &["rustc"],
+        "php" => &["php"],
+        "ruby" => &["ruby"],
+        "kotlinc" => &["kotlinc"],
+        "dotnet" => &["dotnet"],
+        "dart" => &["dart"],
+        "swift" => &["swift"],
         _ => &[],
     }
 }
@@ -149,8 +155,15 @@ fn extra_dirs(tool: &str) -> Vec<PathBuf> {
                 dirs.push(v.join("bin"));
             }
         }
-        if ["python", "cc", "cxx"].contains(&tool) && command_line_tools_installed() {
+        if ["python", "cc", "cxx", "swift"].contains(&tool) && command_line_tools_installed() {
             dirs.push(PathBuf::from("/usr/bin"));
+        }
+        // macOS ships a real Ruby (no install dialog); .NET installs outside PATH for apps.
+        if tool == "ruby" {
+            dirs.push(PathBuf::from("/usr/bin"));
+        }
+        if tool == "dotnet" {
+            dirs.push(PathBuf::from("/usr/local/share/dotnet"));
         }
     }
     #[cfg(windows)]
@@ -173,6 +186,17 @@ fn extra_dirs(tool: &str) -> Vec<PathBuf> {
                 }
                 dirs.push(pf.join(r"LLVM\bin"));
             }
+            "php" => {
+                dirs.push(PathBuf::from(r"C:\php"));
+                dirs.push(PathBuf::from(r"C:\tools\php"));
+            }
+            "ruby" => {
+                if let Some(v) = newest_child(Path::new(r"C:\"), "Ruby") {
+                    dirs.push(v.join("bin"));
+                }
+            }
+            "dotnet" => dirs.push(pf.join("dotnet")),
+            "dart" => dirs.push(PathBuf::from(r"C:\tools\dart-sdk\bin")),
             "java" | "javac" => {
                 for vendor in ["Eclipse Adoptium", "Java", "Microsoft", "Zulu"] {
                     if let Some(v) = newest_child(&pf.join(vendor), "jdk") {
@@ -212,7 +236,7 @@ fn executable(dir: &Path, name: &str) -> Option<PathBuf> {
 /// returns the first meaningful line; None means "not really usable".
 fn probe_version(tool: &str, path: &Path, prefix: &[String]) -> Option<String> {
     let flag = match tool {
-        "java" | "javac" => "-version",
+        "java" | "javac" | "kotlinc" => "-version",
         "go" => "version",
         _ => "--version",
     };

@@ -191,15 +191,97 @@ fn sources(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Expands {entry}, {entry_stem}, {out} and {sources:<ext>} into concrete arguments.
-pub fn expand(args: &[String], entry: &Path, out: &Path) -> Result<Vec<String>, String> {
+/// Source files of `ext` directly in `dir` (not its subfolders), sorted.
+fn sources_here(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut found: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_file() && p.extension().map(|x| x.eq_ignore_ascii_case(ext)).unwrap_or(false))
+        .collect();
+    found.sort();
+    found
+}
+
+/// Does this source file define its own program entry (`int main(`, `func main(`)?
+fn defines_main(path: &Path, ext: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    text.lines().any(|line| {
+        let l = line.trim_start();
+        if l.starts_with("//") || l.starts_with('*') || l.starts_with("/*") {
+            return false;
+        }
+        match ext {
+            "go" => l.starts_with("func main("),
+            _ => {
+                let compact: String = l.split_whitespace().collect::<Vec<_>>().join(" ");
+                compact.contains(" main(") && (compact.starts_with("int ") || compact.starts_with("void ") || compact.starts_with("auto ") || compact.starts_with("signed "))
+            }
+        }
+    })
+}
+
+/// The `package a.b;` of a Java file, if any.
+fn java_package(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines().map(str::trim).find(|l| l.starts_with("package ")).map(|l| l["package ".len()..].trim_end_matches(';').trim().to_string()).filter(|p| !p.is_empty())
+}
+
+/// What a C/C++/Go build compiles: the entry's own folder only (exercises in other folders are
+/// separate programs). When other files there define `main` too, they are separate programs
+/// as well, and only the entry is built.
+fn program_sources(entry: &Path, ext: &str) -> Vec<PathBuf> {
     let dir = entry.parent().unwrap_or(entry);
+    let mut found = sources_here(dir, ext);
+    if ext == "go" {
+        found.retain(|p| !p.to_string_lossy().ends_with("_test.go"));
+    }
+    let others_with_main = found.iter().any(|p| p != entry && defines_main(p, ext));
+    if others_with_main || found.is_empty() {
+        return vec![entry.to_path_buf()];
+    }
+    found
+}
+
+/// Java: the source root (the entry's folder minus its package path) and the class to run.
+fn java_layout(entry: &Path) -> (PathBuf, String) {
+    let dir = entry.parent().unwrap_or(entry).to_path_buf();
     let stem = entry.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let Some(pkg) = java_package(entry) else { return (dir, stem) };
+    let parts: Vec<&str> = pkg.split('.').collect();
+    let mut root = dir.clone();
+    for part in parts.iter().rev() {
+        if root.file_name().map(|n| n.to_string_lossy() == *part).unwrap_or(false) {
+            root = root.parent().map(Path::to_path_buf).unwrap_or(root);
+        } else {
+            // The folders don't match the package: compile next to the entry, run the qualified name.
+            return (dir, format!("{pkg}.{stem}"));
+        }
+    }
+    (root, format!("{pkg}.{stem}"))
+}
+
+/// Expands {entry}, {entry_stem}, {entry_class}, {out}, {sources:<ext>} and {program:<ext>} into concrete arguments.
+///
+/// `{sources:java}` is every .java file under the source root (the package layout); `{sources:c}`,
+/// `{sources:cpp}` and `{program:go}` are the files of the entry's own program (see `program_sources`).
+pub fn expand(args: &[String], entry: &Path, out: &Path) -> Result<Vec<String>, String> {
+    let stem = entry.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let (java_root, java_class) = java_layout(entry);
     let mut result = Vec::new();
     for arg in args {
-        if let Some(ext) = arg.strip_prefix("{sources:").and_then(|r| r.strip_suffix('}')) {
-            let mut found = Vec::new();
-            sources(dir, ext, &mut found);
+        let token = arg.strip_prefix("{sources:").or_else(|| arg.strip_prefix("{program:")).and_then(|r| r.strip_suffix('}'));
+        if let Some(ext) = token {
+            let found = if ext == "java" {
+                let mut found = Vec::new();
+                if java_root == entry.parent().unwrap_or(entry) {
+                    found = sources_here(&java_root, ext);
+                } else {
+                    sources(&java_root, ext, &mut found);
+                }
+                found
+            } else {
+                program_sources(entry, ext)
+            };
             if found.is_empty() {
                 return Err(format!("No .{ext} files found next to {}.", entry.display()));
             }
@@ -208,6 +290,7 @@ pub fn expand(args: &[String], entry: &Path, out: &Path) -> Result<Vec<String>, 
         }
         result.push(
             arg.replace("{entry_stem}", &stem)
+                .replace("{entry_class}", &java_class)
                 .replace("{entry}", &entry.to_string_lossy())
                 .replace("{out}", &out.to_string_lossy()),
         );
@@ -243,6 +326,12 @@ pub fn missing_tool_message(tool: &str) -> String {
         "javac" | "java" => "a Java JDK (version 17 or newer)",
         "go" => "Go (go.dev/dl)",
         "rustc" => "Rust (rustc, from rustup.rs)",
+        "php" => "PHP",
+        "ruby" => "Ruby",
+        "kotlinc" => "the Kotlin compiler (kotlinc)",
+        "dotnet" => "the .NET SDK",
+        "dart" => "the Dart SDK",
+        "swift" => "Swift",
         other => other,
     };
     format!("TMCode could not find {what} on this computer. Install it (Help › Check My Computer has the links), then choose \"Refresh Toolchains\".")
@@ -629,8 +718,8 @@ mod tests {
     fn expands_tokens_and_sources() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::write(root.join("main.c"), "").unwrap();
-        std::fs::write(root.join("util.c"), "").unwrap();
+        std::fs::write(root.join("main.c"), "int main(void) { return 0; }").unwrap();
+        std::fs::write(root.join("util.c"), "int util(void) { return 0; }").unwrap();
         std::fs::create_dir(root.join("node_modules")).unwrap();
         std::fs::write(root.join("node_modules/x.c"), "").unwrap();
         let out = root.join("out");
@@ -640,6 +729,55 @@ mod tests {
         assert_eq!(args[3], format!("{}/main", out.display()));
         assert_eq!(args[4], "main");
         assert!(expand(&["{sources:java}".into()], &root.join("main.c"), &out).is_err());
+    }
+
+    #[test]
+    fn builds_only_the_entrys_program() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Two exercises in one folder: each has its own main, so only the entry is compiled.
+        std::fs::write(root.join("ex1.c"), "#include <stdio.h>\nint main(void) { return 0; }\n").unwrap();
+        std::fs::write(root.join("ex2.c"), "int main() {\n  return 1;\n}\n").unwrap();
+        std::fs::create_dir(root.join("other")).unwrap();
+        std::fs::write(root.join("other/x.c"), "int helper(void) { return 2; }\n").unwrap();
+        let out = root.join("out");
+        let args = expand(&["{sources:c}".into()], &root.join("ex1.c"), &out).unwrap();
+        assert_eq!(args.len(), 1);
+        assert!(args[0].ends_with("ex1.c"));
+        // A program split into files: main + helpers in the entry's folder (never subfolders).
+        let prog = root.join("other");
+        std::fs::write(prog.join("main.c"), "int helper(void);\nint main(void) { return helper(); }\n").unwrap();
+        let args = expand(&["{sources:c}".into()], &prog.join("main.c"), &out).unwrap();
+        assert_eq!(args.len(), 2);
+        // Go: the package's files, without tests; a second `func main` means separate programs.
+        std::fs::write(root.join("a.go"), "package main\n\nfunc main() {}\n").unwrap();
+        std::fs::write(root.join("util.go"), "package main\n\nfunc add(a, b int) int { return a + b }\n").unwrap();
+        std::fs::write(root.join("util_test.go"), "package main\n").unwrap();
+        let args = expand(&["{program:go}".into()], &root.join("a.go"), &out).unwrap();
+        assert_eq!(args.iter().map(|a| Path::new(a).file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>(), vec!["a.go", "util.go"]);
+        std::fs::write(root.join("b.go"), "package main\n\nfunc main() {}\n").unwrap();
+        assert_eq!(expand(&["{program:go}".into()], &root.join("a.go"), &out).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn java_runs_the_package_qualified_class() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src/com/school")).unwrap();
+        std::fs::write(root.join("src/com/school/App.java"), "package com.school;\npublic class App { public static void main(String[] a) {} }\n").unwrap();
+        std::fs::write(root.join("src/com/school/Util.java"), "package com.school;\nclass Util {}\n").unwrap();
+        std::fs::create_dir_all(root.join("src/com/other")).unwrap();
+        std::fs::write(root.join("src/com/other/Lib.java"), "package com.other;\npublic class Lib {}\n").unwrap();
+        let out = root.join("out");
+        let args = expand(&["{sources:java}".into(), "{entry_class}".into()], &root.join("src/com/school/App.java"), &out).unwrap();
+        assert_eq!(args.len(), 4);
+        assert_eq!(args[3], "com.school.App");
+        // No package: the entry's folder only (a broken exercise elsewhere can't stop this one).
+        std::fs::write(root.join("Main.java"), "public class Main { public static void main(String[] a) {} }\n").unwrap();
+        std::fs::write(root.join("src/Broken.java"), "class Broken {").unwrap();
+        let args = expand(&["{sources:java}".into(), "{entry_class}".into()], &root.join("Main.java"), &out).unwrap();
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[1], "Main");
     }
 
     #[test]

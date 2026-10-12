@@ -636,7 +636,8 @@ const TERMINAL_RUNNERS: Record<string, { lang: string; run: (file: string) => st
   rb: { lang: "Ruby", run: (f) => `ruby "${f}"`, repl: { label: "Ruby REPL (irb)", command: "irb" } },
   dart: { lang: "Dart", run: (f) => `dart run "${f}"` },
   swift: { lang: "Swift", run: (f) => `swift "${f}"`, repl: { label: "Swift REPL", command: "swift repl" } },
-  kt: { lang: "Kotlin", run: (f) => `kotlinc "${f}" -include-runtime -d tmcode-kotlin.jar && java -jar tmcode-kotlin.jar` },
+  // The jar goes to TMCode's own folder (never saved to Task Mentor), not next to the student's code.
+  kt: { lang: "Kotlin", run: (f) => `kotlinc "${f}" -include-runtime -d ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar" && java -jar ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar"` },
   kts: { lang: "Kotlin script", run: (f) => `kotlinc -script "${f}"` },
   scala: { lang: "Scala", run: (f) => `scala run "${f}"` },
   cs: { lang: "C#", run: (f) => `dotnet run "${f}"` },
