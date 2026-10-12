@@ -141,3 +141,43 @@ describe("notification centre: unread", () => {
     dismissNotification(9);
   });
 });
+
+describe("calm messages: owners", () => {
+  beforeEach(() => {
+    resetWorkbenchForTests();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
+  const toasts = () => useWorkbench.getState().notifications.filter((n) => !n.silent).map((n) => n.message);
+
+  it("a newer message about the same thing replaces the older one", () => {
+    notify("info", "Submitted", undefined, { kind: "result", important: true, owner: "assignment:51" });
+    notify("info", "Returned", undefined, { kind: "external", owner: "assignment:51" });
+    notify("info", "Graded", undefined, { kind: "external", owner: "assignment:51" });
+    expect(toasts()).toEqual(["Graded"]);
+  });
+
+  it("news about what is already in front goes to the centre only", () => {
+    useWorkbench.setState({ groups: [{ id: 0, editors: [{ kind: "assignment", id: "assignment:51", assignmentId: 51, title: "x", preview: false }], activeId: "assignment:51" }] });
+    notify("info", "Graded", undefined, { kind: "external", owner: "assignment:51" });
+    expect(toasts()).toEqual([]);
+    expect(useWorkbench.getState().notifications.find((n) => n.message === "Graded")?.silent).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(useWorkbench.getState().notifications).toHaveLength(0);
+    // Errors are never silenced.
+    notify("error", "Saving failed", undefined, { owner: "assignment:51" });
+    expect(toasts()).toEqual(["Saving failed"]);
+  });
+
+  it("the centre keeps only the newest entry of a thing", () => {
+    let h = recordToasts([], [{ id: 1, message: "Returned", severity: "info", kind: "external", owner: "assignment:51" }], 1);
+    h = recordToasts(h, [{ id: 2, message: "Graded", severity: "info", kind: "external", owner: "assignment:51" }], 2);
+    h = recordToasts(h, [{ id: 3, message: "Copied", severity: "info" }], 3);
+    expect(h.map((x) => x.message)).toEqual(["Copied", "Graded"]);
+  });
+
+  it("shows at most two toasts", async () => {
+    const { MAX_VISIBLE_TOASTS } = await import("./notifications");
+    expect(MAX_VISIBLE_TOASTS).toBe(2);
+  });
+});

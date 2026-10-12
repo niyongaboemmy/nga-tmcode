@@ -186,6 +186,9 @@ function openGradingInTaskMentor(key: string, studentId: number | null) {
   void openExternalUrl(`${taskMentorWeb(api)}/grading/practical/${type}/${id}${q.toString() ? `?${q}` : ""}`);
 }
 
+/** Save & Next's note for the next panel ("Saved Chloe Coder: 20/20."). */
+let carried: { key: string; text: string; at: number } | null = null;
+
 /** What the split button's main part does; the teacher's last choice from its menu (L3). */
 type SaveMode = "next" | "draft" | "release";
 let savedMode: SaveMode = "next";
@@ -219,7 +222,12 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
   const draft = stored ?? pristine;
   const [openComment, setOpenComment] = useState<number | null>(null);
   const [saving, setSaving] = useState<null | "draft" | "release">(null);
-  const [justSaved, setJustSaved] = useState<string | null>(null);
+  // Save & Next: what was just saved for the previous student shows here first.
+  const [justSaved, setJustSaved] = useState<string | null>(() => {
+    const c = carried;
+    carried = null;
+    return c && c.key === gkey && Date.now() - c.at < 15_000 ? c.text : null;
+  });
   const [conflict, setConflict] = useState<RowGrade | null>(null);
   const [warn, setWarn] = useState<Record<string, string>>({});
   const [returning, setReturning] = useState<null | { message: string; error: string | null; busy: boolean; resubmit?: boolean }>(null);
@@ -269,8 +277,8 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
     setJustSaved(null);
     // The version this draft was edited from; unchanged forms answer the grade as it is.
     const ifVersion = ifVersionOverride !== undefined ? ifVersionOverride : stored ? (stored.base ?? null) : (row.grade?.version ?? null);
-    // N4: the footer says it (the panel is on screen); Save & Next also tells it in a short toast, since the panel moves on.
-    const r = await saveGrade(gkey, row.student.id, inputFromDraft(roster, draft), { release, ifVersion, quiet: !next });
+    // N4/T9: the footer says it. After Save & Next, the next student's footer says what was saved (no toast).
+    const r = await saveGrade(gkey, row.student.id, inputFromDraft(roster, draft), { release, ifVersion, quiet: true });
     setSaving(null);
     setFailCode(r.ok ? null : (r.code ?? null));
     if (r.ok) {
@@ -278,7 +286,10 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       setFailed(dkey, null);
       setConflict(null);
       setJustSaved(r.message);
-      if (next) onNext();
+      if (next) {
+        carried = { key: gkey, text: `Saved ${row.student.name}: ${r.score}/${r.max_points}${r.released ? "" : " (draft)"}.`, at: Date.now() };
+        onNext();
+      }
     } else if (r.conflict) {
       setConflict(r.conflict);
     } else {

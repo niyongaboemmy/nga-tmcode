@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { dismissNotification, getPlatform, useWorkbench, type Notification } from "./store";
-import { isExternal, kindOf, shownInDnd, type NotifyKind } from "./notifications";
+import { dismissNotification, frontEditorIds, getPlatform, useWorkbench, type Notification } from "./store";
+import { isExternal, kindOf, ownerOnScreen, shownInDnd, type NotifyKind } from "./notifications";
 
 /**
  * VS Code's notification centre: every toast of this session, newest first,
@@ -19,6 +19,8 @@ export interface HistoryEntry {
   kind?: NotifyKind;
   /** Arrived from outside and not seen yet (the bell's count). */
   unread?: boolean;
+  /** What it is about: a newer entry about the same thing replaces this one (no stale "returned" after "graded"). */
+  owner?: string;
 }
 
 /** Kept 30 days, at most this many (N8). */
@@ -39,7 +41,11 @@ export function recordToasts(history: HistoryEntry[], toasts: Notification[], no
   let out = history;
   for (const n of toasts) {
     const at = out.findIndex((h) => h.id === n.id);
-    if (at < 0) out = [{ id: n.id, severity: n.severity, message: n.message, time: now, kind: kindOf(n), ...(isExternal(n) ? { unread: true } : {}) }, ...out];
+    if (at < 0) {
+      // The newest state of a thing wins: its older entries (and their buttons) go.
+      if (n.owner) out = out.filter((h) => h.owner !== n.owner);
+      out = [{ id: n.id, severity: n.severity, message: n.message, time: now, kind: kindOf(n), ...(n.owner ? { owner: n.owner } : {}), ...(isExternal(n) && !n.silent ? { unread: true } : {}) }, ...out];
+    }
     else if (out[at].message !== n.message || out[at].severity !== n.severity) {
       out = out.map((h, i) => (i === at ? { ...h, message: n.message, severity: n.severity } : h));
     }
@@ -99,6 +105,16 @@ export function wireNotificationCenter() {
   sync(useWorkbench.getState().notifications);
   useWorkbench.subscribe((s, prev) => {
     if (s.notifications !== prev.notifications) sync(s.notifications);
+    // A toast whose thing comes on screen (its brief opened) has said what it had to say: it retires to the centre.
+    if (s.groups !== prev.groups) {
+      const fronts = frontEditorIds(s);
+      for (const n of s.notifications) {
+        if (n.owner && n.severity !== "error" && n.kind !== "failure" && ownerOnScreen(n.owner, fronts)) {
+          markRead(n.id);
+          dismissNotification(n.id);
+        }
+      }
+    }
   });
   void getPlatform()
     .store.get<boolean>("notifications.doNotDisturb")

@@ -130,11 +130,13 @@ export function wireProjects() {
     const was = signedIn();
     set({ account });
     if (account.signed_in && !was) {
-      notify("info", `Signed in to NGA as ${account.user?.name ?? account.user?.email ?? "you"}.`);
+      notify("info", `Signed in to NGA as ${account.user?.name ?? account.user?.email ?? "you"}.`, undefined, { kind: "hint", owner: "account" });
       void refreshProjects();
       void bindWorkspace();
     }
     if (!account.signed_in && was) set({ mine: null, shared: null });
+    // A sign-in that was cancelled or failed: its "Continue in your browser…" message goes.
+    if (!account.signed_in && account.phase === "idle") dismissNotificationByKey("account");
     // The keychain refused the session (review F2): say it once, or the next start silently signs out.
     if (account.signed_in && account.keychain_error && !keychainWarned) {
       keychainWarned = true;
@@ -172,7 +174,7 @@ export async function signIn() {
   if (inExam()) return notify("info", "Signing in is not available during an exam.");
   try {
     await host.signIn();
-    notify("info", msg("signin.browser"));
+    notify("info", msg("signin.browser"), undefined, { kind: "progress", owner: "account" });
   } catch (e) {
     notifyError(e);
   }
@@ -219,7 +221,7 @@ export function resumeAfterSignIn(action: PendingAction) {
     const p = pending;
     pending = null;
     if (Date.now() > p.until) return;
-    notify("info", p.action.notice ?? msg("signin.resume", { what: p.action.label }), undefined, { kind: "result" });
+    notify("info", p.action.notice ?? msg("signin.resume", { what: p.action.label }), undefined, { kind: "result", owner: "account" });
     void Promise.resolve(p.action.run()).catch((e) => notifyError(e));
   });
 }

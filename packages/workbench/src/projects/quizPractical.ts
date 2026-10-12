@@ -97,7 +97,7 @@ export async function submitQuizPractical(quizId: number, questionId: number) {
   if (!(await confirmSubmit({ message: `Submit "${ref.q.title}"?`, late: !!ref.quiz.due_date && Date.parse(ref.quiz.due_date) < Date.now(), quizPractical: true }))) return;
   try {
     const res = await submitLink(current.id, link.id);
-    notifySubmitted(`"${ref.q.title}"`, res.submission);
+    notifySubmitted(`"${ref.q.title}"`, res.submission, practicalEditorId(quizId, questionId));
   } catch (e) {
     await explainSubmitError(e, { activity_type: "quiz", activity_id: quizId });
   } finally {

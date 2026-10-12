@@ -28,13 +28,19 @@ export interface NotifyOptions {
   bypassDnd?: boolean;
   /** Raised by an exam or a teacher: always shown, whatever the caller passed. */
   source?: "exam" | "teacher";
+  /**
+   * What the message is about (`assignment:51`, `quiz:78:501`, `grading:assignment:51:`, `account`).
+   * A newer message about the same thing replaces the older one, and a message whose thing
+   * is on screen (its brief or grading tab in front) goes to the centre, not a toast (calm screen).
+   */
+  owner?: string;
 }
 
 export const HINT_MS = 6000;
 export const RESULT_MS = 8000;
 export const UNDO_MS = 10_000;
 /** At most this many toasts on screen; the rest wait in the centre ("+2 more"). */
-export const MAX_VISIBLE_TOASTS = 3;
+export const MAX_VISIBLE_TOASTS = 2;
 
 /** The fields of a notification the policy reads. */
 export interface PolicyFields {
@@ -81,10 +87,23 @@ export function lifetimeOf(n: PolicyFields): number | null {
   return ms;
 }
 
-/** Normalises the options: exam and teacher notices always get through Do Not Disturb. */
+/** Normalises the options: exam and teacher notices always get through Do Not Disturb; an owner replaces its older message. */
 export function withPolicy<T extends PolicyFields>(n: T, opts: NotifyOptions = {}): T & NotifyOptions {
   const forced = opts.source === "exam" || opts.source === "teacher";
-  return { ...n, ...opts, bypassDnd: forced || !!opts.bypassDnd };
+  return { ...n, ...opts, bypassDnd: forced || !!opts.bypassDnd, ...(opts.owner && !opts.replaceKey ? { replaceKey: opts.owner } : {}) };
+}
+
+/** The editor that shows an owner's state: `assignment:51` → the brief `assignment:51`; `quiz:78:501` → its brief; `grading:<key>` → its grading tab. */
+export function ownerEditorId(owner: string): string | null {
+  if (owner.startsWith("assignment:") || owner.startsWith("quiz:")) return owner;
+  if (owner.startsWith("grading:")) return owner;
+  return null;
+}
+
+/** Pure: is the owner's editor the front tab of some group? */
+export function ownerOnScreen(owner: string | undefined, fronts: (string | null)[]): boolean {
+  const id = owner ? ownerEditorId(owner) : null;
+  return !!id && fronts.includes(id);
 }
 
 /**

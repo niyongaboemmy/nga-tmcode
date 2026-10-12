@@ -171,16 +171,34 @@ export function Notifications() {
   const dnd = useNotificationCenter((s) => s.dnd);
   const centreOpen = useNotificationCenter((s) => s.open);
   const examActive = useExam((s) => !!s.quiz && (s.phase === "active" || s.phase === "locked" || s.phase === "submitting"));
-  const list = visibleToasts(all, dnd, examActive);
-  // A grading tab in front: its Save buttons are at the bottom right, so the toasts sit above them.
-  const aboveFooter = useWorkbench((s) => s.groups.some((g) => g.editors.some((e) => e.id === g.activeId && e.kind === "grading")));
+  const list = visibleToasts(all, dnd, examActive).filter((n) => !n.silent);
+  // Work mode: a brief or grading tab beside the code. The toasts sit over the CODE column, never over
+  // the brief or the grade panel (where the main button is).
+  const codeGroup = useWorkbench((s) => {
+    const side = (g: (typeof s.groups)[number]) => g.editors.some((e) => e.id === g.activeId && (e.kind === "assignment" || e.kind === "grading"));
+    if (s.groups.length < 2 || !s.groups.some(side)) return null;
+    return s.groups.find((g) => !side(g))?.id ?? null;
+  });
+  const [place, setPlace] = useState<{ right: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    if (codeGroup === null || !list.length) return setPlace(null);
+    const measure = () => {
+      const el = document.querySelector<HTMLElement>(`[data-group="${codeGroup}"]`);
+      if (!el) return setPlace(null);
+      const r = el.getBoundingClientRect();
+      setPlace({ right: Math.max(12, window.innerWidth - r.right + 12), width: Math.max(240, Math.min(450, r.width - 24)) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [codeGroup, list.length]);
   // The centre shows them while it is open, as VS Code's does.
   if (!list.length || centreOpen) return null;
   // The newest few; the rest wait in the centre ("+2 more").
   const shown = list.slice(-MAX_VISIBLE_TOASTS);
   const hidden = list.length - shown.length;
   return (
-    <div className={`tm-toasts ${aboveFooter ? "is-above-footer" : ""}`} role="region" aria-label="Notifications" aria-live="polite">
+    <div className="tm-toasts" style={place ? { right: place.right, width: place.width } : undefined} data-placement={place ? "code" : "corner"} role="region" aria-label="Notifications" aria-live="polite">
       {hidden > 0 && (
         <button type="button" className="tm-toast-more" onClick={() => showNotificationCenter(true)} data-testid="toast-more">
           +{hidden} more

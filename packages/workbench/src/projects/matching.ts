@@ -246,7 +246,7 @@ export async function submitProject() {
   if (!ok) return;
   try {
     const res = await submitLink(current.id, target.id);
-    notifySubmitted(`"${current.name}" for "${title}"`, res.submission);
+    notifySubmitted(`"${current.name}" for "${title}"`, res.submission, current.assignment ? `assignment:${current.assignment.id}` : target.activity_type === "quiz" && target.question_id ? `quiz:${target.activity_id}:${target.question_id}` : undefined);
   } catch (e) {
     await explainSubmitError(e, target);
   } finally {

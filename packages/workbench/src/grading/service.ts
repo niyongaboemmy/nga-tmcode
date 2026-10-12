@@ -422,8 +422,8 @@ export async function releaseDrafts(key: string, toInput: (roster: Roster, row: 
   }
   await loadRoster(key, { quiet: true });
   const locks = locked ? ` ${locked === 1 ? "1 student's project is" : `${locked} students' projects are`} now read-only.` : "";
-  if (failed.length) notify("warning", `${msg("release.partial", { done, total: done + failed.length, list: failed.join("; ") })}${locks}`, undefined, { kind: "result", important: true });
-  else notify("info", `${msg("release.done", { n: done, quiz: type === "quiz" })}${locks}`, undefined, { kind: "result", important: true });
+  if (failed.length) notify("warning", `${msg("release.partial", { done, total: done + failed.length, list: failed.join("; ") })}${locks}`, undefined, { kind: "result", important: true, owner: `grading-result:${key}` });
+  else notify("info", `${msg("release.done", { n: done, quiz: type === "quiz" })}${locks}`, undefined, { kind: "result", important: true, owner: `grading-result:${key}` });
 }
 
 /**
@@ -436,7 +436,7 @@ export async function returnForChanges(key: string, row: RosterRow, message: str
   try {
     await api("POST", `/projects/${row.project.id}/return`, { message: message.trim() || null, ...(allowResubmission ? { allow_resubmission: true } : {}) });
     await loadRoster(key, { quiet: true });
-    notify("info", allowResubmission ? msg("return.resubmit", { name: row.student?.name ?? "The student" }) : msg("return.done", { name: row.student?.name ?? "the student" }), undefined, { kind: "result", important: true });
+    notify("info", allowResubmission ? msg("return.resubmit", { name: row.student?.name ?? "The student" }) : msg("return.done", { name: row.student?.name ?? "the student" }), undefined, { kind: "result", important: true, owner: `grading-result:${key}` });
     return { ok: true };
   } catch (e) {
     if (e instanceof TmError && e.code === "RETURN_NOT_SUPPORTED") return { ok: false, unsupported: true, error: "Quiz practicals can't be returned for changes. Grade the answer as it is." };

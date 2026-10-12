@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, migrateSettings, type SettingKey, type Settings } fro
 import { isExamRoot } from "../exam/roots";
 import { MAX_GROUPS, groupOrder as groupOrderOf, leaf, mapGroups, neighbour, readSavedLayout, reconcile as reconcileTree, removeNode, serializeLayout, splitNode, type GridNode, type SplitDirection } from "./layout";
 import { editorMemento } from "./viewStates";
-import { lifetimeOf, withPolicy, type NotifyKind, type NotifyOptions } from "./notifications";
+import { lifetimeOf, ownerOnScreen, withPolicy, type NotifyKind, type NotifyOptions } from "./notifications";
 import { resolveSettings, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
@@ -117,6 +117,9 @@ export interface Notification {
   details?: string;
   bypassDnd?: boolean;
   source?: "exam" | "teacher";
+  owner?: string;
+  /** Its owner was on screen: recorded in the centre (read), never shown as a toast. */
+  silent?: boolean;
 }
 
 export interface DialogButton {
@@ -1356,16 +1359,25 @@ function capNotifications(list: Notification[]): Notification[] {
  */
 export function notify(severity: Notification["severity"], message: string, actions?: Notification["actions"], opts?: NotifyOptions) {
   const base = withPolicy({ severity, message, actions }, opts);
-  const old = opts?.replaceKey ? get().notifications.find((n) => n.replaceKey === opts.replaceKey) : undefined;
+  const key = base.replaceKey;
+  const old = key ? get().notifications.find((n) => n.replaceKey === key) : undefined;
   const id = old?.id ?? ++notificationSeq;
-  const n: Notification = { id, ...base };
+  // Calm screen: news about what is already in front (its brief, its grading tab) goes to the centre only.
+  const silent = severity !== "error" && base.kind !== "failure" && ownerOnScreen(base.owner, frontEditorIds());
+  const n: Notification = { id, ...base, ...(silent ? { silent: true } : {}) };
   if (old) {
     clearToastTimer(id);
     set({ notifications: get().notifications.map((x) => (x.id === id ? n : x)) });
   } else set({ notifications: capNotifications([...get().notifications, n]) });
   log("Notifications", opts?.details ? `${message} (${opts.details})` : message, severity === "error" ? "error" : severity === "warning" ? "warn" : "info");
-  startToastTimer(id, lifetimeOf(n));
+  if (silent) setTimeout(() => dismissNotification(id), 0);
+  else startToastTimer(id, lifetimeOf(n));
   return id;
+}
+
+/** The front tab of every editor group (for "is its owner on screen?"). */
+export function frontEditorIds(s: WorkbenchState = get()): (string | null)[] {
+  return s.groups.map((g) => g.activeId);
 }
 
 // ── toast lifetimes, paused while the pointer is over the toast ──
