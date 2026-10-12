@@ -39,3 +39,18 @@ tasks again in Phase 4.
 
 Run the dev build with `window.__TMCODE_JOURNEY__ = true` set before load to get the click counts,
 or count by hand from the screen recording.
+
+## 3. After the plan (TMCode 0.15.0, Phases 1–3), automated
+
+Same journeys and counter, 12 October 2026, Chromium and WebKit (macOS), mock Task Mentor.
+
+| Measure (plan §10) | Baseline (0.14) | Target | After (0.15.0) |
+|---|---|---|---|
+| Clicks from launch to working on the next assignment | 2 (the test knows the icon; real users must discover it) | 1 | **1** (Home › Start) |
+| Clicks from launch to grading the first student | 3 | 1 | **1** (Home › Start Grading) |
+| Screens with two different statuses (student journey) | 2 | 0 | **0** (asserted on header, card, row, side bar, status bar) |
+| Important events with no notice or a disappearing one | 9 | 0 | **0** in the journeys (returned and graded notices stay until read; submit, return, release stay until closed) |
+| Visible duplicate Submit/Save buttons (student journey) | 2 per screen | 0 | **0** (at most one of each, asserted at every step) |
+| Technical messages shown to users | 6+ kinds | 0 | **0** in the catalogue (glossary test); codes only behind Details |
+
+Still to measure with people (section 2): success without help, time to grade 5 submissions, and "I knew what to do next". Run the same session with 3–5 students and 1–3 teachers on 0.15.0 and fill in a copy of the table above.

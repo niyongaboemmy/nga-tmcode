@@ -545,7 +545,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
           rubric.map((c, i) => {
             const v = draft.scores[i];
             return (
-              <div key={i} className={`tm-grade-criterion ${i === firstMissing ? "is-missing" : ""}`} data-testid="grade-criterion">
+              <div key={i} className={`tm-grade-criterion ${i === firstMissing ? `is-missing ${draft.scores.some((x) => x !== null) ? "is-started" : ""}` : ""}`} data-testid="grade-criterion">
                 <div className="tm-grade-criterion-name" title={c.description ? `${c.criteria}\n${c.description}` : c.criteria}>
                   {c.criteria}
                 </div>
@@ -900,7 +900,7 @@ export function GradingEditor({ input }: { input: Input }) {
         {reviewing && (
           <div className="tm-grade-review-bar" role="status" data-testid="grade-review-bar">
             <Codicon name="eye" />
-            <span>
+            <span className="tm-grade-review-bar-text">
               Reviewing <b>{reviewing.student}</b>'s submission (read-only)
             </span>
             <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void closeReview()} data-testid="grade-close-review" title="Close the review and go back to the folder you had open">

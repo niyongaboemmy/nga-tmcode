@@ -176,9 +176,8 @@ export function BriefSyncLine() {
 function ReturnedNote({ at, message }: { at: string | null; message: string | null }) {
   return (
     <p className="tm-assignment-returned-note" role="status" data-testid="assignment-returned">
-      <b>Returned by your teacher</b>
-      {at ? ` on ${when(at)}` : ""}. Make the changes, then submit again.
-      {message && <q className="tm-assignment-returned-message">{message}</q>}
+      <span className="tm-muted">Returned by your teacher{at ? ` on ${when(at)}` : ""}</span>
+      {message ? <q className="tm-assignment-returned-message">{message}</q> : null}
     </p>
   );
 }
