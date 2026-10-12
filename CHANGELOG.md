@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.16.0 — 2026-10-12
+
+**TMCode 0.16: calm and guided.** Run, Test and Stop each have one button that says what it will do and why. Your work saves itself, the brief keeps its one main button on screen, and fewer messages ask for your attention. Students get a simpler screen; teachers get one set of numbers and a Grade button.
+
+### Run, Test and Stop
+
+#### One Run
+- **Run runs what you're working on, and says why.** Hover over Run in the status bar: "Run main.py, because it's the file you're editing", or "react-app is a React project". The Run panel's first line says the same for programs that run in the Terminal.
+- **F5 runs your program.** It starts the debugger only when you've set breakpoints (or chose Debug in the Run menu), so there's no "install the debugger" question unless you want one.
+- **Shift+F5 stops anything:** a program, the debugger, a dev server or the JavaScript Console.
+- **Change Run Target… is remembered for the folder you chose it in.**
+- A web page previews the page you're editing, not the site's index. A `.js` file previews its page only when that page loads it.
+- Programs that read input with `prompt-sync` run where you can type.
+
+#### Every language, checked first
+- **Before a run, TMCode checks that the language is installed.** If it isn't, one card says so, with **How to Install** and **Check Again**, instead of an error in a terminal.
+- TMCode now finds PHP, Ruby, Kotlin, .NET, Dart and Swift, and **Check My Computer** lists them.
+- **C and C++** build only the program you run (a folder of exercises, each with its own `main`, now works). **Go** builds the program's own files. **Java** runs classes inside packages. **Kotlin** keeps its build file out of your project.
+
+#### One Test
+- **A Test button beside Run**, with a passed/total count. It tests the file's tests, its project's tests, or your example tests, and says which and why.
+- **Add a Test:** give an example input and the output you expect; TMCode writes the test for you.
+- Python tests run with the built-in `unittest` when pytest isn't installed, use the same Python as Run, and a `tests/` folder is one suite, not two. Plain Node.js test files run without a `package.json`.
+
+### Working on an assignment
+
+- **Your work saves itself:** a few seconds after you save a file, it's in Task Mentor. The brief says "Saving…", then "Saved online". The Save button only shows when automatic saving is off; if saving fails, **Try Again** appears on the brief.
+- **The brief keeps its main button on screen:** scroll the brief and Start, Continue or Submit stays at the bottom.
+- **One brief at a time:** opening another assignment's brief replaces the first, and says which assignment you're working on before you switch.
+- Previews and results open under the brief, never in its place. On a small screen the side bar folds away when the brief opens beside your code.
+- **An empty project offers "Create main.py"** (named for the assignment's language), and Submit says "Nothing to hand in yet" until there's a file. Starter templates are only for the assignment's language.
+- **Next up on Home says why:** Returned to you, Late, Due soonest or Open now.
+
+### A simpler screen for students
+
+- **Four icons:** Assignments, Files, Search and Run. Source Control, Testing and Extensions are under **More** (Settings › Simple Layout shows them all).
+- **A shorter status bar** with what you act on.
+- **Your own projects are in Assignments › Other projects:** one place for all your work.
+- **Quiz practicals count as tasks** in the badge and on Home.
+- Rows show the title, then the status and due date. The course is hidden when you have only one.
+- **Fewer messages:** at most two at once, over your code. A message about an assignment you have on screen (submitted, returned, graded) goes straight to the bell, because the brief already shows it.
+
+### Teachers
+
+- **The assignment page's main button is Grade (n),** and its numbers (Students, In progress, To grade, Graded) come from the same list as Grading. "Use Open Project as Starter…" moved to the "…" menu.
+- **Grading goes oldest hand-in first,** and says "1 of 2 to grade".
+- **No criteria? One final grade.** An assignment or quiz question without grading criteria shows a **Final grade** box, with Full marks and quick scores.
+- After Save & Next, the next student's footer says what you saved ("Saved Ben: 18/20"), instead of a message over the Feedback box.
+- The student list opens over the grade form instead of pushing it down, and keeps your filter when you change student.
+- **Close Review** also closes the grading tab. Reviews open the code first, not the README.
+- Home says "No submissions yet" instead of "Done", and due dates are plain facts for teachers, not red warnings.
+- New palette commands: **Start Grading**, **Return for Changes…**, **Show Brief**, **Start or Continue an Assignment…**.
+
+### All changes
+
+- Release notes for 0.16.0
+- Grading: no criteria means one final grade (normalised criteria and maximum, Final grade box with Full marks, no '/ 0'), e2e + unit tests
+- Guided workflow: fixes from the full e2e run (Run menu lists the target once, pins belong to where they were chosen, remembered file choice and the edited page win, exam task actions know their source, pretend pytest probe, two-line rows without wrapping)
+- Guided workflow: e2e for the new behaviour (guided.spec.ts), specs updated to the intended changes; fixes found by them (Saving… only when queued, why-line only for terminal runs, Save & Next footer text survives remounts, dropdown closes on any choice, grading filter kept per practical)
+- Guided workflow Phase J: simple student screen (student layout: Assignments/Files/Search/Run + More, simple status bar, two-line rows, one-course rows, coach mark beside its icon over the editor, no Source Control while reviewing)
+- Guided workflow Phase I: one number + teacher flow (studentTasks with quiz practicals, graded is graded, gradingQueue/progressOf drafts rule, teacher brief Grade (n) with roster numbers and starter under …, grading order + 1 of n to grade, Close Review closes the tab, no student quiz list for teachers, reviews open code first, No submissions yet, neutral teacher due dates)
+- Guided workflow Phase H: one home per action (Other projects inside Assignments, one submit(), one openInTaskMentor(), Start/Continue/Sign in wording, one row behaviour, palette Show Brief/Start or Continue/Start Grading/Return for Changes, real shortcuts, dead code removed)
+- Guided workflow Phase G: the first minute (language-only starters, Create your first file, nothing to hand in until a file exists, Next up says why)
+- Guided workflow Phase F: one Test (resolveTest, Test button + passed/total badge, Add a Test, unittest fallback, one suite per folder, selected Python, node:test without package.json)
+- Guided workflow Phase E: build fixes + preflight (entry-folder C/C++/Go programs, Java package class, Kotlin jar in .tmcode, PHP/Ruby/Kotlin/.NET/Dart/Swift detection, install card before a run, Check My Computer lists every language)
+- Guided workflow Phase D: work mode (one brief slot, sticky main button, previews under the brief, side bar folds <1200px, Home in first group, grading list dropdown)
+- Guided workflow Phase C: one saving story (3 s after save, Saving… at once, Save button only when not automatic)
+- Guided workflow Phase B: one Run (resolveRun with a reason, F5 = Run, one Stop, why-line, page-loaded JS rule)
+- Guided workflow Phase A: calm messages (owners, silent when on screen, max 2, over the code)
+- Reviews: end-user walkthrough and simplify-and-centralize (post-0.15)
+
 ## 0.15.0 — 2026-10-12
 
 **TMCode 0.15: start here, one way to do it.** TMCode now opens on Home: your next assignment, or what you have to grade, one click away. Every screen shows one status and has one main button, grading opens the first student by itself, and messages say what happened in plain words and stay until you've read them.
