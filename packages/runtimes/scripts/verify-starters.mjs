@@ -150,6 +150,8 @@ function prepare(s, dir) {
       return r.ok ? { run: ["./verify-bin", []] } : fail("rustc", r);
     }
     case "sql": {
+      // PostgreSQL / MySQL starters need a database server: tm-judge's container tier runs them.
+      if (kind !== "sql/sqlite") return { skip: `${kind} needs a database server (tm-judge container tier)` };
       if (files.includes("schema.sql") && files.includes("seed.sql")) {
         const r = sh("sqlite3", ["-bail", "verify.db", ".read schema.sql", ".read seed.sql"], { cwd: dir });
         if (!r.ok) return fail("seed", r);

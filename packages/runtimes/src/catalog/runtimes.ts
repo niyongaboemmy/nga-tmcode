@@ -119,8 +119,9 @@ export const RUNTIMES: RuntimeDef[] = [
   { id: "swift-6", label: "Swift 6 (pin)", install: { script: "install-swift.sh" }, version: ["swift", "--version"], tools: { swift: "/opt/swift/usr/bin/swift", swiftc: "/opt/swift/usr/bin/swiftc", ...STDBUF }, env: BOX_ENV },
   { id: "dart-3", label: "Dart 3", install: { script: "install-dart.sh" }, version: ["dart", "--version"], tools: { dart: "/usr/lib/dart/bin/dart" }, env: { ...BOX_ENV, PUB_CACHE: "/caches/pub" } },
   { id: "flutter-3", label: "Flutter 3 (container only)", install: { script: "install-flutter.sh" }, version: ["flutter", "--version"], tools: { flutter: "/opt/flutter/bin/flutter" }, env: { ...BOX_ENV, PUB_CACHE: "/caches/pub" }, uses: ["dart-3"] },
-  { id: "postgres-16", label: "PostgreSQL 16 (runner cluster)", install: { apt: ["postgresql-client-16"] }, version: ["psql", "--version"], tools: { psql: "/usr/bin/psql" }, env: BOX_ENV },
-  { id: "mariadb-10.11", label: "MariaDB 10.11 (runner instance)", install: { apt: ["mariadb-client"] }, version: ["mariadb", "--version"], tools: { mariadb: "/usr/bin/mariadb" }, env: BOX_ENV },  // ── wave D (phase 7): apt packages from Ubuntu 24.04 where they are recent enough, else pinned tarballs.
+  // Tier 3 clients (images nga-runner/postgres-16, nga-runner/mysql-8.4); the servers are per-run sidecars.
+  { id: "postgres-16", label: "PostgreSQL 16 (per-run sidecar)", install: { apt: ["postgresql-client-16"] }, version: ["psql", "--version"], tools: { psql: "/usr/bin/psql" }, env: BOX_ENV },
+  { id: "mysql-8.4", label: "MySQL 8.4 (per-run sidecar)", install: { apt: ["mysql-client"] }, version: ["mysql", "--version"], tools: { mysql: "/usr/bin/mysql" }, env: BOX_ENV },  // ── wave D (phase 7): apt packages from Ubuntu 24.04 where they are recent enough, else pinned tarballs.
   // services/judge/deploy/install.sh installs each one on its own (INSTALL_WAVE_D=1); a failed one is skipped and
   // tm-judge reports its kinds in /v1/catalog `unavailable`.
   { id: "zig-0.14", label: "Zig 0.14 (pin)", install: { script: "install.sh#zig" }, version: ["zig", "version"], tools: { zig: "/opt/zig/zig", ...STDBUF }, env: { ...BOX_ENV, ZIG_GLOBAL_CACHE_DIR: "/tmp/zig-cache", ZIG_LOCAL_CACHE_DIR: "/tmp/zig-local" } },

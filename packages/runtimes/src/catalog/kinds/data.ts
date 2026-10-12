@@ -1,5 +1,8 @@
 /** SQL engines, R, Julia (§13.4, §13.7). */
+import type { Limits } from "../../schema";
 import { entry, kind } from "./kit";
+
+const SQL_RUN: Limits = { cpu_s: 5, wall_s: 15, memory_mb: 128, processes: 16, output_kb: 512 };
 
 export const DATA_KINDS = [
   kind({
@@ -28,23 +31,28 @@ export const DATA_KINDS = [
     wave: "B",
     detect: { anyOf: ["*.sql"], contains: [{ file: "*.sql", text: "--\\s*dialect:\\s*postgres" }], priority: 20 },
     entry: { default: "main.sql", find: "manifest" },
-    steps: { run: { tool: "psql", args: ["-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", entry] } },
-    tier: "isolate",
+    // Boxed tables (border 2, no "(n rows)" footer): the same layout as MySQL's --table.
+    steps: { run: { tool: "psql", args: ["-X", "-q", "-v", "ON_ERROR_STOP=1", "-P", "border=2", "-P", "footer=off", "-f", entry] } },
+    tier: "container",
+    services: ["postgres"],
     interactive: "none",
-    notes: "Per run: CREATE DATABASE run_<id> TEMPLATE seed_<question> on the runner cluster, a NOSUPERUSER role, statement_timeout.",
+    limits: { run: SQL_RUN },
+    notes: "Tier 3: a PostgreSQL 16 sidecar per run (tmpfs, internal network), schema.sql + seed.sql loaded once into a template; every I/O test gets a fresh copy (CREATE DATABASE app TEMPLATE seed) and a NOSUPERUSER role.",
   }),
   kind({
     id: "sql/mysql",
     language: "sql",
-    label: "SQL – MySQL / MariaDB",
-    runtime: "mariadb-10.11",
+    label: "SQL – MySQL",
+    runtime: "mysql-8.4",
     wave: "B",
     detect: { anyOf: ["*.sql"], contains: [{ file: "*.sql", text: "--\\s*dialect:\\s*(mysql|mariadb)" }], priority: 20 },
     entry: { default: "main.sql", find: "manifest" },
-    steps: { run: { tool: "mariadb", args: ["--batch", "--table"], stdin: entry } },
-    tier: "isolate",
+    steps: { run: { tool: "mysql", args: ["--user=student", "--protocol=TCP", "--batch", "--table", "app"], stdin: entry } },
+    tier: "container",
+    services: ["mysql"],
     interactive: "none",
-    notes: "Per-run database and user on the runner instance (never the production MySQL).",
+    limits: { run: SQL_RUN },
+    notes: "Tier 3: a MySQL 8.4 sidecar per run (tmpfs, internal network); every I/O test gets a fresh `app` database with schema.sql + seed.sql replayed, owned by a non-root user.",
   }),
   kind({
     id: "r/single",

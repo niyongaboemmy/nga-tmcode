@@ -74,6 +74,13 @@ describe("runtime catalog", () => {
     for (const k of KINDS.filter((x) => x.tier === "container" && x.steps.run)) expect(k.limits.run, k.id).toBeDefined();
   });
 
+  it("runs PostgreSQL and MySQL exercises in tier 3 with a per-run database sidecar", () => {
+    expect(kindById("sql/postgres")).toMatchObject({ tier: "container", services: ["postgres"], runtime: "postgres-16" });
+    expect(kindById("sql/mysql")).toMatchObject({ tier: "container", services: ["mysql"], runtime: "mysql-8.4" });
+    // Only tier 3 has a network for a database.
+    for (const k of KINDS.filter((x) => x.services?.length)) expect(k.tier, k.id).toBe("container");
+  });
+
   it("every compiled wave D single file builds into the project (so run boxes get the binary)", () => {
     for (const k of KINDS.filter((x) => x.wave === "D" && x.steps.build && x.tier !== "container")) {
       const outs = k.steps.build!.args.filter((a) => typeof a === "object" && "out" in a);
