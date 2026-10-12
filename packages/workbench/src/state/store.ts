@@ -952,13 +952,40 @@ export function setEditorSticky(groupId: number, id: string, sticky: boolean) {
   });
 }
 
+/** The brief (an assignment's or a quiz practical's page): work mode keeps it on screen beside the code. */
+const isBrief = (e: EditorInput | undefined) => e?.kind === "assignment";
+
 /** Opens (or focuses) a non-file editor such as a preview or a test diff. */
 export function openEditorInput(input: Extract<EditorInput, { kind: "preview" | "testDiff" | "browser" | "markdown" | "image" | "extension" | "historyDiff" | "webview" | "assignment" | "grading" | "sqlResults" | "logic" | "api" | "snippets" }>, opts: { group?: number; toSide?: boolean } = {}) {
   let groupId = opts.group ?? get().activeGroup;
+  if (input.kind === "assignment") {
+    // One brief slot: another assignment's brief is replaced where it is (its tab, its column).
+    const s = get();
+    const holder = s.groups.find((g) => g.editors.some((e) => isBrief(e) && e.id !== input.id)) ?? null;
+    if (holder && !holder.editors.some((e) => e.id === input.id)) {
+      updateGroup(holder.id, (g) => ({ ...g, editors: g.editors.map((e) => (isBrief(e) ? ({ ...input, sticky: e.sticky } as EditorInput) : e)), activeId: input.id }));
+      if (!opts.toSide) set({ activeGroup: holder.id });
+      return;
+    }
+    // Work mode on a small screen: the brief beside the code takes the side bar's room.
+    if (opts.toSide && typeof window !== "undefined" && window.innerWidth < 1200 && s.sidebarVisible) toggleSidebar(false);
+  }
   if (opts.toSide) {
     const s = get();
     const right = neighbour(reconcileTree(s.editorLayout, s.groups.map((g) => g.id)), s.activeGroup, "right");
     groupId = right ?? addGroup(s.activeGroup, "right") ?? groupId;
+  }
+  // Previews, results and browsers never take the brief's place: they go under it.
+  if (input.kind !== "assignment" && input.kind !== "grading") {
+    const g = get().groups.find((x) => x.id === groupId);
+    const front = g?.editors.find((e) => e.id === g.activeId);
+    if (g && isBrief(front) && g.activeId !== input.id) {
+      if (g.editors.some((e) => e.id === input.id)) updateGroup(g.id, (x) => ({ ...x, editors: x.editors.filter((e) => e.id !== input.id) }));
+      const tree = reconcileTree(get().editorLayout, get().groups.map((x) => x.id));
+      const below = neighbour(tree, g.id, "down");
+      const belowFront = below != null ? get().groups.find((x) => x.id === below) : undefined;
+      groupId = below != null && !isBrief(belowFront?.editors.find((e) => e.id === belowFront.activeId)) ? below : (addGroup(g.id, "down") ?? groupId);
+    }
   }
   updateGroup(groupId, (g) => {
     if (g.editors.some((e) => e.id === input.id)) {
@@ -986,7 +1013,9 @@ export function updateTest(id: string, patch: Partial<TestItem>) {
 }
 
 export function openSpecialEditor(kind: "settings" | "settingsJson" | "welcome" | "shortcuts") {
-  const groupId = get().activeGroup;
+  // Home always opens in the first group (the widest, the code's), never in a brief's column.
+  const groupId = kind === "welcome" ? (get().groups[0]?.id ?? get().activeGroup) : get().activeGroup;
+  if (kind === "welcome" && get().activeGroup !== groupId) set({ activeGroup: groupId });
   updateGroup(groupId, (g) => {
     if (g.editors.some((e) => e.id === kind)) return { ...g, activeId: kind };
     const editors = [...g.editors];

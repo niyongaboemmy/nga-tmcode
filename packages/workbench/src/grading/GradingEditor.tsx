@@ -944,7 +944,16 @@ export function GradingEditor({ input }: { input: Input }) {
       </header>
 
       <div className={`tm-grade-body ${row && !finished ? "has-selection" : ""} ${showList ? "show-list" : ""} ${focusMode && reviewing && row && !finished ? "is-focus" : ""}`}>
-        <aside className="tm-grade-list" aria-label="Students">
+        <aside
+          className="tm-grade-list"
+          aria-label="Students"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && showList) {
+              e.stopPropagation();
+              setShowList(false);
+            }
+          }}
+        >
           <div className="tm-grade-filters" role="tablist" aria-label="Show">
             {(["to-grade", "graded", "working", "not-started", "all"] as Filter[]).map((f) => (
               <button key={f} type="button" role="tab" aria-selected={filter === f} className={`tm-filter-chip ${filter === f ? "is-active" : ""}`} onClick={() => setFilter(f)} data-testid={`grade-filter-${f}`}>

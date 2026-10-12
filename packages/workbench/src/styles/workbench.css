@@ -9284,3 +9284,66 @@ button.tm-setting-badge {
 .tm-grade-panel > .tm-grade-footer {
   margin-top: auto;
 }
+
+/* Work mode (guided plan D): the brief's sticky footer keeps the status and the one main button on screen. */
+.tm-assignment-page > .tm-brief-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: none;
+  margin: 24px calc(-1 * clamp(16px, 4vw, 48px)) -48px;
+  padding: 10px clamp(16px, 4vw, 48px) 10px;
+  border-top: 1px solid var(--border);
+  background: var(--editor-bg);
+  box-shadow: 0 -6px 12px -10px rgba(0, 0, 0, 0.35);
+}
+.tm-assignment-page > .tm-brief-footer.is-hidden {
+  visibility: hidden;
+}
+.tm-brief-footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+/* Work mode (guided plan D, T4): the folded student list opens as a dropdown over the grade panel; the form never moves. */
+.tm-grade-body.has-selection {
+  position: relative;
+}
+@container grade (max-width: 820px) {
+  .tm-grade-body.has-selection.show-list {
+    grid-template-rows: 1fr;
+  }
+  .tm-grade-body.has-selection.show-list > .tm-grade-list {
+    position: absolute;
+    top: 40px;
+    left: 8px;
+    right: 8px;
+    z-index: 5;
+    max-height: min(60%, 420px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--editor-bg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+}
+.tm-grade-body.is-focus.has-selection.show-list {
+  grid-template-rows: 1fr;
+}
+.tm-grade-body.is-focus.has-selection.show-list > .tm-grade-list {
+  position: absolute;
+  top: 40px;
+  left: 8px;
+  right: 8px;
+  z-index: 5;
+  max-height: min(60%, 420px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--editor-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}

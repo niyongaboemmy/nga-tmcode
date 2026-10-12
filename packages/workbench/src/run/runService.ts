@@ -317,7 +317,12 @@ export function openPreview(root: string, entry: string, profile: "static" | "bu
   const input = { kind: "preview" as const, id: `preview:${join(root, entry)}`, root, entry, profile, preview: false as const };
   const { groups } = useWorkbench.getState();
   const host = groups.find((g) => g.editors.some((e) => e.kind === "preview"));
-  if (!host) return openEditorInput(input, { toSide: true });
+  // Hidden behind the brief (work mode): reopen it where the brief stays visible.
+  const hidden = host && host.editors.find((e) => e.id === host.activeId)?.kind === "assignment";
+  if (!host || hidden) {
+    if (host) useWorkbench.setState({ groups: groups.map((g) => (g === host ? { ...g, editors: g.editors.filter((e) => e.kind !== "preview") } : g)) });
+    return openEditorInput(input, { toSide: true });
+  }
   const old = host.editors.find((e) => e.kind === "preview")!;
   useWorkbench.setState({
     groups: groups.map((g) =>

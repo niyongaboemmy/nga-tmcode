@@ -246,6 +246,8 @@ function AssignmentBrief({ input }: { input: Input }) {
   const my = detail.my;
   const saving = savingNow || sync === "saving" || sync === "pulling";
   const autoSaving = here && autoSaveMode() !== "off";
+  // Another assignment is open in this window: the brief says so before Continue switches.
+  const otherWork = !here && current?.assignment && current.assignment.id !== id ? current.assignment.title : null;
   const criteria = normalizeRubric(detail.rubric);
   const graded = !teaching && my?.state === "graded" ? rubricResults(criteria, my) : null;
   // One status for the whole page (W4): header chip, card and button all come from `view`.
@@ -255,6 +257,15 @@ function AssignmentBrief({ input }: { input: Input }) {
   const handedIn = status === "submitted" || status === "graded";
   const open = acceptsSubmissions(detail);
   const overdue = !teaching && open && !handedIn && due?.tone === "late";
+  // The one main button of the next-step card, repeated by the sticky footer.
+  const footerMain: { label: string; icon: string; run: () => void } | null =
+    status === "not_started" && open
+      ? { label: "Start Assignment", icon: "play", run: () => void startAssignment(id) }
+      : !here && (status === "in_progress" || status === "returned" || status === "submitted")
+        ? { label: "Continue", icon: "folder-opened", run: () => void startAssignment(id) }
+        : here && (status === "in_progress" || status === "returned") && !detail.read_only
+          ? { label: view!.primary?.label ?? "Submit", icon: "send", run: () => void submitAssignment(id) }
+          : null;
   const busyIcon = (b: typeof busy, icon: string) => <Codicon name={busy === b ? "loading" : icon} className={busy === b ? "codicon-modifier-spin" : ""} />;
   const submittedLine = my?.submitted_at ? (
     <p className="tm-muted tm-next-step-meta" data-testid="assignment-submitted-at">
@@ -391,6 +402,11 @@ function AssignmentBrief({ input }: { input: Input }) {
                     : `Your project is saved in Task Mentor. Continue opens it in this window${status === "returned" ? " to make the changes, then submit again" : ", then Submit"}.`}
                 </p>
                 {status === "submitted" && submittedLine}
+                {otherWork && (
+                  <p className="tm-muted tm-next-step-meta" data-testid="assignment-other-work">
+                    <Codicon name="info" /> You're working on <strong>{otherWork}</strong> in this window. Continue saves it to Task Mentor and opens this one.
+                  </p>
+                )}
               </div>
               <button type="button" className="tm-button tm-button--large" disabled={!!busy} onClick={() => void startAssignment(id)} data-testid="assignment-continue" autoFocus>
                 {busyIcon("starting", "folder-opened")} {busy === "starting" ? "Opening…" : "Continue"}
@@ -518,6 +534,36 @@ function AssignmentBrief({ input }: { input: Input }) {
         </section>
       )}
       {!brief && !instructions && <p className="tm-muted">No brief was written for this assignment. Open it in Task Mentor for any details.</p>}
+      {!teaching && footerMain && (
+        <BriefFooter status={STUDENT_STATUS_LABEL[status]} tone={status} label={footerMain.label} icon={footerMain.icon} busy={!!busy || saving} onClick={footerMain.run} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Work mode: while the next-step card is scrolled away, a footer keeps the status and the one main
+ * button on screen (Start, Continue or Submit), so reading the brief never hides what to do next.
+ */
+export function BriefFooter(props: { status: string; tone: string; label: string; icon: string; busy: boolean; onClick: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [cardVisible, setCardVisible] = useState(true);
+  useEffect(() => {
+    const page = ref.current?.closest(".tm-assignment-page");
+    const card = page?.querySelector('[data-testid="assignment-next-step"]');
+    if (!page || !card || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setCardVisible(e.isIntersecting), { root: page, threshold: 0.2 });
+    io.observe(card);
+    return () => io.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={`tm-brief-footer${cardVisible ? " is-hidden" : ""}`} data-testid="brief-footer" aria-hidden={cardVisible ? "true" : undefined}>
+      <span className="tm-brief-footer-status">
+        <Codicon name="circle-filled" className={`tm-state-dot is-${props.tone}`} /> {props.status}
+      </span>
+      <button type="button" className="tm-button" disabled={props.busy} tabIndex={cardVisible ? -1 : 0} onClick={props.onClick} data-testid="brief-footer-main">
+        <Codicon name={props.icon} /> {props.label}
+      </button>
     </div>
   );
 }
