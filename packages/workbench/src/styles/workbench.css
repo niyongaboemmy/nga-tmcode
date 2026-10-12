@@ -9375,3 +9375,9 @@ button.tm-setting-badge {
   margin: 0;
   color: var(--description);
 }
+
+/* Teachers' due dates are facts, not alarms (guided plan I, T8). */
+.tm-due.is-neutral {
+  color: var(--description);
+  background: transparent;
+}

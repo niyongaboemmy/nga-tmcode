@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { useWorkbench } from "../state/store";
 import { announceChanges, type AssignmentSummary } from "./assignments";
-import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, nextUpReason, practicalStateOf } from "./studentHome";
+import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, nextUpReason, practicalStateOf, studentTasks } from "./studentHome";
 import type { Project } from "./types";
 
 const a = (id: number, over: Partial<AssignmentSummary> = {}): AssignmentSummary => ({
@@ -106,6 +106,13 @@ describe("nextUp (Home)", () => {
   });
   it("counts Returned · To do · Graded", () => {
     const list = [a(1), a(2, state("in_progress", { returned_at: at(-1) })), a(3, state("graded")), a(4, { ...state("graded"), read_only: true }), a(5, state("submitted"))];
-    expect(homeCounts(list)).toEqual({ returned: 1, todo: 2, graded: 1 });
+    // Graded is graded, closed or not (one rule, guided plan I).
+    expect(homeCounts(list)).toEqual({ returned: 1, todo: 2, graded: 2 });
+  });
+  it("counts quiz practicals as tasks too", () => {
+    const quiz = { activity_type: "quiz", activity_id: 78, title: "Quiz", practical_questions: [{ question_id: 501, title: "Build a page", points: 5 }] } as never;
+    const tasks = studentTasks([a(1)], [quiz], [], null);
+    expect(tasks.map((t) => t.key)).toEqual(["assignment:1", "quiz:78:501"]);
+    expect(homeCounts(tasks)).toEqual({ returned: 0, todo: 2, graded: 0 });
   });
 });

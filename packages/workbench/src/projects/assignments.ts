@@ -537,9 +537,11 @@ export function returnedForChanges(a: AssignmentSummary): boolean {
 export function groupAssignments(list: AssignmentSummary[]) {
   const groups = { todo: [] as AssignmentSummary[], submitted: [] as AssignmentSummary[], graded: [] as AssignmentSummary[], completed: [] as AssignmentSummary[] };
   for (const a of list) {
-    if (a.read_only) groups.completed.push(a);
-    else if (a.my?.state === "graded") groups.graded.push(a);
-    else if (a.my?.state === "submitted") groups.submitted.push(a);
+    // One rule (guided plan I): graded is graded, closed or not; closed work isn't "to do".
+    const s = studentStatus(a);
+    if (a.my?.state === "graded" || s === "graded") groups.graded.push(a);
+    else if (a.read_only || s === "closed") groups.completed.push(a);
+    else if (s === "submitted") groups.submitted.push(a);
     else groups.todo.push(a);
   }
   const byDue = (x: AssignmentSummary, y: AssignmentSummary) => (x.due_date ? Date.parse(x.due_date) : Infinity) - (y.due_date ? Date.parse(y.due_date) : Infinity);

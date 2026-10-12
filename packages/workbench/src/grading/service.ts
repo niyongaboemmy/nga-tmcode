@@ -2,7 +2,7 @@ import { track } from "../state/activity";
 import { msg, releaseSkipReason } from "../messages/catalog";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { confirmLeaveWorkspace, getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, revealView as revealViewFn, useWorkbench } from "../state/store";
+import { closeEditors, confirmLeaveWorkspace, getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, revealView as revealViewFn, useWorkbench } from "../state/store";
 import { api, notifyError, projectsSupported, signedIn, TmError, useProjects } from "../projects/service";
 import { linkableActivities } from "../projects/matching";
 import type { Manifest } from "../projects/plan";
@@ -261,16 +261,42 @@ export async function loadRoster(key: string, opts: { quiet?: boolean } = {}): P
 }
 
 /** Progress of one activity: graded of handed in, and of everyone with work. */
+/**
+ * One practical's numbers (guided plan I, T1): every teacher view reads these words the same way.
+ * To grade = handed in with no grade yet; drafts = graded but not released (they wait for Release).
+ */
 export function progressOf(r: Roster | undefined) {
   if (!r) return null;
-  const submitted = r.counts.to_grade + r.counts.graded;
-  const inProgress = r.rows.filter((x) => x.state === "in_progress").length;
-  return { graded: r.counts.graded, toGrade: r.counts.to_grade, submitted, inProgress, total: r.counts.total, pct: submitted ? Math.round((r.counts.graded / submitted) * 100) : 0 };
+  const rows = r.rows ?? [];
+  const drafts = rows.length ? rows.filter((x) => x.state === "submitted" && isDraftGrade(x)).length : (r.counts.drafts ?? 0);
+  const toGrade = rows.length ? rows.filter((x) => x.state === "submitted" && !isDraftGrade(x) && !!x.student).length : Math.max(0, r.counts.to_grade - drafts);
+  const submitted = toGrade + drafts + r.counts.graded;
+  const inProgress = rows.filter((x) => x.state === "in_progress").length;
+  return { graded: r.counts.graded, toGrade, drafts, submitted, inProgress, total: r.counts.total, pct: submitted ? Math.round((r.counts.graded / submitted) * 100) : 0 };
+}
+
+/** Every practical's numbers added up (Home, the Grading badge, the activity bar): one queue. */
+export function gradingQueue(activities: Gradable[] | null, rosters: Record<string, Roster>) {
+  let toGrade = 0;
+  let drafts = 0;
+  let practicals = 0;
+  const rows = (activities ?? []).map((a) => {
+    const p = progressOf(rosters[a.key]);
+    toGrade += p?.toGrade ?? 0;
+    drafts += p?.drafts ?? 0;
+    if (p?.toGrade) practicals++;
+    return { a, toGrade: p?.toGrade ?? null, drafts: p?.drafts ?? 0, submitted: p?.submitted ?? null };
+  });
+  rows.sort((x, y) => (y.toGrade ?? -1) - (x.toGrade ?? -1) || x.a.title.localeCompare(y.a.title));
+  return { toGrade, drafts, practicals, rows };
 }
 
 /** Handed in, not graded yet (a draft grade waits for Release, not for grading). */
 const waitingRow = (r: RosterRow) => r.state === "submitted" && !isDraftGrade(r) && !!r.student;
 const handedInAt = (r: RosterRow) => Date.parse(r.submitted_at ?? r.link?.submitted_at ?? "") || Infinity;
+
+/** Grading order (T3): the oldest hand-in first. */
+export const byHandIn = (a: RosterRow, b: RosterRow) => handedInAt(a) - handedInAt(b);
 
 /** The first submission to grade in one roster: the oldest hand-in (W8). */
 export function firstToGrade(r: Roster | undefined): RosterRow | null {
@@ -493,13 +519,18 @@ function applyReview(review: Review | null) {
   }
 }
 
-/** The file to show first: README, index.html, main.* or the first file. */
+/** The file to show first (T7): the code — index.html, main.*, app.*, Main.* — then any code file, README last. */
 async function revealEntry() {
   if (useWorkbench.getState().groups[0]?.editors.some((e) => e.kind === "file")) return;
   const entries = await getPlatform().fs.readDir("").catch(() => []);
   const files = entries.filter((e) => e.kind === "file").map((e) => e.path);
+  const code = (f: string) => !f.startsWith(".") && !/\.(md|txt|json|lock|ya?ml|toml|gitignore)$/i.test(f);
   const pick =
-    files.find((f) => /^readme\.md$/i.test(f)) ?? files.find((f) => /^index\.html?$/i.test(f)) ?? files.find((f) => /^(main|app|index)\.\w+$/i.test(f)) ?? files.find((f) => !f.startsWith("."));
+    files.find((f) => /^index\.html?$/i.test(f)) ??
+    files.find((f) => /^(main|app|index|program)\.\w+$/i.test(f)) ??
+    files.find(code) ??
+    files.find((f) => /^readme\.md$/i.test(f)) ??
+    files.find((f) => !f.startsWith("."));
   if (pick) openFile(pick, { pinned: true, group: 0 });
 }
 
@@ -591,7 +622,11 @@ export async function closeReview() {
     if (!(await openFolder(home))) return;
     set({ homeRoot: null });
   } else applyReview(null);
-  if (key) openGrading(key, { toSide: false });
+  // Close Review ends the review (T5): the grading tab goes too (Grading reopens it, where it left off).
+  if (key) {
+    const id = `grading:${key}`;
+    for (const g of useWorkbench.getState().groups) if (g.editors.some((e) => e.id === id)) await closeEditors(g.id, [id]);
+  }
 }
 
 /** A short-lived page of the submitted website (Task Mentor serves it), in the built-in browser. */

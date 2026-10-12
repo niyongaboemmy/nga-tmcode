@@ -18,6 +18,7 @@ import {
   isDraftGrade,
   keyOf,
   firstToGrade,
+  byHandIn,
   loadRoster,
   openGrading,
   openSubmission,
@@ -777,7 +778,16 @@ export function GradingEditor({ input }: { input: Input }) {
     if (first) choose(first);
   }, [roster, startReq]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const rows = useMemo(() => (roster?.rows ?? []).filter((r) => inFilter(filter, r) && (!query || (r.student?.name ?? "").toLowerCase().includes(query.toLowerCase()))), [roster, filter, query]);
+  // "To grade" in grading order (oldest hand-in first), so the list, Next and the counter agree (T3).
+  const rows = useMemo(() => {
+    const list = (roster?.rows ?? []).filter((r) => inFilter(filter, r) && (!query || (r.student?.name ?? "").toLowerCase().includes(query.toLowerCase())));
+    return filter === "to-grade" ? [...list].sort(byHandIn) : list;
+  }, [roster, filter, query]);
+  // This session's queue: everyone who was waiting since the tab opened ("1 of 2 to grade", then "2 of 2").
+  const session = useRef(new Map<number, RosterRow>());
+  for (const r of roster?.rows ?? []) if (r.student && r.state === "submitted" && !isDraftGrade(r)) session.current.set(r.student.id, r);
+  const queue = [...session.current.values()].sort(byHandIn);
+  const queuePos = queue.findIndex((r) => r.student?.id === selected);
   const row = roster?.rows.find((r) => r.student?.id === selected) ?? null;
 
   const choose = (r: RosterRow) => {
@@ -795,7 +805,9 @@ export function GradingEditor({ input }: { input: Input }) {
     if (!roster) return;
     const all = roster.rows;
     const i = all.findIndex((r) => r.student?.id === selected);
-    const after = [...all.slice(i + 1), ...all.slice(0, Math.max(0, i))].find((r) => r.state === "submitted" && !isDraftGrade(r) && r.student?.id !== selected);
+    void i;
+    // Next = the oldest hand-in still waiting (grading order), not the next row of the list.
+    const after = all.filter((r) => r.state === "submitted" && !isDraftGrade(r) && r.student?.id !== selected).sort(byHandIn)[0];
     if (after) choose(after);
     else setFinished(true);
   };
@@ -1081,7 +1093,9 @@ export function GradingEditor({ input }: { input: Input }) {
                   {initials(row.student?.name ?? "?")}
                 </span>
                 <b>{row.student?.name ?? "Unknown"}</b>
-                <span className="tm-muted">{rows.some((r) => r.student?.id === selected) ? `${rows.findIndex((r) => r.student?.id === selected) + 1} of ${rows.length}` : ""}</span>
+                <span className="tm-muted" data-testid="grade-counter">
+                  {queuePos >= 0 ? `${queuePos + 1} of ${queue.length} to grade` : rows.some((r) => r.student?.id === selected) ? `${rows.findIndex((r) => r.student?.id === selected) + 1} of ${rows.length}` : ""}
+                </span>
                 <Codicon name={showList ? "chevron-up" : "chevron-down"} />
               </button>
               <ActionButton

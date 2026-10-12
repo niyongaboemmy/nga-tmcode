@@ -60,7 +60,8 @@ function ActivityRow({ a }: { a: Gradable }) {
           {/* The subject heads the group: the row says what is waiting. */}
           {a.question_title && <span className="tm-assignment-course">{a.title}</span>}
           <span className="tm-grade-workload" data-testid="grading-workload">{workload(p)}</span>
-          {due && a.status !== "completed" && <span className={`tm-due is-${due.tone}`}>{due.text}</span>}
+          {/* Teachers: the due date is a fact, not an alarm (T8). */}
+          {due && a.status !== "completed" && <span className="tm-due is-neutral">{a.due_date && Date.parse(a.due_date) < Date.now() ? `Was due ${new Date(a.due_date).toLocaleDateString([], { day: "numeric", month: "short" })}` : due.text}</span>}
         </span>
         {p ? <ProgressBar graded={p.graded} toGrade={p.toGrade} inProgress={p.inProgress} total={Math.max(p.total, 1)} compact /> : error ? null : <span className="tm-grade-progress is-compact is-loading" />}
       </span>

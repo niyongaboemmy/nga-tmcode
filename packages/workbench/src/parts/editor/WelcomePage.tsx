@@ -7,8 +7,8 @@ import { openInTaskMentor } from "../../projects/taskMentorLinks";
 import { projectsSupported, signIn, useProjects } from "../../projects/service";
 import { SignInWaiting } from "../../projects/SignInWaiting";
 import { deriveStatus } from "../../projects/status";
-import { homeCounts, nextUp, nextUpReason } from "../../projects/studentHome";
-import { openGrading, progressOf, startGrading, useGrading, type Gradable, type Roster } from "../../grading/service";
+import { homeCounts, nextUp, nextUpReason, studentTasks } from "../../projects/studentHome";
+import { gradingQueue, openGrading, startGrading, useGrading } from "../../grading/service";
 import { isTeacherRole, useRole, useRoleChecking } from "../../state/role";
 import { markJourney } from "../../util/journey";
 import { Codicon } from "../../widgets/icons";
@@ -136,6 +136,8 @@ function StudentHome() {
   const current = useProjects((s) => s.current);
   const binding = useProjects((s) => s.binding);
   const openId = binding && current?.id === binding.project_id ? (current.assignment?.id ?? null) : null;
+  const quizzes = useAssignments((s) => s.quizPracticals);
+  const mine = useProjects((s) => s.mine);
   if (student === null && !error) {
     return (
       <Card testId="home-loading">
@@ -145,7 +147,7 @@ function StudentHome() {
     );
   }
   const next = nextUp(student, openId);
-  const counts = homeCounts(student);
+  const counts = homeCounts(studentTasks(student, quizzes, mine, current));
   return (
     <>
       {error && (
@@ -177,21 +179,7 @@ function StudentHome() {
 
 // ── Teachers ────────────────────────────────────────────────────────────────
 
-function gradingSummary(activities: Gradable[] | null, rosters: Record<string, Roster>) {
-  let toGrade = 0;
-  let drafts = 0;
-  let practicals = 0;
-  const rows = (activities ?? []).map((a) => {
-    const p = progressOf(rosters[a.key]);
-    const d = rosters[a.key]?.counts.drafts ?? 0;
-    toGrade += p?.toGrade ?? 0;
-    drafts += d;
-    if (p?.toGrade) practicals++;
-    return { a, toGrade: p?.toGrade ?? null, drafts: d };
-  });
-  rows.sort((x, y) => (y.toGrade ?? -1) - (x.toGrade ?? -1) || x.a.title.localeCompare(y.a.title));
-  return { toGrade, drafts, practicals, rows };
-}
+const gradingSummary = gradingQueue;
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -239,14 +227,14 @@ function TeacherHome() {
       </Card>
       {rows.length > 0 && (
         <section className="tm-home-list" aria-label="Practicals" data-testid="home-practicals">
-          {rows.slice(0, 6).map(({ a, toGrade: n, drafts: d }) => (
+          {rows.slice(0, 6).map(({ a, toGrade: n, drafts: d, submitted }) => (
             <button key={a.key} type="button" className="tm-home-row" onClick={() => openGrading(a.key)} data-testid="home-practical" data-key={a.key}>
               <Codicon name={a.type === "quiz" ? "checklist" : "beaker"} />
               <span className="tm-home-row-title">
                 {a.question_title ?? a.title}
                 <small>{[a.question_title ? a.title : null, a.course_name].filter(Boolean).join(" · ")}</small>
               </span>
-              <span className={`tm-chip ${n ? "is-info" : ""}`}>{n === null ? "…" : n ? `${n} to grade` : d ? `${plural(d, "draft")}` : "Done"}</span>
+              <span className={`tm-chip ${n ? "is-info" : ""}`}>{n === null ? "…" : n ? `${n} to grade` : d ? `${plural(d, "draft")}` : submitted ? "All graded" : "No submissions yet"}</span>
             </button>
           ))}
         </section>

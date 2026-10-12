@@ -3,7 +3,8 @@ import { inExam } from "../exam/state";
 import { isFirstRun, openSpecialEditor, revealView, useWorkbench } from "../state/store";
 import { SIGN_IN_EXPIRED, studentStatus, useAssignments, type AssignmentSummary } from "./assignments";
 import { signOut, useProjects } from "./service";
-import type { Link, LinkItem, Project } from "./types";
+import type { Link, LinkableActivity, LinkItem, Project } from "./types";
+import type { StudentStatus } from "./status";
 
 /**
  * The student's home (0.11 "One place for my work"): the Assignments view,
@@ -183,14 +184,39 @@ export function nextUpReason(a: AssignmentSummary, openAssignmentId: number | nu
   return s === "in_progress" ? "In progress" : "Not started";
 }
 
-/** Home's counters: Returned (n) · To do (n) · Graded (n). */
-export function homeCounts(list: AssignmentSummary[] | null) {
+/** One task of a student's: an assignment or a quiz practical, with its one status. */
+export interface StudentTask {
+  kind: "assignment" | "practical";
+  key: string;
+  title: string;
+  status: StudentStatus | PracticalState;
+}
+
+/**
+ * Every task a student has (guided plan I): assignments and quiz practicals. The activity badge,
+ * Home's counters and the Assignments lists all count from this one list.
+ */
+export function studentTasks(list: AssignmentSummary[] | null, quizzes: LinkableActivity[] | null = null, projects: Project[] | null = null, current: Project | null = null): StudentTask[] {
+  const out: StudentTask[] = (list ?? []).map((a) => ({ kind: "assignment", key: `assignment:${a.id}`, title: a.title, status: studentStatus(a) }));
+  for (const quiz of quizzes ?? []) {
+    for (const q of quiz.practical_questions ?? []) {
+      out.push({ kind: "practical", key: `quiz:${quiz.activity_id}:${q.question_id}`, title: q.title, status: practicalStateOf(quiz.activity_id, q.question_id, projects, current).state });
+    }
+  }
+  return out;
+}
+
+/** To do: not started, in progress or returned (closed and handed-in work is not). */
+export const isToDo = (t: StudentTask) => t.status === "not_started" || t.status === "in_progress" || t.status === "returned";
+
+/** Home's counters: Returned (n) · To do (n) · Graded (n), from studentTasks (an assignment list alone also works). */
+export function homeCounts(tasks: StudentTask[] | AssignmentSummary[] | null) {
+  const list: StudentTask[] = (tasks ?? []).length && "key" in (tasks as StudentTask[])[0] ? (tasks as StudentTask[]) : studentTasks(tasks as AssignmentSummary[] | null);
   const out = { returned: 0, todo: 0, graded: 0 };
-  for (const a of list ?? []) {
-    const s = studentStatus(a);
-    if (s === "returned") out.returned++;
-    if (s === "returned" || s === "in_progress" || s === "not_started") out.todo++;
-    if (s === "graded" && !a.read_only) out.graded++;
+  for (const t of list) {
+    if (t.status === "returned") out.returned++;
+    if (isToDo(t)) out.todo++;
+    if (t.status === "graded") out.graded++;
   }
   return out;
 }

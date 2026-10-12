@@ -10,9 +10,9 @@ import { changeCount } from "../scm/model";
 import { debugAllowed } from "../debug/debugService";
 import { useProjects, signIn, refreshProjects } from "../projects/service";
 import { useAssignments } from "../projects/assignments";
-import { isAssessmentWorkspace, signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
+import { isToDo, studentTasks, isAssessmentWorkspace, signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
 import { useEffect, useState } from "react";
-import { useGrading, progressOf } from "../grading/service";
+import { gradingQueue, useGrading } from "../grading/service";
 import { isTeacherRole, useIsTeacher, useRole, useRoleChecking } from "../state/role";
 import type { AccountStatus } from "../platform/types";
 // ── extension view containers (exthost/views) ──
@@ -57,9 +57,12 @@ export function ActivityBar() {
   const projectSync = useProjects((s) => s.sync);
   // Teachers: the Grading view, with what waits to be graded.
   const grader = useGrading((s) => s.grader);
-  const toGrade = useGrading((s) => Object.values(s.rosters).reduce((n, r) => n + (progressOf(r)?.toGrade ?? 0), 0));
+  const toGrade = useGrading((s) => gradingQueue(s.activities, s.rosters).toGrade);
   // Assignments to start or finish (not submitted, not completed).
-  const todo = useAssignments((s) => (s.student ?? []).filter((a) => !a.read_only && (!a.my || a.my.state === "not_started" || a.my.state === "in_progress")).length);
+  // One number (guided plan I): to-do tasks, quiz practicals included, by the same rule as Home and Assignments.
+  const mine = useProjects((s) => s.mine);
+  const current = useProjects((s) => s.current);
+  const todo = useAssignments((s) => studentTasks(s.student, s.quizPracticals, mine, current).filter(isToDo).length);
   // Teachers keep Projects, Assignments, Grading; students get Assignments first. The role is
   // remembered per account, so a teacher's layout is there on the first frame (W2); while nobody
   // knows yet, only the shared Assignments view shows (never the student "All My Projects").

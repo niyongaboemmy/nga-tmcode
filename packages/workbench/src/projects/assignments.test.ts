@@ -49,6 +49,10 @@ describe("assignments", () => {
     expect(g.submitted.map((x) => x.id)).toEqual([3]);
     expect(g.graded.map((x) => x.id)).toEqual([4]);
     expect(g.completed.map((x) => x.id)).toEqual([5]);
+    // Graded stays graded when the teacher closes it; closed work is never "to do".
+    const h = groupAssignments([a(7, { read_only: true, status: "completed", my: my("graded") }), a(8, { accepts_submissions: false })]);
+    expect(h.graded.map((x) => x.id)).toEqual([7]);
+    expect(h.completed.map((x) => x.id)).toEqual([8]);
   });
 
   it("late comes from the submission when Task Mentor sends it, else from the due date", () => {

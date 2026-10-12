@@ -174,7 +174,7 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
               {a.teaching.submitted}/{a.teaching.students} submitted
             </span>
           ) : (
-            due && !a.read_only && a.my?.state !== "graded" && a.my?.state !== "submitted" && <span className={`tm-due is-${due.tone}`}>{due.text}</span>
+            due && !a.read_only && a.my?.state !== "graded" && a.my?.state !== "submitted" && <span className={`tm-due ${teaching ? "is-neutral" : `is-${due.tone}`}`}>{due.text}</span>
           )}
         </span>
       </span>
@@ -429,7 +429,8 @@ export function AssignmentsView() {
   const rows = (list: AssignmentSummary[], empty: string, t?: boolean) =>
     list.length === 0 ? <p className="tm-muted tm-projects-hint">{empty}</p> : list.map((a) => <AssignmentRow key={a.id} a={a} teaching={t} urgent={!t && a.id === urgentId} />);
   const teach = (teaching ?? []).filter(match);
-  const quizzes = (quizPracticals ?? []).filter((q) => !filter || `${q.title} ${q.course_name ?? ""} ${(q.practical_questions ?? []).map((p) => p.title).join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
+  // Teachers grade quiz practicals in Grading; the student list (with its Start) isn't theirs (T6).
+  const quizzes = (staff === true ? [] : (quizPracticals ?? [])).filter((q) => !filter || `${q.title} ${q.course_name ?? ""} ${(q.practical_questions ?? []).map((p) => p.title).join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
   const practicalCount = quizzes.reduce((n, q) => n + (q.practical_questions?.length ?? 0), 0);
   // A failed check is never "nothing to do": Task Mentor just couldn't say.
   const nothing = !error && student !== null && student.length === 0 && teach.length === 0 && practicalCount === 0;

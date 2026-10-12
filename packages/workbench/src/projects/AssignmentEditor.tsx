@@ -1,11 +1,11 @@
 import { useActivity } from "../state/activity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { executeCommand } from "../commands/registry";
-import { useWorkbench, type EditorInput } from "../state/store";
+import { openContextMenu, useWorkbench, type EditorInput } from "../state/store";
 import { openExternalUrl } from "../terminal/browser";
 import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
 import { taskMentorHtml } from "../widgets/richHtml";
-import { Codicon, FileIcon } from "../widgets/icons";
+import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
 import { api, autoSaveMode, compareConflict, recheck, useProjects } from "./service";
 import { changeCount } from "./plan";
@@ -19,7 +19,7 @@ import { QuizPracticalBrief } from "./QuizPracticalBrief";
 import { ConflictList } from "./ConflictList";
 import { STATE_LABEL } from "./AssignmentsView";
 import { openInTaskMentor } from "./taskMentorLinks";
-import { keyOf, openGrading } from "../grading/service";
+import { keyOf, loadRoster, openGrading, progressOf, useGrading } from "../grading/service";
 
 type Input = Extract<EditorInput, { kind: "assignment" }>;
 
@@ -213,6 +213,12 @@ function AssignmentBrief({ input }: { input: Input }) {
   const detail = useAssignments((s) => s.details[id]);
   const busy = useAssignments((s) => s.busy[id]);
   const teaching = useAssignments((s) => !!s.teaching?.some((a) => a.id === id));
+  // Teachers: one source for every number (guided plan I, T1) — the grading roster.
+  const gradeKey = keyOf("assignment", id, null);
+  const roster = useGrading((s) => (teaching ? s.rosters[gradeKey] : undefined));
+  useEffect(() => {
+    if (teaching && !roster) void loadRoster(gradeKey, { quiet: true });
+  }, [teaching, roster, gradeKey]);
   const sync = useProjects((s) => s.sync);
   // Saving starts with a scan of the folder: "Saving…" from the click (a hook: before the early return).
   const savingNow = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
@@ -251,6 +257,7 @@ function AssignmentBrief({ input }: { input: Input }) {
   // Another assignment is open in this window: the brief says so before Continue switches.
   const otherWork = !here && current?.assignment && current.assignment.id !== id ? current.assignment.title : null;
   const criteria = normalizeRubric(detail.rubric);
+  const progress = teaching ? progressOf(roster) : null;
   const graded = !teaching && my?.state === "graded" ? rubricResults(criteria, my) : null;
   // One status for the whole page (W4): header chip, card and button all come from `view`.
   // Teachers have no status of their own here (their page lists the students').
@@ -478,22 +485,42 @@ function AssignmentBrief({ input }: { input: Input }) {
       {teaching && (
         <>
           <div className="tm-assignment-actions">
-            <button type="button" className="tm-button" onClick={() => void publishAsStarter()}>
-              <Codicon name="file-symlink-directory" /> Use Open Project as Starter…
-            </button>
-            <button type="button" className="tm-button tm-button--secondary" onClick={() => openGrading(keyOf("assignment", id, null))} data-testid="assignment-grade">
-              <Codicon name="tasklist" /> Grade Submissions
+            {/* The teacher's one main button: what waits to be graded (T2). */}
+            <button type="button" className="tm-button" onClick={() => openGrading(gradeKey)} data-testid="assignment-grade">
+              <Codicon name="tasklist" /> {progress ? (progress.toGrade ? `Grade (${progress.toGrade})` : progress.submitted ? "Review Grades" : "Open Grading") : "Grade"}
             </button>
             <button type="button" className="tm-button tm-button--secondary" onClick={() => openInTaskMentor({ kind: "assignment", id: id })}>
               <Codicon name="link-external" /> Open in Task Mentor
             </button>
+            <ActionButton
+              icon="ellipsis"
+              label="More Actions..."
+              data-testid="assignment-teacher-more"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                openContextMenu(r.left, r.bottom, [{ kind: "item", label: "Use Open Project as Starter…", run: () => void publishAsStarter() }]);
+              }}
+            />
           </div>
-          {detail.teaching && (
-            <div className="tm-assignment-stats">
-              {(["students", "started", "submitted", "graded"] as const).map((k) => (
-                <div key={k} className="tm-assignment-stat">
-                  <b>{detail.teaching![k]}</b>
-                  <span>{k[0].toUpperCase() + k.slice(1)}</span>
+          {(progress || detail.teaching) && (
+            <div className="tm-assignment-stats" data-testid="assignment-teacher-stats">
+              {(progress
+                ? [
+                    ["Students", progress.total],
+                    ["In progress", progress.inProgress],
+                    ["To grade", progress.toGrade],
+                    ["Graded", progress.graded],
+                  ]
+                : [
+                    ["Students", detail.teaching!.students],
+                    ["Started", detail.teaching!.started],
+                    ["Submitted", detail.teaching!.submitted],
+                    ["Graded", detail.teaching!.graded],
+                  ]
+              ).map(([label, n]) => (
+                <div key={label} className="tm-assignment-stat">
+                  <b>{n}</b>
+                  <span>{label}</span>
                 </div>
               ))}
             </div>
