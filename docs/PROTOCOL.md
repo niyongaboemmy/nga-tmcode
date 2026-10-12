@@ -123,6 +123,7 @@ hmac_0     = ""   (the chain is per session, across questions)
 | `GET /v1/catalog` | The Runtime Catalog (`@nga/runtimes`) filtered to the kinds this runner can run |
 | `POST /v1/detect` | `{ files: [{ path, content? }], language? }` → ranked kinds with entry files |
 | `POST /v1/run` | Synchronous run. Two request shapes: a **language profile** (§5.1, unchanged) or a **catalog project** (§5.2) |
+| `/v1/sessions…` | Interactive runs with live stdin/stdout (§5.6) |
 
 Errors: HTTP status + `{ "error": "Human text", "code": "..." }` with `code` one of `INVALID_REQUEST` (400), `NOT_FOUND` (404), `KIND_UNSUPPORTED` (409: unknown kind, a tier this runner doesn't run, or a missing run/test step), `RUNTIME_UNAVAILABLE` (503: the kind's toolchain isn't installed), `BUSY` (503 + `Retry-After`; queue full), `INTERNAL` (500). Older clients that only read `error` keep working.
 
@@ -227,12 +228,42 @@ Response:
 ```
 Content is optional; it improves `contains` rules (frameworks) and entry detection (`main` declarations).
 
-`GET /v1/health` → `{ ok, sandbox, languages: { "<profile>": version|null }, catalog: "2026.10.1", runtimes: { "<runtime>": version|null }, caches: { "<id>": bool }, queue: { running, waiting, concurrency } }`.
+`GET /v1/health` → `{ ok, sandbox, features: ["run", "projects", "catalog", "detect", "checkers", "sessions"], languages: { "<profile>": version|null }, catalog: "2026.10.1", runtimes: { "<runtime>": version|null }, caches: { "<id>": bool }, queue: { running, waiting, concurrency }, sessions: { running, max } }`.
 
 ### 5.5 Toolchains and offline caches (runner configuration)
 
 - `JUDGE_TOOLCHAINS` (JSON, optional): `{ "<runtime id>": { "<tool>": "/abs/path" }, "*": { "<tool>": "/abs/path" } }` overrides the catalog's tool paths. Resolution: override → catalog path → `command -v <tool>` (disable with `JUDGE_TOOL_LOOKUP=0`). Tool folders outside `/usr` are bound read-only into boxes and put on `PATH`.
 - `JUDGE_CACHES` (JSON): `{ "<cache id>": "/host/folder" }`. A non-empty folder is mounted read-only at `/caches/<id>` in the boxes of kinds that list that cache (isolate `--dir=/caches/<id>=<host>`; read-only is isolate's default). Boxes have no network: a dependency missing from the layers fails the step offline and becomes `package-not-available`. Layers: `m2-school` (Maven tail repo), `gradle-school` (`GRADLE_RO_DEP_CACHE`), `npm-school` (npm cache), `wheels-school` + `site-packages-school` (Python), `cargo-registry-school` (`cargo vendor` folder; the runner writes a `.cargo/config.toml` pointing crates-io at it), `go-mod-school` (module cache; `GOPROXY=file:///caches/go-mod-school/cache/download,off`). `services/judge/deploy/build-caches.sh` fills them from the starters and `deploy/allowlists/`.
+
+### 5.6 Sessions (interactive runs)
+
+A program run with live pipes (no PTY): output streams as server-sent events while stdin arrives over HTTP. Same bearer auth as `/v1/run`. `GET /v1/health` lists `"sessions"` in `features` when the runner supports them (Task Mentor shows the live terminal only then).
+
+| Method / path | Body | Answer |
+|---|---|---|
+| `POST /v1/sessions` | `{ language?, kind?, files: [{ path, content }], entry?, limits? }` (the same rules as `/v1/run`: a profile `language` such as `python-3`, or a catalog `kind`, or files to detect one from) | `201 { "id": "<uuid>" }` |
+| `GET /v1/sessions/:id/events` | — | `200 text/event-stream` (below) |
+| `POST /v1/sessions/:id/stdin` | `{ "data": "Ada\n" }` (≤ 64 KB per call) | `204` |
+| `POST /v1/sessions/:id/eof` | — | `204` (closes the program's stdin) |
+| `POST /v1/sessions/:id/signal` | `{ "name": "SIGINT" \| "SIGTERM" }` | `204` |
+| `DELETE /v1/sessions/:id` | — | `204` (kills the program, frees the box) |
+
+Events, each written as `event: <name>\ndata: <json>\n\n` (plus `: ping` comments every 20 s):
+
+| Event | Data |
+|---|---|
+| `stage` | `{ "name": "build" \| "run" }` (`build` only when the language/kind builds) |
+| `stdout` / `stderr` | `{ "data": "text" }` (UTF-8, chunked as the program writes) |
+| `exit` | `{ "code": 0, "signal": null, "verdict": "ok", "time_ms": 412, "memory_kb": 7400 }`: always the last event; the stream then ends |
+| `error` | `{ "message": "..." }`: the judge stopped the program (output cap, idle, wall clock) or could not start it; an `exit` follows |
+
+- **Verdicts** in `exit`: `ok` (exit code 0), `runtime-error` (non-zero exit, or a signal the client sent), `compile-error` / `package-not-available` (the build failed; its output came as `stderr`, `code` is the build tool's), `time-limit` (wall clock or idle), `memory-limit`, `output-limit`, `internal-error`.
+- **Limits:** the batch run's limits (memory, processes, CPU time; `limits` as in `/v1/run`), a **10-minute wall clock**, a **2-minute idle timeout** (no stdin and no output; counted from the run stage), and **1 MB of stdout+stderr**, after which an `error` event is sent and the program is killed.
+- **Concurrency:** at most `JUDGE_SESSIONS` (default 4) at a time; more → `429 { code: "BUSY" }`. Sessions use their own isolate boxes (from `JUDGE_SESSION_FIRST_BOX`, default after the batch range) and don't take batch slots.
+- **Clean-up:** the box is removed when the program exits, on `DELETE`, or when the last event stream disconnects before the `exit` event. A finished session's events stay readable for 60 s (`GET .../events` replays them), then the id answers 404.
+- stdin sent before the program starts (during the build) is queued. `stdin`/`eof`/`signal` after the end → `409 { code: "SESSION_ENDED" }`; an unknown id → `404`.
+- **Signals under isolate:** isolate does not forward signals to the program; `SIGINT`/`SIGTERM` end the box (the program stops; `exit.signal` is the name sent). A program's own Ctrl-C handler only runs with the local development sandbox.
+- Programs see pipes, not a terminal: Python runs with `-u`, compiled profiles run under `stdbuf -oL`, catalog run steps already use `stdbuf` where needed; other programs should flush prompts.
 
 ## 6. Task Mentor v1 implementation notes (branch `feat/tmcode-phase3`)
 

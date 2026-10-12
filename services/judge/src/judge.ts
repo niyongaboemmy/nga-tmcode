@@ -200,7 +200,7 @@ function failedCompile(language: string, kind: RunResponse["sandbox"], compile: 
  * only; nothing is executed here). Type errors are not reported, as with
  * Node's own type stripping; syntax errors fail the "compile".
  */
-async function transpileTypeScript(files: SubmissionFile[]) {
+export async function transpileTypeScript(files: SubmissionFile[]) {
   const started = Date.now();
   const { transform } = await import("esbuild");
   const out: SubmissionFile[] = [];

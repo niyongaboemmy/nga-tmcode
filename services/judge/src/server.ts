@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { languageVersions, RequestError, resolvePrograms } from "./judge.ts";
 import { DEFAULT_BUDGET_S } from "./project.ts";
 import { run, type JudgeEnv } from "./run.ts";
+import { SessionManager } from "./sessions.ts";
 import { IsolateSandbox, isolateAvailable, LocalSandbox, type Sandbox } from "./sandbox.ts";
 import { catalogView, detectView, probeVersions, resolveToolchains, type DetectFile } from "./toolchains.ts";
 
@@ -26,8 +27,17 @@ const PORT = Number(env.JUDGE_PORT ?? 5010);
 const HOST = env.JUDGE_HOST ?? "127.0.0.1";
 const CONCURRENCY = Math.max(1, Number(env.JUDGE_CONCURRENCY ?? 2));
 const QUEUE = Number(env.JUDGE_QUEUE ?? 100);
+const SESSIONS = Math.max(1, Number(env.JUDGE_SESSIONS ?? 4));
+/** What this runner supports; Task Mentor shows the live terminal only when "sessions" is listed. */
+export const FEATURES = ["run", "projects", "catalog", "detect", "checkers", "sessions"];
 const MAX_BODY = 2 * 1024 * 1024;
 const BUDGET_S = Math.min(Math.max(Number(env.JUDGE_RUN_BUDGET_S ?? DEFAULT_BUDGET_S), 10), 600);
+
+/** Interactive sessions get their own box range (after the batch boxes). */
+export async function createSessionSandbox(batch: Sandbox): Promise<Sandbox> {
+  if (batch.kind === "none") return new LocalSandbox();
+  return new IsolateSandbox(env.ISOLATE_BIN ?? "isolate", SESSIONS, Number(env.JUDGE_SESSION_FIRST_BOX ?? Number(env.JUDGE_FIRST_BOX ?? 0) + Math.max(CONCURRENCY, 16)));
+}
 
 export async function createSandbox(): Promise<Sandbox> {
   const mode = env.JUDGE_SANDBOX ?? "isolate";
@@ -51,6 +61,11 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
   const text = JSON.stringify(body);
   res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(text), ...headers });
   res.end(text);
+}
+
+function send204(res: ServerResponse) {
+  res.writeHead(204);
+  res.end();
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -77,6 +92,11 @@ export async function start() {
   probeVersions(toolchains);
   const catalog = catalogView(toolchains);
   const judgeEnv: JudgeEnv = { programs, toolchains, budgetS: BUDGET_S };
+  const sessions = new SessionManager(await createSessionSandbox(sandbox), programs, toolchains, {
+    max: SESSIONS,
+    wallMs: Number(env.JUDGE_SESSION_WALL_S ?? 600) * 1000,
+    idleMs: Number(env.JUDGE_SESSION_IDLE_S ?? 120) * 1000,
+  });
   let running = 0;
   let waiting = 0;
   const slots: (() => void)[] = [];
@@ -104,13 +124,38 @@ export async function start() {
           ok: true,
           sandbox: sandbox.kind,
           languages: versions,
+          features: FEATURES,
           catalog: toolchains.version,
           runtimes: Object.fromEntries(catalog.runtimes.map((r) => [r.id, r.healthy ? r.version ?? "unknown" : null])),
           caches: catalog.caches,
           queue: { running, waiting, concurrency: CONCURRENCY },
+          sessions: { running: sessions.running, max: sessions.max },
         });
       }
       if (req.method === "GET" && req.url === "/v1/catalog") return send(res, 200, catalog);
+      const sm = /^\/v1\/sessions(?:\/([\w-]{1,64})(?:\/(events|stdin|eof|signal))?)?\/?$/.exec((req.url ?? "").split("?")[0]);
+      if (sm) {
+        const [, id, action] = sm;
+        if (!id && req.method === "POST") return send(res, 201, sessions.create(await readJson(req)));
+        if (id && !action && req.method === "DELETE") {
+          await sessions.remove(id);
+          return send204(res);
+        }
+        if (id && action === "events" && req.method === "GET") return sessions.subscribe(id, res);
+        if (id && action === "stdin" && req.method === "POST") {
+          sessions.stdin(id, await readJson(req));
+          return send204(res);
+        }
+        if (id && action === "eof" && req.method === "POST") {
+          sessions.eof(id);
+          return send204(res);
+        }
+        if (id && action === "signal" && req.method === "POST") {
+          sessions.signal(id, await readJson(req));
+          return send204(res);
+        }
+        return send(res, 405, { error: "method not allowed", code: "METHOD_NOT_ALLOWED" });
+      }
       if (req.method === "POST" && req.url === "/v1/detect") {
         const body = (await readJson(req)) as { files?: DetectFile[]; language?: string };
         if (!Array.isArray(body?.files) || body.files.some((f) => !f || typeof f.path !== "string")) throw new RequestError("files must be a list of { path, content? }.");
@@ -141,6 +186,7 @@ export async function start() {
   });
   // Project runs: up to JUDGE_RUN_BUDGET_S of steps, plus queueing and box setup.
   server.requestTimeout = (BUDGET_S + 60) * 1000;
+  server.on("close", () => void sessions.closeAll());
   await new Promise<void>((r) => server.listen(PORT, HOST, r));
   console.log(`[tm-judge] listening on ${HOST}:${PORT}; sandbox=${sandbox.kind}; concurrency=${CONCURRENCY}; languages=${JSON.stringify(versions)}`);
   console.log(`[tm-judge] catalog ${toolchains.version}: ${catalog.kinds.length} kinds runnable (${catalog.kinds.map((k) => k.id).join(", ")}); caches ${JSON.stringify(catalog.caches)}`);

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, normalize } from "node:path";
@@ -27,6 +27,52 @@ export interface ExecOptions {
   env?: Record<string, string>;
   /** Working folder relative to the box root (default: the root, /box). */
   cwd?: string;
+}
+
+export interface SpawnOptions {
+  limits: Limits;
+  env?: Record<string, string>;
+  cwd?: string;
+}
+
+export type SessionSignal = "SIGINT" | "SIGTERM" | "SIGKILL";
+
+/** A running interactive program. `done` resolves with stdout/stderr empty (they were streamed). */
+export interface Proc {
+  write(data: string | Buffer): void;
+  end(): void;
+  kill(signal: SessionSignal): void;
+  onStdout(cb: (chunk: Buffer) => void): void;
+  onStderr(cb: (chunk: Buffer) => void): void;
+  done: Promise<ExecResult>;
+}
+
+/** Wires a child process's pipes into a Proc. */
+function procOf(child: ChildProcess, kill: (signal: SessionSignal) => void, finish: (code: number | null, signal: NodeJS.Signals | null) => Promise<ExecResult>): Proc {
+  child.stdin?.on("error", () => {});
+  const done = new Promise<ExecResult>((resolve) => {
+    let settled = false;
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      finish(code, signal).then(resolve);
+    });
+    child.on("error", (e) => {
+      if (settled) return;
+      settled = true;
+      resolve({ status: "internal", exitCode: null, stdout: "", stderr: String(e), timeMs: 0, memoryKb: null, message: String(e) });
+    });
+  });
+  return {
+    write: (d) => {
+      if (child.stdin && !child.stdin.destroyed && child.stdin.writable) child.stdin.write(d);
+    },
+    end: () => child.stdin?.end(),
+    kill,
+    onStdout: (cb) => child.stdout?.on("data", cb),
+    onStderr: (cb) => child.stderr?.on("data", cb),
+    done,
+  };
 }
 
 /** A host folder visible read-only inside the box at `inside` (cache layers: /caches/<id>). */
@@ -69,6 +115,8 @@ export interface Box {
   write(path: string, content: string | Buffer, mode?: number, mtimeMs?: number): Promise<void>;
   /** A relative symlink inside the box. */
   link(path: string, target: string): Promise<void>;
+  /** Starts a program with live pipes (interactive sessions); no PTY. */
+  spawn(argv: string[], opts: SpawnOptions): Proc;
   exec(argv: string[], opts: ExecOptions): Promise<ExecResult>;
   /** A box file's bytes, or null when it doesn't exist (reports). */
   read(path: string): Promise<Buffer | null>;
@@ -285,6 +333,33 @@ export class IsolateSandbox implements Sandbox {
     const give = () => this.give(id);
     let disposed = false;
 
+    const isolateArgs = (argv: string[], limits: Limits, env: Record<string, string>, cwd: string | undefined, redirect: boolean, meta: string) => {
+      // One value per variable (PATH may be the step's own).
+      const vars = { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/box", LANG: "C.UTF-8", ...env };
+      return [
+          "--cg",
+          `--box-id=${id}`,
+          `--meta=${meta}`,
+          `--time=${limits.cpuS}`,
+          `--wall-time=${limits.wallS}`,
+          "--extra-time=0.5",
+          `--cg-mem=${limits.memoryMb * 1024}`,
+          `--processes=${limits.processes}`,
+          `--fsize=${limits.fileKb ?? Math.max(limits.outputKb * 2, 1024)}`,
+          ...(redirect ? ["--stdin=.stdin", "--stdout=.stdout", "--stderr=.stderr"] : []),
+          ...Object.entries(vars).map(([k, v]) => `--env=${k}=${v}`),
+          // Read-only system config (the JVM reads /etc/java-*); the sandbox user can't read root-only files.
+          "--dir=/etc:noexec",
+          // Toolchains and cache layers: read-only (isolate's default for --dir).
+          ...topDirs([...dirs, ...extraMounts(argv[0])]).map((d) => `--dir=${d}`),
+          ...mounts.map((m) => `--dir=${m.inside}=${m.host}`),
+          ...(cwd && cwd !== "." ? [`--chdir=/box/${cwd}`] : []),
+          "--run",
+          "--",
+          ...argv,
+      ];
+    };
+
     return {
       write: (path, content, mode, mtimeMs) => writeInto(boxDir, path, content, mode, mtimeMs),
       link: (path, target) => linkInto(boxDir, path, target),
@@ -299,35 +374,37 @@ export class IsolateSandbox implements Sandbox {
         if (again.code !== 0) throw new Error(`isolate --init failed: ${again.stderr.trim()}`);
         boxDir = join(again.stdout.trim(), "box");
       },
+      spawn(argv, { limits, env = {}, cwd }) {
+        const started = Date.now();
+        const meta = `${metaFile}.session`;
+        const child = spawn(iso, isolateArgs(argv, limits, env, cwd, false, meta), { stdio: ["pipe", "pipe", "pipe"] });
+        // isolate ends the box on SIGINT/SIGTERM (it doesn't forward signals to the program).
+        const kill = (sig: SessionSignal) => {
+          try {
+            child.kill(sig === "SIGKILL" ? "SIGTERM" : sig);
+          } catch {
+            /* gone */
+          }
+        };
+        return procOf(child, kill, async (code) => {
+          const m = parseMeta(await readFile(meta, "utf8").catch(() => ""));
+          await rm(meta, { force: true });
+          const status = code === null && !m.status ? "internal" : statusFromMeta(m, false, limits);
+          return {
+            status,
+            exitCode: m.exitcode !== undefined ? Number(m.exitcode) : status === "ok" ? 0 : null,
+            stdout: "",
+            stderr: "",
+            timeMs: m.time ? Math.round(Number(m.time) * 1000) : Date.now() - started,
+            memoryKb: m["cg-mem"] ? Number(m["cg-mem"]) : m["max-rss"] ? Number(m["max-rss"]) : null,
+            message: m.message || undefined,
+          };
+        });
+      },
       async exec(argv, { stdin, limits, env = {}, cwd }) {
         await writeFile(join(boxDir, ".stdin"), stdin);
         await rm(metaFile, { force: true });
-        // One value per variable (PATH may be the step's own).
-        const vars = { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/box", LANG: "C.UTF-8", ...env };
-        const args = [
-          "--cg",
-          `--box-id=${id}`,
-          `--meta=${metaFile}`,
-          `--time=${limits.cpuS}`,
-          `--wall-time=${limits.wallS}`,
-          "--extra-time=0.5",
-          `--cg-mem=${limits.memoryMb * 1024}`,
-          `--processes=${limits.processes}`,
-          `--fsize=${limits.fileKb ?? Math.max(limits.outputKb * 2, 1024)}`,
-          "--stdin=.stdin",
-          "--stdout=.stdout",
-          "--stderr=.stderr",
-          ...Object.entries(vars).map(([k, v]) => `--env=${k}=${v}`),
-          // Read-only system config (the JVM reads /etc/java-*); the sandbox user can't read root-only files.
-          "--dir=/etc:noexec",
-          // Toolchains and cache layers: read-only (isolate's default for --dir).
-          ...topDirs([...dirs, ...extraMounts(argv[0])]).map((d) => `--dir=${d}`),
-          ...mounts.map((m) => `--dir=${m.inside}=${m.host}`),
-          ...(cwd && cwd !== "." ? [`--chdir=/box/${cwd}`] : []),
-          "--run",
-          "--",
-          ...argv,
-        ];
+        const args = isolateArgs(argv, limits, env, cwd, true, metaFile);
         const started = Date.now();
         const r = await run(iso, args, { timeoutMs: (limits.wallS + 10) * 1000 });
         const meta = parseMeta(await readFile(metaFile, "utf8").catch(() => ""));
@@ -389,6 +466,37 @@ export class LocalSandbox implements Sandbox {
         await removeTree(tmp);
         await mkdir(dir, { recursive: true });
         await mkdir(tmp, { recursive: true });
+      },
+      spawn(argv, { limits, env = {}, cwd }) {
+        const started = Date.now();
+        const clean = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, LANG: "C.UTF-8", NO_COLOR: "1" };
+        const vars: Record<string, string> = { ...clean };
+        for (const [k, v] of Object.entries(env)) vars[k] = k === "PATH" ? v : visible(v);
+        const child = spawn(argv[0], argv.slice(1).map(visible), { cwd: cwd && cwd !== "." ? safeJoin(dir, cwd) : dir, env: vars, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+        let timedOut = false;
+        const kill = (sig: SessionSignal) => {
+          try {
+            process.kill(-child.pid!, sig);
+          } catch {
+            child.kill(sig);
+          }
+        };
+        const timer = setTimeout(() => {
+          timedOut = true;
+          kill("SIGKILL");
+        }, limits.wallS * 1000);
+        return procOf(child, kill, async (code, signal) => {
+          clearTimeout(timer);
+          return {
+            status: timedOut ? "timeout" : signal ? "signal" : code === 0 ? "ok" : "runtime-error",
+            exitCode: code,
+            stdout: "",
+            stderr: "",
+            timeMs: Date.now() - started,
+            memoryKb: null,
+            message: signal ? `Killed by ${signal}` : undefined,
+          };
+        });
       },
       exec(argv, { stdin, limits, env = {}, cwd }) {
         return new Promise((resolve) => {

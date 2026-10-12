@@ -27,7 +27,7 @@ import {
   type TestResult,
   type Verdict,
 } from "./judge.ts";
-import { javaMainClass } from "./languages.ts";
+import { javaMainClass, languageById } from "./languages.ts";
 import { missingPackage, missingPackageMessage, type MissingPackage } from "./packages.ts";
 import { extraMounts, restoreSnapshot, type Box, type ExecResult, type Limits, type Mount, type Sandbox } from "./sandbox.ts";
 import { entryStem, renderArgs, renderToken, TEST_FILTER, testFilterArgs, type TokenContext } from "./tokens.ts";
@@ -98,6 +98,11 @@ export interface ProjectResponse {
   tests: TestResult[];
   unit: UnitResult | null;
   error?: { code: "PACKAGE_NOT_AVAILABLE"; manager: string; package: string | null; message: string };
+}
+
+/** A TMCode profile request (`language: "python-3"`, no kind). */
+export function isProfileRequest(r: { kind?: unknown; language?: unknown }) {
+  return (r.kind === undefined || r.kind === null) && typeof r.language === "string" && !!languageById(r.language);
 }
 
 /** TMCode profile ids (legacy `language`) → their single-file kinds. */
@@ -183,7 +188,7 @@ function kindLimits(kind: KindDef, step: StepName): KindLimits {
   return { ...fallback, ...(kind.limits[step] ?? {}) };
 }
 
-function buildLimits(kind: KindDef, step: StepName): Limits {
+export function buildLimits(kind: KindDef, step: StepName): Limits {
   const l = kindLimits(kind, step);
   return {
     cpuS: l.cpu_s!,
@@ -252,7 +257,7 @@ export function cacheFiles(kind: KindDef, mounts: Mount[], box: Pick<Box, "visib
   return out;
 }
 
-function mainClassOf(entry: string | null, files: SubmissionFile[]) {
+export function mainClassOf(entry: string | null, files: SubmissionFile[]) {
   if (!entry) return "";
   const src = files.find((f) => f.path === entry)?.content ?? "";
   // Java: comments/annotations-aware (judge); Kotlin: MainKt naming (catalog).
@@ -263,11 +268,11 @@ const ok = (r: ExecResult) => r.status === "ok" && r.exitCode === 0;
 
 /** The JVM announces JAVA_TOOL_OPTIONS on every start; that line is ours, not the program's. */
 const JVM_NOTICE = /^Picked up (?:JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS): .*(?:\r?\n|$)/gm;
-function quiet(r: ExecResult): ExecResult {
-  return JVM_NOTICE.test(r.stderr) ? { ...r, stderr: r.stderr.replace(JVM_NOTICE, "") } : r;
+export function quiet(r: ExecResult): ExecResult {
+  return r.stderr.includes("Picked up ") ? { ...r, stderr: r.stderr.replace(JVM_NOTICE, "") } : r;
 }
 
-function stepFailureText(name: StepName, r: ExecResult, limits: Limits) {
+export function stepFailureText(name: StepName, r: ExecResult, limits: Limits) {
   const out = `${r.stdout}${r.stdout && r.stderr ? "\n" : ""}${r.stderr}`.trim();
   const why =
     r.status === "timeout"
