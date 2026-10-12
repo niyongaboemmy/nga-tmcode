@@ -429,6 +429,8 @@ export function AssignmentsView() {
   const rows = (list: AssignmentSummary[], empty: string, t?: boolean) =>
     list.length === 0 ? <p className="tm-muted tm-projects-hint">{empty}</p> : list.map((a) => <AssignmentRow key={a.id} a={a} teaching={t} urgent={!t && a.id === urgentId} />);
   const teach = (teaching ?? []).filter(match);
+  // One course only: its name on every row is noise (U12).
+  const oneCourse = staff !== true && new Set([...(student ?? []).map((a) => a.course_name), ...(quizPracticals ?? []).map((q) => q.course_name)].filter(Boolean)).size <= 1;
   // Teachers grade quiz practicals in Grading; the student list (with its Start) isn't theirs (T6).
   const quizzes = (staff === true ? [] : (quizPracticals ?? [])).filter((q) => !filter || `${q.title} ${q.course_name ?? ""} ${(q.practical_questions ?? []).map((p) => p.title).join(" ")}`.toLowerCase().includes(filter.toLowerCase()));
   const practicalCount = quizzes.reduce((n, q) => n + (q.practical_questions?.length ?? 0), 0);
@@ -438,7 +440,7 @@ export function AssignmentsView() {
   const thisFolder = staff !== true && isAssessmentWorkspace(current, !!binding);
 
   return (
-    <div className="tm-projects-view" data-testid="assignments-view" ref={root} onKeyDown={nav.onKeyDown} onFocus={nav.onFocus}>
+    <div className={`tm-projects-view ${oneCourse ? "is-one-course" : ""}`} data-testid="assignments-view" ref={root} onKeyDown={nav.onKeyDown} onFocus={nav.onFocus}>
       {ended && <SessionEndedBanner />}
       {thisFolder && (
         <Section title="This Folder" testId="assignments-this-folder">

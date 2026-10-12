@@ -115,6 +115,8 @@ export interface Settings {
    * Exams never show Home.
    */
   "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
+  /** Students: four views (Assignments, Files, Search, Run) and a short status bar; the rest under More. */
+  "workbench.simpleLayout": boolean;
   /** Grading: while a student's submission is open, the side bar and the student list fold away (a switcher stays). */
   "grading.focusWhileReviewing": boolean;
   /** Source Control in a student's assignment workspace (off: the view and its badge are hidden there). */
@@ -179,6 +181,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "workbench.editor.languageDetection": true,
   "markdown.editor.drop.enabled": "smart",
   "workbench.startupEditor": "home",
+  "workbench.simpleLayout": true,
   "grading.focusWhileReviewing": true,
   "scm.showInAssignments": false,
 };
@@ -508,6 +511,12 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "homeIfNoFolder", label: "Home, only when no folder is open" },
           { value: "none", label: "none" },
         ],
+      },
+      {
+        key: "workbench.simpleLayout",
+        label: "Simple Layout (students)",
+        description: "Show the four views a student needs (Assignments, Files, Search, Run) and a short status bar. Source Control, Testing and Extensions stay one click away under More. Teachers always see everything.",
+        type: "boolean",
       },
       {
         key: "update.mode",

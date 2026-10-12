@@ -19,6 +19,7 @@ import type { SyncState } from "../projects/types";
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
+import { useIsTeacher, useRoleChecking } from "../state/role";
 // ── Run hub ──
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
@@ -214,17 +215,23 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const debugging = useDebug((s) => s.phase !== "inactive");
   const fileInfo = useActiveFileInfo();
   const screenReader = useWorkbench((s) => s.settings["editor.accessibilitySupport"] === "on");
+  // The student layout (guided plan J, U9): only what a student acts on; Settings › Simple Layout shows the rest.
+  const simplePref = useWorkbench((s) => s.settings["workbench.simpleLayout"] !== false);
+  const teacher = useIsTeacher();
+  const checking = useRoleChecking();
+  const signedIn = useProjects((s) => !!s.account?.signed_in);
+  const simple = simplePref && mode === "practice" && signedIn && !teacher && !checking;
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
   return (
-    <footer className={`tm-statusbar is-${mode} ${debugging ? "is-debugging" : ""}`} role="status" aria-label="Status Bar">
+    <footer className={`tm-statusbar is-${mode} ${debugging ? "is-debugging" : ""} ${simple ? "is-simple" : ""}`} role="status" aria-label="Status Bar" data-simple={simple ? "true" : undefined}>
       <div className="tm-status-left">
         <Item className="tm-status-mode" title={MODE_TITLE[mode]}>
           <Codicon name={MODE_ICON[mode]} />
           <span>{MODE_LABEL[mode]}</span>
         </Item>
-        <GitItems />
+        {!simple && <GitItems />}
         <ProjectStatus />
         <SyncStatus />
         <BusyItem />
@@ -248,16 +255,20 @@ export function StatusBar({ chord }: { chord: string | null }) {
               Ln {cursor.line}, Col {cursor.column}
               {cursor.selected > 0 && ` (${cursor.selected} selected)`}
             </Item>
-            <Item className="tm-prio-low tm-status-indent" title="Select Indentation" onClick={() => void pickIndentation()}>
-              {fileInfo.path ? (fileInfo.insertSpaces ? "Spaces" : "Tab Size") : spaces ? "Spaces" : "Tab Size"}: {fileInfo.path ? fileInfo.tabSize : tabSize}
-            </Item>
-            <Item className={`tm-prio-low tm-status-encoding ${fileInfo.encoding && fileInfo.encoding !== "utf8" ? "is-non-default" : ""}`} title="Select Encoding" onClick={() => void pickEncoding()}>
-              {encodingLabel(fileInfo.encoding)}
-            </Item>
-            <Item className="tm-prio-low tm-status-eol" title="Select End of Line Sequence" onClick={() => void pickEol()}>
-              {eol}
-            </Item>
-            <LanguageItem language={language} />
+            {!simple && (
+              <>
+                <Item className="tm-prio-low tm-status-indent" title="Select Indentation" onClick={() => void pickIndentation()}>
+                  {fileInfo.path ? (fileInfo.insertSpaces ? "Spaces" : "Tab Size") : spaces ? "Spaces" : "Tab Size"}: {fileInfo.path ? fileInfo.tabSize : tabSize}
+                </Item>
+                <Item className={`tm-prio-low tm-status-encoding ${fileInfo.encoding && fileInfo.encoding !== "utf8" ? "is-non-default" : ""}`} title="Select Encoding" onClick={() => void pickEncoding()}>
+                  {encodingLabel(fileInfo.encoding)}
+                </Item>
+                <Item className="tm-prio-low tm-status-eol" title="Select End of Line Sequence" onClick={() => void pickEol()}>
+                  {eol}
+                </Item>
+                <LanguageItem language={language} />
+              </>
+            )}
           </>
         )}
         {screenReader && (
@@ -266,13 +277,13 @@ export function StatusBar({ chord }: { chord: string | null }) {
           </Item>
         )}
         {/* Assignment work has one saving story (the brief's line); the disk Auto Save item would be a second one. */}
-        {!assignmentWork && (
+        {!assignmentWork && !simple && (
           <Item className="tm-prio-low" title={autoSave === "off" ? "Auto Save is off" : "Auto Save is on"} onClick={() => executeCommand("workbench.action.openSettings")}>
             <Codicon name={autoSave === "off" ? "circle-slash" : "check-all"} />
             {autoSave === "off" ? "Auto Save Off" : "Auto Save"}
           </Item>
         )}
-        <ExtensionStatusItems side="right" />
+        {!simple && <ExtensionStatusItems side="right" />}
         <UpdateItem />
         <Item
           className="tm-status-bell"

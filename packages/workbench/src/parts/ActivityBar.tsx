@@ -1,6 +1,6 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
 import { msg } from "../messages/catalog";
-import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
+import { getPlatform, openContextMenu, showView, updateSetting, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
 import { useUpdate } from "../update/updateService";
@@ -11,7 +11,7 @@ import { debugAllowed } from "../debug/debugService";
 import { useProjects, signIn, refreshProjects } from "../projects/service";
 import { useAssignments } from "../projects/assignments";
 import { isToDo, studentTasks, isAssessmentWorkspace, signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { gradingQueue, useGrading } from "../grading/service";
 import { isTeacherRole, useIsTeacher, useRole, useRoleChecking } from "../state/role";
 import type { AccountStatus } from "../platform/types";
@@ -19,6 +19,9 @@ import type { AccountStatus } from "../platform/types";
 import { useViews, type ViewContainer } from "../exthost/views/model";
 import { useWebviews } from "../exthost/views/webviews";
 import { ExtIcon } from "../exthost/views/ExtIcon";
+
+/** The student layout's views (guided plan J): where the work is, the files, search, and Run. */
+const SIMPLE_IDS: ViewId[] = ["assignments", "explorer", "search", "debug"];
 
 // The exam task: a checklist (Assignments has the mortar board).
 const TASK_VIEW = { id: "task" as ViewId, icon: "checklist", label: "Task", command: "workbench.view.task" };
@@ -78,14 +81,23 @@ export function ActivityBar() {
   // L7 (0.17): a student's assignment workspace saves to Task Mentor; git is noise there unless asked for.
   const scmInAssignments = useWorkbench((s) => s.settings["scm.showInAssignments"] === true);
   const assignmentWs = useProjects((s) => !!s.binding && isAssessmentWorkspace(s.current, !!s.binding)) && !teacher;
-  const views = base.filter((v) => (v.id !== "scm" || (gitAllowed && (!assignmentWs || scmInAssignments))) && (v.id !== "debug" || debugAllowed()));
+  // A review folder is the student's submitted work: its git changes are noise for the teacher (T10).
+  const reviewing = useGrading((s) => !!s.review);
+  const allViews = base.filter((v) => (v.id !== "scm" || (gitAllowed && (!assignmentWs || scmInAssignments) && !reviewing)) && (v.id !== "debug" || debugAllowed()));
+  // The student layout (guided plan J, U10): Assignments, Files, Search, Run; the rest under More.
+  const simplePref = useWorkbench((s) => s.settings["workbench.simpleLayout"] !== false);
+  const simple = simplePref && practice && !inExam && hasAccount && !!account?.signed_in && !isTeacher && !checking;
+  const views = simple ? allViews.filter((v) => SIMPLE_IDS.includes(v.id) || (sidebarVisible && activeView === v.id)) : allViews;
+  const hidden = simple ? allViews.filter((v) => !views.includes(v)) : [];
   // Extensions never run in exams, so their containers only exist in practice mode.
-  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
+  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam && !simple);
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
     const kb = cmd ? formatKeybinding(keybindingFor(cmd, os), os) : "";
-    return kb ? `${v.label} (${kb})` : v.label;
+    // Plain words in the student layout: "Files", "Run".
+    const name = simple ? (v.id === "explorer" ? "Files" : v.id === "debug" ? "Run" : v.label) : v.label;
+    return kb ? `${name} (${kb})` : name;
   };
 
   return (
@@ -130,6 +142,27 @@ export function ActivityBar() {
         {extContainers.map((c) => (
           <ExtContainerButton key={c.key} container={c} active={sidebarVisible && activeView === c.key} />
         ))}
+        {simple && (
+          <button
+            type="button"
+            className="tm-activity"
+            title="More Views"
+            aria-label="More Views"
+            aria-haspopup="menu"
+            data-testid="activity-more"
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              openContextMenu(r.right + 4, r.top, [
+                ...hidden.map((v) => ({ kind: "item" as const, label: v.label, run: () => showView(v.id) })),
+                ...(practice && !inExam ? [{ kind: "item" as const, label: "Extensions", run: () => executeCommand("workbench.view.extensions") }] : []),
+                { kind: "separator" as const },
+                { kind: "item" as const, label: "Show All Views in This Bar", run: () => updateSetting("workbench.simpleLayout", false) },
+              ]);
+            }}
+          >
+            <Codicon name="ellipsis" />
+          </button>
+        )}
       </div>
       {practice && !inExam && hasAccount && account?.signed_in && !checking && <CoachMark teacher={isTeacher} />}
       <div className="tm-activitybar-bottom">
@@ -258,9 +291,24 @@ function CoachMark({ teacher }: { teacher: boolean }) {
       window.removeEventListener("keydown", done, true);
     };
   }, [show, key]);
+  // Beside its icon, over the editor (U10): never over the side bar's filter or summary.
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!show) return;
+    const measure = () => {
+      const icon = document.querySelector<HTMLElement>(`.tm-activitybar [aria-label^="${teacher ? "Grading" : "Assignments"}"]`);
+      const side = document.querySelector<HTMLElement>(".tm-sidebar");
+      const bar = document.querySelector<HTMLElement>(".tm-activitybar");
+      const left = Math.max(side && side.offsetWidth > 0 ? side.getBoundingClientRect().right : 0, bar?.getBoundingClientRect().right ?? 0) + 8;
+      setPlace({ top: icon ? icon.getBoundingClientRect().top + 2 : 40, left });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [show, teacher]);
   if (!show) return null;
   return (
-    <div className="tm-coach" role="status" data-testid="coach-mark">
+    <div className="tm-coach" role="status" data-testid="coach-mark" style={place ? { top: place.top, left: place.left } : undefined}>
       <b>{teacher ? "Grading lives here" : "Your assignments live here"}</b>
       <span>{teacher ? "What your students handed in, ready to grade." : "Start, continue and hand in your work from this icon."}</span>
     </div>
