@@ -1,4 +1,5 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
+import { msg } from "../messages/catalog";
 import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
@@ -9,8 +10,8 @@ import { changeCount } from "../scm/model";
 import { debugAllowed } from "../debug/debugService";
 import { useProjects, signIn, refreshProjects } from "../projects/service";
 import { useAssignments } from "../projects/assignments";
-import { signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
-import { useEffect } from "react";
+import { isAssessmentWorkspace, signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
+import { useEffect, useState } from "react";
 import { useGrading, progressOf } from "../grading/service";
 import { isTeacherRole, useIsTeacher, useRole, useRoleChecking } from "../state/role";
 import type { AccountStatus } from "../platform/types";
@@ -67,9 +68,15 @@ export function ActivityBar() {
   const teacher = useIsTeacher();
   const checking = useRoleChecking();
   useEffect(() => wireStudentHome(), []);
-  const accountViews = teacher || grader ? [PROJECTS_VIEW, ASSIGNMENTS_VIEW, GRADING_VIEW] : checking ? [ASSIGNMENTS_VIEW] : [ASSIGNMENTS_VIEW, MY_PROJECTS_VIEW];
-  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...VIEWS, ...(hasAccount ? accountViews : []), EXTENSIONS_VIEW] : VIEWS;
-  const views = base.filter((v) => (v.id !== "scm" || gitAllowed) && (v.id !== "debug" || debugAllowed()));
+  // L10 (0.17): where the work is comes first: Grading, Assignments for teachers; Assignments for students.
+  const isTeacher = teacher || grader;
+  const lead = isTeacher ? [GRADING_VIEW, ASSIGNMENTS_VIEW] : [ASSIGNMENTS_VIEW];
+  const tail = isTeacher ? [PROJECTS_VIEW] : checking ? [] : [MY_PROJECTS_VIEW];
+  const base = inExam ? [TASK_VIEW, ...VIEWS] : practice ? [...(hasAccount ? lead : []), ...VIEWS, ...(hasAccount ? tail : []), EXTENSIONS_VIEW] : VIEWS;
+  // L7 (0.17): a student's assignment workspace saves to Task Mentor; git is noise there unless asked for.
+  const scmInAssignments = useWorkbench((s) => s.settings["scm.showInAssignments"] === true);
+  const assignmentWs = useProjects((s) => !!s.binding && isAssessmentWorkspace(s.current, !!s.binding)) && !teacher;
+  const views = base.filter((v) => (v.id !== "scm" || (gitAllowed && (!assignmentWs || scmInAssignments))) && (v.id !== "debug" || debugAllowed()));
   // Extensions never run in exams, so their containers only exist in practice mode.
   const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
 
@@ -109,7 +116,8 @@ export function ActivityBar() {
                   {todo}
                 </span>
               )}
-              {v.id === "projects" && (projectSync === "conflict" || projectSync === "local-changes" || projectSync === "both") && (
+              {/* Students see sync on the brief and the side-bar line; the "↑" here was noise (L7). Conflicts still show. */}
+              {v.id === "projects" && (projectSync === "conflict" || ((teacher || grader) && (projectSync === "local-changes" || projectSync === "both"))) && (
                 <span className={`tm-activity-badge ${projectSync === "conflict" ? "is-error" : ""}`} aria-label="Unsaved project changes">
                   {projectSync === "conflict" ? "!" : "↑"}
                 </span>
@@ -121,6 +129,7 @@ export function ActivityBar() {
           <ExtContainerButton key={c.key} container={c} active={sidebarVisible && activeView === c.key} />
         ))}
       </div>
+      {practice && !inExam && hasAccount && account?.signed_in && !checking && <CoachMark teacher={isTeacher} />}
       <div className="tm-activitybar-bottom">
         {hasAccount && practice && !inExam && <AccountButton account={account} />}
         <button
@@ -177,7 +186,7 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("");
-  const title = user ? `${user.name ?? user.email} (NGA)` : busy ? "Signing in… (continue in your browser)" : "Accounts: Sign in with NGA";
+  const title = user ? `${user.name ?? user.email} (NGA)` : busy ? "Signing in… (continue in your browser)" : msg("signin.account");
   return (
     <button
       type="button"
@@ -205,7 +214,7 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
             : [
                 busy
                   ? { kind: "item", label: "Cancel Sign In", run: () => void getPlatform().account?.cancel() }
-                  : { kind: "item", label: "Sign in with NGA (Central MIS + Task Mentor)", run: () => void signIn() },
+                  : { kind: "item", label: msg("signin.button"), run: () => void signIn() },
               ],
         );
       }}
@@ -213,5 +222,45 @@ function AccountButton({ account }: { account: AccountStatus | null }) {
       {user ? <span className="tm-account-avatar">{initials || <Codicon name="account" />}</span> : <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} />}
       {!user && account?.error && <span className="tm-activity-badge is-error" aria-label="Signed out">!</span>}
     </button>
+  );
+}
+
+/**
+ * A one-time pointer at the first icon for newcomers (L10): "Your assignments live here" or
+ * "Grading lives here". Dismissed once, never shown again on this computer.
+ */
+function CoachMark({ teacher }: { teacher: boolean }) {
+  const key = `tmcode:coach-${teacher ? "grading" : "assignments"}`;
+  const [show, setShow] = useState(() => {
+    try {
+      return localStorage.getItem(key) !== "1";
+    } catch {
+      return false;
+    }
+  });
+  // Seen once the person does anything (a click or a key): it never covers what they reach for.
+  useEffect(() => {
+    if (!show) return;
+    const done = () => {
+      setShow(false);
+      try {
+        localStorage.setItem(key, "1");
+      } catch {
+        /* private mode */
+      }
+    };
+    window.addEventListener("mousedown", done, true);
+    window.addEventListener("keydown", done, true);
+    return () => {
+      window.removeEventListener("mousedown", done, true);
+      window.removeEventListener("keydown", done, true);
+    };
+  }, [show, key]);
+  if (!show) return null;
+  return (
+    <div className="tm-coach" role="status" data-testid="coach-mark">
+      <b>{teacher ? "Grading lives here" : "Your assignments live here"}</b>
+      <span>{teacher ? "What your students handed in, ready to grade." : "Start, continue and hand in your work from this icon."}</span>
+    </div>
   );
 }

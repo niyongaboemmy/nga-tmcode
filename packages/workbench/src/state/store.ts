@@ -40,7 +40,7 @@ type EditorInputBase =
   /** A language's user snippets file (snippets/SnippetsEditor). */
   | { kind: "snippets"; id: string; language: string; preview: false }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
-  | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false }
+  | { kind: "assignment"; id: string; assignmentId: number; title: string; preview: false; source?: "quiz"; quizId?: number; questionId?: number }
   /** Grading one assignment / quiz practical question (grading/GradingEditor). */
   | { kind: "grading"; id: string; gradingKey: string; title: string; preview: false }
   /** Results of running a .sql file (sql/SqlResultsEditor). */
@@ -100,7 +100,11 @@ export interface Notification {
   id: number;
   severity: "info" | "warning" | "error";
   message: string;
-  actions?: { label: string; run: () => void }[];
+  /**
+   * Buttons. `keep`: the button stays in the notification centre after the toast closes, while
+   * it is still valid (true, or a check run when the centre shows it), e.g. View Feedback (N8).
+   */
+  actions?: { label: string; run: () => void; keep?: boolean | (() => boolean) }[];
   /** A long operation: percentage, or null while it can't be measured (infinite bar). */
   progress?: number | null;
   /** Shows a Cancel button on a progress notification. */

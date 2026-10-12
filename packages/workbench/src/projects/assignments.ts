@@ -1,9 +1,10 @@
 import { track } from "../state/activity";
+import { msg } from "../messages/catalog";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
 import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
-import { api, offerSaveBeforeSwitch, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
+import { api, notifyError, offerSaveBeforeSwitch, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
 import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
 import type { LinkableActivity, Project } from "./types";
 import { markJourney } from "../util/journey";
@@ -161,18 +162,18 @@ export function announceChanges(before: AssignmentSummary[] | null, after: Assig
   for (const a of after) {
     const was = old.get(a.id);
     if (!was) {
-      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id) }], { kind: "external" });
+      if (!a.read_only && once(`new:${a.id}`)) notify("info", `New assignment: ${a.title}`, [{ label: "Show Brief", run: () => showAssignment(a.id), keep: true }], { kind: "external" });
       continue;
     }
     // Returned for changes (N2): never hidden by Do Not Disturb, the teacher's words in the message.
     if (returnedForChanges(a) && a.my!.returned_at !== was.my?.returned_at && once(`returned:${a.id}:${a.my!.returned_at}`)) {
       const note = a.my!.returned_message?.trim();
-      notify("info", `Your teacher returned "${a.title}"${note ? `: "${note.length > 120 ? `${note.slice(0, 117)}…` : note}"` : " for changes"}`, [{ label: "Open", run: () => showAssignment(a.id) }], { kind: "external", bypassDnd: true, source: "teacher" });
+      notify("info", `Your teacher returned "${a.title}"${note ? `: "${note.length > 120 ? `${note.slice(0, 117)}…` : note}"` : " for changes"}`, [{ label: "Open", run: () => showAssignment(a.id), keep: true }], { kind: "external", bypassDnd: true, source: "teacher" });
     }
     if (a.my?.state === "graded" && was.my?.state !== "graded" && once(`graded:${a.id}:${a.my.submitted_at ?? ""}:${a.my.grade ?? ""}`)) {
       const max = a.my.max_points ?? a.points;
       const score = a.my.grade != null ? `: ${a.my.grade}${max != null ? `/${max}` : ""}` : "";
-      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id) }], { kind: "external" });
+      notify("info", `${a.title} was graded${score}`, [{ label: "View Feedback", run: () => showAssignment(a.id), keep: true }], { kind: "external" });
     }
   }
 }
@@ -217,7 +218,7 @@ export async function loadAssignment(id: number): Promise<AssignmentDetail | nul
     set({ details: { ...get().details, [id]: assignment } });
     return assignment;
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
     return null;
   }
 }
@@ -254,7 +255,7 @@ function setBusy(id: number, b: "starting" | "submitting" | undefined) {
 
 /** Start (first time: Task Mentor copies the starter files into the student's own project) or continue. */
 async function startAssignmentNow(id: number) {
-  if (inExam()) return notify("info", "Finish your exam first.");
+  if (inExam()) return notify("info", msg("start.examFirst"));
   // Another assignment's folder with work not in Task Mentor yet: offer to save it first.
   const known = get().details[id] ?? [...(get().student ?? [])].find((x) => x.id === id);
   if (!(await offerSaveBeforeSwitch(known?.title ?? "this assignment", known?.my?.project_id))) return;
@@ -270,12 +271,12 @@ async function startAssignmentNow(id: number) {
     // No starter files from the teacher (and nothing written yet): offer a way to begin instead of an empty folder.
     const began = (await isEmptyWorkspace()) ? await offerStarter(a ?? null) : false;
     if (!began) await revealStarterFile();
-    if (created && !began) notify("info", `Your workspace for "${a?.title ?? project.name}" is ready${a?.starter ? ` with ${a.starter.file_count} starter file${a.starter.file_count === 1 ? "" : "s"}` : ""}. Save to Task Mentor as you go, then Submit.`, undefined, { kind: "result" });
+    if (created && !began) notify("info", msg("start.ready", { title: a?.title ?? project.name, files: a?.starter?.file_count ?? 0 }), undefined, { kind: "result" });
     void refreshAssignments();
     void refreshProjects();
   } catch (e) {
-    if (e instanceof TmError && e.code === "ASSIGNMENT_COMPLETED") notify("info", "This assignment is completed and was not started.");
-    else notify("error", (e as Error).message);
+    if (e instanceof TmError && e.code === "ASSIGNMENT_COMPLETED") notify("info", msg("start.completed"));
+    else notifyError(e);
   } finally {
     setBusy(id, undefined);
   }
@@ -360,11 +361,11 @@ export function isOpenWorkspaceOf(a: AssignmentSummary) {
 
 export async function submitAssignment(id: number) {
   const a = get().details[id] ?? [...(get().student ?? [])].find((x) => x.id === id);
-  if (!a?.my?.project_id || !a.my.link_id) return notify("info", "Start the assignment first.");
-  if (a.read_only) return notify("info", "This assignment is completed: it can no longer be submitted.");
-  if (!acceptsSubmissions(a)) return notify("info", "This assignment is closed: your teacher no longer takes submissions.");
+  if (!a?.my?.project_id || !a.my.link_id) return notify("info", msg("start.firstThis"));
+  if (a.read_only) return notify("info", msg("submit.completed"));
+  if (!acceptsSubmissions(a)) return notify("info", msg("submit.closed"));
   if (!isOpenWorkspaceOf(a)) {
-    notify("info", "Open your workspace for this assignment first (Continue), so the newest work is what you submit.");
+    notify("info", msg("submit.openFirst"), [{ label: "Continue", run: () => void startAssignment(id) }]);
     return;
   }
   // The confirmation says what is handed in (files, size) and what stays here.
@@ -401,7 +402,7 @@ export async function publishAsStarter() {
     notify("info", `"${b.name}" is now the starter of "${a.title}". Students who start it get the latest saved version.`);
     void refreshAssignments();
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
   }
 }
 
@@ -421,7 +422,7 @@ export function parseAssignmentLink(link: string): { id: number; api: string } |
 export async function openAssignmentLink(link: { id: number; api: string }) {
   const { isAllowedApi } = await import("../exam/api");
   if (!isAllowedApi(link.api, !!getPlatform().exam?.dev)) return notify("error", "This link points to an unknown Task Mentor server and was ignored.");
-  if (inExam()) return notify("info", "Finish your exam first.");
+  if (inExam()) return notify("info", msg("start.examFirst"));
   const account = useProjects.getState().account;
   if (account?.signed_in && link.api && account.tm_api.replace(/\/+$/, "") !== link.api) {
     return notify("error", `This assignment belongs to ${link.api}, but TMCode is signed in to ${account.tm_api}.`);
@@ -435,7 +436,7 @@ export async function openAssignmentLink(link: { id: number; api: string }) {
       void refreshAssignments().then(() => showAssignment(link.id));
     });
     setTimeout(off, 10 * 60_000);
-    notify("info", "Sign in with NGA to open this assignment.");
+    notify("info", msg("signin.toOpenAssignment"));
     void signIn();
     return;
   }

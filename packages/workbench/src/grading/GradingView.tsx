@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { msg } from "../messages/catalog";
 import { useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { projectsSupported, signIn, useProjects } from "../projects/service";
 import { dueLabel } from "../projects/assignments";
+import { openTaskMentorPage } from "../projects/commands";
 import { closeReview, openGrading, progressOf, refreshGrading, useGrading, type Gradable } from "./service";
 
 /** Graded / to grade / in progress, as one bar. */
@@ -18,12 +20,12 @@ export function ProgressBar({ graded, toGrade, inProgress, total, compact }: { g
   );
 }
 
-/** "2 to grade", "All 3 graded", "1 working, none handed in", "No submissions yet". */
+/** "2 to grade", "All 3 graded", "1 in progress, none handed in", "No submissions yet". */
 export function workload(p: ReturnType<typeof progressOf>) {
   if (!p) return "Loading…";
   if (p.toGrade > 0) return `${p.toGrade} to grade`;
   if (p.submitted > 0) return `All ${p.graded} graded`;
-  if (p.inProgress > 0) return `${p.inProgress} working, none handed in`;
+  if (p.inProgress > 0) return `${p.inProgress} in progress, none handed in`;
   return "No submissions yet";
 }
 
@@ -47,7 +49,7 @@ function ActivityRow({ a }: { a: Gradable }) {
       tabIndex={0}
       data-testid="grading-activity"
       data-key={a.key}
-      title={`${a.question_title ? `${a.title} › ${a.question_title}` : a.title}${a.course_name ? `\n${a.course_name}` : ""}${p ? `\n${p.graded} graded · ${p.toGrade} to grade · ${p.inProgress} still working\n${p.pct}% of submissions graded` : ""}`}
+      title={`${a.question_title ? `${a.title} › ${a.question_title}` : a.title}${a.course_name ? `\n${a.course_name}` : ""}${p ? `\n${p.graded} graded · ${p.toGrade} to grade · ${p.inProgress} in progress\n${p.pct}% of submissions graded` : ""}`}
       onClick={() => openGrading(a.key)}
       onKeyDown={(e) => e.key === "Enter" && openGrading(a.key)}
     >
@@ -87,6 +89,8 @@ export function GradingView() {
   const home = useGrading((s) => s.homeRoot);
   const rosters = useGrading((s) => s.rosters);
   useWorkbench((s) => s.workspace);
+  // L4: a grading tab in front shows the progress; the side bar doesn't repeat it then.
+  const panelOpen = useWorkbench((s) => s.groups.some((g) => g.editors.some((e) => e.id === g.activeId && e.kind === "grading")));
   const [filter, setFilter] = useState("");
   const [show, setShow] = useState<"to-grade" | "all">("all");
 
@@ -102,7 +106,7 @@ export function GradingView() {
         <h3>Grade TMCode practicals</h3>
         <p>Sign in with your NGA account to grade the assignments and quiz practicals of your subjects.</p>
         <button type="button" className="tm-button tm-button--block" onClick={() => void signIn()}>
-          <Codicon name="account" /> Sign in with NGA
+          <Codicon name="account" /> {msg("signin.button")}
         </button>
       </div>
     );
@@ -130,25 +134,27 @@ export function GradingView() {
           </span>
           {home && (
             <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void closeReview()} title="Close the review and go back to your own folder">
-              Back to my folder
+              Close Review
             </button>
           )}
         </div>
       )}
-      <div className="tm-grade-summary">
-        <div className="tm-grade-summary-numbers">
-          <span>
-            <b>{totals.toGrade}</b> to grade
-          </span>
-          <span>
-            <b>{totals.graded}</b> graded
-          </span>
-          <span>
-            <b>{totals.inProgress}</b> working
-          </span>
+      {!panelOpen && (
+        <div className="tm-grade-summary" data-testid="grading-summary">
+          <div className="tm-grade-summary-numbers">
+            <span>
+              <b>{totals.toGrade}</b> to grade
+            </span>
+            <span>
+              <b>{totals.graded}</b> graded
+            </span>
+            <span>
+              <b>{totals.inProgress}</b> in progress
+            </span>
+          </div>
+          <ProgressBar {...totals} total={Math.max(totals.total, 1)} />
         </div>
-        <ProgressBar {...totals} total={Math.max(totals.total, 1)} />
-      </div>
+      )}
       <div className="tm-assignments-toolbar">
         <div className="tm-input-box tm-assignments-filter">
           <input className="tm-input" placeholder="Filter practicals" aria-label="Filter practicals" value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -163,9 +169,24 @@ export function GradingView() {
         <div className="tm-view-empty">
           <Codicon name="tasklist" className="tm-projects-hero" />
           <p>No TMCode practicals to grade yet. Turn on "TMCode practical" for an assignment, or add a practical question to a quiz, in Task Mentor.</p>
+          {/* W6: every empty state has one action. */}
+          <button type="button" className="tm-button" onClick={() => openTaskMentorPage("/assignments/create")} data-testid="grading-create">
+            <Codicon name="add" /> Create in Task Mentor
+          </button>
         </div>
       ) : list.length === 0 ? (
-        <p className="tm-muted tm-projects-hint">{show === "to-grade" ? "Nothing waiting to be graded." : "No matching practicals."}</p>
+        <div className="tm-projects-hint">
+          <p className="tm-muted">{show === "to-grade" ? "Nothing waiting to be graded." : "No matching practicals."}</p>
+          {show === "to-grade" ? (
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => setShow("all")} data-testid="grading-show-all">
+              Show All Practicals
+            </button>
+          ) : (
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => setFilter("")}>
+              Clear Filter
+            </button>
+          )}
+        </div>
       ) : (
         [...bySubject.entries()]
           .sort(([x], [y]) => x.localeCompare(y))

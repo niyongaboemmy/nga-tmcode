@@ -1,13 +1,14 @@
 import type { ProjectScan, SkippedFile } from "../platform/types";
+import { msg } from "../messages/catalog";
 import { getPlatform, log, notify, showDialog } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { taskMentorWeb } from "./commands";
-import { TmError, useProjects } from "./service";
+import { notifyError, TmError, useProjects } from "./service";
 import { markJourney } from "../util/journey";
 
 /**
- * The words both submit flows share (Assignments › Submit and Projects ›
- * Submit Project), so they never contradict each other. They follow Task
+ * The words both submit flows share (the brief's Submit and All My Projects'
+ * Submit), so they never contradict each other. They follow Task
  * Mentor: a submitted project is locked until the teacher grades it or the
  * student withdraws it, and Withdraw works while the assessment is open.
  */
@@ -120,7 +121,7 @@ export async function confirmSubmit(opts: { message: string; late?: boolean; qui
 export function notifySubmitted(what: string, submission: unknown) {
   const late = (submission as { is_late?: boolean } | null)?.is_late;
   markJourney("submitted");
-  notify("info", `Submitted ${what}${late ? " (late)" : ""}. Your teacher sees exactly this version.`, undefined, { kind: "result", important: true });
+  notify("info", msg("submit.done", { what, late: !!late }), undefined, { kind: "result", important: true });
 }
 
 /** The student's quiz page in Task Mentor (where the attempt is opened). */
@@ -137,7 +138,7 @@ export async function explainSubmitError(e: unknown, target?: { activity_type: s
   if (e instanceof TmError && e.code === "QUIZ_NOT_OPEN") {
     const choice = await showDialog({
       severity: "warning",
-      message: "The quiz isn't open in Task Mentor. Open the quiz, then submit again.",
+      message: msg("submit.quizClosed"),
       detail: "Nothing was submitted. Your work is saved in Task Mentor.",
       buttons: [
         { id: "open", label: "Open the Quiz in Task Mentor", primary: true },
@@ -148,5 +149,5 @@ export async function explainSubmitError(e: unknown, target?: { activity_type: s
     if (choice === "open" && target?.activity_type === "quiz") openQuizInTaskMentor(target.activity_id);
     return;
   }
-  notify("error", (e as Error).message);
+  notifyError(e);
 }

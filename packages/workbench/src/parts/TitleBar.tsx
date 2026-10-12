@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
 import { inAppMenus, menuItems, type MenuSpec } from "../commands/menus";
 import { closeContextMenu, getPlatform, openContextMenu, useWorkbench, type ContextMenuItem } from "../state/store";
@@ -54,12 +54,42 @@ function MenuButton() {
   );
 }
 
+/** Pure: how many menus fit in `avail` px, leaving room for the "…" button when some don't (L6). */
+export function menusThatFit(widths: number[], avail: number, moreWidth = 30): number {
+  const total = widths.reduce((n, w) => n + w, 0);
+  if (total <= avail) return widths.length;
+  let used = moreWidth;
+  let n = 0;
+  while (n < widths.length && used + widths[n] <= avail) used += widths[n++];
+  return n;
+}
+
 function MenuBar() {
   const [open, setOpen] = useState<number | null>(null);
   const menuOpen = useWorkbench((s) => !!s.contextMenu);
   useEffect(() => {
     if (!menuOpen) setOpen(null);
   }, [menuOpen]);
+  // L6 (0.17): menus that don't fit go into "…" (VS Code's overflow), so Help stays reachable.
+  const bar = useRef<HTMLDivElement>(null);
+  const widths = useRef<number[]>([]);
+  const [fit, setFit] = useState(MENUS.length);
+  useLayoutEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    const measure = () => {
+      if (widths.current.length !== MENUS.length) {
+        const items = [...el.querySelectorAll<HTMLElement>(".tm-menubar-item[data-menu-index]")];
+        if (items.length !== MENUS.length) return;
+        widths.current = items.map((b) => b.getBoundingClientRect().width);
+      }
+      setFit(menusThatFit(widths.current, el.clientWidth));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, []);
 
   const show = (i: number, el: HTMLElement) => {
     const r = el.getBoundingClientRect();
@@ -68,13 +98,17 @@ function MenuBar() {
   };
 
   return (
-    <div className="tm-menubar" role="menubar">
+    <div className="tm-menubar" role="menubar" ref={bar}>
       {MENUS.map((m, i) => (
         <button
           key={m.label}
           type="button"
           role="menuitem"
           data-menu-anchor
+          data-menu-index={i}
+          style={i >= fit ? { visibility: "hidden", position: "absolute", pointerEvents: "none" } : undefined}
+          aria-hidden={i >= fit || undefined}
+          tabIndex={i >= fit ? -1 : undefined}
           aria-haspopup="menu"
           aria-expanded={open === i}
           className={`tm-menubar-item ${open === i ? "is-open" : ""}`}
@@ -91,6 +125,29 @@ function MenuBar() {
           {m.label}
         </button>
       ))}
+      {fit < MENUS.length && (
+        <button
+          type="button"
+          role="menuitem"
+          data-menu-anchor
+          aria-haspopup="menu"
+          className="tm-menubar-item tm-menubar-more"
+          aria-label="More Menus"
+          title="More Menus"
+          data-testid="menubar-overflow"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const r = e.currentTarget.getBoundingClientRect();
+            openContextMenu(
+              r.left,
+              r.bottom,
+              MENUS.slice(fit).map((m) => ({ kind: "item" as const, label: `${m.label}  ›`, run: () => setTimeout(() => openContextMenu(r.left, r.bottom, itemsFor(m)), 0) })),
+            );
+          }}
+        >
+          <Codicon name="ellipsis" />
+        </button>
+      )}
     </div>
   );
 }

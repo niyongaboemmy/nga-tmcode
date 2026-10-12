@@ -1,4 +1,5 @@
 import { registerCommand } from "../commands/registry";
+import { msg } from "../messages/catalog";
 import { inExam } from "../exam/state";
 import { confirmLeaveWorkspace, getPlatform, notify, openFile, openPathFromOs, openRecent, revealView, showDialog, showPanel, useWorkbench } from "../state/store";
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
@@ -17,9 +18,11 @@ import {
   refreshProjects,
   saveToTaskMentor,
   signIn,
+  resumeAfterSignIn,
   signedIn,
   submitLink,
   useProjects,
+  notifyError,
 } from "./service";
 import { CATEGORY_ORDER, TEMPLATES, templateById, type Template } from "./templates";
 import { publishAsStarter, refreshAssignments, startAssignment, useAssignments } from "./assignments";
@@ -156,13 +159,17 @@ export async function newProjectFromTemplate() {
     notify("info", `Created ${name} from the ${tpl.label} template. Run Project: ⌘/Ctrl+Shift+F10.`);
     await offerSetup(tpl);
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
   }
 }
 
 /** New Project: the open folder, a GitHub repository, or a template in a new folder. `from: "folder"` skips the choice. */
 async function newProject(opts: { from?: "folder" } = {}) {
-  if (!signedIn()) return void signIn();
+  if (!signedIn()) {
+    // W5: carries on once signed in.
+    resumeAfterSignIn({ label: "New Project", notice: "Signed in. Starting your new project…", run: () => newProject(opts) });
+    return void signIn();
+  }
   const ws = useWorkbench.getState().workspace;
   // Your own work first: with a folder open, saving it is what you most likely want.
   const choice =
@@ -251,7 +258,7 @@ async function newProject(opts: { from?: "folder" } = {}) {
     if (matched) await checkSync();
     revealView("projects");
   } catch (e) {
-    notify("error", (e as Error).message);
+    notifyError(e);
   }
 }
 
@@ -266,7 +273,10 @@ async function guessRemote(): Promise<string | null> {
 }
 
 async function connect() {
-  if (!signedIn()) return void signIn();
+  if (!signedIn()) {
+    resumeAfterSignIn({ label: "this folder", notice: "Signed in. Connecting this folder to Task Mentor…", run: () => connect() });
+    return void signIn();
+  }
   const { mine } = useProjects.getState();
   // Nothing to choose from: straight to naming the new project.
   if (!mine?.length) return newProject({ from: "folder" });
@@ -286,7 +296,7 @@ async function connect() {
 
 export function registerProjectCommands() {
   registerCommand({ id: "workbench.view.projects", title: "Show Task Mentor Projects", category: "View", keybinding: "mod+shift+j", enabled: usable, run: () => revealView("projects") });
-  registerCommand({ id: "projects.signIn", title: "Sign in with NGA (Central MIS + Task Mentor)", category: "Accounts", enabled: () => usable() && !signedIn(), run: signIn });
+  registerCommand({ id: "projects.signIn", title: msg("signin.button"), category: "Accounts", aliases: ["sign in with nga", "log in", "login"], enabled: () => usable() && !signedIn(), run: signIn });
   registerCommand({ id: "projects.signOut", title: "Sign Out of NGA", category: "Accounts", enabled: () => signedIn(), run: () => void import("./studentHome").then((m) => m.signOutOnPurpose()) });
   registerCommand({ id: "projects.new", title: "New Project…", category: "Projects", enabled: usable, run: () => newProject() });
   registerCommand({ id: "projects.connectFolder", title: "Connect This Folder to Task Mentor…", category: "Projects", enabled: () => usable() && !!useWorkbench.getState().workspace, run: connect });
@@ -305,8 +315,9 @@ export function registerProjectCommands() {
   registerCommand({ id: "projects.linkActivity", title: "Change Assessment…", category: "Projects", enabled: bound, run: changeAssessment });
   registerCommand({
     id: "projects.submit",
-    title: "Submit Project…",
+    title: "Submit…",
     category: "Projects",
+    aliases: ["submit project", "hand in"],
     enabled: () => bound() && !["submitted", "graded", "removed"].includes(useProjects.getState().current?.status ?? "draft"),
     run: submitProject,
   });
@@ -352,7 +363,7 @@ export function registerProjectCommands() {
   registerCommand({ id: "workbench.action.newProjectFromTemplate", title: "New Project from Template…", category: "File", enabled: () => !!getPlatform().account && !inExam(), run: newProjectFromTemplate });
   registerCommand({ id: "workbench.view.grading", title: "Show Grading", category: "View", enabled: () => usable() && useGrading.getState().grader, run: () => revealView("grading") });
   registerCommand({ id: "grading.refresh", title: "Refresh Grading", category: "Grading", enabled: () => usable() && signedIn(), run: () => refreshGrading() });
-  registerCommand({ id: "grading.closeReview", title: "Close Review (Back to My Folder)", category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
+  registerCommand({ id: "grading.closeReview", title: "Close Review", aliases: ["back to my folder"], category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });
   registerCommand({ id: "workbench.view.assignments", title: "Show Assignments", category: "View", enabled: usable, run: () => revealView("assignments") });
   registerCommand({ id: "assignments.refresh", title: "Refresh Assignments", category: "Assignments", enabled: () => usable() && signedIn(), run: refreshAssignments });
   registerCommand({ id: "assignments.useAsStarter", title: "Use as Starter for an Assignment…", category: "Assignments", enabled: () => bound() && useProjects.getState().binding?.kind === "tm" && useAssignments.getState().staff === true, run: publishAsStarter });

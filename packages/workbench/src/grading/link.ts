@@ -1,4 +1,5 @@
 import { inExam } from "../exam/state";
+import { msg } from "../messages/catalog";
 import { notify, revealView } from "../state/store";
 import { signedIn, signIn, useProjects } from "../projects/service";
 import { keyOf, loadRoster, openGrading, openSubmission, refreshGrading, selectStudent, useGrading, type ActivityType } from "./service";
@@ -74,7 +75,7 @@ export async function openGradingLink(link: GradingLink) {
       void openNow(link);
     });
     setTimeout(off, 10 * 60_000);
-    notify("info", "Sign in with NGA to grade this practical.");
+    notify("info", msg("signin.toGrade"));
     void signIn();
     return;
   }

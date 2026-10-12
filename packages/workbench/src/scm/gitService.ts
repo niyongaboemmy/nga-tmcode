@@ -707,6 +707,7 @@ export async function signOut() {
   const user = get().user;
   if (!gh || !user) return;
   const choice = await showDialog({
+    severity: "warning",
     message: `Sign out of GitHub (${user.login})?`,
     detail: "TMCode will forget the token stored in your system keychain. Git will fall back to your own credential helpers.",
     buttons: [

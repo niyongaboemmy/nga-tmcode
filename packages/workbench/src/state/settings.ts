@@ -115,6 +115,10 @@ export interface Settings {
    * Exams never show Home.
    */
   "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
+  /** Grading: while a student's submission is open, the side bar and the student list fold away (a switcher stays). */
+  "grading.focusWhileReviewing": boolean;
+  /** Source Control in a student's assignment workspace (off: the view and its badge are hidden there). */
+  "scm.showInAssignments": boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -175,6 +179,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "workbench.editor.languageDetection": true,
   "markdown.editor.drop.enabled": "smart",
   "workbench.startupEditor": "home",
+  "grading.focusWhileReviewing": true,
+  "scm.showInAssignments": false,
 };
 
 /** One-time changes to saved settings, by id (kept in the saved UI state once applied). */
@@ -441,6 +447,23 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         key: "projects.presence",
         label: "Projects: Share Live Status",
         description: "Let Task Mentor show that the project is open, which file you are editing and whether it is synced.",
+        type: "boolean",
+      },
+    ],
+  },
+  {
+    title: "Grading",
+    settings: [
+      {
+        key: "scm.showInAssignments",
+        label: "Source Control in Assignments",
+        description: "Show Source Control (git) in assignment workspaces. Off: the view and its change count are hidden there, since your work is saved to Task Mentor.",
+        type: "boolean",
+      },
+      {
+        key: "grading.focusWhileReviewing",
+        label: "Focus While Reviewing",
+        description: "While a student's submission is open, hide the side bar and the list of students so the code gets the width. A switcher (‹ Ben 1 of 2 ›) stays above the grade.",
         type: "boolean",
       },
     ],

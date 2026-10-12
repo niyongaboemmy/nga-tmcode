@@ -333,5 +333,5 @@ function orderPanes(sideRight: boolean, side: React.ReactElement, main: React.Re
 /** A thin running line under the title bar while anything is in flight (VS Code's progress bar). */
 function ProgressLine() {
   const busy = useActivity((s) => s.running.length > 0);
-  return <div className={`tm-progress-line ${busy ? "is-busy" : ""}`} role="progressbar" aria-hidden={!busy} aria-label="Working" data-testid="progress-line" />;
+  return <div className={`tm-progress-line ${busy ? "is-busy" : ""}`} role="progressbar" aria-hidden={!busy} aria-label="Loading" data-testid="progress-line" />;
 }

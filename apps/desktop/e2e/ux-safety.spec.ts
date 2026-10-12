@@ -62,11 +62,14 @@ test("non-destructive dialogs still focus their primary button", async ({ page }
   await page.keyboard.press("Escape");
 });
 
-test("clicking a quiz practical row opens its workspace", async ({ page }) => {
+test("clicking a quiz practical row opens its brief; double-click opens its workspace", async ({ page }) => {
   await fresh(page);
   await page.keyboard.press("F1");
   await page.keyboard.type("View: Show Assignments");
   await page.keyboard.press("Enter");
+  // 0.16 (6.3): like an assignment row.
   await page.getByTestId("quiz-practical-row").locator(".tm-project-name").click();
+  await expect(page.getByTestId("assignment-page")).toHaveAttribute("data-source", "quiz");
+  await page.getByTestId("quiz-practical-row").locator(".tm-project-name").dblclick();
   await expect(page.locator(".tm-toast", { hasText: 'Your workspace for "Build a navbar" is ready' })).toBeVisible({ timeout: 15_000 });
 });

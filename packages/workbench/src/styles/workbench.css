@@ -356,9 +356,13 @@ kbd,
   margin-right: 6px;
 }
 .tm-menubar {
+  position: relative;
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 100%;
   align-items: center;
+  overflow: hidden;
 }
 .tm-menubar-item {
   height: 26px;
@@ -7243,14 +7247,9 @@ kbd,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Grade filter chips scroll in a narrow side bar (the status filters wrap instead, below). */
+/* L5 (0.17): the chips wrap instead of hiding behind a scroll ("Not sta…"). */
 .tm-grade-filters {
-  flex-wrap: nowrap !important;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.tm-grade-filters::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
 }
 /* Two-line project rows: the name gets the room. */
 .tm-project-row {
@@ -9101,7 +9100,184 @@ button.tm-setting-badge {
 .tm-explorer-empty-assignments {
   margin-top: 16px;
 }
+
+/* ───────────── workflow plan 0.16: grading layout (L3, L4) ───────────── */
+/* Review focus: the code gets the width; the roster folds behind the switcher. */
+.tm-grade-body.is-focus {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.tm-grade-body.is-focus:not(.show-list) > .tm-grade-list {
+  display: none;
+}
+.tm-grade-body.is-focus.show-list {
+  grid-template-rows: minmax(150px, 45%) 1fr;
+}
+.tm-grade-body.is-focus .tm-grade-switcher {
+  display: flex;
+}
+.tm-grade-progress-line {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-grade-progress-line b {
+  color: var(--foreground);
+}
+.tm-grade-progress-line .is-to-grade b {
+  color: var(--info);
+}
+.tm-grade-more {
+  margin-left: auto;
+}
+.tm-grade-files-details {
+  margin: 4px 0 12px;
+}
+.tm-grade-files-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--description);
+}
+.tm-grade-criterion.is-missing {
+  outline: 1px solid var(--error);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.tm-grade-missing {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--error);
+}
+.tm-split-button {
+  display: inline-flex;
+}
+.tm-split-button > .tm-button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.tm-split-button-menu {
+  padding: 0 6px;
+  border-left: 1px solid color-mix(in srgb, var(--accent-fg) 30%, transparent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* ───────────── workflow plan 0.16: one door per step (W3, L1, L2) ───────────── */
+.tm-folder-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px 4px 12px;
+  font-size: 12px;
+}
+.tm-folder-line-status {
+  flex: none;
+  font-weight: 600;
+}
+.tm-folder-line-sync {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--description);
+}
+.tm-folder-line-sync-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-folder-line-brief {
+  flex: none;
+  font-size: 12px;
+}
+.tm-assignment-page > .tm-status-steps {
+  margin: -4px 0 12px;
+}
+.tm-folder-line-sync.tm-tone-attention {
+  color: var(--warning);
+}
+.tm-folder-line-sync.tm-tone-error {
+  color: var(--error);
+}
+.tm-folder-line-sync.tm-tone-success .codicon {
+  color: var(--success);
+}
 /* Results that stay (Released…, Returned…) never cover the grade panel's Save buttons. */
 .tm-toasts.is-above-footer {
-  bottom: calc(var(--statusbar-h) + 64px);
+  bottom: calc(var(--statusbar-h) + 96px);
+}
+
+/* ───────────── workflow plan 0.17: polish ───────────── */
+.tm-grade-review-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  font-size: 12px;
+}
+.tm-grade-review-bar > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* L5: below 260px the sync words go; the icon stays, with the words as its tooltip. */
+.tm-folder-line {
+  container-type: inline-size;
+}
+@container (max-width: 260px) {
+  .tm-folder-line-sync-text {
+    display: none;
+  }
+}
+/* L10: the one-time pointer at the first activity icon. Click-through; the first click or key dismisses it. */
+.tm-coach {
+  position: fixed;
+  top: calc(var(--titlebar-h) + 6px);
+  left: calc(var(--activitybar-w) + 8px);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  padding: 10px 12px;
+  border: 1px solid var(--focus-border);
+  border-radius: 8px;
+  background: var(--widget-bg);
+  box-shadow: 0 6px 20px var(--shadow);
+  font-size: 12px;
+  pointer-events: none;
+}
+.tm-coach::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border-left: 1px solid var(--focus-border);
+  border-bottom: 1px solid var(--focus-border);
+  background: var(--widget-bg);
+  transform: rotate(45deg);
+}
+.tm-coach span {
+  color: var(--description);
+}
+/* The grade footer stays at the bottom of the grading area, short panel or long (one place for Save). */
+.tm-grade-main {
+  display: flex;
+  flex-direction: column;
+}
+.tm-grade-main > .tm-grade-panel {
+  flex: 1 0 auto;
+}
+.tm-grade-panel > .tm-grade-footer {
+  margin-top: auto;
 }

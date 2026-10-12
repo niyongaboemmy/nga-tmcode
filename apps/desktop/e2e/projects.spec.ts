@@ -27,7 +27,7 @@ async function command(page: Page, name: string) {
 test("signing in with NGA shows the projects", async ({ page }) => {
   await fresh(page);
   await page.getByTestId("account-button").click();
-  await page.getByText("Sign in with NGA (Central MIS + Task Mentor)").click();
+  await page.locator(".tm-menu-item", { hasText: /^Sign in$/ }).click();
   await expect(page.locator(".tm-toast").first()).toContainText(/browser|Signed in/);
   await page.mouse.move(700, 400);
   await expect(page.getByTestId("account-button")).toHaveAttribute("title", /Ada Student/);
@@ -223,7 +223,7 @@ test("remove a draft project, filter by status, and restore it", async ({ page }
 test("projects are hidden during exams and signed-out views explain sign-in", async ({ page }) => {
   await fresh(page);
   await command(page, "View: Show Task Mentor Projects");
-  await expect(page.getByTestId("projects-signin")).toContainText("Sign in with NGA");
+  await expect(page.getByTestId("projects-signin").getByRole("button", { name: "Sign in" })).toBeVisible();
 });
 
 test("only teachers are offered Use as Starter in the This Folder menu", async ({ page }) => {

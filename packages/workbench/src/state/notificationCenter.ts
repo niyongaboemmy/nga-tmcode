@@ -21,7 +21,10 @@ export interface HistoryEntry {
   unread?: boolean;
 }
 
-const MAX_HISTORY = 100;
+/** Kept 30 days, at most this many (N8). */
+const MAX_HISTORY = 200;
+const HISTORY_DAYS = 30;
+const HISTORY_KEY = "notifications.history";
 
 interface CenterState {
   open: boolean;
@@ -44,15 +47,55 @@ export function recordToasts(history: HistoryEntry[], toasts: Notification[], no
   return out.length > MAX_HISTORY ? out.slice(0, MAX_HISTORY) : out;
 }
 
+/** Pure: what is saved (and loaded): the last 30 days, at most 200 entries. */
+export function pruneHistory(history: HistoryEntry[], now: number): HistoryEntry[] {
+  const since = now - HISTORY_DAYS * 86_400_000;
+  return history.filter((h) => h.time >= since).slice(0, MAX_HISTORY);
+}
+
+// Buttons that outlive their toast (View Feedback, Open…), for this session.
+type KeptAction = NonNullable<Notification["actions"]>[number];
+const kept = new Map<number, KeptAction[]>();
+
+/** The buttons a closed entry still offers: kept ones whose check still passes. */
+export function keptActions(id: number): KeptAction[] {
+  return (kept.get(id) ?? []).filter((a) => (typeof a.keep === "function" ? a.keep() : !!a.keep));
+}
+
 let wired = false;
 export function wireNotificationCenter() {
   if (wired) return;
   wired = true;
   const sync = (toasts: Notification[]) => {
     const s = useNotificationCenter.getState();
+    for (const n of toasts) {
+      const keep = n.actions?.filter((a) => a.keep);
+      if (keep?.length) kept.set(n.id, keep);
+    }
     const next = recordToasts(s.history, toasts, Date.now());
     if (next !== s.history) useNotificationCenter.setState({ history: next });
   };
+  // N8: the history survives a restart (30 days). Loaded entries get ids of their own (negative),
+  // so they never meet this session's toasts.
+  let loaded = false;
+  void getPlatform()
+    .store.get<HistoryEntry[]>(HISTORY_KEY)
+    .then((saved) => {
+      loaded = true;
+      if (!Array.isArray(saved) || !saved.length) return;
+      const old = pruneHistory(saved, Date.now()).map((h, i) => ({ ...h, id: -(i + 1) }));
+      const s = useNotificationCenter.getState();
+      useNotificationCenter.setState({ history: [...s.history, ...old].slice(0, MAX_HISTORY) });
+    })
+    .catch(() => {
+      loaded = true;
+    });
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  useNotificationCenter.subscribe((s, prev) => {
+    if (s.history === prev.history || !loaded) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void getPlatform().store.set(HISTORY_KEY, pruneHistory(s.history, Date.now())).catch(() => {}), 800);
+  });
   sync(useWorkbench.getState().notifications);
   useWorkbench.subscribe((s, prev) => {
     if (s.notifications !== prev.notifications) sync(s.notifications);
@@ -87,6 +130,9 @@ export function markAllRead() {
 export function toggleNotificationCenter() {
   showNotificationCenter(!useNotificationCenter.getState().open);
 }
+
+/** Notifications: Mark All as Read. */
+export const markAllAsRead = () => markAllRead();
 
 /** Notifications: Clear All Notifications — the toasts and the centre's list. */
 export function clearAllNotifications() {

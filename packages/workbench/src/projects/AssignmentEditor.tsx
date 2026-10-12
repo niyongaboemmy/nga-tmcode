@@ -14,6 +14,9 @@ import { SYNC_ICON, SYNC_TIP, SYNC_TONE, syncLineText } from "./syncLabels";
 import { acceptsSubmissions, dueLabel, handedInLate, isOpenWorkspaceOf, latePolicyText, loadAssignment, refreshAssignments, startAssignment, STUDENT_STATUS_LABEL, submitAssignment, publishAsStarter, useAssignments } from "./assignments";
 import { deriveStatus } from "./status";
 import { useStatusSync } from "./useStatusSync";
+import { StatusSteps } from "./StatusSteps";
+import { QuizPracticalBrief } from "./QuizPracticalBrief";
+import { ConflictList } from "./ConflictList";
 import { STATE_LABEL } from "./AssignmentsView";
 import { openAssignmentInTaskMentor } from "./commands";
 import { keyOf, openGrading } from "../grading/service";
@@ -136,7 +139,7 @@ function RubricTable({ results, graded }: { results: RubricResult[]; graded?: bo
 }
 
 /** The brief's working card says where the work is: "Saved online · 2 min ago", "Not saved yet · 3 changes"… (the Projects view's words). */
-function BriefSyncLine() {
+export function BriefSyncLine() {
   const live = useProjects((s) => s.sync);
   // The quick re-check after each edit keeps the last answer on screen (no "Checking…" flicker).
   const stable = useRef(live);
@@ -180,8 +183,13 @@ function ReturnedNote({ at, message }: { at: string | null; message: string | nu
   );
 }
 
-/** The assignment page: the brief beside the code, with Start / Continue / Submit. */
+/** The brief tab: an assignment's, or a quiz practical's (same card, same status: 6.3). */
 export function AssignmentEditor({ input }: { input: Input }) {
+  return input.source === "quiz" ? <QuizPracticalBrief input={input} /> : <AssignmentBrief input={input} />;
+}
+
+/** The assignment page: the brief beside the code, with Start / Continue / Submit. */
+function AssignmentBrief({ input }: { input: Input }) {
   const id = input.assignmentId;
   const detail = useAssignments((s) => s.details[id]);
   const busy = useAssignments((s) => s.busy[id]);
@@ -285,6 +293,9 @@ export function AssignmentEditor({ input }: { input: Input }) {
           )}
         </div>
       </header>
+
+      {/* The steps live here now, beside the one button (0.16; the side bar is one line). */}
+      {!teaching && status !== "not_started" && status !== "closed" && <StatusSteps status={status} testId="assignment-steps" />}
 
       {!teaching && (
         <section className={`tm-next-step is-${status === "not_started" ? "start" : status === "graded" ? "graded" : !here ? "open" : status === "submitted" || status === "closed" ? "done" : "working"}`} data-testid="assignment-next-step" data-status={status} aria-label="Next step">
@@ -399,6 +410,7 @@ export function AssignmentEditor({ input }: { input: Input }) {
                   </p>
                 )}
                 <BriefSyncLine />
+                <ConflictList testId="brief-conflicts" />
               </div>
               <div className="tm-next-step-actions">
                 <button type="button" className="tm-button tm-button--secondary" disabled={saving || !!busy} onClick={() => executeCommand("projects.save")} data-testid="assignment-save" title="Save to Task Mentor">

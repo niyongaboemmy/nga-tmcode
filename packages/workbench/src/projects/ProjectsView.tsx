@@ -1,16 +1,22 @@
 import { useActivity } from "../state/activity";
+import { msg } from "../messages/catalog";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRowNav } from "./rowNav";
 import { executeCommand, formatKeybinding } from "../commands/registry";
 import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
-import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
+import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
-import { SYNC_ICON, SYNC_LABEL, SYNC_TIP } from "./syncLabels";
-import { loadRemoved, lockReason, recheck, openProject, projectsSupported, refreshProjects, removeProject, resolveConflict, restoreProject, compareConflict, setSharePresence, signIn, useProjects } from "./service";
-import { showAssignment, useAssignments } from "./assignments";
+import { SYNC_ICON, SYNC_LABEL, SYNC_TIP, SYNC_TONE, syncLineText } from "./syncLabels";
+import { loadRemoved, lockReason, recheck, openProject, projectsSupported, refreshProjects, removeProject, restoreProject, setSharePresence, signIn, useProjects } from "./service";
+import { showAssignment, useAssignments, type AssignmentSummary } from "./assignments";
 import { deriveStatus, STATUS_LABEL as STUDENT_LABEL, type StudentStatus } from "./status";
 import { useStatusSync } from "./useStatusSync";
+import { StatusSteps } from "./StatusSteps";
+import { ConflictList } from "./ConflictList";
+import { findPractical, practicalState, practicalSummary, showQuizPractical } from "./quizPractical";
+
+const linksOfProject = (p: Project): Link[] => (Array.isArray(p.links) ? (p.links as Link[]) : ((p.links?.items ?? []) as Link[]));
 import type { Link, Project } from "./types";
 import { openInTaskMentor } from "./commands";
 import { SignInWaiting } from "./SignInWaiting";
@@ -117,6 +123,20 @@ export function ThisFolder() {
   // Saving starts with a scan of the folder: the button says so from the click, not after the scan.
   // (A hook: before the early returns below.)
   const saving = useActivity((s) => s.running.some((r) => r.label.startsWith("Saving to Task Mentor") || r.label === "Submitting…"));
+  // A student's assignment workspace: the brief holds Save and Submit, so this is one status line (W3, L1, L2).
+  const assignment = useAssignments((s) => (project?.assignment ? (s.student?.find((a) => a.id === project.assignment!.id) ?? null) : null));
+  // A quiz practical's workspace has a brief too (6.3).
+  const quizLink = project && !project.assignment ? (linksOfProject(project).find((l) => l.activity_type === "quiz" && !!l.question_id) ?? null) : null;
+  const quizPracticals = useAssignments((s) => s.quizPracticals);
+  const practical = quizLink && quizPracticals ? findPractical(quizLink.activity_id, quizLink.question_id!) : null;
+  const savedAt = useProjects((s) => s.lastSyncAt ?? s.headAt ?? null);
+  if (workspace && binding && project && !staff && binding.kind === "tm") {
+    if (assignment) return <AssignmentFolder project={project} summary={assignment} openBrief={() => showAssignment(assignment.id, { toSide: true })} savedAt={savedAt} />;
+    if (practical && quizLink) {
+      const summary = practicalSummary(practical, practicalState(practical, null, project).state, project);
+      return <AssignmentFolder project={project} summary={summary} openBrief={() => showQuizPractical(quizLink.activity_id, quizLink.question_id!, { toSide: true })} savedAt={savedAt} />;
+    }
+  }
   if (!workspace) return <p className="tm-muted tm-projects-hint">Open a project below, or open a folder to connect it to Task Mentor.</p>;
   if (!binding) {
     return (
@@ -183,21 +203,7 @@ export function ThisFolder() {
             </span>
           </div>
           {message && <p className="tm-muted tm-projects-hint">{message}</p>}
-          {plan && plan.conflicts.length > 0 && (
-            <div className="tm-projects-conflicts" data-testid="conflicts">
-              <p>These files changed here and in Task Mentor:</p>
-              {plan.conflicts.map((path) => (
-                <div key={path} className="tm-list-row">
-                  <Codicon name="warning" />
-                  <FileIcon path={path} />
-                  <span className="tm-project-name">{path}</span>
-                  <ActionButton icon="diff" label="Compare with Task Mentor's" onClick={() => void compareConflict(path)} />
-                  <ActionButton icon="check" label="Keep Mine" onClick={() => void resolveConflict(path, "mine")} />
-                  <ActionButton icon="cloud-download" label="Take Task Mentor's" onClick={() => void resolveConflict(path, "theirs")} />
-                </div>
-              ))}
-            </div>
-          )}
+          <ConflictList />
         </>
       ) : (
         <div className="tm-sync-line is-synced">
@@ -207,6 +213,64 @@ export function ThisFolder() {
       )}
       {project && <SharePresence project={project} />}
     </div>
+  );
+}
+
+/**
+ * The side bar's This Folder for a student's assignment workspace (0.16, W3/L1/L2): one line,
+ * `● In progress · Saved online 2 min ago · Open Brief`. Save and Submit are on the brief; the
+ * live-status switch, Get Latest and Disconnect are in the "…" menu.
+ */
+function AssignmentFolderLine({ project, summary, openBrief, savedAt }: { project: Project; summary: AssignmentSummary; openBrief: () => void; savedAt: number | null }) {
+  const sync = useProjects((s) => s.sync);
+  const plan = useProjects((s) => s.plan);
+  const message = useProjects((s) => s.syncMessage);
+  const view = useStatusSync(deriveStatus(summary, project, { here: true }), project.id, () => Promise.all([recheck(), import("./assignments").then((m) => m.refreshAssignments())]));
+  const changes = plan ? changeCount(plan.localChanges) : 0;
+  const busy = sync === "saving" || sync === "pulling";
+  const locked = !project.read_only;
+  const shared = project.share_presence !== false || locked;
+  return (
+    <div className="tm-folder-line" data-testid="this-folder-line" data-status={view!.status} data-sync={sync} title={`${project.name}\n${SYNC_TIP[sync]}${sync === "error" && message ? ` — ${message}` : ""}`}>
+      <Codicon name="circle-filled" className={`tm-state-dot is-${view!.status === "closed" ? "readonly" : view!.status === "returned" ? "in_progress" : view!.status}`} />
+      <span className="tm-folder-line-status" data-testid="project-student-status-line">
+        {view!.syncing ? "Updating…" : STUDENT_LABEL[view!.status]}
+      </span>
+      <span className={`tm-folder-line-sync tm-tone-${SYNC_TONE[sync]}`} title={syncLineText(sync, { changes, savedAt })}>
+        <Codicon name={SYNC_ICON[sync]} className={busy ? "codicon-modifier-spin" : ""} />
+        <span className="tm-folder-line-sync-text">{syncLineText(sync, { changes, savedAt })}</span>
+      </span>
+      <button type="button" className="tm-link-button tm-folder-line-brief" onClick={openBrief} data-testid="project-assessment">
+        Open Brief
+      </button>
+      <ActionButton
+        icon="ellipsis"
+        label="More Project Actions…"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          openContextMenu(r.left, r.bottom + 2, [
+            { kind: "item", label: "Get Latest from Task Mentor", disabled: busy, run: () => executeCommand("projects.pull") },
+            { kind: "item", label: "Open in Task Mentor", run: () => executeCommand("projects.openInTaskMentor") },
+            { kind: "separator" },
+            locked
+              ? { kind: "item", label: "Share Live Status with Teachers: On (required while the assignment is open)", disabled: true, run: () => {} }
+              : { kind: "item", label: shared ? "Stop Sharing Live Status with Teachers" : "Share Live Status with Teachers", run: () => void setSharePresence(project.id, !shared) },
+            { kind: "separator" },
+            { kind: "item", label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") },
+          ]);
+        }}
+      />
+    </div>
+  );
+}
+
+/** The one line, plus the conflicts to resolve when there are some (they block saving). */
+function AssignmentFolder(props: Parameters<typeof AssignmentFolderLine>[0]) {
+  return (
+    <>
+      <AssignmentFolderLine {...props} />
+      <ConflictList />
+    </>
   );
 }
 
@@ -239,9 +303,6 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
   const derived: StudentStatus = view?.status ?? (projectStatus === "draft" ? "in_progress" : projectStatus === "removed" ? "in_progress" : projectStatus);
   // Draft-like: work can go on and be handed in.
   const status: Status = projectStatus === "removed" ? "removed" : derived === "submitted" ? "submitted" : derived === "graded" ? "graded" : "draft";
-  // The stepper gains Returned when the teacher sent the work back: In progress → Submitted → Returned → Graded.
-  const steps: StudentStatus[] = derived === "returned" ? ["in_progress", "submitted", "returned", "graded"] : ["in_progress", "submitted", "graded"];
-  const at = steps.indexOf(derived === "closed" || derived === "not_started" ? "in_progress" : derived);
   const title = link?.activity?.title ?? project.assignment?.title ?? (link ? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}` : null);
   const kind = link ? (link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one) : project.assignment ? "Assignment" : null;
   // Handed in: no countdown (late or not is the submission's, not the date's).
@@ -300,14 +361,7 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
           </span>
         </span>
       </div>
-      <ol className="tm-status-steps" aria-label="Project status" data-testid="project-steps">
-        {steps.map((st, i) => (
-          <li key={st} className={`${i < at ? "is-done" : ""} ${i === at ? "is-current" : ""} ${st === "returned" ? "is-returned" : ""}`} aria-current={i === at ? "step" : undefined}>
-            <span className="tm-status-dot">{i < at ? <Codicon name="check" /> : null}</span>
-            <span>{STUDENT_LABEL[st]}</span>
-          </li>
-        ))}
-      </ol>
+      <StatusSteps status={derived} />
       {status === "draft" && (
         <>
           <button
@@ -329,8 +383,8 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
       {status === "submitted" && (
         <div className="tm-assess-locked" data-testid="project-submitted">
           <span>
-            <Codicon name="lock" /> Handed in{link?.revision_number ? ` (version ${link.revision_number})` : ""}
-            {link?.submitted_at ? `, ${when(link.submitted_at)}` : ""}. Locked until graded.
+            <Codicon name="lock" /> Submitted{link?.revision_number ? ` (version ${link.revision_number})` : ""}
+            {link?.submitted_at ? `, ${when(link.submitted_at)}` : ""}. Withdraw to Edit to change it.
           </span>
           <button type="button" className="tm-link-button" onClick={() => executeCommand("projects.withdraw")} title="Unlock it to change your work, then submit again" data-testid="project-withdraw">
             Withdraw to Edit
@@ -411,7 +465,7 @@ export function ProjectsView() {
         <h3>Your projects, everywhere</h3>
         <p>Sign in with your NGA account to sync your Task Mentor projects, save your work, link it to quizzes and assignments, and continue on any computer.</p>
         <button type="button" className="tm-button tm-button--block" disabled={busy} onClick={() => void signIn()} data-testid="projects-signin-button">
-          <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} /> {busy ? "Continue in your browser…" : "Sign in with NGA"}
+          <Codicon name={busy ? "loading" : "account"} className={busy ? "codicon-modifier-spin" : ""} /> {busy ? msg("signin.waiting") : msg("signin.button")}
         </button>
         <SignInWaiting />
         <p className="tm-muted">One sign-in for Central MIS and Task Mentor. Google sign-in works too.</p>

@@ -43,7 +43,7 @@ function moreActions(view: ViewId): ContextMenuItem[] {
   if (view === "grading") {
     return [
       { kind: "item", label: "Refresh", run: () => executeCommand("grading.refresh") },
-      { kind: "item", label: "Close Review (Back to My Folder)", run: () => executeCommand("grading.closeReview") },
+      { kind: "item", label: "Close Review", run: () => executeCommand("grading.closeReview") },
       { kind: "separator" },
       { kind: "item", label: "Hide Primary Side Bar", run: () => executeCommand("workbench.action.toggleSidebarVisibility") },
     ];

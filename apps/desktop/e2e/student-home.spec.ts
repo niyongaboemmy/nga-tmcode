@@ -55,8 +55,9 @@ test("#4 students: Assignments comes first, Projects is the secondary All My Pro
   const labels = await page.locator(".tm-activitybar-top .tm-activity").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
   const a = labels.findIndex((l) => l.startsWith("Assignments"));
   const p = labels.findIndex((l) => l.startsWith("All My Projects"));
-  expect(a).toBeGreaterThan(-1);
-  expect(p).toBe(a + 1);
+  // 0.17 (L10): Assignments is the first icon; All My Projects comes later, after the editor views.
+  expect(a).toBe(0);
+  expect(p).toBeGreaterThan(a);
   expect(labels.some((l) => l.startsWith("Task Mentor Projects"))).toBe(false);
   // Assignments has the mortar board; the exam Task view has its own icon.
   await expect(assignmentsIcon(page).locator(".codicon-mortar-board")).toHaveCount(1);
@@ -72,7 +73,7 @@ test("#4 students: Assignments comes first, Projects is the secondary All My Pro
   await expect(page.locator(".tm-sidebar-title h2")).toHaveText("All My Projects");
 });
 
-test("#4 an open assignment workspace shows This Folder (sync, Save, status, Submit) on top of Assignments", async ({ page }) => {
+test("#4 an open assignment workspace shows This Folder (one status line) on top of Assignments", async ({ page }) => {
   await fresh(page);
   await openAssignments(page);
   await row(page, 51).getByRole("button", { name: "Start" }).click();
@@ -80,12 +81,13 @@ test("#4 an open assignment workspace shows This Folder (sync, Save, status, Sub
   await command(page, "View: Show Assignments");
   const folder = page.getByTestId("assignments-this-folder");
   await expect(folder).toBeVisible({ timeout: 15_000 });
-  await expect(folder.getByTestId("sync-state")).toContainText("Saved online", { timeout: 15_000 });
-  await expect(folder.getByTestId("save-to-tm")).toBeVisible();
-  await expect(folder.getByTestId("project-status-panel")).toHaveAttribute("data-status", "draft");
-  await expect(folder.getByTestId("project-assessment")).toContainText("Build a to-do list");
-  await expect(folder.getByTestId("submit-project")).toBeVisible();
-  await expect(folder.getByTestId("share-presence")).toBeChecked();
+  // 0.16 (W3, L1, L2): one line — status, sync, Open Brief. Save and Submit are on the brief.
+  const line = folder.getByTestId("this-folder-line");
+  await expect(line).toContainText("Saved online", { timeout: 15_000 });
+  await expect(line).toHaveAttribute("data-status", "in_progress");
+  await expect(line.getByTestId("project-assessment")).toHaveText("Open Brief");
+  await expect(folder.getByTestId("save-to-tm")).toHaveCount(0);
+  await expect(folder.getByTestId("submit-project")).toHaveCount(0);
   // It sits above the list.
   const top = await folder.boundingBox();
   const list = await page.locator(".tm-pane-title", { hasText: "To Do" }).boundingBox();
@@ -229,7 +231,7 @@ test("S16 completed rows show the grade and a lock", async ({ page }) => {
   await command(page, "View: Show Assignments");
   await expect(row(page, 52)).toBeVisible({ timeout: 10_000 });
   await refresh(page);
-  await page.locator(".tm-pane-title", { hasText: "Completed (Read-only)" }).click();
+  await page.locator(".tm-pane-title", { hasText: "Closed" }).click();
   await expect(row(page, 51).getByTestId("assignment-grade-chip")).toHaveText("17/20");
   await expect(row(page, 51).getByTestId("assignment-locked-chip")).toContainText("Read-only");
   await expect(row(page, 51).getByTestId("assignment-locked-chip").locator(".codicon-lock")).toHaveCount(1);

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { command, finish, launch, mock, shot, toast } from "./journeys";
+import { command, finish, launch, mock, shot, toast, visibleDoors } from "./journeys";
 
 /**
  * Golden journey, student (workflow plan 0.1): launch → start → save →
@@ -26,6 +26,9 @@ test("student journey: launch → start → save → submit → returned → gra
   await expect(row(page, 51)).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("assignment-save")).toBeVisible({ timeout: 15_000 });
   await shot(page, info, J, "started");
+  // 0.16 (W3, L1): one Submit and one Save on the screen, both on the brief.
+  expect(await visibleDoors(page)).toEqual({ submit: 1, save: 1 });
+  await expect(page.getByTestId("this-folder-line")).toBeVisible();
 
   // Save to Task Mentor.
   await page.getByTestId("assignment-save").click();
@@ -49,8 +52,10 @@ test("student journey: launch → start → save → submit → returned → gra
   await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "returned", { timeout: 15_000 });
   await expect(row(page, 51)).toHaveAttribute("data-status", "returned");
   await expect(page.getByTestId("project-student-status")).toHaveAttribute("data-status", "returned");
+  await expect(page.getByTestId("this-folder-line")).toHaveAttribute("data-status", "returned");
   await expect(page.getByTestId("assignment-submit")).toHaveText(/Submit Again/);
   await shot(page, info, J, "returned");
+  expect(await visibleDoors(page)).toEqual({ submit: 1, save: 1 });
 
   // Submit again, then graded.
   await page.getByTestId("assignment-submit").click();
@@ -65,6 +70,7 @@ test("student journey: launch → start → save → submit → returned → gra
   await expect(page.getByTestId("assignment-next-step").getByTestId("assignment-result")).toContainText("17");
   await expect(row(page, 51)).toHaveAttribute("data-status", "graded");
   await shot(page, info, J, "graded");
+  expect(await visibleDoors(page)).toEqual({ submit: 0, save: 0 });
 
   const r = await finish(page, info, J);
   expect(r.marks.map((m) => m.name)).toEqual(expect.arrayContaining(["home-shown", "first-start", "submitted"]));

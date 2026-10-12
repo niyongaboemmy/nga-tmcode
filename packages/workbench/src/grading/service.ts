@@ -1,8 +1,9 @@
 import { track } from "../state/activity";
+import { msg, releaseSkipReason } from "../messages/catalog";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { confirmLeaveWorkspace, getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, useWorkbench } from "../state/store";
-import { api, projectsSupported, signedIn, TmError, useProjects } from "../projects/service";
+import { confirmLeaveWorkspace, getPlatform, notify, notifyProgress, openEditorInput, openFile, openPathFromOs, openRecent, revealView as revealViewFn, useWorkbench } from "../state/store";
+import { api, notifyError, projectsSupported, signedIn, TmError, useProjects } from "../projects/service";
 import { linkableActivities } from "../projects/matching";
 import type { Manifest } from "../projects/plan";
 import { markJourney } from "../util/journey";
@@ -124,6 +125,8 @@ interface GradingState {
   /** Where the teacher was before the first review, to go back. */
   homeRoot: string | null;
   loadingReview: string | null;
+  /** Home's Start Grading asked this tab to open its first waiting submission (a counter per activity). */
+  startFirst: Record<string, number>;
 }
 
 export interface Review {
@@ -146,6 +149,7 @@ export const useGrading = create<GradingState>(() => ({
   review: null,
   homeRoot: null,
   loadingReview: null,
+  startFirst: {},
 }));
 const set = useGrading.setState;
 const get = useGrading.getState;
@@ -251,7 +255,7 @@ export async function loadRoster(key: string, opts: { quiet?: boolean } = {}): P
     return roster;
   } catch (e) {
     set({ rosterErrors: { ...get().rosterErrors, [key]: (e as Error).message } });
-    if (!opts.quiet) notify("error", (e as Error).message);
+    if (!opts.quiet) notifyError(e);
     return null;
   }
 }
@@ -262,6 +266,38 @@ export function progressOf(r: Roster | undefined) {
   const submitted = r.counts.to_grade + r.counts.graded;
   const inProgress = r.rows.filter((x) => x.state === "in_progress").length;
   return { graded: r.counts.graded, toGrade: r.counts.to_grade, submitted, inProgress, total: r.counts.total, pct: submitted ? Math.round((r.counts.graded / submitted) * 100) : 0 };
+}
+
+/** Handed in, not graded yet (a draft grade waits for Release, not for grading). */
+const waitingRow = (r: RosterRow) => r.state === "submitted" && !isDraftGrade(r) && !!r.student;
+const handedInAt = (r: RosterRow) => Date.parse(r.submitted_at ?? r.link?.submitted_at ?? "") || Infinity;
+
+/** The first submission to grade in one roster: the oldest hand-in (W8). */
+export function firstToGrade(r: Roster | undefined): RosterRow | null {
+  const rows = (r?.rows ?? []).filter(waitingRow);
+  return rows.sort((x, y) => handedInAt(x) - handedInAt(y))[0] ?? null;
+}
+
+/** Across every practical: the activity holding the oldest waiting submission (Home's Start Grading). */
+export function oldestWaiting(rosters: Record<string, Roster>, keys: string[]): string | null {
+  let best: { key: string; at: number } | null = null;
+  for (const key of keys) {
+    const row = firstToGrade(rosters[key]);
+    if (!row) continue;
+    const at = handedInAt(row);
+    if (!best || at < best.at) best = { key, at };
+  }
+  return best?.key ?? null;
+}
+
+/** Home's Start Grading: straight to the oldest waiting submission across all practicals (the tab opens it). */
+export function startGrading() {
+  const s = get();
+  const key = oldestWaiting(s.rosters, (s.activities ?? []).map((a) => a.key));
+  if (!key) return revealViewFn("grading");
+  // The tab picks that student itself, also when it is already open on someone else.
+  set({ startFirst: { ...s.startFirst, [key]: (s.startFirst[key] ?? 0) + 1 } });
+  openGrading(key);
 }
 
 // ── Opening a grading tab ─────────────────────────────────────────────────
@@ -312,11 +348,9 @@ export const isDraftGrade = (row: RosterRow) => !!row.grade && (row.grade.status
 
 function savedMessage(type: ActivityType, score: number, max: number, released: boolean, draftsKnown: boolean) {
   if (!released) {
-    return draftsKnown
-      ? { severity: "info" as const, text: `Draft saved: ${score}/${max}. The student doesn't see it until you release it.` }
-      : { severity: "warning" as const, text: `Grade saved: ${score}/${max}. This Task Mentor has no draft grades yet, so the student can already see it.` };
+    return draftsKnown ? { severity: "info" as const, text: msg("grade.draftSaved", { score, max }) } : { severity: "warning" as const, text: msg("grade.noDrafts", { score, max }) };
   }
-  return { severity: "info" as const, text: type === "quiz" ? `Grade saved: ${score}/${max}. The student sees it when the quiz results are released.` : `Grade saved: ${score}/${max}. The student sees it in Task Mentor.` };
+  return { severity: "info" as const, text: msg("grade.saved", { score, max, quiz: type === "quiz" }) };
 }
 
 async function saveGradeNow(key: string, studentId: number, input: GradeInput, opts: SaveOptions = { release: true }): Promise<SaveResult> {
@@ -332,7 +366,7 @@ async function saveGradeNow(key: string, studentId: number, input: GradeInput, o
     const released = typeof res.released === "boolean" ? res.released : opts.release || !known || row?.grade?.released !== false;
     const locksStudent = res.locks_student === true;
     const m = savedMessage(type, res.score, res.max_points, released, known);
-    const message = locksStudent ? `${m.text} The student's project is now read-only.` : m.text;
+    const message = locksStudent ? `${m.text} ${msg("grade.locks")}` : m.text;
     // N4: the grade panel shows it inline; a toast only when asked (Save & Next: the panel moves on).
     if (!opts.quiet) notify(m.severity, message, undefined, { kind: m.severity === "warning" ? "result" : "hint" });
     return { ok: true, score: res.score, max_points: res.max_points, released, locksStudent, message, severity: m.severity };
@@ -357,12 +391,13 @@ export async function releaseDrafts(key: string, toInput: (roster: Roster, row: 
   if (!roster) return;
   const rows = roster.rows.filter(isDraftGrade);
   if (!rows.length) {
-    notify("info", "There are no draft grades to release.");
+    notify("info", msg("release.none"));
     return;
   }
   const { type, id, question_id } = parseKey(key);
   const nameOf = (sid: number) => roster.rows.find((r) => r.student?.id === sid)?.student?.name ?? "A student";
-  const why = (code: string) => (code === "GRADE_CHANGED" ? "changed by another teacher" : code === "DRAFT_NEEDS_SUBMISSION" ? "not handed in yet" : code.toLowerCase().replace(/_/g, " "));
+  // Task Mentor's codes in words (N5), never "activity closed" made from ACTIVITY_CLOSED.
+  const why = releaseSkipReason;
   let done = 0;
   let locked = 0;
   const failed: string[] = [];
@@ -373,7 +408,7 @@ export async function releaseDrafts(key: string, toInput: (roster: Roster, row: 
     for (const sk of res.skipped ?? []) failed.push(`${nameOf(sk.student_id)}: ${why(sk.code)}`);
   } catch (e) {
     if (!(e instanceof TmError && e.status === 404)) {
-      notify("error", `Could not release the drafts: ${(e as Error).message}`);
+      notifyError(e, `${msg("release.failed")} `);
       return;
     }
     // Older Task Mentor: one save per draft.
@@ -382,14 +417,13 @@ export async function releaseDrafts(key: string, toInput: (roster: Roster, row: 
       if (r.ok) {
         done++;
         if (r.locksStudent) locked++;
-      } else failed.push(`${row.student?.name ?? "A student"}: ${r.conflict ? "changed by another teacher" : r.error}`);
+      } else failed.push(`${row.student?.name ?? "A student"}: ${r.conflict ? releaseSkipReason("GRADE_CHANGED") : r.error}`);
     }
   }
   await loadRoster(key, { quiet: true });
-  const what = type === "quiz" ? " Students see them when the quiz results are released." : " Students see them in Task Mentor now.";
   const locks = locked ? ` ${locked === 1 ? "1 student's project is" : `${locked} students' projects are`} now read-only.` : "";
-  if (failed.length) notify("warning", `Released ${done} of ${done + failed.length} grades. Not released: ${failed.join("; ")}.${locks}`, undefined, { kind: "result", important: true });
-  else notify("info", `Released ${done} grade${done === 1 ? "" : "s"}.${what}${locks}`, undefined, { kind: "result", important: true });
+  if (failed.length) notify("warning", `${msg("release.partial", { done, total: done + failed.length, list: failed.join("; ") })}${locks}`, undefined, { kind: "result", important: true });
+  else notify("info", `${msg("release.done", { n: done, quiz: type === "quiz" })}${locks}`, undefined, { kind: "result", important: true });
 }
 
 /**
@@ -402,7 +436,7 @@ export async function returnForChanges(key: string, row: RosterRow, message: str
   try {
     await api("POST", `/projects/${row.project.id}/return`, { message: message.trim() || null, ...(allowResubmission ? { allow_resubmission: true } : {}) });
     await loadRoster(key, { quiet: true });
-    notify("info", allowResubmission ? `${row.student?.name ?? "The student"} can change their work and submit again. Their grade was taken back.` : `Returned to ${row.student?.name ?? "the student"} for changes. They can edit and submit again.`, undefined, { kind: "result", important: true });
+    notify("info", allowResubmission ? msg("return.resubmit", { name: row.student?.name ?? "The student" }) : msg("return.done", { name: row.student?.name ?? "the student" }), undefined, { kind: "result", important: true });
     return { ok: true };
   } catch (e) {
     if (e instanceof TmError && e.code === "RETURN_NOT_SUPPORTED") return { ok: false, unsupported: true, error: "Quiz practicals can't be returned for changes. Grade the answer as it is." };
@@ -435,9 +469,20 @@ async function readReviewFile(): Promise<Review | null> {
 }
 
 let readOnlyByReview = false;
+/** The side bar this module hid for review focus (it comes back when the review closes). */
+let hidSidebarForReview = false;
 function applyReview(review: Review | null) {
   set({ review });
   if (inExam()) return;
+  const wb = useWorkbench.getState();
+  if (review && wb.settings["grading.focusWhileReviewing"] !== false && wb.sidebarVisible && wb.activeView === "grading") {
+    // L3: the code gets the width; the grading tab keeps a student switcher.
+    hidSidebarForReview = true;
+    useWorkbench.setState({ sidebarVisible: false });
+  } else if (!review && hidSidebarForReview) {
+    hidSidebarForReview = false;
+    useWorkbench.setState({ sidebarVisible: true });
+  }
   if (review) {
     readOnlyByReview = true;
     useWorkbench.setState({ readOnly: true, readOnlyReason: `Reviewing ${review.student}'s submission for "${review.activity}" (read-only).` });
