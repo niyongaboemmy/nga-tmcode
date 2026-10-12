@@ -1,3 +1,5 @@
+import { currentTest, runSmartTest, testBadge } from "../testing/smartTest";
+import { useFrameworkTests } from "../testing/service";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
@@ -199,6 +201,7 @@ export function RunStatusItems() {
           <Codicon name="chevron-up" />
         </button>
       </span>
+      <TestStatusItem />
       {outcome && (
         <button
           type="button"
@@ -213,6 +216,34 @@ export function RunStatusItems() {
         </button>
       )}
     </>
+  );
+}
+
+/** One Test beside Run: what it tests (tooltip: why) and the last passed/total. */
+function TestStatusItem() {
+  // Re-render on what the choice depends on (selectors return primitives: no new arrays).
+  useWorkbench((s) => activeFilePath(s));
+  useWorkbench((s) => s.tests);
+  useFrameworkTests((s) => s.suites);
+  useFrameworkTests((s) => s.state);
+  useFrameworkTests((s) => s.running);
+  const choice = currentTest();
+  const badge = testBadge(choice);
+  const ok = badge && !badge.running && badge.total > 0 && badge.passed === badge.total;
+  return (
+    <button
+      type="button"
+      className={`tm-status-item is-clickable tm-test-status tm-prio-mid${badge && !badge.running ? (ok ? " is-ok" : " is-fail") : ""}`}
+      title={`${choice.label}, because ${choice.reason}`}
+      aria-label={choice.label}
+      data-testid="test-status"
+      data-kind={choice.kind}
+      onClick={() => void runSmartTest()}
+    >
+      <Codicon name={badge?.running ? "loading" : choice.kind === "add" ? "add" : "beaker"} className={badge?.running ? "codicon-modifier-spin" : ""} />
+      <span>{choice.kind === "add" ? "Add a Test" : "Test"}</span>
+      {badge && !badge.running && badge.total > 0 && <span className="tm-test-badge" data-testid="test-badge">{`${badge.passed}/${badge.total}`}</span>}
+    </button>
   );
 }
 

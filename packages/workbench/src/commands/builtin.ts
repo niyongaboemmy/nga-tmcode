@@ -276,6 +276,9 @@ export function registerBuiltinCommands() {
       if (executeCommandEnabled("testing.runAll")) void executeCommand("testing.runAll");
     },
   });
+  // One Test: the file's tests, its project's, the example tests, or Add a Test (testing/resolve.ts).
+  registerCommand({ id: "tmcode.test", title: "Test", category: "Test", enabled: hasWorkspace, run: async () => (await import("../testing/smartTest")).runSmartTest() });
+  registerCommand({ id: "tmcode.addTest", title: "Add a Test (Example Input and Output)...", category: "Test", enabled: hasWorkspace, run: async () => (await import("../testing/smartTest")).addExampleTest() });
   registerCommand({ id: "tmcode.reloadTests", title: "Reload Tests", category: "Test", enabled: hasWorkspace, run: loadTests });
   registerCommand({ id: "workbench.view.testing", title: "Show Testing", category: "View", run: () => revealView("testing") });
   registerCommand({ id: "tmcode.refreshToolchains", title: "Refresh Toolchains", category: "Run", run: refreshToolchains });

@@ -5,7 +5,7 @@ import { monaco } from "../monaco/setup";
 import { revealInEditor } from "../monaco/reveal";
 import { useRunHub } from "../run/runHub";
 import { getPlatform, log, notify, showPanel, useWorkbench } from "../state/store";
-import { detectSuites, setShellOs, suiteForFile, testAt, type Scope, type TestSuite } from "./frameworks";
+import { detectSuites, setPythonCommand, setShellOs, suiteForFile, testAt, type Scope, type TestSuite } from "./frameworks";
 import { summarize, type TestResult } from "./parsers";
 import { parseRun } from "./report";
 
@@ -55,6 +55,13 @@ export function wireFrameworkTests() {
   if (wired) return;
   wired = true;
   setShellOs(getPlatform().os);
+  // Tests use the Python that Run uses (the detected or chosen interpreter), not whichever is first on PATH.
+  if (getPlatform().kind === "desktop") {
+    void getPlatform()
+      .runner?.detect(false)
+      .then((list) => setPythonCommand(list.find((t) => t.tool === "python")?.path ?? null))
+      .catch(() => {});
+  }
   let folders = useRunHub.getState().folders;
   set({ suites: detectSuites(folders) });
   useRunHub.subscribe((s) => {
@@ -106,14 +113,27 @@ function merge(prev: TestResult[], next: TestResult[], scope?: Scope) {
   return [...kept, ...next];
 }
 
+/** Exit code of a short check command (null: it couldn't start). */
+function probe(command: string, dir: string): Promise<number | null> {
+  const proc = getPlatform().proc!;
+  return new Promise((resolve) => {
+    proc.run(command, dir, (e) => e.type === "exit" && resolve(e.code)).catch(() => resolve(null));
+  });
+}
+
 export async function runSuite(suiteId: string, scope?: Scope) {
-  const suite = get().suites.find((s) => s.id === suiteId);
+  let suite = get().suites.find((s) => s.id === suiteId);
   const proc = getPlatform().proc;
   if (!suite) return;
   if (!proc) return notify("warning", "Framework tests need the TMCode desktop app.");
   if (inExam()) return notify("warning", "Running test commands is turned off during exams.");
   if (get().running[suiteId]) return;
   await saveAll();
+  // pytest not installed (and not asked for): the same tests with Python's own unittest.
+  if (suite.fallback && (await probe(suite.fallback.probe, suite.dir)) !== 0) {
+    const { label, report, command } = suite.fallback;
+    suite = { ...suite, framework: "unittest", label, report, command, fallback: undefined };
+  }
   const { fs } = getPlatform();
   if (suite.report.path) {
     // A stale report must never pass for this run's results.
