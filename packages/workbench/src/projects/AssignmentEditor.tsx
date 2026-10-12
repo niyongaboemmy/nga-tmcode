@@ -219,6 +219,8 @@ function AssignmentBrief({ input }: { input: Input }) {
   // The open project (when it is this assignment's workspace) is the second source of the one status.
   const current = useProjects((s) => s.current);
   useProjects((s) => s.binding);
+  // The first minute: nothing to hand in until the project has a file (unknown while the folder loads: allowed).
+  const hasFiles = useWorkbench((s) => !s.dirs[""] || s.dirs[""].some((e) => !e.name.startsWith(".")));
   const here = !!detail && isOpenWorkspaceOf(detail);
   // The sources disagree for a moment ("Updating…"): refresh both once, quietly, then settle.
   const view = useStatusSync(detail && !teaching ? deriveStatus(detail, current, { here }) : null, id, () => Promise.all([recheck(), refreshAssignments()]));
@@ -263,7 +265,7 @@ function AssignmentBrief({ input }: { input: Input }) {
       ? { label: "Start Assignment", icon: "play", run: () => void startAssignment(id) }
       : !here && (status === "in_progress" || status === "returned" || status === "submitted")
         ? { label: "Continue", icon: "folder-opened", run: () => void startAssignment(id) }
-        : here && (status === "in_progress" || status === "returned") && !detail.read_only
+        : here && (status === "in_progress" || status === "returned") && !detail.read_only && hasFiles
           ? { label: view!.primary?.label ?? "Submit", icon: "send", run: () => void submitAssignment(id) }
           : null;
   const busyIcon = (b: typeof busy, icon: string) => <Codicon name={busy === b ? "loading" : icon} className={busy === b ? "codicon-modifier-spin" : ""} />;
@@ -453,8 +455,15 @@ function AssignmentBrief({ input }: { input: Input }) {
                     <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
                   </button>
                 )}
-                <button type="button" className="tm-button" disabled={saving || !!busy || view!.syncing} onClick={() => void submitAssignment(id)} data-testid="assignment-submit">
-                  {busyIcon("submitting", "send")} {busy === "submitting" ? "Submitting…" : view!.primary?.label ?? "Submit"}
+                <button
+                  type="button"
+                  className="tm-button"
+                  disabled={saving || !!busy || view!.syncing || !hasFiles}
+                  onClick={() => void submitAssignment(id)}
+                  data-testid="assignment-submit"
+                  title={hasFiles ? undefined : "Create your first file (Explorer), then Submit."}
+                >
+                  {busyIcon("submitting", "send")} {busy === "submitting" ? "Submitting…" : !hasFiles ? "Nothing to hand in yet" : (view!.primary?.label ?? "Submit")}
                 </button>
               </div>
             </>

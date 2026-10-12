@@ -191,6 +191,16 @@ export function nextUp(list: AssignmentSummary[] | null, openAssignmentId: numbe
   return todo.sort(bySoonest)[0] ?? null;
 }
 
+/** Why Next up chose `a` (the kicker's first words): "Returned", "Open now", "Late", "Due soonest", "Not started". */
+export function nextUpReason(a: AssignmentSummary, openAssignmentId: number | null = null, now = Date.now()): string {
+  const s = studentStatus(a);
+  if (s === "returned") return "Returned to you";
+  if (a.id === openAssignmentId && s === "in_progress") return "Open now";
+  if (a.due_date && Date.parse(a.due_date) < now) return "Late";
+  if (a.due_date) return "Due soonest";
+  return s === "in_progress" ? "In progress" : "Not started";
+}
+
 /** Home's counters: Returned (n) · To do (n) · Graded (n). */
 export function homeCounts(list: AssignmentSummary[] | null) {
   const out = { returned: 0, todo: 0, graded: 0 };

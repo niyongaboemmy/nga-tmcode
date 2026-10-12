@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { useWorkbench } from "../state/store";
 import { announceChanges, type AssignmentSummary } from "./assignments";
-import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, practicalStateOf, todoSummary } from "./studentHome";
+import { dayLabel, homeCounts, isAssessmentWorkspace, nextUp, nextUpReason, practicalStateOf, todoSummary } from "./studentHome";
 import type { Project } from "./types";
 
 const a = (id: number, over: Partial<AssignmentSummary> = {}): AssignmentSummary => ({
@@ -97,6 +97,13 @@ describe("nextUp (Home)", () => {
     const list = [a(1), a(2, { due_date: at(3) }), a(4, { due_date: at(-1) }), a(5, { ...state("in_progress"), due_date: at(2) })];
     expect(nextUp(list)?.id).toBe(4);
     expect(nextUp([a(1), a(2, { due_date: at(3) })])?.id).toBe(2);
+  });
+  it("says why it chose it", () => {
+    expect(nextUpReason(a(2, { ...state("in_progress", { returned_at: at(-1) }), due_date: at(5) }))).toBe("Returned to you");
+    expect(nextUpReason(a(3, state("in_progress")), 3)).toBe("Open now");
+    expect(nextUpReason(a(4, { due_date: at(-1) }), null, NOW)).toBe("Late");
+    expect(nextUpReason(a(2, { due_date: at(3) }), null, NOW)).toBe("Due soonest");
+    expect(nextUpReason(a(1))).toBe("Not started");
   });
   it("is null when there is nothing to do", () => {
     expect(nextUp(null)).toBeNull();

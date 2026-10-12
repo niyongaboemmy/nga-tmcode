@@ -7,7 +7,7 @@ import { openTaskMentorPage } from "../../projects/commands";
 import { projectsSupported, signIn, useProjects } from "../../projects/service";
 import { SignInWaiting } from "../../projects/SignInWaiting";
 import { deriveStatus } from "../../projects/status";
-import { homeCounts, nextUp } from "../../projects/studentHome";
+import { homeCounts, nextUp, nextUpReason } from "../../projects/studentHome";
 import { openGrading, progressOf, startGrading, useGrading, type Gradable, type Roster } from "../../grading/service";
 import { isTeacherRole, useRole, useRoleChecking } from "../../state/role";
 import { markJourney } from "../../util/journey";
@@ -74,7 +74,7 @@ function SignInCard() {
 // ── Students ────────────────────────────────────────────────────────────────
 
 /** "Next up": the one assignment to work on, with its one button. */
-function NextUp({ a }: { a: AssignmentSummary }) {
+function NextUp({ a, openId }: { a: AssignmentSummary; openId: number | null }) {
   const busy = useAssignments((s) => s.busy[a.id]);
   const current = useProjects((s) => s.current);
   useProjects((s) => s.binding);
@@ -91,6 +91,9 @@ function NextUp({ a }: { a: AssignmentSummary }) {
     <Card testId="home-next-up">
       <div className="tm-home-kicker">
         <span>Next up</span>
+        <span className="tm-home-why" data-testid="home-next-why">
+          · {nextUpReason(a, openId)}
+        </span>
         {a.course_name && <span>· {a.course_name}</span>}
         {due && (
           <span className={`tm-home-due is-${due.tone}`} title={a.due_date ? new Date(a.due_date).toLocaleString() : undefined}>
@@ -151,7 +154,7 @@ function StudentHome() {
         </div>
       )}
       {next ? (
-        <NextUp a={next} />
+        <NextUp a={next} openId={openId} />
       ) : (
         <Card testId="home-nothing" tone="quiet">
           <h2 className="tm-home-title">

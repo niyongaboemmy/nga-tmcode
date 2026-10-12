@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { executeCommand } from "../commands/registry";
-import type { EditorInput } from "../state/store";
+import { useWorkbench, type EditorInput } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { BriefSyncLine } from "./AssignmentEditor";
 import { dueLabel, STUDENT_STATUS_LABEL, useAssignments } from "./assignments";
@@ -30,6 +30,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
   const binding = useProjects((s) => s.binding);
   const current = useProjects((s) => s.current);
   const sync = useProjects((s) => s.sync);
+  const hasFiles = useWorkbench((s) => !s.dirs[""] || s.dirs[""].some((e) => !e.name.startsWith(".")));
   const [busy, setBusy] = useState<null | "starting" | "submitting">(null);
   const ref = findPractical(quizId, questionId);
   const found = ref ? practicalState(ref, mine, binding ? current : null) : null;
@@ -193,8 +194,8 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
                   <Codicon name={saving ? "loading" : "cloud-upload"} className={saving ? "codicon-modifier-spin" : ""} /> {saving ? "Saving…" : "Save to Task Mentor"}
                 </button>
               )}
-              <button type="button" className={`tm-button ${quizFirst ? "tm-button--secondary" : ""}`} disabled={saving || !!busy || view.syncing} onClick={() => void submit()} data-testid="assignment-submit">
-                {spin("submitting", "send")} {busy === "submitting" ? "Submitting…" : "Submit"}
+              <button type="button" className={`tm-button ${quizFirst ? "tm-button--secondary" : ""}`} disabled={saving || !!busy || view.syncing || !hasFiles} onClick={() => void submit()} data-testid="assignment-submit" title={hasFiles ? undefined : "Create your first file (Explorer), then Submit."}>
+                {spin("submitting", "send")} {busy === "submitting" ? "Submitting…" : hasFiles ? "Submit" : "Nothing to hand in yet"}
               </button>
             </div>
           </>

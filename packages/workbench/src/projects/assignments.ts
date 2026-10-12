@@ -299,8 +299,44 @@ export async function startersFor(language: string | null | undefined) {
     if (web) return t.category === "Websites" || tl === "html" || (lang === "javascript" && tl === "javascript" && t.category === "Languages");
     return tl === lang || (lang === "c++" && tl === "cpp") || (lang === "c#" && tl === "csharp");
   };
-  const matching = TEMPLATES.filter(fits);
-  return matching.length ? matching : TEMPLATES.filter((t) => t.category === "Languages");
+  // The assignment's language only: a Python assignment never offers a React app (no language known: the plain languages).
+  return lang ? TEMPLATES.filter(fits) : TEMPLATES.filter((t) => t.category === "Languages");
+}
+
+const FIRST_FILE: Record<string, string> = {
+  python: "main.py",
+  java: "Main.java",
+  c: "main.c",
+  "c++": "main.cpp",
+  cpp: "main.cpp",
+  "c#": "Program.cs",
+  csharp: "Program.cs",
+  javascript: "index.js",
+  js: "index.js",
+  typescript: "index.ts",
+  html: "index.html",
+  css: "index.html",
+  web: "index.html",
+  php: "index.php",
+  go: "main.go",
+  rust: "main.rs",
+  ruby: "main.rb",
+  kotlin: "Main.kt",
+  dart: "main.dart",
+  swift: "main.swift",
+  sql: "queries.sql",
+};
+
+/** The first file of an empty assignment workspace ("main.py" for Python), or null for an unknown language. */
+export function firstFileFor(language: string | null | undefined): string | null {
+  return FIRST_FILE[(language ?? "").trim().toLowerCase()] ?? null;
+}
+
+/** The open workspace's assignment language (for its first file). */
+export function openAssignmentLanguage(): string | null {
+  const id = useProjects.getState().current?.assignment?.id;
+  if (!id) return null;
+  return (get().details[id] ?? get().student?.find((a) => a.id === id))?.language ?? null;
 }
 
 /**
@@ -309,6 +345,8 @@ export async function startersFor(language: string | null | undefined) {
  */
 async function offerStarter(a: AssignmentSummary | null): Promise<boolean> {
   const starters = await startersFor(a?.language);
+  // Nothing in the assignment's language: the Explorer's "Create your first file" is the way in.
+  if (!starters.length) return false;
   const pick = await showQuickPick({
     title: `Your project for "${a?.title ?? "this assignment"}" is empty. How do you want to begin?`,
     placeholder: "Choose starter files (you can change everything)",
@@ -368,6 +406,7 @@ export async function submitAssignment(id: number) {
     notify("info", msg("submit.openFirst"), [{ label: "Continue", run: () => void startAssignment(id) }]);
     return;
   }
+  if (await isEmptyWorkspace()) return notify("info", "Nothing to hand in yet: create your first file, then Submit.");
   // The confirmation says what is handed in (files, size) and what stays here.
   if (!(await confirmSubmit({ message: `Submit "${a.title}"?`, late: !!a.due_date && Date.parse(a.due_date) < Date.now() }))) return;
   setBusy(id, "submitting");

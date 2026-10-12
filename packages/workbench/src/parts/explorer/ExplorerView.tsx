@@ -28,6 +28,8 @@ import { basename, dirname, isWithin, join, validateName } from "../../util/path
 import { globMatcher } from "../../util/glob";
 import { ActionButton, FileIcon, FolderIcon, Codicon } from "../../widgets/icons";
 import { SkeletonRows } from "../../widgets/Skeleton";
+import { useProjects } from "../../projects/service";
+import { firstFileFor, openAssignmentLanguage, useAssignments } from "../../projects/assignments";
 import { writeClipboardText } from "../../util/clipboard";
 import { copyEntries, cutEntries, duplicateEntry, pasteEntries, useFileClipboard } from "./fileClipboard";
 import { rangeBetween, rowLabel, topLevelPaths, typeAheadMatch, visibleChildren, visibleRows, type Row } from "./explorerModel";
@@ -190,6 +192,29 @@ function InlineNameInput({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * An empty folder (guided plan G): one button creates the first file, named for the
+ * assignment's language ("main.py"); otherwise New File.
+ */
+function FirstFile() {
+  const assignment = useProjects((s) => s.current?.assignment ?? null);
+  useAssignments((s) => s.details);
+  const name = assignment ? firstFileFor(openAssignmentLanguage()) : null;
+  const create = async () => {
+    if (!name) return void beginExplorerEdit({ mode: "newFile", target: "" });
+    await createEntry("", name, "file");
+    openFile(name, { pinned: true });
+  };
+  return (
+    <div className="tm-first-file" data-testid="explorer-first-file">
+      <p>{assignment ? "Your project is empty. Create your first file to begin." : "This folder is empty. Create a file to get started."}</p>
+      <button type="button" className="tm-button" onClick={() => void create()} data-testid="explorer-first-file-create">
+        <Codicon name="new-file" /> {name ? `Create ${name}` : "New File..."}
+      </button>
     </div>
   );
 }
@@ -692,7 +717,7 @@ export function ExplorerView() {
         >
           {out}
           {!dirs[""] && <SkeletonRows rows={7} label="Loading folder" />}
-          {dirs[""] && rows.length === 0 && !edit && <div className="tm-view-hint">This folder is empty. Create a file to get started.</div>}
+          {dirs[""] && !edit && rows.every((r) => r.entry.name.startsWith(".")) && <FirstFile />}
         </div>
       )}
     </div>
