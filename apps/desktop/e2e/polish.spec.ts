@@ -57,7 +57,7 @@ test.describe("notification centre (N8) and severity (N10)", () => {
     await t.getByRole("button", { name: "Clear Notification" }).click();
     await page.locator(".tm-status-bell").click();
     const entry = page.getByTestId("notification-entry").filter({ hasText: "was graded" });
-    await expect(entry.getByTestId("notification-entry-action")).toHaveText("View Feedback");
+    await expect(entry.getByTestId("notification-entry-action")).toHaveText("Open");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(1200);
     await page.reload();
@@ -104,9 +104,10 @@ test.describe("layout (L5, L6, L7, L10)", () => {
 
   test("students: Assignments first, no Source Control in an assignment workspace, one-time coach mark", async ({ page }) => {
     await launch(page);
-    await expect(page.locator('.tm-activity[aria-label^="All My Projects"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".tm-statusbar")).toHaveAttribute("data-simple", "true", { timeout: 10_000 });
     const labels = await activityLabels(page);
-    expect(labels.slice(0, 3)).toEqual(["Assignments", "Explorer", "Search"]);
+    // The student layout (guided plan J): plain words.
+    expect(labels.slice(0, 3)).toEqual(["Assignments", "Files", "Search"]);
     await expect(page.getByTestId("coach-mark")).toContainText("Your assignments live here");
     // The first click anywhere dismisses it (it never blocks what is under it).
     await page.locator(".tm-statusbar").click({ position: { x: 5, y: 5 } });

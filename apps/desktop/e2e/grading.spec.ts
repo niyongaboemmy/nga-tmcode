@@ -76,10 +76,10 @@ test("select a submission: the project loads read-only, criteria grade it, Save 
   await expect(page.getByTestId("grade-total")).toContainText("18");
   await page.getByTestId("grade-feedback").fill("Nice and tidy.");
   await page.getByTestId("grade-save-next").click();
-  await expect(page.locator(".tm-toast", { hasText: "Grade saved: 18/20" })).toBeVisible();
 
-  // Next: Chloe, and the progress moved.
+  // Next: Chloe, and the progress moved; her footer says what was saved (T9: no toast over the form).
   await expect(page.getByTestId("grade-panel")).toContainText("Chloe Coder", { timeout: 15_000 });
+  await expect(page.getByTestId("grade-status")).toContainText("Saved Ben Learner: 18/20");
   await expect(page.getByTestId("grading-progress")).toContainText("1 graded");
   await expect(page.getByTestId("grading-progress")).toContainText("1 to grade");
   // Beside the code the roster is folded: the switcher unfolds it.
@@ -152,7 +152,8 @@ test("beside the code the roster folds into a switcher; Full marks, the save hin
   const switcher = page.getByTestId("grade-switcher");
   await expect(switcher).toBeVisible();
   await expect(switcher).toContainText("Ben Learner");
-  await expect(switcher).toContainText("1 of 2");
+  // T3: the counter follows grading order (oldest hand-in first): Ben handed in after Chloe.
+  await expect(switcher).toContainText("2 of 2 to grade");
   await expect(page.locator(".tm-grade-list")).toBeHidden();
   await expect(page.getByTestId("grade-feedback")).toBeInViewport();
   await page.getByTestId("grade-switcher-toggle").click();

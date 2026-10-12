@@ -19,7 +19,7 @@ test.describe("Home", () => {
     // Next up: the overdue case study first, then the counters.
     await expect(page.getByTestId("home-next-title")).toHaveText("Library case study", { timeout: 10_000 });
     await expect(page.getByTestId("home-next-status")).toHaveAttribute("data-status", "not_started");
-    await expect(page.getByTestId("home-count-todo")).toContainText("2 To do");
+    await expect(page.getByTestId("home-count-todo")).toContainText("3 To do");
     await page.getByTestId("home-next-action").click();
     // No starter files: TMCode offers templates (the workspace is already open).
     await page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Start with an empty project" }).click();
@@ -82,7 +82,9 @@ test.describe("role", () => {
     expect((await activityLabels(page)).some((l) => l.startsWith("All My Projects"))).toBe(false);
     await expect(toast(page, "Your layout changed to student.")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.tm-activity[aria-label^="Grading"]')).toHaveCount(0);
-    await expect(page.locator('.tm-activity[aria-label^="All My Projects"]')).toBeVisible();
+    // The student layout: Assignments first, no Projects icon (their projects are in Assignments).
+    await expect(page.locator('.tm-activity[data-view="assignments"]')).toBeVisible();
+    await expect(page.locator('.tm-activity[data-view="projects"]')).toHaveCount(0);
   });
 
   test("first sign-in: a teacher lands on Grading, and the account menu has Grading", async ({ page }) => {
@@ -101,8 +103,10 @@ test.describe("notifications", () => {
     await command(page, "View: Show Assignments");
     await page.locator('[data-testid="assignment-row"][data-assignment-id="51"]').getByRole("button", { name: "Start" }).click();
     await expect(page.getByTestId("assignment-submit")).toBeVisible({ timeout: 15_000 });
-    // The workspace-ready toast is a result (8 s): hovering keeps it.
-    const ready = toast(page, "is ready");
+    // The workspace-ready message is silent (the brief is in front, guided plan A); a save result is an
+    // ordinary toast: hovering keeps it.
+    await command(page, "Projects: Save to Task Mentor");
+    const ready = toast(page, /Saved to Task Mentor|already saved/);
     await expect(ready).toBeVisible();
     await ready.hover();
     await page.waitForTimeout(9_000);
@@ -112,10 +116,9 @@ test.describe("notifications", () => {
 
     await page.getByTestId("assignment-submit").click();
     await page.locator("[data-dialog-button=submit]").click();
-    const submitted = toast(page, /Submitted "Build a to-do list"/);
-    await expect(submitted).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(10_500);
-    await expect(submitted).toBeVisible();
+    // Calm (guided plan A): the brief in front says Submitted; no toast repeats what is on screen.
+    await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
+    await expect(toast(page, /Submitted "Build a to-do list"/)).toHaveCount(0);
   });
 
   test("work returned for changes is announced, unread in the bell, even in Do Not Disturb", async ({ page }) => {
@@ -126,6 +129,8 @@ test.describe("notifications", () => {
     await page.getByTestId("assignment-submit").click();
     await page.locator("[data-dialog-button=submit]").click();
     await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
+    // The brief out of sight (the announcement would be silent while it shows the same thing).
+    await command(page, "View: Close All Editors");
     await mock(page, `m.returnForChanges(51, "Add a delete button to each item.")`);
     await page.getByTestId("assignments-refresh").click();
     const notice = toast(page, /Your teacher returned "Build a to-do list": "Add a delete button/);

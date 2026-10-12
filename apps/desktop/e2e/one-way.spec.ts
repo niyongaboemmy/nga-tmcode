@@ -24,7 +24,8 @@ test.describe("students: one door per step", () => {
     await expect(line).toBeVisible();
     await expect(line).toContainText("In progress");
     await expect(line).toContainText(/Saved online|Not saved|Saving/);
-    expect(await visibleDoors(page)).toEqual({ submit: 1, save: 1 });
+    // Guided plan C: saving is automatic, so the only door is Submit.
+    expect(await visibleDoors(page)).toEqual({ submit: 1, save: 0 });
     // The live-status switch is in the line's "…" menu, locked on for an open assignment.
     await line.getByRole("button", { name: "More Project Actions…" }).click();
     await expect(page.locator(".tm-menu-item", { hasText: "Share Live Status with Teachers: On" })).toHaveAttribute("aria-disabled", "true");
@@ -63,7 +64,6 @@ test.describe("students: one door per step", () => {
     await expect(page.getByTestId("assignments-view")).toBeVisible();
     await page.getByTestId("assignment-submit").click();
     await page.locator("[data-dialog-button=submit]").click();
-    await expect(toast(page, /Submitted "Build a navbar"/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
     await expect(page.getByTestId("assignments-view")).toBeVisible();
   });
@@ -82,7 +82,8 @@ test.describe("students: one door per step", () => {
   test("an action started signed out carries on after the sign-in", async ({ page }) => {
     await launch(page, { signedIn: false });
     await command(page, "Projects: New Project…");
-    await expect(toast(page, "Signed in. Starting your new project…")).toBeVisible({ timeout: 10_000 });
+    // Sign-in messages replace each other (one owner, guided plan A); the action carries on.
+    await expect(toast(page, /Signed in/)).toBeVisible({ timeout: 10_000 });
     await expect(page.locator(".tm-quick-pick")).toBeVisible();
   });
 });
@@ -118,8 +119,10 @@ test.describe("teachers: grading", () => {
     await expect(page.getByTestId("grade-missing")).toHaveCount(0);
     await page.getByTestId("grade-feedback").click();
     await page.keyboard.press("ControlOrMeta+Enter");
-    await expect(toast(page, "Grade saved: 20/20")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("grade-panel")).toContainText("Ben Learner", { timeout: 10_000 });
+    // T9: no toast over the Feedback box; the next student's footer says what was saved.
+    await expect(page.locator(".tm-grade-footer")).toContainText("Saved Chloe Coder: 20/20");
+    await expect(toast(page, "Grade saved")).toHaveCount(0);
   });
 
   test("the split button remembers the teacher's last choice", async ({ page }) => {

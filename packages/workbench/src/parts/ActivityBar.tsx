@@ -112,6 +112,7 @@ export function ActivityBar() {
               role="tab"
               aria-selected={active}
               className={`tm-activity ${active ? "is-active" : ""}`}
+              data-view={v.id}
               title={label(v)}
               aria-label={label(v)}
               onClick={() => showView(v.id)}

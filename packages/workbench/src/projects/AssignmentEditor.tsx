@@ -159,7 +159,9 @@ export function BriefSyncLine() {
   const autoOn = autoSaveMode() !== "off";
   const busy = sync === "saving" || sync === "pulling";
   const failing = !!autoError && !busy && sync !== "synced" && sync !== "conflict";
-  const pending = autoOn && !failing && sync !== "conflict" && sync !== "error" && (unsaved > 0 || sync === "local-changes" || sync === "both");
+  const queued = useProjects((s) => !!s.autoSaveQueued);
+  // "Saving…" only when a save is really on its way: unsaved editors (auto-saved to disk, then uploaded) or a queued upload.
+  const pending = autoOn && !failing && sync !== "conflict" && sync !== "error" && (unsaved > 0 || (queued && (sync === "local-changes" || sync === "both")));
   const files = `${unsaved} file${unsaved === 1 ? "" : "s"}`;
   const text = failing
     ? `Not saved to Task Mentor: ${autoError}`

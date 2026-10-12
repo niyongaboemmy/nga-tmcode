@@ -24,20 +24,20 @@ test("student journey: launch → start → save → submit → returned → gra
   await page.getByTestId("home-next-action").click();
   await expect(page.getByTestId("assignment-page")).toBeVisible({ timeout: 15_000 });
   await expect(row(page, 51)).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("assignment-save")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("assignment-submit")).toBeVisible({ timeout: 15_000 });
   await shot(page, info, J, "started");
-  // 0.16 (W3, L1): one Submit and one Save on the screen, both on the brief.
-  expect(await visibleDoors(page)).toEqual({ submit: 1, save: 1 });
+  // 0.16 (W3, L1) + guided plan C: one Submit on the brief; saving is automatic (no Save button).
+  expect(await visibleDoors(page)).toEqual({ submit: 1, save: 0 });
   await expect(page.getByTestId("this-folder-line")).toBeVisible();
 
-  // Save to Task Mentor.
-  await page.getByTestId("assignment-save").click();
+  // Saved to Task Mentor by itself: the brief's line says so.
   await expect(page.getByTestId("assignment-sync")).toHaveAttribute("data-state", "synced", { timeout: 15_000 });
+  // Calm (guided plan A): never more than two messages on screen.
+  expect(await page.locator(".tm-toast:visible").count()).toBeLessThanOrEqual(2);
 
   // Submit (confirm dialog).
   await page.getByTestId("assignment-submit").click();
   await page.locator("[data-dialog-button=submit]").click();
-  await expect(page.locator(".tm-toast", { hasText: /Submitted "Build a to-do list"/ })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
   await shot(page, info, J, "submitted");
 
@@ -47,7 +47,8 @@ test("student journey: launch → start → save → submit → returned → gra
   await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "returned", { timeout: 15_000 });
   await expect(page.getByTestId("assignment-returned")).toContainText("Add a delete button");
   // N2: a notice that stays until read.
-  await expect(toast(page, /Your teacher returned "Build a to-do list"/)).toBeVisible();
+  // Calm (guided plan A): the brief in front shows Returned, so no toast repeats it; the bell keeps it.
+  await expect(toast(page, /Your teacher returned "Build a to-do list"/)).toHaveCount(0);
   // W4: one status on the whole screen, and the way back in is Submit Again.
   await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "returned", { timeout: 15_000 });
   await expect(row(page, 51)).toHaveAttribute("data-status", "returned");
@@ -55,7 +56,7 @@ test("student journey: launch → start → save → submit → returned → gra
   await expect(page.getByTestId("this-folder-line")).toHaveAttribute("data-status", "returned");
   await expect(page.getByTestId("assignment-submit")).toHaveText(/Submit Again/);
   await shot(page, info, J, "returned");
-  expect(await visibleDoors(page)).toEqual({ submit: 1, save: 1 });
+  expect(await visibleDoors(page)).toEqual({ submit: 1, save: 0 });
 
   // Submit again, then graded.
   await page.getByTestId("assignment-submit").click();
@@ -64,7 +65,8 @@ test("student journey: launch → start → save → submit → returned → gra
   await mock(page, `m.grade(51, 17, "Good work: the list adds and deletes.")`);
   await page.getByTestId("assignments-refresh").click();
   await expect(page.getByTestId("assignment-state")).toHaveAttribute("data-status", "graded", { timeout: 15_000 });
-  await expect(toast(page, /Build a to-do list was graded: 17\/20/)).toBeVisible();
+  // The brief in front shows the grade (guided plan A): no toast repeats it.
+  await expect(toast(page, /Build a to-do list was graded: 17\/20/)).toHaveCount(0);
   // L8: the result is the next-step card, at the top; one status everywhere.
   await expect(page.getByTestId("assignment-next-step")).toHaveAttribute("data-status", "graded", { timeout: 15_000 });
   await expect(page.getByTestId("assignment-next-step").getByTestId("assignment-result")).toContainText("17");

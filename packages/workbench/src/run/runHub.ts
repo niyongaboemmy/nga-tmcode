@@ -261,9 +261,10 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
   log("Run", `${a.kind}: ${a.label}${opts.reason ? ` (because ${opts.reason})` : ""}`);
   // One place to look: every run says in the Run panel what it is and why (terminal runs too).
   const note = opts.reason ? `Running ${a.label} because ${opts.reason}.` : `Running ${a.label}.`;
-  if (a.kind !== "runFile") {
+  // Terminal runs: the Run panel still says what started and where its output is (the one place to look first).
+  if (a.kind === "task" || a.kind === "devServer" || a.kind === "repl") {
     writeConsole({ type: "clear" });
-    writeConsole({ type: "info", text: `▶ ${note}${a.kind === "task" || a.kind === "devServer" || a.kind === "repl" ? " Its output is in the Terminal panel." : ""}` });
+    writeConsole({ type: "info", text: `▶ ${note} Its output is in the Terminal panel.` });
   }
   const os = getPlatform().os;
   switch (a.kind) {

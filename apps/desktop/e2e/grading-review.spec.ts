@@ -309,8 +309,9 @@ test("keyboard: ⌥↓/⌥↑ change student, ⌘Enter saves and moves on, roste
   await gradeMoreAction(page, "Shortcuts");
   await expect(page.getByTestId("grade-shortcuts")).toContainText("Save & Next");
   await page.keyboard.press("ControlOrMeta+Enter");
-  await expect(toast(page, "Grade saved: 20/20")).toBeVisible();
   await expect(page.getByTestId("grade-panel")).toContainText("Chloe Coder", { timeout: 15_000 });
+  // T9: the next student's footer says what was saved (no toast over the form).
+  await expect(page.getByTestId("grade-status")).toContainText("Saved Ben Learner: 20/20");
   // Grading: Focus Grade Panel.
   await command(page, "Grading: Focus Grade Panel");
   await expect(page.getByTestId("grade-panel").locator(":focus")).toHaveCount(1);

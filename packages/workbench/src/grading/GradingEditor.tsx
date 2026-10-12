@@ -189,7 +189,8 @@ function openGradingInTaskMentor(key: string, studentId: number | null) {
 }
 
 /** Save & Next's note for the next panel ("Saved Chloe Coder: 20/20."). */
-let carried: { key: string; text: string; at: number } | null = null;
+const filters = new Map<string, Filter>();
+let carried: { key: string; from: number; text: string; at: number } | null = null;
 
 /** What the split button's main part does; the teacher's last choice from its menu (L3). */
 type SaveMode = "next" | "draft" | "release";
@@ -225,10 +226,10 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
   const [openComment, setOpenComment] = useState<number | null>(null);
   const [saving, setSaving] = useState<null | "draft" | "release">(null);
   // Save & Next: what was just saved for the previous student shows here first.
+  // Kept for 15 s (the next panel may mount more than once while the review opens), never on the saved student's own panel.
   const [justSaved, setJustSaved] = useState<string | null>(() => {
     const c = carried;
-    carried = null;
-    return c && c.key === gkey && Date.now() - c.at < 15_000 ? c.text : null;
+    return c && c.key === gkey && c.from !== row.student?.id && Date.now() - c.at < 15_000 ? c.text : null;
   });
   const [conflict, setConflict] = useState<RowGrade | null>(null);
   const [warn, setWarn] = useState<Record<string, string>>({});
@@ -289,7 +290,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       setConflict(null);
       setJustSaved(r.message);
       if (next) {
-        carried = { key: gkey, text: `Saved ${row.student.name}: ${r.score}/${r.max_points}${r.released ? "" : " (draft)"}.`, at: Date.now() };
+        carried = { key: gkey, from: row.student.id, text: `Saved ${row.student.name}: ${r.score}/${r.max_points}${r.released ? "" : " (draft)"}.`, at: Date.now() };
         onNext();
       }
     } else if (r.conflict) {
@@ -347,16 +348,16 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
     ? saving === "draft"
       ? "Saving the draft…"
       : "Saving…"
-    : gradable && !complete
-      ? rubric.length
-        ? "" // shown on the first criterion without a score
-        : "Enter a score to save"
-      : failed
-        ? "Not saved"
-        : dirty
-          ? "Unsaved changes"
-          : justSaved
-            ? justSaved
+    : failed
+      ? "Not saved"
+      : dirty
+        ? "Unsaved changes"
+        : justSaved
+          ? justSaved // Save & Next: what was saved for the previous student (T9), until this one is touched
+          : gradable && !complete
+            ? rubric.length
+              ? "" // shown on the first criterion without a score
+              : "Enter a score to save"
             : isDraftGrade(row)
               ? "Draft: the student doesn't see it yet"
               : row.grade?.graded_at
@@ -731,7 +732,12 @@ export function GradingEditor({ input }: { input: Input }) {
   const selected = useGrading((s) => s.selected[key]);
   const localDrafts = useDrafts((s) => s.drafts);
   const failedSaves = useDrafts((s) => s.failed);
-  const [filter, setFilter] = useState<Filter>("to-grade");
+  // The teacher's filter survives the tab re-mounting while a review folder opens (per practical, this session).
+  const [filter, setFilterState] = useState<Filter>(() => filters.get(key) ?? "to-grade");
+  const setFilter = (f: Filter) => {
+    filters.set(key, f);
+    setFilterState(f);
+  };
   const [query, setQuery] = useState("");
   const [autoLoad, setAutoLoad] = useState(true);
   // Beside the code the tab is narrow: the roster folds into a switcher bar so the grade form fits.
@@ -793,6 +799,8 @@ export function GradingEditor({ input }: { input: Input }) {
   const choose = (r: RosterRow) => {
     if (!r.student) return;
     setFocusId(r.student.id);
+    // The dropdown list closes on any choice, the open student too (it covers the form).
+    setShowList(false);
     if (r.student.id === selected) return;
     // Unsaved scores stay as a draft on this computer (marked in the list).
     selectStudent(key, r.student.id);

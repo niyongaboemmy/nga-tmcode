@@ -40,7 +40,8 @@ const row = (page: Page, id: number) => page.locator(`[data-testid="assignment-r
 const brief = (page: Page) => page.locator(".tm-tab", { hasText: "Build a to-do list" });
 
 async function startPractical(page: Page) {
-  await page.locator('.tm-activity[aria-label^="Assignments"]').click();
+  // The view, not its icon: clicking the active icon hides the side bar (it may already be open on Assignments).
+  await command(page, "View: Show Assignments");
   await expect(row(page, 51)).toContainText("Build a to-do list");
   await row(page, 51).getByRole("button", { name: "Start" }).click();
   await expect(page.getByTestId("assignment-submit")).toBeVisible({ timeout: 15_000 });
@@ -90,7 +91,8 @@ test("a file that grows past the size limit stays in Task Mentor instead of bein
 
 test("the brief shows how it's graded, then the score and note per criterion", async ({ page }) => {
   await fresh(page);
-  await page.locator('.tm-activity[aria-label^="Assignments"]').click();
+  // The view, not its icon: clicking the active icon hides the side bar (it may already be open on Assignments).
+  await command(page, "View: Show Assignments");
   await row(page, 51).click();
   const rubric = page.getByTestId("assignment-rubric");
   await expect(rubric).toContainText("How it's graded");
@@ -129,7 +131,8 @@ test("assignment work saves itself: the brief's sync line, leaving the window, a
   const ws = await workspace(page);
   await brief(page).click();
   await expect(page.getByTestId("assignment-next-step")).toContainText("saves to Task Mentor by itself");
-  await expect(page.getByTestId("assignment-save")).toHaveText(/Save to Task Mentor/);
+  // One saving story (guided plan C): no Save button while work saves by itself.
+  await expect(page.getByTestId("assignment-save")).toHaveCount(0);
   const before = (await revisionsOf(page, ws)).length;
 
   await externalWrite(page, "app.js", "const items = ['auto'];\n");
@@ -165,10 +168,10 @@ test("a closed assignment says Closed and can't be submitted; late work is expla
   await mock(page, (m) => m.closeAssignment(51));
   await command(page, "Assignments: Refresh Assignments");
   await expect(page.getByTestId("assignment-state")).toHaveText("Closed");
-  // 0.15 (one door per step): no Submit at all on a closed assignment; the card says why, and Save still works.
+  // 0.15 (one door per step): no Submit at all on a closed assignment; the card says why, and saving goes on by itself.
   await expect(page.getByTestId("assignment-submit")).toHaveCount(0);
   await expect(page.getByTestId("assignment-closed")).toContainText("no longer takes submissions");
-  await expect(page.getByTestId("assignment-save")).toBeVisible();
+  await expect(page.getByTestId("assignment-sync")).toBeVisible();
 });
 
 test("opening another assignment offers to save this one first", async ({ page }) => {
@@ -176,7 +179,7 @@ test("opening another assignment offers to save this one first", async ({ page }
   await startPractical(page);
   const ws = await workspace(page);
   const before = (await revisionsOf(page, ws)).length;
-  // Not saved by itself yet (no blur, no 30 s): the switch asks.
+  // Not saved by itself yet (an outside change, no blur): the switch asks.
   await externalWrite(page, "app.js", "const items = ['switch'];\n");
   await command(page, "View: Show Assignments");
   await row(page, 52).getByRole("button", { name: "Start" }).click();
@@ -212,7 +215,7 @@ test("conflicts: Compare opens Task Mentor's copy beside mine; taking theirs kee
   await expect(page.locator(".tm-tab", { hasText: "(Task Mentor)" })).toHaveCount(0);
 
   // My version was kept in Local History before Task Mentor's replaced it.
-  await page.locator('.tm-activity[aria-label^="Explorer"]').click();
+  await page.locator('.tm-activity[data-view="explorer"]').click();
   await page.locator('.tm-explorer [data-path="main.py"]').dblclick();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("theirs");
   const timeline = page.getByTestId("timeline");

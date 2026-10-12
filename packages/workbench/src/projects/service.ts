@@ -37,6 +37,8 @@ export interface ProjectsState {
   headAt?: number | null;
   /** Automatic saves that failed in a row (a toast says why after two). */
   autoSaveFailures?: number;
+  /** An automatic save is on its way (a few seconds after a file save): the brief says "Saving…". */
+  autoSaveQueued?: boolean;
   /** Why the last automatic save failed (the brief's sync line shows it at once, in warning colour). */
   autoSaveError?: string | null;
 }
@@ -1083,9 +1085,10 @@ export function autoSaveMode(): "off" | "onSave" | "interval" | "assignment" {
 let autoTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleAutoSave(delay: number) {
   if (autoTimer) clearTimeout(autoTimer);
+  set({ autoSaveQueued: true });
   autoTimer = setTimeout(() => {
     autoTimer = null;
-    void autoSaveNow();
+    void autoSaveNow().finally(() => set({ autoSaveQueued: false }));
   }, delay);
 }
 

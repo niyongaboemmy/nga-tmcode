@@ -48,17 +48,14 @@ async function refresh(page: Page) {
 
 const opacity = (_page: Page, sel: ReturnType<Page["locator"]>) => sel.evaluate((el) => Number(getComputedStyle(el).opacity));
 
-test("#4 students: Assignments comes first, Projects is the secondary All My Projects list", async ({ page }) => {
+test("#4 students: Assignments comes first; their own projects are Other projects inside it", async ({ page }) => {
   await fresh(page);
   // 0.15: until the role is known only Assignments shows; then the student layout.
-  await expect(page.locator('.tm-activity[aria-label^="All My Projects"]')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".tm-statusbar")).toHaveAttribute("data-simple", "true", { timeout: 10_000 });
   const labels = await page.locator(".tm-activitybar-top .tm-activity").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
-  const a = labels.findIndex((l) => l.startsWith("Assignments"));
-  const p = labels.findIndex((l) => l.startsWith("All My Projects"));
-  // 0.17 (L10): Assignments is the first icon; All My Projects comes later, after the editor views.
-  expect(a).toBe(0);
-  expect(p).toBeGreaterThan(a);
-  expect(labels.some((l) => l.startsWith("Task Mentor Projects"))).toBe(false);
+  // 0.17 (L10): Assignments is the first icon; guided plan H: no second Projects view for students.
+  expect(labels.findIndex((l) => l.startsWith("Assignments"))).toBe(0);
+  expect(labels.some((l) => /Projects/.test(l))).toBe(false);
   // Assignments has the mortar board; the exam Task view has its own icon.
   await expect(assignmentsIcon(page).locator(".codicon-mortar-board")).toHaveCount(1);
 
@@ -66,9 +63,9 @@ test("#4 students: Assignments comes first, Projects is the secondary All My Pro
   await openAssignments(page);
   await expect(page.getByTestId("assignments-this-folder")).toHaveCount(0);
 
-  // "…" › Show All My Projects.
-  await page.locator(".tm-sidebar-title").getByRole("button", { name: "Views and More Actions..." }).click();
-  await page.locator(".tm-menu-item", { hasText: "Show All My Projects" }).click();
+  // Other projects (folded) at the bottom of Assignments; the palette still opens the full list.
+  await expect(page.getByTestId("assignments-other-projects")).toBeVisible();
+  await command(page, "View: Show Task Mentor Projects");
   await expect(page.getByTestId("projects-view")).toBeVisible();
   await expect(page.locator(".tm-sidebar-title h2")).toHaveText("All My Projects");
 });
@@ -102,7 +99,7 @@ test("#10 Home: sign in from the one card, then Assignments opens once", async (
   // After the first sign-in the Assignments view opens by itself (students; 0.15 waits for the role).
   await expect(page.getByTestId("assignments-view")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("home-next-up")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId("home-count-todo")).toContainText("2 To do");
+  await expect(page.getByTestId("home-count-todo")).toContainText("3 To do");
 
   // Only once: sign out on purpose and in again, the view stays where it is.
   await command(page, "View: Show Explorer");
@@ -208,14 +205,14 @@ test("S9 new and graded work is announced between checks, never on the first loa
   await refresh(page);
   const added = page.locator(".tm-toast", { hasText: "New assignment: Weather app" });
   await expect(added).toBeVisible();
-  await added.getByRole("button", { name: "Show Brief" }).click();
+  await added.getByRole("button", { name: "Open" }).click();
   await expect(page.locator(".tm-tab", { hasText: "Weather app" })).toBeVisible();
 
   await mock(page, (m) => m.grade(51, 17, "Nice work"));
   await refresh(page);
   const graded = page.locator(".tm-toast", { hasText: "Build a to-do list was graded: 17/20" });
   await expect(graded).toBeVisible();
-  await graded.getByRole("button", { name: "View Feedback" }).click();
+  await graded.getByRole("button", { name: "Open" }).click();
   await expect(page.locator(".tm-tab.is-active", { hasText: "Build a to-do list" })).toBeVisible();
   // Told once: the action closed it, and another check says nothing new.
   await refresh(page);
@@ -231,7 +228,8 @@ test("S16 completed rows show the grade and a lock", async ({ page }) => {
   await command(page, "View: Show Assignments");
   await expect(row(page, 52)).toBeVisible({ timeout: 10_000 });
   await refresh(page);
-  await page.locator(".tm-pane-title", { hasText: "Closed" }).click();
+  // One rule (guided plan I): graded is graded, closed or not.
+  await expect(page.locator(".tm-pane-title", { hasText: "Graded" })).toBeVisible();
   await expect(row(page, 51).getByTestId("assignment-grade-chip")).toHaveText("17/20");
   await expect(row(page, 51).getByTestId("assignment-locked-chip")).toContainText("Read-only");
   await expect(row(page, 51).getByTestId("assignment-locked-chip").locator(".codicon-lock")).toHaveCount(1);
@@ -292,20 +290,19 @@ test("#17 Projects rows: arrows, Home/End and Enter", async ({ page }) => {
   await expect(page.locator(".tm-project-row.is-current .tm-project-name")).toHaveText(name, { timeout: 15_000 });
 });
 
-test("S4 the session ends: a sticky banner offers Sign In; signing out on purpose shows none", async ({ page }) => {
+test("S4 the session ends: a sticky banner offers Sign in; signing out on purpose shows none", async ({ page }) => {
   await fresh(page);
   await openAssignments(page);
   await mock(page, (m) => m.expireSession());
   const banner = page.getByTestId("session-ended-banner");
   await expect(banner).toBeVisible();
   await expect(banner).toHaveText(/Your NGA session ended\. Sign in to keep saving\./);
-  await banner.getByRole("button", { name: "Sign In" }).click();
+  await banner.getByRole("button", { name: "Sign in" }).click();
   await expect(banner).toHaveCount(0, { timeout: 10_000 });
   await expect(row(page, 51)).toBeVisible({ timeout: 10_000 });
 
   // Sign Out chosen here: just the sign-in screen.
-  await page.locator(".tm-sidebar-title").getByRole("button", { name: "Views and More Actions..." }).click();
-  await page.locator(".tm-menu-item", { hasText: "Show All My Projects" }).click();
+  await command(page, "View: Show Task Mentor Projects");
   await page.locator(".tm-sidebar-title").getByRole("button", { name: "Views and More Actions..." }).click();
   await page.locator(".tm-menu-item", { hasText: "Sign Out of NGA" }).click();
   await page.locator(".tm-dialog").getByRole("button", { name: "Sign Out" }).click();
