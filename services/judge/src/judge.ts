@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { languageById, LANGUAGES, type Ctx, type Language } from "./languages.ts";
+import { javaMainClass, languageById, LANGUAGES, type Ctx, type Language } from "./languages.ts";
 import type { ExecResult, Limits, Sandbox } from "./sandbox.ts";
 
 /**
@@ -30,6 +30,7 @@ export interface RunRequest {
 
 export type Verdict =
   | "accepted"
+  | "compile-error"
   | "wrong-answer"
   | "ok"
   | "runtime-error"
@@ -47,6 +48,8 @@ export interface TestResult {
   exit_code: number | null;
   time_ms: number;
   memory_kb: number | null;
+  /** stdout or stderr was cut (response caps, or the program hit the output limit). */
+  truncated: boolean;
 }
 
 export interface RunResponse {
@@ -113,12 +116,33 @@ export function languageVersions(programs: Map<string, string>) {
   return out;
 }
 
+/** Response caps: stdout up to the request's output limit (at most 1 MB), stderr and compiler output 64 KB. */
+const STDOUT_CAP_KB = 1024;
+const STDERR_CAP = 64 * 1024;
+
+/** Cuts a string to at most `bytes` UTF-8 bytes (never splitting a character). */
+export function capBytes(s: string, bytes: number): { text: string; cut: boolean } {
+  if (Buffer.byteLength(s) <= bytes) return { text: s, cut: false };
+  return { text: Buffer.from(s).subarray(0, bytes).toString("utf8").replace(/\uFFFD+$/, ""), cut: true };
+}
+
 function failedCompile(language: string, kind: RunResponse["sandbox"], compile: NonNullable<RunResponse["compile"]>, tests: TestCase[]): RunResponse {
+  const stderr = capBytes(compile.output || "Compilation failed", STDERR_CAP);
   return {
     language,
     sandbox: kind,
     compile,
-    tests: tests.map((t) => ({ id: t.id, verdict: "runtime-error", passed: false, stdout: "", stderr: "Compilation failed", exit_code: null, time_ms: 0, memory_kb: null })),
+    tests: tests.map((t) => ({
+      id: String(t.id),
+      verdict: "compile-error",
+      passed: false,
+      stdout: "",
+      stderr: stderr.text,
+      exit_code: null,
+      time_ms: 0,
+      memory_kb: null,
+      truncated: stderr.cut,
+    })),
   };
 }
 
@@ -171,9 +195,11 @@ export async function judge(sandbox: Sandbox, programs: Map<string, string>, req
     outputKb: Math.min(req.limits?.output_kb ?? 256, 4096),
   };
   const stem = req.entry.split("/").pop()!.replace(/\.[^.]+$/, "");
+  const entrySource = String(req.files.find((f) => f.path === req.entry)?.content ?? "");
   const ctx: Ctx = {
     entry: req.entry,
     entryStem: stem,
+    mainClass: javaMainClass(stem, entrySource),
     sources: (ext) => req.files.map((f) => f.path).filter((p) => p.toLowerCase().endsWith(`.${ext}`)),
     bin: (p) => programs.get(p) ?? p,
   };
@@ -194,11 +220,20 @@ export async function judge(sandbox: Sandbox, programs: Map<string, string>, req
         limits: { cpuS: 20, wallS: 30, memoryMb: 768, processes: 64, outputKb: 256 },
         env: lang.env,
       });
-      compile = { ok: c.status === "ok" && c.exitCode === 0, output: `${c.stdout}${c.stderr}`.slice(0, 64 * 1024), time_ms: c.timeMs };
+      compile = { ok: c.status === "ok" && c.exitCode === 0, output: capBytes(`${c.stdout}${c.stderr}`, STDERR_CAP).text, time_ms: c.timeMs };
       if (!compile.ok) return failedCompile(lang.id, sandbox.kind, compile, req.tests);
     }
+    // Every test starts from the state right after the compile: files one test
+    // writes must not leak into the next. Same box (no extra acquire), emptied
+    // and refilled from this snapshot before tests 2..n.
+    const snapshot = req.tests.length > 1 ? await box.snapshot() : [];
+    const stdoutCap = Math.min(limits.outputKb, STDOUT_CAP_KB) * 1024;
     const tests: TestResult[] = [];
-    for (const t of req.tests) {
+    for (const [i, t] of req.tests.entries()) {
+      if (i > 0) {
+        await box.reset();
+        for (const f of snapshot) await box.write(f.path, f.data, f.mode);
+      }
       const r = await box.exec(lang.run(ctx), { stdin: t.input ?? "", limits, env: lang.env });
       let verdict = VERDICT[r.status];
       if (verdict === "ok" && r.exitCode !== 0) verdict = "runtime-error";
@@ -208,15 +243,18 @@ export async function judge(sandbox: Sandbox, programs: Map<string, string>, req
         if (verdict === "ok") verdict = passed ? "accepted" : "wrong-answer";
         else passed = false;
       }
+      const stdout = capBytes(r.stdout, stdoutCap);
+      const stderr = capBytes(r.stderr, STDERR_CAP);
       tests.push({
         id: String(t.id),
         verdict,
         passed,
-        stdout: r.stdout.slice(0, 64 * 1024),
-        stderr: r.stderr.slice(0, 8 * 1024),
+        stdout: stdout.text,
+        stderr: stderr.text,
         exit_code: r.exitCode,
         time_ms: r.timeMs,
         memory_kb: r.memoryKb,
+        truncated: stdout.cut || stderr.cut || !!r.stderrTruncated || r.status === "output-limit",
       });
     }
     return { language: lang.id, sandbox: sandbox.kind, compile, tests };

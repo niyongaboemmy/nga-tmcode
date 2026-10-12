@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -27,12 +27,59 @@ export interface ExecResult {
   timeMs: number;
   memoryKb: number | null;
   message?: string;
+  /** stderr was cut at the sandbox's 64 KB cap (stdout cut = "output-limit"). */
+  stderrTruncated?: boolean;
+}
+
+/** A regular file in a box, for snapshots (build outputs keep their mode, e.g. ./main). */
+export interface BoxFile {
+  path: string;
+  data: Buffer;
+  mode: number;
 }
 
 export interface Box {
-  write(path: string, content: string): Promise<void>;
+  write(path: string, content: string | Buffer, mode?: number): Promise<void>;
   exec(argv: string[], opts: { stdin: string; limits: Limits; env?: Record<string, string> }): Promise<ExecResult>;
+  /** Every regular file in the box (sources and build outputs), minus the judge's own stdio files. */
+  snapshot(): Promise<BoxFile[]>;
+  /** Empties the box, keeping the same box (no new acquire): the next test starts clean. */
+  reset(): Promise<void>;
   dispose(): Promise<void>;
+}
+
+/** The judge's redirect files, never part of a snapshot. */
+const STDIO_FILES = new Set([".stdin", ".stdout", ".stderr"]);
+const SNAPSHOT_MAX_BYTES = 64 * 1024 * 1024;
+
+async function listFiles(root: string): Promise<BoxFile[]> {
+  const out: BoxFile[] = [];
+  let total = 0;
+  const walk = async (rel: string) => {
+    const entries = await readdir(rel ? join(root, rel) : root, { withFileTypes: true });
+    for (const e of entries) {
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (!rel && STDIO_FILES.has(e.name)) continue;
+      if (e.isDirectory()) await walk(path);
+      else if (e.isFile()) {
+        const full = join(root, path);
+        const [data, st] = await Promise.all([readFile(full), lstat(full)]);
+        total += data.length;
+        if (total > SNAPSHOT_MAX_BYTES) throw new Error("Build output is larger than 64 MB.");
+        out.push({ path, data, mode: st.mode & 0o777 });
+      }
+      // Symlinks and special files are not carried over.
+    }
+  };
+  await walk("");
+  return out;
+}
+
+async function writeInto(root: string, path: string, content: string | Buffer, mode?: number) {
+  const full = safeJoin(root, path);
+  await mkdir(dirname(full), { recursive: true });
+  await writeFile(full, content);
+  if (mode !== undefined) await chmod(full, mode);
 }
 
 export interface Sandbox {
@@ -149,16 +196,20 @@ export class IsolateSandbox implements Sandbox {
       this.give(id);
       throw new Error(`isolate --init failed: ${init.stderr.trim()}`);
     }
-    const boxDir = join(init.stdout.trim(), "box");
+    let boxDir = join(init.stdout.trim(), "box");
     const metaFile = join(tmpdir(), `tm-judge-meta-${id}.txt`);
     const give = () => this.give(id);
     let disposed = false;
 
     return {
-      async write(path, content) {
-        const full = safeJoin(boxDir, path);
-        await mkdir(dirname(full), { recursive: true });
-        await writeFile(full, content);
+      write: (path, content, mode) => writeInto(boxDir, path, content, mode),
+      snapshot: () => listFiles(boxDir),
+      async reset() {
+        // Same box id: cleanup kills anything left running and wipes the folder.
+        await run(iso, ["--cg", `--box-id=${id}`, "--cleanup"]);
+        const again = await run(iso, ["--cg", `--box-id=${id}`, "--init"]);
+        if (again.code !== 0) throw new Error(`isolate --init failed: ${again.stderr.trim()}`);
+        boxDir = join(again.stdout.trim(), "box");
       },
       async exec(argv, { stdin, limits, env = {} }) {
         await writeFile(join(boxDir, ".stdin"), stdin);
@@ -201,6 +252,7 @@ export class IsolateSandbox implements Sandbox {
           timeMs: meta.time ? Math.round(Number(meta.time) * 1000) : Date.now() - started,
           memoryKb: meta["cg-mem"] ? Number(meta["cg-mem"]) : meta["max-rss"] ? Number(meta["max-rss"]) : null,
           message: meta.message || (status === "internal" ? r.stderr.trim() : undefined),
+          stderrTruncated: err.over,
         };
       },
       async dispose() {
@@ -221,10 +273,11 @@ export class LocalSandbox implements Sandbox {
   async acquire(): Promise<Box> {
     const dir = await mkdtemp(join(tmpdir(), "tm-judge-"));
     return {
-      async write(path, content) {
-        const full = safeJoin(dir, path);
-        await mkdir(dirname(full), { recursive: true });
-        await writeFile(full, content);
+      write: (path, content, mode) => writeInto(dir, path, content, mode),
+      snapshot: () => listFiles(dir),
+      async reset() {
+        await rm(dir, { recursive: true, force: true });
+        await mkdir(dir, { recursive: true });
       },
       exec(argv, { stdin, limits, env = {} }) {
         return new Promise((resolve) => {
@@ -235,6 +288,7 @@ export class LocalSandbox implements Sandbox {
           let stdout = "";
           let stderr = "";
           let over = false;
+          let stderrCut = false;
           let timedOut = false;
           const killTree = () => {
             try {
@@ -251,6 +305,7 @@ export class LocalSandbox implements Sandbox {
           });
           child.stderr.on("data", (d: Buffer) => {
             if (stderr.length < 64 * 1024) stderr += d.toString("utf8");
+            else stderrCut = true;
           });
           const timer = setTimeout(() => {
             timedOut = true;
@@ -265,6 +320,7 @@ export class LocalSandbox implements Sandbox {
               stderr,
               timeMs: Date.now() - started,
               memoryKb: null,
+              stderrTruncated: stderrCut,
             });
           });
           child.on("error", (e) => {
