@@ -1,0 +1,21 @@
+{
+  "id": "rust-io",
+  "language": "rust",
+  "kind": "rust/single",
+  "title": "Rust – Average (input/output)",
+  "description": "Reads numbers until the end of input and prints how many there were and their average",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.rs",
+  "open": [
+    "main.rs"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "iterators"
+  ],
+  "since": "2026.10.1"
+}

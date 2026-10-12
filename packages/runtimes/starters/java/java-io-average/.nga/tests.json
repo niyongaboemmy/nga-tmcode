@@ -1,0 +1,26 @@
+{
+  "entry": "Main.java",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "three numbers",
+      "input": "4 8 6\n",
+      "expected_output": "Count: 3\nAverage: 6.00\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "decimals on lines",
+      "input": "2.5\n3.5\n",
+      "expected_output": "Count: 2\nAverage: 3.00\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "no numbers",
+      "input": "",
+      "expected_output": "No numbers\n",
+      "points": 1
+    }
+  ]
+}

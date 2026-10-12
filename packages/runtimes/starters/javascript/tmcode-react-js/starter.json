@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-react-js",
+  "language": "javascript",
+  "kind": "js/vite",
+  "title": "React (Vite + JavaScript)",
+  "description": "React with plain JavaScript (JSX), no TypeScript",
+  "level": "intermediate",
+  "purpose": "web",
+  "entry": "src/App.jsx",
+  "open": [
+    "src/App.jsx"
+  ],
+  "tags": [
+    "frontend-frameworks",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-misc",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs React and Vite"
+  },
+  "aliases": [
+    "react-js"
+  ]
+}

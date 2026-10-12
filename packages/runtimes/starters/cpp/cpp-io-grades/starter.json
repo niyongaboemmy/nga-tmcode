@@ -1,0 +1,21 @@
+{
+  "id": "cpp-io-grades",
+  "language": "cpp",
+  "kind": "cpp/single",
+  "title": "C++ – Letter grades (input/output)",
+  "description": "Reads a count and that many marks, prints each mark's grade and the class average",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.cpp",
+  "open": [
+    "main.cpp"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "conditions"
+  ],
+  "since": "2026.10.1"
+}

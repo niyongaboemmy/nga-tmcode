@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-sql",
+  "language": "sql",
+  "kind": "sql/sqlite",
+  "title": "SQL (SQLite)",
+  "description": "Tables, data and queries that run inside TMCode, results as tables",
+  "level": "intermediate",
+  "purpose": "data",
+  "entry": "queries.sql",
+  "open": [
+    "queries.sql"
+  ],
+  "tags": [
+    "data-sql",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "database",
+  "aliases": [
+    "sql"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "tmcode-cpp",
+  "language": "cpp",
+  "kind": "cpp/single",
+  "title": "C++",
+  "description": "A C++17 program with input tests and debugging",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.cpp",
+  "open": [
+    "main.cpp"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-class",
+  "tools": [
+    "cxx"
+  ],
+  "aliases": [
+    "cpp"
+  ]
+}

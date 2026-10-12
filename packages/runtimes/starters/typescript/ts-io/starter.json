@@ -1,0 +1,21 @@
+{
+  "id": "ts-io",
+  "language": "typescript",
+  "kind": "ts/single",
+  "title": "TypeScript – Word counter (input/output)",
+  "description": "Reads text from input and prints the number of lines, words and the longest word",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.ts",
+  "open": [
+    "main.ts"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "strings"
+  ],
+  "since": "2026.10.1"
+}

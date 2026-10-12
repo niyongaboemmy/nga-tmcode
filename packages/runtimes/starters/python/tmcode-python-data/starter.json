@@ -1,0 +1,29 @@
+{
+  "id": "tmcode-python-data",
+  "language": "python",
+  "kind": "python/data",
+  "title": "Python Data Analysis (pandas)",
+  "description": "Load a CSV, summarise it and draw a chart",
+  "level": "intermediate",
+  "purpose": "data",
+  "entry": "analysis.py",
+  "open": [
+    "analysis.py"
+  ],
+  "tags": [
+    "data-sql",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "graph",
+  "tools": [
+    "python"
+  ],
+  "setup": {
+    "command": "python -m pip install -r requirements.txt",
+    "note": "Installs pandas and matplotlib"
+  },
+  "aliases": [
+    "python-data"
+  ]
+}

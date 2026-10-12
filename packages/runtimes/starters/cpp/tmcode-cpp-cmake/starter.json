@@ -1,0 +1,26 @@
+{
+  "id": "tmcode-cpp-cmake",
+  "language": "cpp",
+  "kind": "cpp/cmake",
+  "title": "C++ (CMake)",
+  "description": "main.cpp with a CMake build and a Makefile task",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "main.cpp",
+  "open": [
+    "main.cpp"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-class",
+  "tools": [
+    "cxx",
+    "cmake"
+  ],
+  "aliases": [
+    "cpp-cmake"
+  ]
+}

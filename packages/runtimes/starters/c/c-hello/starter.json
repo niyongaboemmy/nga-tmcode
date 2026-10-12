@@ -1,0 +1,17 @@
+{
+  "id": "c-hello",
+  "language": "c",
+  "kind": "c/single",
+  "title": "C – Hello, world",
+  "description": "The smallest C program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.c",
+  "open": [
+    "main.c"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "tmcode-java-swing",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Java Desktop App (Swing)",
+  "description": "A window with a button and a text field, no build tool",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "Main.java",
+  "open": [
+    "Main.java"
+  ],
+  "tags": [
+    "mobile-desktop",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "coffee",
+  "tools": [
+    "java"
+  ],
+  "aliases": [
+    "java-swing"
+  ]
+}

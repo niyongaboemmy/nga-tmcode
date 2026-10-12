@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-node-express",
+  "language": "javascript",
+  "kind": "js/express",
+  "title": "Node.js API (Express)",
+  "description": "A REST API (to-dos) with a debug configuration",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "src/index.js",
+  "open": [
+    "src/index.js"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs Express"
+  },
+  "aliases": [
+    "node-express"
+  ]
+}

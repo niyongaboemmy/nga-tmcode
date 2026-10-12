@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-rails",
+  "language": "ruby",
+  "kind": "ruby/rails",
+  "title": "Ruby on Rails",
+  "description": "Creates a Rails app (rails new), then rails server",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "README.md",
+  "open": [
+    "README.md"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "ruby",
+  "tools": [
+    "ruby",
+    "rails"
+  ],
+  "setup": {
+    "command": "rails new app --skip-git",
+    "note": "Creates a Rails app in app/ (a few minutes)"
+  },
+  "aliases": [
+    "rails"
+  ]
+}

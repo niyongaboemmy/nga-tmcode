@@ -1,0 +1,28 @@
+{
+  "id": "tmcode-algorithms-c",
+  "language": "c",
+  "kind": "c/single",
+  "title": "Algorithms (C)",
+  "description": "Selection sort, binary search and GCD with tests",
+  "level": "beginner",
+  "purpose": "algorithms",
+  "entry": "algorithms.c",
+  "open": [
+    "algorithms.c"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "learning",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "list-ordered",
+  "tools": [
+    "cc"
+  ],
+  "aliases": [
+    "algorithms-c"
+  ]
+}

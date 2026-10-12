@@ -1,0 +1,36 @@
+{
+  "id": "tmcode-node-typescript",
+  "language": "typescript",
+  "kind": "ts/npm",
+  "title": "Node.js (TypeScript)",
+  "description": "TypeScript run directly with tsx, watch mode and debugging",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "src/index.ts",
+  "open": [
+    "src/index.ts"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "node",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-namespace",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs TypeScript and tsx"
+  },
+  "aliases": [
+    "node-typescript"
+  ]
+}

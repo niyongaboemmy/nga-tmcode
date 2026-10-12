@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-canvas-game",
+  "language": "web",
+  "kind": "web/static",
+  "title": "JavaScript Game (Canvas)",
+  "description": "A canvas game loop with keyboard controls",
+  "level": "beginner",
+  "purpose": "web",
+  "entry": "index.html",
+  "open": [
+    "index.html"
+  ],
+  "tags": [
+    "websites",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "game",
+  "aliases": [
+    "canvas-game"
+  ]
+}

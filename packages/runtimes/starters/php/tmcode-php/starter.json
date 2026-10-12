@@ -1,0 +1,25 @@
+{
+  "id": "tmcode-php",
+  "language": "php",
+  "kind": "php/web",
+  "title": "PHP Website",
+  "description": "PHP pages and a JSON endpoint on PHP's built-in server",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "index.php",
+  "open": [
+    "index.php"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "php"
+  ],
+  "aliases": [
+    "php"
+  ]
+}

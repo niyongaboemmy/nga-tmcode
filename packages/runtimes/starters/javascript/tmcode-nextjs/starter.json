@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-nextjs",
+  "language": "javascript",
+  "kind": "js/next",
+  "title": "Next.js (App Router)",
+  "description": "React pages and an API route in one project",
+  "level": "intermediate",
+  "purpose": "web",
+  "entry": "app/page.tsx",
+  "open": [
+    "app/page.tsx"
+  ],
+  "tags": [
+    "frontend-frameworks",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-misc",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs Next.js"
+  },
+  "aliases": [
+    "nextjs"
+  ]
+}

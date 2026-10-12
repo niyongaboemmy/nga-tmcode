@@ -1,0 +1,12 @@
+{
+  "entry": "queries.sql",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "average per class",
+      "input": "",
+      "expected_output": "┌───────┬─────────┐\n│ class │ average │\n├───────┼─────────┤\n│ S4A   │ 71.0    │\n│ S4B   │ 68.8    │\n└───────┴─────────┘\n",
+      "points": 1
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-vue",
+  "language": "javascript",
+  "kind": "js/vite",
+  "title": "Vue 3 (Vite)",
+  "description": "Single-file components with the Composition API",
+  "level": "intermediate",
+  "purpose": "web",
+  "entry": "src/App.vue",
+  "open": [
+    "src/App.vue"
+  ],
+  "tags": [
+    "frontend-frameworks",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-misc",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs Vue and Vite"
+  },
+  "aliases": [
+    "vue"
+  ]
+}

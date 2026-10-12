@@ -1,0 +1,29 @@
+{
+  "id": "java-spring-api",
+  "language": "java",
+  "kind": "java/spring-boot",
+  "title": "Java – Spring Boot to-do API",
+  "description": "A small REST to-do API with Spring Boot and one MockMvc integration test",
+  "level": "advanced",
+  "purpose": "api",
+  "entry": "src/main/java/rw/ac/nga/todo/TodoController.java",
+  "open": [
+    "src/main/java/rw/ac/nga/todo/TodoController.java",
+    "src/test/java/rw/ac/nga/todo/TodoControllerTest.java"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "junit5",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "pom.xml"
+  ],
+  "tags": [
+    "spring",
+    "rest",
+    "junit"
+  ],
+  "since": "2026.10.1"
+}

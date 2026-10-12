@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-angular",
+  "language": "javascript",
+  "kind": "js/angular",
+  "title": "Angular",
+  "description": "A standalone Angular app with signals, served by ng serve",
+  "level": "intermediate",
+  "purpose": "web",
+  "entry": "src/app/app.component.ts",
+  "open": [
+    "src/app/app.component.ts"
+  ],
+  "tags": [
+    "frontend-frameworks",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-misc",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs Angular (a few minutes the first time)"
+  },
+  "aliases": [
+    "angular"
+  ]
+}

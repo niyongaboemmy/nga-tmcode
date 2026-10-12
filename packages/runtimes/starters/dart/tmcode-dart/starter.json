@@ -1,0 +1,35 @@
+{
+  "id": "tmcode-dart",
+  "language": "dart",
+  "kind": "dart/package",
+  "title": "Dart Console App",
+  "description": "A Dart program with a test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "bin/dart_app.dart",
+  "open": [
+    "bin/dart_app.dart"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "dart",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "mobile-desktop",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "dart"
+  ],
+  "setup": {
+    "command": "dart pub get",
+    "note": "Downloads the test package"
+  },
+  "aliases": [
+    "dart"
+  ]
+}

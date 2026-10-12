@@ -1,0 +1,26 @@
+{
+  "id": "cpp-make",
+  "language": "cpp",
+  "kind": "cpp/make",
+  "title": "C++ – Shapes with a Makefile",
+  "description": "Classes across header and source files, built with make, with one unit test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/main.cpp",
+  "open": [
+    "src/main.cpp",
+    "src/shapes.cpp",
+    "tests/test_shapes.cpp"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "make",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "classes",
+    "make"
+  ],
+  "since": "2026.10.1"
+}

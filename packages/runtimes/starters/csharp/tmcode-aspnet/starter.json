@@ -1,0 +1,25 @@
+{
+  "id": "tmcode-aspnet",
+  "language": "csharp",
+  "kind": "csharp/aspnet",
+  "title": "C# API (ASP.NET Core)",
+  "description": "A minimal API with dotnet watch",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "Program.cs",
+  "open": [
+    "Program.cs"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "dotnet"
+  ],
+  "aliases": [
+    "aspnet"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "go-gin-api",
+  "language": "go",
+  "kind": "go/web",
+  "title": "Go – Gin to-do API",
+  "description": "A small REST to-do API with Gin and one httptest integration test",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "main.go",
+  "open": [
+    "handlers.go",
+    "handlers_test.go"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "go",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "go.mod",
+    "go.sum"
+  ],
+  "tags": [
+    "gin",
+    "rest",
+    "go-test"
+  ],
+  "since": "2026.10.1"
+}

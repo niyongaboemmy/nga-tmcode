@@ -1,0 +1,16 @@
+# Truth tables update as you type (▶ or "Show Truth Tables").
+# Operators: and & ∧  or | ∨  not ! ¬  xor ^ ⊕  -> →  <-> ↔  nand nor  constants 0 1 T F
+
+# De Morgan's laws: F and G have the same table
+F = not (A and B)
+G = not A or not B
+
+# Implication and its contrapositive (a tautology)
+I = (p -> q) <-> (not q -> not p)
+
+# Distributive law
+D1 = A and (B or C)
+D2 = (A and B) or (A and C)
+
+# A contradiction
+X = p and not p

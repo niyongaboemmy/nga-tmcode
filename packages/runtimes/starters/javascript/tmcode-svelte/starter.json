@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-svelte",
+  "language": "javascript",
+  "kind": "js/vite",
+  "title": "Svelte 5 (Vite)",
+  "description": "Svelte components with runes",
+  "level": "intermediate",
+  "purpose": "web",
+  "entry": "src/App.svelte",
+  "open": [
+    "src/App.svelte"
+  ],
+  "tags": [
+    "frontend-frameworks",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-misc",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs Svelte and Vite"
+  },
+  "aliases": [
+    "svelte"
+  ]
+}

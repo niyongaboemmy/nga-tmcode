@@ -1,0 +1,31 @@
+{
+  "id": "tmcode-swift",
+  "language": "swift",
+  "kind": "swift/package",
+  "title": "Swift Package",
+  "description": "A Swift command-line program with a test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "Sources/App/main.swift",
+  "open": [
+    "Sources/App/main.swift"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "swift",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "mobile-desktop",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "swift"
+  ],
+  "aliases": [
+    "swift"
+  ]
+}

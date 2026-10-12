@@ -1,0 +1,6 @@
+app
+main
+*.o
+*.dSYM/
+build/
+tests/run_tests

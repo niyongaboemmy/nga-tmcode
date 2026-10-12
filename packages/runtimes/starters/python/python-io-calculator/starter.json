@@ -1,0 +1,21 @@
+{
+  "id": "python-io-calculator",
+  "language": "python",
+  "kind": "python/single",
+  "title": "Python – Calculator (input/output)",
+  "description": "Reads one calculation per line (like `2 + 3`) and prints each result",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.py",
+  "open": [
+    "main.py"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "functions"
+  ],
+  "since": "2026.10.1"
+}

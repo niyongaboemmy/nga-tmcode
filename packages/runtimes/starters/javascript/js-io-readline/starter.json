@@ -1,0 +1,22 @@
+{
+  "id": "js-io-readline",
+  "language": "javascript",
+  "kind": "js/single",
+  "title": "JavaScript – Biggest and smallest (input/output)",
+  "description": "Reads numbers line by line with readline and prints the biggest and the smallest",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.js",
+  "open": [
+    "main.js"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "readline",
+    "arrays"
+  ],
+  "since": "2026.10.1"
+}

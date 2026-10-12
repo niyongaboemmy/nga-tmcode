@@ -1,0 +1,30 @@
+{
+  "id": "ts-vitest",
+  "language": "typescript",
+  "kind": "ts/npm",
+  "title": "TypeScript – Stack with Vitest",
+  "description": "A generic stack class in TypeScript with one Vitest test file",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/stack.ts",
+  "open": [
+    "src/stack.ts",
+    "test/stack.test.ts"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "vitest",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "package.json",
+    "tsconfig.json"
+  ],
+  "tags": [
+    "vitest",
+    "generics",
+    "classes"
+  ],
+  "since": "2026.10.1"
+}

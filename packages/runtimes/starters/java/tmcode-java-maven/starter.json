@@ -1,0 +1,32 @@
+{
+  "id": "tmcode-java-maven",
+  "language": "java",
+  "kind": "java/maven",
+  "title": "Java (Maven)",
+  "description": "A Maven project with a Main class and a JUnit test",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "src/main/java/Main.java",
+  "open": [
+    "src/main/java/Main.java"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "maven",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "coffee",
+  "tools": [
+    "java",
+    "mvn"
+  ],
+  "aliases": [
+    "java-maven"
+  ]
+}

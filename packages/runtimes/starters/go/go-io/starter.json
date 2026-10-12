@@ -1,0 +1,21 @@
+{
+  "id": "go-io",
+  "language": "go",
+  "kind": "go/single",
+  "title": "Go – Sum and maximum (input/output)",
+  "description": "Reads whole numbers until the end of input and prints their sum and the largest",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.go",
+  "open": [
+    "main.go"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "loops"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,13 @@
+{"protocolVersion":"0.1.1","runnerVersion":"1.31.0","pid":57766,"type":"start","time":0}
+{"suite":{"id":0,"platform":"vm","path":"test/calc_test.dart"},"type":"suite","time":0}
+{"test":{"id":1,"name":"loading test/calc_test.dart","suiteID":0,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":0}
+{"count":1,"time":5,"type":"allSuites"}
+{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":294}
+{"group":{"id":2,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":2,"line":null,"column":null,"url":null},"type":"group","time":295}
+{"group":{"id":3,"suiteID":0,"parentID":2,"name":"calc","metadata":{"skip":false,"skipReason":null},"testCount":2,"line":3,"column":3,"url":"file:///ws/test/calc_test.dart"},"type":"group","time":296}
+{"test":{"id":4,"name":"calc adds","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":4,"column":5,"url":"file:///ws/test/calc_test.dart"},"type":"testStart","time":296}
+{"testID":4,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":305}
+{"test":{"id":5,"name":"calc fails","suiteID":0,"groupIDs":[2,3],"metadata":{"skip":false,"skipReason":null},"line":5,"column":5,"url":"file:///ws/test/calc_test.dart"},"type":"testStart","time":305}
+{"testID":5,"error":"Expected: <3>\n  Actual: <2>\n","stackTrace":"package:matcher           expect\ntest/calc_test.dart 5:25  main.<fn>.<fn>\n","isFailure":true,"type":"error","time":312}
+{"testID":5,"result":"failure","skipped":false,"hidden":false,"type":"testDone","time":312}
+{"success":false,"type":"done","time":316}

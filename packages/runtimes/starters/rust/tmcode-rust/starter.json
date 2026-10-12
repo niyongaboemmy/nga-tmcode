@@ -1,0 +1,31 @@
+{
+  "id": "tmcode-rust",
+  "language": "rust",
+  "kind": "rust/cargo",
+  "title": "Rust",
+  "description": "A Cargo project with a unit test",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "src/main.rs",
+  "open": [
+    "src/main.rs"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "cargo",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "cargo"
+  ],
+  "aliases": [
+    "rust"
+  ]
+}

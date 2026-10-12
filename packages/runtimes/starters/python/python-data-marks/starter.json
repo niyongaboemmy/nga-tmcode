@@ -1,0 +1,27 @@
+{
+  "id": "python-data-marks",
+  "language": "python",
+  "kind": "python/data",
+  "title": "Python – Marks analysis with pandas",
+  "description": "Loads a CSV of marks with pandas, summarises it per subject and saves a chart",
+  "level": "intermediate",
+  "purpose": "data",
+  "entry": "analysis.py",
+  "open": [
+    "analysis.py",
+    "data/marks.csv",
+    "tests/test_analysis.py"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "pytest",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "pandas",
+    "csv",
+    "matplotlib"
+  ],
+  "since": "2026.10.1"
+}

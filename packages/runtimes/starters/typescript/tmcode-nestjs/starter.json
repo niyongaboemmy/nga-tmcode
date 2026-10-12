@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-nestjs",
+  "language": "typescript",
+  "kind": "ts/nest",
+  "title": "NestJS API",
+  "description": "Controllers, services and modules, with watch mode",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "src/todos.controller.ts",
+  "open": [
+    "src/todos.controller.ts"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs NestJS"
+  },
+  "aliases": [
+    "nestjs"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "id": "c-structs-make",
+  "language": "c",
+  "kind": "c/make",
+  "title": "C – Linked list with a Makefile",
+  "description": "A linked list across header and source files, built with make, with one unit test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/main.c",
+  "open": [
+    "src/main.c",
+    "src/list.c",
+    "tests/test_list.c"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "make",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "structs",
+    "pointers",
+    "make"
+  ],
+  "since": "2026.10.1"
+}

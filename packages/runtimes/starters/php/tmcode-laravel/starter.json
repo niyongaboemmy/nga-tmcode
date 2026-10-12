@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-laravel",
+  "language": "php",
+  "kind": "php/laravel",
+  "title": "Laravel (PHP)",
+  "description": "Creates a Laravel app with Composer, then artisan serve",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "README.md",
+  "open": [
+    "README.md"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "php",
+    "composer"
+  ],
+  "setup": {
+    "command": "composer create-project laravel/laravel app",
+    "note": "Downloads Laravel into app/ (a few minutes)"
+  },
+  "aliases": [
+    "laravel"
+  ]
+}

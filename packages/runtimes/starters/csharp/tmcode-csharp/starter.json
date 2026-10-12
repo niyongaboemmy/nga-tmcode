@@ -1,0 +1,25 @@
+{
+  "id": "tmcode-csharp",
+  "language": "csharp",
+  "kind": "csharp/console",
+  "title": "C# Console (.NET)",
+  "description": "A .NET console app",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "Program.cs",
+  "open": [
+    "Program.cs"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-class",
+  "tools": [
+    "dotnet"
+  ],
+  "aliases": [
+    "csharp"
+  ]
+}

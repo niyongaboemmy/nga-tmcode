@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-logic",
+  "language": "logic",
+  "kind": "logic/tables",
+  "title": "Logic & Truth Tables",
+  "description": "Logical expressions with truth tables, equivalences and normal forms",
+  "level": "beginner",
+  "purpose": "algorithms",
+  "entry": "laws.logic",
+  "open": [
+    "laws.logic"
+  ],
+  "tags": [
+    "learning",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-boolean",
+  "aliases": [
+    "logic"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "java-gradle-junit",
+  "language": "java",
+  "kind": "java/gradle",
+  "title": "Java – Gradle project with JUnit 5",
+  "description": "A Gradle (Kotlin DSL) application with one class and a JUnit 5 test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/main/java/rw/ac/nga/App.java",
+  "open": [
+    "src/main/java/rw/ac/nga/App.java",
+    "src/test/java/rw/ac/nga/AppTest.java"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "junit5",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "build.gradle.kts",
+    "settings.gradle.kts"
+  ],
+  "tags": [
+    "gradle",
+    "junit"
+  ],
+  "since": "2026.10.1"
+}
