@@ -12,7 +12,8 @@ import { registerMenuCommands, wireNativeMenus } from "./menus";
 import { wireKeybindings } from "./keybindings";
 import { saveAll, saveDocument } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
-import { isRunning, refreshToolchains, runFile, stopRun } from "../run/runService";
+import { refreshToolchains, runFile } from "../run/runService";
+import { canStop, runActiveFile, stopAnything } from "../run/runHub";
 import { loadTests, runTests } from "../run/testService";
 import { submitExam } from "../exam/session";
 import { checkMyComputer } from "../exam/readiness";
@@ -248,10 +249,7 @@ export function registerBuiltinCommands() {
     category: "Run",
     // F5 is `tmcode.f5` (Start Debugging, or Run when no debugger applies); Ctrl+F5 always runs.
     enabled: hasActiveFile,
-    run: () => {
-      const path = activeFilePath();
-      if (path) void runFile(path);
-    },
+    run: () => void runActiveFile(),
   });
   registerCommand({ id: "tmcode.runNoDebug", title: "Run Without Debugging", category: "Run", hidden: true, keybinding: "ctrl+f5", enabled: hasActiveFile, run: runWithoutDebugging });
   registerCommand({
@@ -264,7 +262,8 @@ export function registerBuiltinCommands() {
       if (entry) void runFile(entry, { args, inputFile });
     },
   });
-  registerCommand({ id: "tmcode.stop", title: "Stop", category: "Run", keybinding: "shift+f5", enabled: isRunning, run: stopRun });
+  // One Stop for everything: the debugger, a run, a dev server, the JS console.
+  registerCommand({ id: "tmcode.stop", title: "Stop", category: "Run", keybinding: "shift+f5", enabled: canStop, run: stopAnything });
   registerCommand({
     id: "tmcode.runTests",
     title: "Run All Tests",

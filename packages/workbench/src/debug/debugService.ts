@@ -4,7 +4,7 @@ import { inExam, useExam } from "../exam/state";
 import { getDocument, onDocumentChanged, saveAll } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import type { DebugAdapterKind, DebugComponent, DebugConnection, DebugPrepared, RunEvent, Toolchain } from "../platform/types";
-import { attachDebuggeeRun, clearConsole, clearRunMarkers, refreshToolchains, runFile, showDiagnostics, writeConsole } from "../run/runService";
+import { attachDebuggeeRun, clearConsole, clearRunMarkers, refreshToolchains, showDiagnostics, writeConsole } from "../run/runService";
 import { activeFilePath, getPlatform, loadDir, log, notify, openFile, revealView, showDialog, showPanel, useWorkbench, workbench } from "../state/store";
 import { basename, extname } from "../util/paths";
 import { showInputBox } from "../widgets/QuickPick";
@@ -981,24 +981,27 @@ export async function loadToolchains(refresh = false) {
 }
 
 /** F5: Continue while paused; otherwise start debugging when a configuration applies, else run the file. */
+/**
+ * F5: Run, like the Run button (one Run, guided workflow). It debugs only when you asked for it:
+ * a launch configuration is selected, or the file has breakpoints. Continue while paused.
+ */
 export async function startOrContinue() {
   const phase = get().phase;
   if (phase === "stopped") return continueExecution();
   if (phase !== "inactive") return;
-  if (debugApplies()) {
+  const path = activeFilePath();
+  const asked = (get().selected && get().configs.some((c) => c.name === get().selected)) || (!!path && get().breakpointsActive && breakpointsFor(path).length > 0);
+  if (asked && debugApplies()) {
     await startDebugging();
     return;
   }
-  const path = activeFilePath();
-  if (path) await runFile(path);
+  await (await import("../run/runHub")).runProject();
 }
 
-/** Ctrl+F5 / the editor's ▶: runs without the debugger (and remembers the choice for the title button). */
+/** Ctrl+F5 / Run Without Debugging: the same Run as the Run button (it knows every language). */
 export async function runWithoutDebugging() {
-  const path = activeFilePath();
-  if (!path) return;
   set({ lastEditorAction: "run" });
-  await runFile(path);
+  await (await import("../run/runHub")).runProject();
 }
 
 function fail() {

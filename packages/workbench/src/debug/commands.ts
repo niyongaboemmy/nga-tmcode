@@ -69,7 +69,7 @@ export function registerDebugCommands() {
   registerCommand({ id: "workbench.action.debug.stepInto", title: "Step Into", category: "Debug", keybinding: "f11", enabled: stopped, run: stepInto });
   registerCommand({ id: "workbench.action.debug.stepOut", title: "Step Out", category: "Debug", keybinding: "shift+f11", enabled: stopped, run: stepOut });
   registerCommand({ id: "workbench.action.debug.restart", title: "Restart", category: "Debug", keybinding: "mod+shift+f5", enabled: isDebugging, run: restartDebugging });
-  registerCommand({ id: "workbench.action.debug.stop", title: "Stop", category: "Debug", keybinding: "shift+f5", enabled: isDebugging, run: stopDebugging });
+  registerCommand({ id: "workbench.action.debug.stop", title: "Stop", category: "Debug", enabled: isDebugging, run: stopDebugging });
   registerCommand({
     id: "editor.debug.action.toggleBreakpoint",
     title: "Toggle Breakpoint",

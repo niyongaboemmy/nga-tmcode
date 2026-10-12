@@ -162,13 +162,15 @@ export interface RunOptions {
   args?: string[];
   /** "Run with Input File…": a workspace file fed to stdin (the run is not interactive then). */
   inputFile?: string | null;
+  /** The first line of the Run panel: what runs and why ("Running main.py because it's the file you're editing"). */
+  note?: string;
 }
 
 export async function runFile(path: string, opts: RunOptions = {}) {
   await saveAll();
   const target = await targetFor(path);
   if (!target) {
-    notify("info", `TMCode doesn't know how to run '${basename(path)}'. Open a .py, .js, .ts, .c, .cpp, .java or .html file.`);
+    notify("info", `TMCode can't run '${basename(path)}' in the Run panel. Use Run ▾ in the status bar to choose what to run.`);
     return;
   }
   if (target.kind === "preview") {
@@ -188,6 +190,7 @@ export async function runFile(path: string, opts: RunOptions = {}) {
   runStarted.forEach((l) => l(target.entry));
   clearRunMarkers();
   emit({ type: "clear" });
+  if (opts.note) emit({ type: "info", text: `▶ ${opts.note}` });
   showPanel("run");
   const label = `${target.profile.label}: ${basename(target.entry)}`;
   const args = opts.args ?? [];

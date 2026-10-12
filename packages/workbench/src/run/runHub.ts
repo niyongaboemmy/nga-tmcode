@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, registerCommand } from "../commands/registry";
-import { debugAllowed, debugKindForPath, startDebugging } from "../debug/debugService";
-import { inExam } from "../exam/state";
+import { debugAllowed, debugKindForPath, isDebugging, startDebugging, stopDebugging } from "../debug/debugService";
+import { inExam, useExam } from "../exam/state";
 import { getDocument, onDocumentChanged } from "../monaco/documents";
 import type { OwnedTerminal, TerminalOwner } from "../parts/panel/TerminalView";
 import { activateEditor, activeFilePath, getPlatform, log, notify, openEditorInput, openFile, showPanel, updateSetting, useWorkbench } from "../state/store";
@@ -15,8 +15,11 @@ import { isJsConsoleRunning, runInJsConsole, stopJsConsole } from "./jsConsole";
 import {
   PROJECT_FILES,
   actionAvailable,
-  chooseTarget,
   detectProjects,
+  isRunLike,
+  projectDirOf,
+  resolveRun,
+  type RunChoice,
   fileActions as fileActionsFor,
   shellLine,
   unavailableReason,
@@ -25,7 +28,7 @@ import {
   type RunAction,
   type TargetContext,
 } from "./projectKind";
-import { isRunning, openPreview, runFile, stopRun } from "./runService";
+import { isRunning, openPreview, runFile, stopRun, writeConsole } from "./runService";
 import { terminalAllowed } from "@tmcode/protocol";
 
 /**
@@ -55,14 +58,16 @@ export interface RunHubState {
   /** Actions for the active file. */
   fileActions: RunAction[];
   scanning: boolean;
-  /** The remembered Run Project choice (per workspace). */
+  /** Kept for the old API (unused): Run's choices are `pins`. */
   targetId: string | null;
+  /** "Change Run Target…" choices, per project folder ("" = the root). */
+  pins: Record<string, string>;
   /** Remembered editor-title choice per file extension ("js" → "jsConsole"). */
   fileChoice: Record<string, RunAction["kind"]>;
   session: DevSession | null;
 }
 
-export const useRunHub = create<RunHubState>()(() => ({ projects: [], folders: [], fileActions: [], scanning: false, targetId: null, fileChoice: {}, session: null }));
+export const useRunHub = create<RunHubState>()(() => ({ projects: [], folders: [], fileActions: [], scanning: false, targetId: null, pins: {}, fileChoice: {}, session: null }));
 const set = useRunHub.setState;
 const get = useRunHub.getState;
 
@@ -90,9 +95,22 @@ export function isAvailable(a: RunAction) {
   return actionAvailable(a, targetContext());
 }
 
-/** The Run Project target right now. */
+/** The exam task in front: its main file is what Run runs (resolveRun step 2). */
+function taskInFront(): { entry: string; actions: RunAction[] } | null {
+  if (!inExam()) return null;
+  const e = useExam.getState();
+  const task = e.tasks.find((t) => t.question_id === e.activeTask) ?? null;
+  return task ? { entry: task.entry, actions: fileActionsFor(task.entry, { webRoot: null }) } : null;
+}
+
+/** What Run runs right now, and why (one answer for the status bar, the editor ▶, F5 and Ctrl+F5). */
+export function currentRun(s: RunHubState = get()): RunChoice {
+  return resolveRun({ projects: s.projects, file: s.fileActions, activePath: activeFilePath(), pins: s.pins, task: taskInFront(), ctx: targetContext() });
+}
+
+/** The Run target right now. */
 export function currentTarget(s: RunHubState = get()): RunAction | null {
-  return chooseTarget(s.projects, s.fileActions, s.targetId, targetContext());
+  return currentRun(s).action;
 }
 
 // ───────────── scanning the workspace ─────────────
@@ -164,26 +182,48 @@ export async function refreshFileActions() {
   const source = ["js", "mjs", "cjs", "ts", "mts", "cts"].includes(ext) ? (getDocument(path)?.getValue() ?? (await getPlatform().fs.readFile(path).catch(() => ""))) : undefined;
   const kind = debugKindForPath(path);
   const debuggable = !!kind && !!getPlatform().debug?.kinds.includes(kind);
+  // A script previews its page only when that page loads it (one index.html at the top must not turn every exercise into a preview).
+  let pageLoadsFile: boolean | undefined;
+  if (webRoot !== null && (ext === "js" || ext === "css")) {
+    const page = await getPlatform().fs.readFile(webRoot ? `${webRoot}/index.html` : "index.html").catch(() => "");
+    const rel = webRoot ? path.slice(webRoot.length + 1) : path;
+    pageLoadsFile = page.includes(rel) || page.includes(basename(path));
+  }
   if (gen !== fileGen) return;
-  set({ fileActions: fileActionsFor(path, { webRoot, source, debuggable }) });
+  set({ fileActions: fileActionsFor(path, { webRoot, source, debuggable, pageLoadsFile }) });
 }
 
-/** The editor title's main action for a file: the user's last choice for its type, else the best available. */
-export function primaryFileAction(s: RunHubState = get()): RunAction | null {
-  const usable = s.fileActions.filter(isAvailable);
+/** Run File: the active file's own first runnable action (PHP, Ruby, SQL… included), not the project. */
+export async function runActiveFile() {
   const path = activeFilePath();
-  const choice = path ? s.fileChoice[extname(path)] : undefined;
-  return (choice && usable.find((a) => a.kind === choice)) || usable[0] || null;
+  if (!path) return;
+  const ctx = targetContext();
+  const a = get().fileActions.find((x) => isRunLike(x) && !unavailableReason(x, ctx));
+  if (a) return executeAction(a, { reason: "you chose Run File" });
+  return runFile(path, { note: `Running ${basename(path)}.` });
+}
+
+/** The editor title's ▶: the same target as the status bar's Run (one Run). */
+export function primaryFileAction(s: RunHubState = get()): RunAction | null {
+  return currentRun(s).action;
 }
 
 // ───────────── remembering choices ─────────────
 
-const targetKey = (root: string) => `runTarget:${root}`;
+const pinsKey = (root: string) => `runPins:${root}`;
 
+/** Change Run Target: remembered for the project folder the choice belongs to (null: forget the active file's). */
 export function setRunTarget(id: string | null) {
-  set({ targetId: id });
+  const s = get();
+  const a = id ? [...s.projects.flatMap((p) => p.actions), ...s.fileActions].find((x) => x.id === id) : null;
+  const path = activeFilePath();
+  const dir = a ? projectDirOf(s.projects, a.kind === "runFile" || a.kind === "jsConsole" || a.kind === "debug" ? (a.entry ?? path ?? "") : a) : path ? projectDirOf(s.projects, path) : "";
+  const pins = { ...s.pins };
+  if (id) pins[dir] = id;
+  else delete pins[dir];
+  set({ pins, targetId: id });
   const root = useWorkbench.getState().workspace?.root;
-  if (root) void getPlatform().store.set(targetKey(root), id);
+  if (root) void getPlatform().store.set(pinsKey(root), pins);
 }
 
 function rememberFileChoice(a: RunAction) {
@@ -208,18 +248,24 @@ function openBeside(input: Parameters<typeof openEditorInput>[0]) {
 }
 
 /** Runs one action: the core of every ▶ in the hub. */
-export async function executeAction(a: RunAction, opts: { remember?: boolean } = {}) {
+export async function executeAction(a: RunAction, opts: { remember?: boolean; reason?: string } = {}) {
   const reason = unavailableReason(a, targetContext());
   if (reason) {
     notify("info", `${a.label}: ${reason}.`);
     return;
   }
   if (opts.remember) rememberFileChoice(a);
-  log("Run", `${a.kind}: ${a.label}`);
+  log("Run", `${a.kind}: ${a.label}${opts.reason ? ` (because ${opts.reason})` : ""}`);
+  // One place to look: every run says in the Run panel what it is and why (terminal runs too).
+  const note = opts.reason ? `Running ${a.label} because ${opts.reason}.` : `Running ${a.label}.`;
+  if (a.kind !== "runFile") {
+    writeConsole({ type: "clear" });
+    writeConsole({ type: "info", text: `▶ ${note}${a.kind === "task" || a.kind === "devServer" || a.kind === "repl" ? " Its output is in the Terminal panel." : ""}` });
+  }
   const os = getPlatform().os;
   switch (a.kind) {
     case "runFile":
-      return runFile(a.entry!);
+      return runFile(a.entry!, { note });
     case "jsConsole":
       return runInJsConsole(a.entry!);
     case "livePreview":
@@ -260,9 +306,9 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean } =
 export async function runProject() {
   if (!useWorkbench.getState().workspace) return;
   if (!get().projects.length) await scanWorkspace();
-  const target = currentTarget();
-  if (!target) return pickRunTarget({ run: true });
-  await executeAction(target);
+  const { action, reason } = currentRun();
+  if (!action) return pickRunTarget({ run: true });
+  await executeAction(action, { reason });
 }
 
 // ───────────── dev servers ─────────────
@@ -415,7 +461,17 @@ export function activity(): "dev" | "run" | "js" | null {
   return null;
 }
 
+/** True when Stop has something to stop: the debugger, a run, a dev server or the JS console. */
+export function canStop() {
+  return isDebugging() || activity() !== null;
+}
+
+/** The one Stop (Shift+F5, the Run panel, the editor ■, the status bar): the debugger first, then whatever runs. */
 export function stopAnything() {
+  if (isDebugging()) {
+    void stopDebugging();
+    return;
+  }
   const what = activity();
   if (what === "dev") stopDevServer();
   else if (what === "run") stopRun();
@@ -515,15 +571,12 @@ export function wireRunHub() {
   const onWorkspace = async (next: string | null) => {
     root = next;
     if (devServerActive()) stopDevServer();
-    set({ projects: [], targetId: null, session: null });
+    set({ projects: [], targetId: null, pins: {}, session: null });
     if (!next) return;
     const p = getPlatform();
-    const [targetId, fileChoice] = await Promise.all([
-      p.store.get<string | null>(targetKey(next)).catch(() => null),
-      p.store.get<Record<string, RunAction["kind"]>>("runFileChoice").catch(() => undefined),
-    ]);
+    const pins = await p.store.get<Record<string, string>>(pinsKey(next)).catch(() => undefined);
     if (root !== next) return;
-    set({ targetId: targetId ?? null, fileChoice: fileChoice ?? {} });
+    set({ pins: pins && typeof pins === "object" ? pins : {} });
     void scanWorkspace();
   };
   void onWorkspace(useWorkbench.getState().workspace?.root ?? null);
@@ -596,8 +649,8 @@ function registerRunHubCommands() {
   registerCommand({ id: "tmcode.runProject", title: "Run Project", category: "Run", keybinding: RUN_PROJECT_KB, enabled: hasWorkspace, run: runProject });
   registerCommand({ id: "tmcode.selectRunTarget", title: "Change Run Target...", category: "Run", enabled: hasWorkspace, run: () => pickRunTarget() });
   registerCommand({ id: "tmcode.runPick", title: "Run...", category: "Run", enabled: hasWorkspace, run: pickAndRun });
-  // After the debugger and Run's own Stop (the first enabled binding wins), Shift+F5 stops a dev server or the JS console.
-  registerCommand({ id: "tmcode.stopProject", title: "Stop Project", category: "Run", keybinding: "shift+f5", enabled: () => activity() === "dev" || activity() === "js", run: stopAnything });
+  // Hidden alias kept for menus and extensions; the one Stop is `tmcode.stop` (Shift+F5).
+  registerCommand({ id: "tmcode.stopProject", title: "Stop Project", category: "Run", hidden: true, enabled: () => activity() === "dev" || activity() === "js", run: stopAnything });
   registerCommand({ id: "tmcode.restartProject", title: "Restart Project", category: "Run", enabled: () => !!get().session, run: restartDevServer });
   registerCommand({
     id: "tmcode.runInJsConsole",

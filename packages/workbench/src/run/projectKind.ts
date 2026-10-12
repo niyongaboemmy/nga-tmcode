@@ -117,6 +117,11 @@ export interface ProjectInfo {
   dir: string;
   /** Best first. */
   actions: RunAction[];
+  /**
+   * Loose files, not a real project (no manifest: a folder of Python, PHP, C or Java exercises).
+   * Run then runs the file being edited, not the folder's "main" file.
+   */
+  loose?: boolean;
 }
 
 /** Files worth reading to tell projects apart. */
@@ -339,7 +344,7 @@ function pythonProject(f: FolderSnapshot): ProjectInfo | null {
     };
   }
   if (!entryName && !has(f, "requirements.txt") && !has(f, "pyproject.toml")) return null;
-  return { kind: "python", label: "Python", icon: "symbol-method", dir: f.dir, actions: pythonExtras(f, entryName) };
+  return { kind: "python", label: "Python", icon: "symbol-method", dir: f.dir, actions: pythonExtras(f, entryName), loose: !has(f, "requirements.txt") && !has(f, "pyproject.toml") };
 }
 
 // ───────────── Java ─────────────
@@ -459,6 +464,7 @@ function nativeProject(f: FolderSnapshot): ProjectInfo | null {
       icon: "file-code",
       dir: f.dir,
       actions: [action({ id: `runFile:${entry}`, kind: "runFile", label: `Run ${single}`, icon: "play", description: "Compile and run in the Run panel", entry, needs: "runner" })],
+      loose: true,
     };
   }
   return null;
@@ -536,7 +542,9 @@ function phpProject(f: FolderSnapshot): ProjectInfo | null {
   if (/phpunit/.test(composer)) actions.push(action({ id: `task:${f.dir}:phpunit`, kind: "task", label: `phpunit${where(f.dir)}`, icon: "beaker", command: "vendor/bin/phpunit", prelude, cwd: f.dir }));
   if (prelude) actions.push(action({ id: `task:${f.dir}:composer-install`, kind: "task", label: `composer: install${where(f.dir)}`, icon: "cloud-download", command: "composer install", cwd: f.dir }));
   actions.push(action({ id: `repl:${f.dir}:php`, kind: "repl", label: "PHP interactive shell", icon: "terminal", command: "php -a", cwd: f.dir }));
-  return { kind: "php", label: has(f, "composer.json") ? "PHP (Composer)" : "PHP", icon: "server", dir: f.dir, actions };
+  // A folder of PHP scripts (no composer.json, no index.php, no public/) is exercises, not a website.
+  const site = has(f, "composer.json") || has(f, "index.php") || f.dirs.includes("public");
+  return { kind: "php", label: has(f, "composer.json") ? "PHP (Composer)" : "PHP", icon: "server", dir: f.dir, actions, ...(site ? {} : { loose: true }) };
 }
 
 // ───────────── Ruby, Rails & Sinatra ─────────────
@@ -722,7 +730,7 @@ export function detectProjects(folders: FolderSnapshot[]): ProjectInfo[] {
  * Node (Run panel); everything else gets the JavaScript Console's structured output.
  */
 export function preferredJsRunner(source: string): "console" | "node" {
-  if (/readFileSync\(\s*(0|["']\/dev\/stdin["'])|process\.stdin|require\(\s*["'](node:)?readline["']\)|from\s+["'](node:)?readline/.test(source)) return "node";
+  if (/readFileSync\(\s*(0|["']\/dev\/stdin["'])|process\.stdin|require\(\s*["'](node:)?readline["']\)|from\s+["'](node:)?readline|["']prompt-sync["']/.test(source)) return "node";
   const nodeOnly =
     /require\(\s*["'](node:)?(http|https|net|child_process|os|path|fs|fs\/promises|worker_threads|cluster|dgram|zlib|crypto|stream)["']\)|from\s+["'](node:)?(http|https|net|child_process|os|path|fs|fs\/promises|worker_threads|cluster|zlib|crypto|stream)["']/;
   return nodeOnly.test(source) ? "node" : "console";
@@ -735,6 +743,8 @@ export interface FileContext {
   source?: string;
   /** A debugger exists for this file. */
   debuggable?: boolean;
+  /** The page at webRoot actually loads this .js/.css file (else the file runs on its own). */
+  pageLoadsFile?: boolean;
 }
 
 const JS_EXTS = ["js", "mjs", "cjs", "ts", "mts", "cts"];
@@ -757,7 +767,7 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     );
   } else if ((ext === "jsx" || ext === "tsx") && ctx.webRoot !== null) {
     out.push(action({ id: `livePreview:${ctx.webRoot}:index.html`, kind: "livePreview", label: "React (Live Preview)", icon: "open-preview", description: "Bundled inside TMCode", root: ctx.webRoot, entry: "index.html", preview: "bundle-react" }));
-  } else if ((ext === "css" || ext === "js") && ctx.webRoot !== null) {
+  } else if ((ext === "css" || ext === "js") && ctx.webRoot !== null && ctx.pageLoadsFile !== false) {
     // A stylesheet or script of a page belongs to that page.
     out.push(action({ id: `livePreview:${ctx.webRoot}:index.html`, kind: "livePreview", label: `${ctx.webRoot ? `${ctx.webRoot}/` : ""}index.html (Live Preview)`, icon: "open-preview", description: "The page that uses this file", root: ctx.webRoot, entry: "index.html", preview: "static" }));
     if (ext === "js") out.push(action({ id: `jsConsole:${path}`, kind: "jsConsole", label: `Run ${name} in JavaScript Console`, icon: "debug-console", description: "Structured console output", entry: path }));
@@ -844,6 +854,173 @@ export function chooseTarget(projects: ProjectInfo[], file: RunAction[], remembe
     if (a) return a;
   }
   return file.find((a) => actionAvailable(a, ctx)) ?? projects.flatMap((p) => p.actions).find((a) => actionAvailable(a, ctx)) ?? null;
+}
+
+// ───────────── one Run: what the Run button means, and why ─────────────
+
+/** A language family, to tell whether a file belongs to the project around it. */
+export type Family = "python" | "web" | "php" | "jvm" | "native" | "go" | "rust" | "ruby" | "dart" | "dotnet" | "swift" | "sql" | "logic" | "doc" | null;
+
+export function fileFamily(path: string): Family {
+  const ext = (path.split(".").pop() ?? "").toLowerCase();
+  if (ext === "py") return "python";
+  if (["js", "mjs", "cjs", "ts", "mts", "cts", "jsx", "tsx", "html", "htm", "css", "scss", "vue", "svelte"].includes(ext)) return "web";
+  if (ext === "php") return "php";
+  if (["java", "kt", "kts", "scala", "groovy"].includes(ext)) return "jvm";
+  if (["c", "h", "cpp", "cc", "cxx", "hpp", "hh"].includes(ext)) return "native";
+  if (ext === "go") return "go";
+  if (ext === "rs") return "rust";
+  if (["rb", "erb"].includes(ext)) return "ruby";
+  if (ext === "dart") return "dart";
+  if (["cs", "fs", "vb"].includes(ext)) return "dotnet";
+  if (ext === "swift") return "swift";
+  if (ext === "sql") return "sql";
+  if (ext === "logic") return "logic";
+  if (["md", "markdown", "svg"].includes(ext)) return "doc";
+  return null;
+}
+
+export function projectFamily(kind: ProjectKindId): Family {
+  switch (kind) {
+    case "python":
+    case "flask":
+    case "django":
+    case "fastapi":
+      return "python";
+    case "static-site":
+    case "vite":
+    case "react":
+    case "vue":
+    case "svelte":
+    case "angular":
+    case "next":
+    case "node":
+      return "web";
+    case "php":
+    case "laravel":
+      return "php";
+    case "maven":
+    case "gradle":
+    case "spring-boot":
+      return "jvm";
+    case "c":
+    case "cpp":
+    case "make":
+    case "cmake":
+      return "native";
+    case "go":
+      return "go";
+    case "rust":
+      return "rust";
+    case "ruby":
+    case "rails":
+    case "sinatra":
+      return "ruby";
+    case "dart":
+    case "flutter":
+      return "dart";
+    case "dotnet":
+      return "dotnet";
+    case "swift":
+      return "swift";
+    case "sql":
+      return "sql";
+    case "logic":
+      return "logic";
+    default:
+      return "doc";
+  }
+}
+
+/** Starts the program (not a build, test, lint, install or REPL step): what Run may pick. */
+export function isRunLike(a: RunAction): boolean {
+  if (["runFile", "jsConsole", "livePreview", "openBrowser", "devServer", "sqlRun", "logicPreview"].includes(a.kind)) return true;
+  if (a.kind !== "task") return false;
+  const c = `${a.command ?? ""} ${a.label}`;
+  if (/\b(test|lint|install|package|build|clean|migrate|analy[sz]e|format|routes|pub get)\b/i.test(c) && !/\b(run|start|serve)\b/i.test(a.command ?? "")) return false;
+  return /(\brun\b|\bstart\b|\bserve\b|exec:java|bootRun|go run|cargo run|dotnet run|dart run|flutter run|\bruby\s|\bphp\s+\S+\.php)/i.test(c);
+}
+
+export interface RunChoice {
+  action: RunAction | null;
+  /** In the student's words: "the file you're editing", "react-app is a Vite + React project". */
+  reason: string;
+}
+
+export interface ResolveInput {
+  projects: ProjectInfo[];
+  /** What the active file can do (fileActions), best first. */
+  file: RunAction[];
+  activePath: string | null;
+  /** The user's choice ("Change Run Target…"), per project folder ("" = the root). */
+  pins: Record<string, string>;
+  /** Exams and assignments with a task: the task's main file and what it can do. */
+  task?: { entry: string; actions: RunAction[] } | null;
+  ctx: TargetContext;
+}
+
+const inDir = (path: string, dir: string) => dir === "" || path === dir || path.startsWith(`${dir}/`);
+
+/** The project folder an action or a file belongs to (the deepest one), "" when none. */
+export function projectDirOf(projects: ProjectInfo[], pathOrAction: string | RunAction): string {
+  let path: string;
+  if (typeof pathOrAction !== "string") {
+    const act = pathOrAction;
+    const owner = projects.find((p) => p.actions.some((a) => a.id === act.id));
+    if (owner) return owner.dir;
+    path = act.entry ? (act.root ? `${act.root}/${act.entry}` : act.entry) : "";
+  } else path = pathOrAction;
+  const hits = projects.filter((p) => p.kind !== "markdown" && inDir(path, p.dir)).sort((a, b) => b.dir.length - a.dir.length);
+  return hits[0]?.dir ?? "";
+}
+
+/**
+ * The ONE answer to "what does Run run?" (status bar, editor ▶, F5, Ctrl+F5, Run menu).
+ * First match wins:
+ * 1. your pin for the project the file is in;
+ * 2. the exam or assignment task's main file;
+ * 3. the file's own project, when it is a real project of the same language (a run step, never build/test);
+ * 4. the file itself;
+ * 5. the only project in the folder;
+ * 6. the first project (nothing open).
+ */
+export function resolveRun(i: ResolveInput): RunChoice {
+  const ok = (a: RunAction | undefined | null): a is RunAction => !!a && actionAvailable(a, i.ctx);
+  const all = [...i.projects.flatMap((p) => p.actions), ...i.file, ...(i.task?.actions ?? [])];
+  const dir = i.activePath ? projectDirOf(i.projects, i.activePath) : "";
+  const pinned = i.pins[dir] ? all.find((a) => a.id === i.pins[dir]) : undefined;
+  if (ok(pinned)) return { action: pinned, reason: "you chose it with Change Run Target" };
+
+  if (i.task) {
+    const a = i.task.actions.find(ok);
+    if (a && (!i.activePath || inDir(i.activePath, i.task.entry.includes("/") ? i.task.entry.slice(0, i.task.entry.lastIndexOf("/")) : ""))) {
+      return { action: a, reason: "it's this task's main file" };
+    }
+  }
+
+  const fam = i.activePath ? fileFamily(i.activePath) : null;
+  if (i.activePath && fam && fam !== "doc") {
+    const own = i.projects
+      .filter((p) => p.kind !== "markdown" && !p.loose && inDir(i.activePath!, p.dir) && projectFamily(p.kind) === fam)
+      .sort((a, b) => b.dir.length - a.dir.length)[0];
+    const run = own?.actions.find((a) => ok(a) && isRunLike(a));
+    if (own && run) return { action: run, reason: `${own.dir ? own.dir : "this folder"} is a ${own.label} project` };
+  }
+
+  const fileRun = i.file.find(ok);
+  if (fileRun) return { action: fileRun, reason: "it's the file you're editing" };
+
+  const real = i.projects.filter((p) => p.kind !== "markdown");
+  if (real.length === 1) {
+    const a = real[0].actions.find((x) => ok(x) && isRunLike(x));
+    if (a) return { action: a, reason: "it's the only project here" };
+  }
+  for (const p of real) {
+    const a = p.actions.find((x) => ok(x) && isRunLike(x));
+    if (a) return { action: a, reason: `${p.dir || "this folder"} is a ${p.label} project` };
+  }
+  if (real.length) return { action: null, reason: "this project has no run command yet; choose one with Change Run Target" };
+  return { action: null, reason: "there is nothing to run here yet" };
 }
 
 /** Joins a prelude ("npm install") and a command for the user's shell. */

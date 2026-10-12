@@ -10,6 +10,7 @@ import { useJsConsole } from "./jsConsole";
 import { formatElapsed, unavailableReason, type RunAction } from "./projectKind";
 import {
   activity,
+  currentRun,
   currentTarget,
   executeAction,
   pickRunTarget,
@@ -169,7 +170,7 @@ export function RunStatusItems() {
       </>
     );
   }
-  const target = currentTarget(h.hub);
+  const { action: target, reason } = currentRun(h.hub);
   const kb = runProjectKeybinding();
   // L7 (0.17): "React - app (Live Preview)" only beside web files; elsewhere it's just Run.
   const quiet = target?.kind === "livePreview" && !!activePath && !WEB_FILE.test(activePath);
@@ -179,7 +180,7 @@ export function RunStatusItems() {
         <button
           type="button"
           className="tm-status-item is-clickable tm-run-status is-idle"
-          title={target ? `Run Project (${kb}): ${target.label}` : "Run Project: choose what to run"}
+          title={target ? `Run (${kb}): ${target.label}, because ${reason}` : "Run: choose what to run"}
           aria-label={target ? `Run Project: ${target.label}` : "Run Project"}
           data-testid="run-hub-status"
           onClick={() => void runProject()}
@@ -274,7 +275,7 @@ export function RunSplitButton({ path }: { path: string }) {
         title={primaryTitle(main)}
         aria-label={primaryTitle(main)}
         data-testid="editor-run-button"
-        onClick={() => void executeAction(main, { remember: true })}
+        onClick={() => void executeAction(main, { remember: true, reason: currentRun(h.hub).action?.id === main.id ? currentRun(h.hub).reason : undefined })}
       >
         <Codicon name={KIND_ICON[main.kind]} />
       </button>

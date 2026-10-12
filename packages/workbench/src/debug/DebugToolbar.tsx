@@ -73,7 +73,7 @@ export function DebugToolbar() {
       <ActionButton icon="debug-step-into" label={`Step Into (${kb("f11")})`} disabled={!stopped} onClick={() => executeCommand("workbench.action.debug.stepInto")} />
       <ActionButton icon="debug-step-out" label={`Step Out (${kb("shift+f11")})`} disabled={!stopped} onClick={() => executeCommand("workbench.action.debug.stepOut")} />
       <ActionButton icon="debug-restart" className="tm-dbg-restart" label={`Restart (${kb("mod+shift+f5")})`} onClick={() => executeCommand("workbench.action.debug.restart")} />
-      <ActionButton icon="debug-stop" className="tm-dbg-stop" label={`Stop (${kb("shift+f5")})`} onClick={() => executeCommand("workbench.action.debug.stop")} />
+      <ActionButton icon="debug-stop" className="tm-dbg-stop" label={`Stop (${kb("shift+f5")})`} onClick={() => executeCommand("tmcode.stop")} />
     </div>
   );
 }

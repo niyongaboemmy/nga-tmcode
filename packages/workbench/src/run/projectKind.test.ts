@@ -7,6 +7,7 @@ import {
   fileActions,
   formatElapsed,
   preferredJsRunner,
+  resolveRun,
   shellLine,
   unavailableReason,
   type FolderSnapshot,
@@ -309,5 +310,65 @@ describe("more technologies", () => {
     // Built-in kinds work in exams too; terminal ones don't.
     expect(actionAvailable(run("q.sql"), EXAM)).toBe(true);
     expect(actionAvailable(run("a.rb"), EXAM)).toBe(false);
+  });
+});
+
+describe("one Run: resolveRun", () => {
+  // The demo layout: loose Python + JS exercises at the top, a React app in a folder.
+  const projects = detectProjects([
+    folder({ "main.py": "print(1)", "hello.js": "console.log(1)", "README.md": "" }, { dirs: ["react-app"] }),
+    folder({ "package.json": pkg({ dependencies: { react: "18" }, devDependencies: { vite: "6" }, scripts: { dev: "vite", build: "vite build", test: "vitest" } }), "index.html": "" }, { dir: "react-app", dirs: ["src", "node_modules"] }),
+  ]);
+  const run = (activePath: string | null, extra: Partial<Parameters<typeof resolveRun>[0]> = {}) =>
+    resolveRun({ projects, file: activePath ? fileActions(activePath, { webRoot: null }) : [], activePath, pins: {}, ctx: DESKTOP, ...extra });
+
+  it("runs the file you're editing when it's a loose exercise", () => {
+    const py = run("main.py");
+    expect(py.action?.label).toBe("Run main.py");
+    expect(py.reason).toBe("it's the file you're editing");
+    expect(run("hello.js").action?.entry).toBe("hello.js");
+  });
+
+  it("runs the file's own project, never a test or build task", () => {
+    const r = run("react-app/src/App.jsx");
+    expect(r.action?.label).toMatch(/dev/);
+    expect(r.reason).toMatch(/^react-app is a .*React project$/);
+  });
+
+  it("a pin wins for its project folder only", () => {
+    const build = projects.flatMap((p) => p.actions).find((a) => /build/.test(a.label))!;
+    const pins = { "react-app": build.id };
+    expect(run("react-app/src/App.jsx", { pins }).action?.id).toBe(build.id);
+    expect(run("react-app/src/App.jsx", { pins }).reason).toMatch(/Change Run Target/);
+    expect(run("main.py", { pins }).action?.label).toBe("Run main.py");
+  });
+
+  it("an exam task's main file wins inside the task folder", () => {
+    const task = { entry: "task1/main.py", actions: fileActions("task1/main.py", { webRoot: null }) };
+    const r = run("task1/helper.py", { task });
+    expect(r.action?.entry).toBe("task1/main.py");
+    expect(r.reason).toBe("it's this task's main file");
+  });
+
+  it("with nothing open, the only project runs", () => {
+    const only = detectProjects([folder({ Makefile: "run:\n\t./app\n", "main.c": "int main(){}" })]);
+    const r = resolveRun({ projects: only, file: [], activePath: null, pins: {}, ctx: DESKTOP });
+    expect(r.reason).toBe("it's the only project here");
+    expect(r.action?.command).toBe("make run");
+    // Build and test steps are never "Run": a plain Maven project says how to choose.
+    const maven = detectProjects([folder({ "pom.xml": "<project><artifactId>demo</artifactId></project>" }, { dirs: ["src"] })]);
+    expect(resolveRun({ projects: maven, file: [], activePath: null, pins: {}, ctx: DESKTOP })).toEqual({ action: null, reason: expect.stringMatching(/Change Run Target/) });
+    expect(resolveRun({ projects: [], file: [], activePath: null, pins: {}, ctx: DESKTOP })).toEqual({ action: null, reason: "there is nothing to run here yet" });
+  });
+
+  it("a loose PHP script runs as a script", () => {
+    const php = detectProjects([folder({ "calc.php": "<?php echo 1;" })]);
+    expect(resolveRun({ projects: php, file: fileActions("calc.php", { webRoot: null }), activePath: "calc.php", pins: {}, ctx: DESKTOP }).reason).toBe("it's the file you're editing");
+  });
+
+  it("a .js file previews its page only when the page loads it", () => {
+    expect(fileActions("site/app.js", { webRoot: "site", pageLoadsFile: true })[0].kind).toBe("livePreview");
+    expect(fileActions("site/app.js", { webRoot: "site", pageLoadsFile: false })[0].kind).not.toBe("livePreview");
+    expect(preferredJsRunner("const prompt = require('prompt-sync')();")).not.toBe(preferredJsRunner("console.log(1)"));
   });
 });

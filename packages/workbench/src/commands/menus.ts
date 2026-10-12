@@ -145,7 +145,7 @@ export function registerMenuCommands() {
     run: () => openQuickInput("files", "?"),
   });
   // Run › Stop / Restart: the debugger, else the running file, else the project.
-  const stopIds = ["workbench.action.debug.stop", "tmcode.stop", "tmcode.stopProject"];
+  const stopIds = ["tmcode.stop"];
   const restartIds = ["workbench.action.debug.restart", "tmcode.restartProject"];
   registerCommand({ id: "tmcode.stopAny", title: "Stop", category: "Run", hidden: true, enabled: () => !!enabledId(...stopIds), run: () => executeCommand(enabledId(...stopIds) ?? "") });
   registerCommand({

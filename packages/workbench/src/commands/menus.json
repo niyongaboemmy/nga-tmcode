@@ -149,7 +149,7 @@
       "items": [
         { "command": "workbench.action.debug.start", "label": "Start Debugging", "keyFrom": "tmcode.f5" },
         { "command": "workbench.action.debug.run", "label": "Run Without Debugging", "keyFrom": "tmcode.runNoDebug" },
-        { "command": "tmcode.stopAny", "label": "Stop", "keyFrom": "workbench.action.debug.stop" },
+        { "command": "tmcode.stopAny", "label": "Stop", "keyFrom": "tmcode.stop" },
         { "command": "tmcode.restartAny", "label": "Restart", "keyFrom": "workbench.action.debug.restart" },
         "-",
         { "command": "tmcode.runProject", "label": "Run Project" },
