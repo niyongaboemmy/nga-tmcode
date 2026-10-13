@@ -1,0 +1,20 @@
+{
+  "id": "csharp-hello",
+  "language": "csharp",
+  "kind": "csharp/console",
+  "title": "C# – Hello, world",
+  "description": "The smallest C# program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "Program.cs",
+  "open": [
+    "Program.cs"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "dotnet"
+  ]
+}

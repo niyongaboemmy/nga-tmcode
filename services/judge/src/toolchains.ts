@@ -14,12 +14,13 @@ import { spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { CATALOG, CATALOG_VERSION, detect, entryFor, type KindDef, type RuntimeDef, type Step } from "../../../packages/runtimes/src/index.ts";
+import { containerReason, databasesUsable, imageFor, type ContainerTier } from "./containers.ts";
 
 export { CATALOG, CATALOG_VERSION };
 
 /** Wrappers a step may drop when they aren't installed (stdbuf only changes buffering). */
 export const OPTIONAL_TOOLS = new Set(["stdbuf"]);
-/** Tiers this runner executes; browser kinds run in TMCode, container kinds need tier 3. */
+/** Tiers isolate executes; browser kinds run in TMCode, container kinds need tier 3 (containers.ts). */
 export const RUNNER_TIERS = new Set<KindDef["tier"]>(["isolate", "isolate-build"]);
 export const STEP_NAMES = ["restore", "build", "run", "test"] as const;
 export type StepName = (typeof STEP_NAMES)[number];
@@ -37,6 +38,8 @@ export interface Toolchains {
   runtimes: Map<string, RuntimeState>;
   /** Cache layer id → host folder (existing folders only). */
   caches: Map<string, string>;
+  /** Tier 3 (Docker + gVisor), when configured; container kinds are unavailable without it. */
+  containers?: ContainerTier;
 }
 
 export interface ToolchainOptions {
@@ -158,6 +161,13 @@ export interface KindAvailability {
 export function availability(tc: Toolchains, kind: KindDef): KindAvailability {
   const missing_caches = kind.caches.filter((c) => !tc.caches.has(c));
   const none = { missing: [], missing_optional: [], missing_caches };
+  if (kind.tier === "container") {
+    // The image carries the toolchain at the catalog's paths: no host tools to check.
+    const why = containerReason(tc.containers, kind) ?? servicesReason(tc, kind.services ?? []);
+    if (why) return { available: false, ...none, reason: why };
+    if (!kindSteps(kind).length) return { available: false, ...none, reason: "no runnable steps" };
+    return { available: true, ...none };
+  }
   if (!RUNNER_TIERS.has(kind.tier)) return { available: false, ...none, reason: `tier ${kind.tier} is not run by this runner` };
   if (!tc.runtimes.has(kind.runtime)) return { available: false, ...none, reason: `unknown runtime ${kind.runtime}` };
   const steps = kindSteps(kind);
@@ -166,6 +176,25 @@ export function availability(tc: Toolchains, kind: KindDef): KindAvailability {
   const missing = absent(steps.filter(([, s]) => !s.when));
   const missing_optional = absent(steps.filter(([, s]) => !!s.when)).filter((t) => !missing.includes(t));
   return { available: missing.length === 0, missing, missing_optional, missing_caches };
+}
+
+/** Why the database sidecars a run asks for can't start here (null = they can). */
+export function servicesReason(tc: Toolchains, services: readonly string[]): string | null {
+  if (!services.length) return null;
+  const db = databasesUsable(tc.containers);
+  for (const s of services) {
+    if (s !== "postgres" && s !== "mysql") return `unknown service '${s}'`;
+    if (!db[s]) return `the ${s} database image (${s === "postgres" ? tc.containers?.config.postgresImage : tc.containers?.config.mysqlImage}) is not available on this runner`;
+  }
+  return null;
+}
+
+/**
+ * Whether a non-container kind can still run in a container (PTY sessions,
+ * database services): tier 3 is up and its runtime has a built image.
+ */
+export function containerCapable(tc: Toolchains, kind: KindDef): boolean {
+  return kind.tier !== "browser" && !!imageFor(tc.containers, kind.runtime);
 }
 
 /** GET /v1/catalog: the catalog filtered to the kinds this runner can run now. */
@@ -190,6 +219,7 @@ export function catalogView(tc: Toolchains) {
       ...k,
       actions: STEP_NAMES.filter((n) => n !== "restore" && k.steps[n]),
       missing_caches: a.missing_caches,
+      ...(k.tier === "container" ? { image: imageFor(tc.containers, k.runtime) } : {}),
     })),
     unavailable: kinds.filter((x) => !x.a.available).map(({ k, a }) => ({ id: k.id, reason: a.reason ?? `missing tools: ${a.missing.join(", ")}` })),
     caches: Object.fromEntries([...new Set(CATALOG.kinds.flatMap((k) => k.caches))].sort().map((c) => [c, tc.caches.has(c)])),

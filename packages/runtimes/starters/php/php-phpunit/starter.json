@@ -1,0 +1,33 @@
+{
+  "id": "php-phpunit",
+  "language": "php",
+  "purpose": "project",
+  "kind": "php/composer",
+  "title": "PHP – Composer project with PHPUnit",
+  "description": "A small class that turns marks into letter grades, with one PHPUnit test file",
+  "level": "intermediate",
+  "entry": "src/main.php",
+  "open": [
+    "src/Grades.php",
+    "tests/GradesTest.php"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "phpunit",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "composer.json",
+    "phpunit.xml"
+  ],
+  "tags": [
+    "phpunit",
+    "classes"
+  ],
+  "tools": [
+    "php",
+    "composer"
+  ],
+  "since": "2026.10.3"
+}

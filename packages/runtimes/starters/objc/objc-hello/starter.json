@@ -1,0 +1,20 @@
+{
+  "id": "objc-hello",
+  "language": "objc",
+  "kind": "objc/single",
+  "title": "Objective-C – Hello, world",
+  "description": "The smallest Objective-C program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.m",
+  "open": [
+    "main.m"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "gcc"
+  ]
+}

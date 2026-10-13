@@ -69,7 +69,7 @@ export interface TestResult {
 
 export interface RunResponse {
   language: string;
-  sandbox: "isolate" | "none";
+  sandbox: "isolate" | "none" | "container";
   compile: { ok: boolean; output: string; time_ms: number } | null;
   tests: TestResult[];
 }

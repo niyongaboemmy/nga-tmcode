@@ -34,6 +34,22 @@ const FRAMEWORK: Record<string, string> = {
   dotnet: "dotnet-test",
   dart: "dart-test",
   swift: "xctest",
+  // wave D
+  zig: "zig-test",
+  nimble: "nim-unittest",
+  fpm: "fpm-test",
+  dub: "d-unittest",
+  crystal: "crystal-spec",
+  v: "v-test",
+  clojure: "kaocha",
+  pwsh: "pester",
+  prove: "prove",
+  tclsh: "tcltest",
+  dune: "dune-test",
+  rebar3: "eunit",
+  gleam: "gleeunit",
+  raco: "rackunit",
+  swipl: "plunit",
 };
 
 export function frameworkOf(tool: string, kindId: string) {

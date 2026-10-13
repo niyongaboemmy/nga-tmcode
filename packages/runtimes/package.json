@@ -1,7 +1,7 @@
 {
   "name": "@nga/runtimes",
   "private": true,
-  "version": "2026.10.1",
+  "version": "2026.10.3",
   "type": "module",
   "license": "UNLICENSED",
   "description": "NGA Runtime Catalog: languages, toolchains, project kinds, detection, test-report parsing and starter projects (no React, no DOM)",

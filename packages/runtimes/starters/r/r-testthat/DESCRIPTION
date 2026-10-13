@@ -1,0 +1,8 @@
+Package: grades
+Title: Marks to Letter Grades
+Version: 0.1.0
+Description: Turns marks into letter grades, with testthat tests.
+License: MIT
+Encoding: UTF-8
+Suggests: testthat (>= 3.0.0)
+Config/testthat/edition: 3

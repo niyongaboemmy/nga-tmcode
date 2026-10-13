@@ -1,0 +1,20 @@
+{
+  "id": "cobol-hello",
+  "language": "cobol",
+  "kind": "cobol/single",
+  "title": "COBOL – Hello, world",
+  "description": "The smallest COBOL program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.cob",
+  "open": [
+    "main.cob"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "cobc"
+  ]
+}

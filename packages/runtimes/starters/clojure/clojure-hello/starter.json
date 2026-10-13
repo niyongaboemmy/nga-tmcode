@@ -1,0 +1,20 @@
+{
+  "id": "clojure-hello",
+  "language": "clojure",
+  "kind": "clojure/single",
+  "title": "Clojure – Hello, world",
+  "description": "The smallest Clojure program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.clj",
+  "open": [
+    "main.clj"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "bb"
+  ]
+}

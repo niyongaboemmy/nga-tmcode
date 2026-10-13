@@ -1,0 +1,20 @@
+{
+  "id": "swift-hello",
+  "language": "swift",
+  "kind": "swift/single",
+  "title": "Swift – Hello, world",
+  "description": "The smallest Swift program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.swift",
+  "open": [
+    "main.swift"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "swift"
+  ]
+}

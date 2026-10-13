@@ -1,0 +1,20 @@
+{
+  "id": "elixir-hello",
+  "language": "elixir",
+  "kind": "elixir/single",
+  "title": "Elixir – Hello, world",
+  "description": "The smallest Elixir program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.exs",
+  "open": [
+    "main.exs"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "elixir"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "bash-bats",
+  "language": "bash",
+  "purpose": "project",
+  "kind": "bash/single",
+  "title": "Bash – Functions with bats tests",
+  "description": "Shell functions that turn marks into letter grades, with one bats test file",
+  "level": "beginner",
+  "entry": "main.sh",
+  "open": [
+    "lib/grades.sh",
+    "test/grades.bats"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "bats",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "bats",
+    "functions"
+  ],
+  "tools": [
+    "bash",
+    "bats"
+  ],
+  "since": "2026.10.3"
+}

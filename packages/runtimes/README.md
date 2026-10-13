@@ -12,7 +12,7 @@ The **Runtime Catalog** shared by the NGA Code Runner (tm-judge), Task Mentor an
 | Starters | `starters/<language>/<id>/` | real project folders plus `starter.json` |
 | Build output | `dist/` (not committed) | `catalog.json`, `starters.json`, `index.js`, `index.d.ts` |
 
-Wave A (enabled now): C, C++, Java, Python, JavaScript, TypeScript, Go, Rust, SQL (SQLite), plus the browser kinds TMCode already has (static websites, React pages bundled in the browser, logic truth tables). Waves B–C are in the catalog as data with `enabled: false`.
+Wave A (enabled now): C, C++, Java, Python, JavaScript, TypeScript, Go, Rust, SQL (SQLite), plus the browser kinds TMCode already has (static websites, React pages bundled in the browser, logic truth tables). Waves B–D are in the catalog as data with `enabled: false`; every wave C and D language has a `<lang>-hello` and a `<lang>-io` starter (two whole numbers on one line → `Sum: N`). Wave C .NET builds, Kotlin Gradle and Flutter are tier `container`. A shared extension goes to the language whose content matches: `*.pl` Perl vs Prolog (clauses), `*.m` Octave vs Objective-C (`#import`), `*.v` V (`fn main`) vs Verilog (`endmodule`), `*.d` D vs Makefile dependency files.
 
 > Licence: `UNLICENSED` for now. Whether this package becomes MIT or stays internal is an open decision (plan §22).
 
@@ -26,7 +26,7 @@ node packages/runtimes/scripts/verify-starters.mjs --projects   # … and the ne
 node packages/runtimes/scripts/migrate-templates.mjs            # one-off: TMCode templates → starters/*/tmcode-*
 ```
 
-`verify-starters` skips languages whose toolchain isn't installed; set `PYTHON=/path/to/venv/bin/python3` for a Python with pytest, pandas, Flask and FastAPI.
+`verify-starters` skips languages whose toolchain isn't installed (waves B–D use the local recipes in its `LOCAL` table); set `PYTHON=/path/to/venv/bin/python3` for a Python with pytest, pandas, Flask and FastAPI.
 
 ## Kinds in one paragraph
 

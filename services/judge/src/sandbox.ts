@@ -33,6 +33,8 @@ export interface SpawnOptions {
   limits: Limits;
   env?: Record<string, string>;
   cwd?: string;
+  /** Containers only: a real terminal (Tty), raw bytes on stdout; size defaults to 120×30. */
+  tty?: { cols: number; rows: number };
 }
 
 export type SessionSignal = "SIGINT" | "SIGTERM" | "SIGKILL";
@@ -45,6 +47,10 @@ export interface Proc {
   onStdout(cb: (chunk: Buffer) => void): void;
   onStderr(cb: (chunk: Buffer) => void): void;
   done: Promise<ExecResult>;
+  /** PTY only: the terminal's size. */
+  resize?(cols: number, rows: number): void;
+  /** Containers only: the container's id and its address on the box's network (previews). */
+  container?: Promise<{ id: string; ip: string | null }>;
 }
 
 /** Wires a child process's pipes into a Proc. */
@@ -86,6 +92,10 @@ export interface AcquireOptions {
   mounts?: Mount[];
   /** Host folders bound read-only at the same path (toolchains outside /usr, e.g. /opt/maven). */
   dirs?: string[];
+  /** Containers only: the image the box's programs run in (tier 3). */
+  image?: string;
+  /** Containers only: a per-run internal Docker network (databases, previews); default: no network. */
+  network?: string;
 }
 
 export interface ExecResult {
@@ -135,7 +145,7 @@ export interface Box {
 const STDIO_FILES = new Set([".stdin", ".stdout", ".stderr"]);
 const SNAPSHOT_MAX_BYTES = 64 * 1024 * 1024;
 
-async function listFiles(root: string): Promise<BoxFile[]> {
+export async function listFiles(root: string): Promise<BoxFile[]> {
   const out: BoxFile[] = [];
   let total = 0;
   const walk = async (rel: string) => {
@@ -163,7 +173,7 @@ async function listFiles(root: string): Promise<BoxFile[]> {
   return out;
 }
 
-async function writeInto(root: string, path: string, content: string | Buffer, mode?: number, mtimeMs?: number) {
+export async function writeInto(root: string, path: string, content: string | Buffer, mode?: number, mtimeMs?: number) {
   const full = safeJoin(root, path);
   await mkdir(dirname(full), { recursive: true });
   await writeFile(full, content);
@@ -171,7 +181,7 @@ async function writeInto(root: string, path: string, content: string | Buffer, m
   if (mtimeMs !== undefined) await utimes(full, mtimeMs / 1000, mtimeMs / 1000);
 }
 
-async function linkInto(root: string, path: string, target: string) {
+export async function linkInto(root: string, path: string, target: string) {
   const full = safeJoin(root, path);
   const resolved = normalize(join(dirname(path), target));
   if (target.startsWith("/") || resolved === ".." || resolved.startsWith("../")) throw new Error(`Link '${path}' points outside the box.`);
@@ -188,7 +198,7 @@ export async function restoreSnapshot(box: Box, files: BoxFile[]) {
   }
 }
 
-async function readFrom(root: string, path: string): Promise<Buffer | null> {
+export async function readFrom(root: string, path: string): Promise<Buffer | null> {
   try {
     return await readFile(safeJoin(root, path));
   } catch {
@@ -196,7 +206,7 @@ async function readFrom(root: string, path: string): Promise<Buffer | null> {
   }
 }
 
-async function listIn(root: string, dir: string): Promise<string[]> {
+export async function listIn(root: string, dir: string): Promise<string[]> {
   try {
     const full = dir && dir !== "." ? safeJoin(root, dir.replace(/\/+$/, "")) : root;
     if (!(await stat(full)).isDirectory()) return [];
@@ -213,7 +223,7 @@ export function topDirs(dirs: string[]): string[] {
 }
 
 export interface Sandbox {
-  kind: "isolate" | "none";
+  kind: "isolate" | "none" | "container";
   acquire(opts?: AcquireOptions): Promise<Box>;
 }
 
@@ -244,7 +254,7 @@ function run(cmd: string, args: string[], opts: { input?: string; timeoutMs?: nu
   });
 }
 
-function safeJoin(root: string, rel: string) {
+export function safeJoin(root: string, rel: string) {
   if (!rel || rel.startsWith("/") || rel.split("/").some((p) => p === ".." || p === "")) throw new Error(`Invalid file path '${rel}'`);
   return join(root, rel);
 }
@@ -435,7 +445,7 @@ export class IsolateSandbox implements Sandbox {
 // ───────────────────────── local (development only) ─────────────────────────
 
 /** rm -rf that also removes read-only trees (a Go module cache, chmod'ed npm files). */
-async function removeTree(path: string) {
+export async function removeTree(path: string) {
   try {
     await rm(path, { recursive: true, force: true });
   } catch {

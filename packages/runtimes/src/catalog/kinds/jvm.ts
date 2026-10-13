@@ -109,9 +109,10 @@ export const JVM_KINDS = [
       build: { tool: "gradle", args: [...GRADLE, "build", "-x", "test"], runsProjectScripts: true },
       test: { tool: "gradle", args: [...GRADLE, "test"], runsProjectScripts: true, report: "junit-dir", path: "build/test-results/test" },
     },
-    tier: "isolate-build",
+    tier: "container",
     caches: ["gradle-school"],
     limits: JVM_PROJECT_LIMITS,
+    notes: "Tier 3: the Kotlin Gradle plugin starts a compile daemon and many threads.",
   }),
   kind({
     id: "scala/single",

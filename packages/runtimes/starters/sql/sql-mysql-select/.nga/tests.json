@@ -1,0 +1,12 @@
+{
+  "entry": "main.sql",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "S4B students by name",
+      "input": "",
+      "expected_output": "+-------+-------+\n| name  | class |\n+-------+-------+\n| Grace | S4B   |\n| Jean  | S4B   |\n+-------+-------+\n",
+      "points": 1
+    }
+  ]
+}

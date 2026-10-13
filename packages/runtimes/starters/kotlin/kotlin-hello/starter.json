@@ -1,0 +1,21 @@
+{
+  "id": "kotlin-hello",
+  "language": "kotlin",
+  "kind": "kotlin/single",
+  "title": "Kotlin – Hello, world",
+  "description": "The smallest Kotlin program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "Main.kt",
+  "open": [
+    "Main.kt"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "kotlinc",
+    "java"
+  ]
+}
