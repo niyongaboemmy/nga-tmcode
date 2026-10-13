@@ -543,7 +543,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       {
         key: "workbench.simpleLayout",
         label: "Simple Layout (students)",
-        description: "Show the four views a student needs (Assignments, Files, Search, Run) and a short status bar. Source Control, Testing and Extensions stay one click away under More. Teachers always see everything.",
+        description: "For students: Assignments, Files, Search and Run come first, in plain words, with a short status bar. Every view stays in the bar while it fits; only a short window puts the rest under More. Teachers always see everything.",
         type: "boolean",
       },
       {

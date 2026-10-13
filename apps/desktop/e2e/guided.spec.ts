@@ -69,7 +69,7 @@ test.describe("F · one Test", () => {
 });
 
 test.describe("J · the simple student screen", () => {
-  test("a student sees four views and a short status bar; the rest is under More", async ({ page }) => {
+  test("a student sees their views first, all of them while they fit, and a short status bar", async ({ page }) => {
     await launch(page);
     await expect(page.locator(".tm-statusbar")).toHaveAttribute("data-simple", "true", { timeout: 15_000 });
     const bar = page.locator(".tm-activitybar-top");
@@ -77,13 +77,23 @@ test.describe("J · the simple student screen", () => {
     await expect(bar.getByRole("tab", { name: /^Files/ })).toBeVisible();
     await expect(bar.getByRole("tab", { name: /^Search/ })).toBeVisible();
     await expect(bar.getByRole("tab", { name: /^Run/ })).toBeVisible();
-    await expect(bar.getByRole("tab", { name: /^Source Control/ })).toHaveCount(0);
-    await expect(bar.getByRole("tab", { name: /^Testing/ })).toHaveCount(0);
+    // A handful of views is never hidden: no More while they fit.
+    await expect(bar.getByRole("tab", { name: /^Testing/ })).toBeVisible();
+    await expect(bar.getByRole("tab", { name: /^Extensions/ })).toBeVisible();
+    await expect(page.getByTestId("activity-more")).toHaveCount(0);
+    expect(await bar.getByRole("tab").first().getAttribute("aria-label")).toMatch(/^Assignments/);
     // H: a student's own projects live in Assignments, not a second view.
     await expect(bar.getByRole("tab", { name: /Projects/ })).toHaveCount(0);
+
+    // A short window: the rest goes under More, each view once.
+    await page.setViewportSize({ width: 1000, height: 330 });
     await page.getByTestId("activity-more").click();
-    await expect(page.locator(".tm-menu-item", { hasText: "Testing" })).toBeVisible();
+    const items = page.locator(".tm-menu-item");
+    const labels = (await items.allTextContents()).map((t) => t.trim());
+    expect(labels.filter((l) => /^Extensions/.test(l))).toHaveLength(labels.some((l) => /^Extensions/.test(l)) ? 1 : 0);
+    expect(new Set(labels).size).toBe(labels.length);
     await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1280, height: 720 });
     // The status bar keeps what a student acts on.
     await expect(page.locator(".tm-statusbar .tm-status-encoding")).toHaveCount(0);
     await expect(page.locator(".tm-statusbar .tm-status-bell")).toBeVisible();

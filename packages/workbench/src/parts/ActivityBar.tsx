@@ -1,6 +1,6 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
 import { msg } from "../messages/catalog";
-import { getPlatform, openContextMenu, showView, updateSetting, useWorkbench, type ViewId } from "../state/store";
+import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { useExam } from "../exam/state";
 import { useUpdate } from "../update/updateService";
@@ -11,7 +11,8 @@ import { debugAllowed } from "../debug/debugService";
 import { useProjects, signIn, refreshProjects } from "../projects/service";
 import { useAssignments } from "../projects/assignments";
 import { isToDo, studentTasks, isAssessmentWorkspace, signOutOnPurpose, wireStudentHome } from "../projects/studentHome";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { splitBar, type BarItem } from "./activityBarFit";
 import { gradingQueue, useGrading } from "../grading/service";
 import { isTeacherRole, useIsTeacher, useRole, useRoleChecking } from "../state/role";
 import type { AccountStatus } from "../platform/types";
@@ -84,13 +85,38 @@ export function ActivityBar() {
   // A review folder is the student's submitted work: its git changes are noise for the teacher (T10).
   const reviewing = useGrading((s) => !!s.review);
   const allViews = base.filter((v) => (v.id !== "scm" || (gitAllowed && (!assignmentWs || scmInAssignments) && !reviewing)) && (v.id !== "debug" || debugAllowed()));
-  // The student layout (guided plan J, U10): Assignments, Files, Search, Run; the rest under More.
+  // The student layout (guided plan J, U10): plain words, and Assignments, Files, Search, Run first.
   const simplePref = useWorkbench((s) => s.settings["workbench.simpleLayout"] !== false);
   const simple = simplePref && practice && !inExam && hasAccount && !!account?.signed_in && !isTeacher && !checking;
-  const views = simple ? allViews.filter((v) => SIMPLE_IDS.includes(v.id) || (sidebarVisible && activeView === v.id)) : allViews;
-  const hidden = simple ? allViews.filter((v) => !views.includes(v)) : [];
+  const ordered = simple ? [...allViews.filter((v) => SIMPLE_IDS.includes(v.id)).sort((a, b) => SIMPLE_IDS.indexOf(a.id) - SIMPLE_IDS.indexOf(b.id)), ...allViews.filter((v) => !SIMPLE_IDS.includes(v.id))] : allViews;
   // Extensions never run in exams, so their containers only exist in practice mode.
-  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam && !simple);
+  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
+
+  // Every view shows while the bar has room (U10 revisited: a handful of icons is never hidden).
+  // Only when the window is too short does the rest go under "More" — each entry once, and
+  // never the view that is open.
+  const items: BarItem[] = [...ordered.map((v) => ({ key: v.id as string, view: v })), ...extContainers.map((c) => ({ key: c.key, container: c }))];
+  const nav = useRef<HTMLElement>(null);
+  const bottom = useRef<HTMLDivElement>(null);
+  const [capacity, setCapacity] = useState(Number.POSITIVE_INFINITY);
+  useLayoutEffect(() => {
+    const el = nav.current;
+    if (!el) return;
+    const measure = () => {
+      const itemH = el.querySelector<HTMLElement>(".tm-activitybar-top .tm-activity")?.offsetHeight || 48;
+      const free = el.clientHeight - (bottom.current?.offsetHeight ?? 0);
+      setCapacity(free > 0 ? Math.max(1, Math.floor(free / itemH)) : Number.POSITIVE_INFINITY);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const { shown, overflow } = splitBar(items, capacity, sidebarVisible ? activeView : null);
 
   const label = (v: (typeof VIEWS)[number]) => {
     const cmd = getCommand(v.command);
@@ -101,9 +127,11 @@ export function ActivityBar() {
   };
 
   return (
-    <nav className="tm-activitybar" aria-label="Active View Switcher">
+    <nav ref={nav} className="tm-activitybar" aria-label="Active View Switcher">
       <div className="tm-activitybar-top" role="tablist" aria-orientation="vertical">
-        {views.map((v) => {
+        {shown.map((item) => {
+          if (item.container) return <ExtContainerButton key={item.key} container={item.container} active={sidebarVisible && activeView === item.key} />;
+          const v = item.view!;
           const active = sidebarVisible && activeView === v.id;
           return (
             <button
@@ -140,10 +168,7 @@ export function ActivityBar() {
             </button>
           );
         })}
-        {extContainers.map((c) => (
-          <ExtContainerButton key={c.key} container={c} active={sidebarVisible && activeView === c.key} />
-        ))}
-        {simple && (
+        {overflow.length > 0 && (
           <button
             type="button"
             className="tm-activity"
@@ -153,12 +178,11 @@ export function ActivityBar() {
             data-testid="activity-more"
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              openContextMenu(r.right + 4, r.top, [
-                ...hidden.map((v) => ({ kind: "item" as const, label: v.label, run: () => showView(v.id) })),
-                ...(practice && !inExam ? [{ kind: "item" as const, label: "Extensions", run: () => executeCommand("workbench.view.extensions") }] : []),
-                { kind: "separator" as const },
-                { kind: "item" as const, label: "Show All Views in This Bar", run: () => updateSetting("workbench.simpleLayout", false) },
-              ]);
+              openContextMenu(
+                r.right + 4,
+                r.top,
+                overflow.map((item) => ({ kind: "item" as const, label: item.view ? label(item.view) : item.container!.title, run: () => showView(item.key as ViewId) })),
+              );
             }}
           >
             <Codicon name="ellipsis" />
@@ -166,7 +190,7 @@ export function ActivityBar() {
         )}
       </div>
       {practice && !inExam && hasAccount && account?.signed_in && !checking && <CoachMark teacher={isTeacher} />}
-      <div className="tm-activitybar-bottom">
+      <div ref={bottom} className="tm-activitybar-bottom">
         {hasAccount && practice && !inExam && <AccountButton account={account} />}
         <button
           type="button"
