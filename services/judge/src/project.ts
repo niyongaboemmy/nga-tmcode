@@ -260,7 +260,7 @@ export function boxSetup(tc: Toolchains, kind: KindDef) {
   env.NO_COLOR = "1";
   const mounts: Mount[] = kind.caches.filter((c) => tc.caches.has(c)).map((c) => ({ inside: `/caches/${c}`, host: tc.caches.get(c)! }));
   const dirs = [...new Set(toolPaths.flatMap((p) => toolMounts(p)))];
-  return { env, mounts, dirs };
+  return { env, mounts, dirs, fileLocks: !!kind.fileLocks };
 }
 
 /** argv for a step: the resolved tool + rendered tokens. An optional wrapper (stdbuf) that isn't installed is dropped. */
@@ -405,7 +405,7 @@ export async function runProject(sandbox: Sandbox, env: ProjectEnv, req: Project
 
   let box: Box;
   try {
-    box = await where.sandbox.acquire({ mounts: setup.mounts, dirs: setup.dirs, image: where.image, network: db?.network });
+    box = await where.sandbox.acquire({ mounts: setup.mounts, dirs: setup.dirs, fileLocks: setup.fileLocks, image: where.image, network: db?.network });
   } catch (e) {
     await db?.dispose();
     throw e;

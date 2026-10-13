@@ -172,6 +172,14 @@ export const KindDefSchema = z.strictObject({
   tier: TierSchema,
   interactive: z.enum(["pipes", "pty", "none"]),
   caches: z.array(z.string()),
+  /**
+   * Isolate tiers: the box allows file locks (flock, fcntl F_SETLK…). isolate
+   * forbids them by default because a lock on an inode several boxes share
+   * (/usr, a cache layer) is a side channel between boxes; only kinds whose
+   * tools refuse to work without locks turn this on (the go command locks
+   * go.mod and its module cache).
+   */
+  fileLocks: z.boolean().optional(),
   limits: z.partialRecord(z.enum(["restore", "build", "run", "test", "serve"]), LimitsSchema),
   /** Starter ids (§14); filled from the starters' manifests at build time. */
   starters: z.array(z.string()),

@@ -384,7 +384,7 @@ describe.runIf(can("cpp/cmake"))("cpp/cmake (starter cpp-cmake-gtest)", () => {
     const r = await project({ kind: "cpp/cmake", files: starter("cpp", "cpp-cmake-gtest"), actions: ["build", "test"] });
     expect(r.compile?.ok, r.compile?.output).toBe(true);
     expect(r.unit?.framework).toBe("ctest");
-    expect(r.unit?.total).toBeGreaterThan(0);
+    expect(r.unit?.total, JSON.stringify({ steps: r.steps, unit: r.unit })).toBeGreaterThan(0);
   });
 });
 

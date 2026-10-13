@@ -97,6 +97,8 @@ export interface AcquireOptions {
   image?: string;
   /** Containers only: a per-run internal Docker network (databases, previews); default: no network. */
   network?: string;
+  /** Isolate: allow flock/fcntl locks (the kind's fileLocks); every other syscall restriction stays. */
+  fileLocks?: boolean;
 }
 
 export interface ExecResult {
@@ -264,6 +266,9 @@ export function safeJoin(root: string, rel: string) {
 
 const DEFAULT_MOUNTS = ["/usr/", "/bin/", "/lib/", "/lib64/", "/box/"];
 
+/** isolate --syscalls: every restriction (CF_SYSCALL_ALL) minus the i-node one (CF_SYSCALL_FCNTL = 4, file locks). */
+export const SYSCALLS_WITH_FILE_LOCKS = 0xffff & ~4;
+
 /**
  * Programs installed outside the standard system folders (nvm, /opt, tool
  * caches) need their install directory mounted read-only inside the box:
@@ -371,6 +376,7 @@ export class IsolateSandbox implements Sandbox {
           `--time=${limits.cpuS}`,
           `--wall-time=${limits.wallS}`,
           "--extra-time=0.5",
+          ...(opts.fileLocks ? [`--syscalls=${SYSCALLS_WITH_FILE_LOCKS}`] : []),
           `--cg-mem=${limits.memoryMb * 1024}`,
           `--processes=${limits.processes}`,
           `--fsize=${limits.fileKb ?? Math.max(limits.outputKb * 2, 1024)}`,

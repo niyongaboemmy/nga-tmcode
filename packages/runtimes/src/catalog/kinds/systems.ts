@@ -106,6 +106,8 @@ export const SYSTEMS_KINDS = [
     },
     tier: "isolate-build",
     caches: ["go-mod-school"],
+    // The go command fails ("RLock go.mod: function not implemented") without flock.
+    fileLocks: true,
     limits: { ...LIMITS["isolate-build"], run: MANAGED_RUN },
   }),
   kind({
