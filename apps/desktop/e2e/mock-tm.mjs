@@ -3,6 +3,7 @@
 // chain with node:crypto), so it doubles as a contract test of the client.
 // Test-only endpoints live under /__test.
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.MOCK_TM_PORT ?? 5099);
@@ -244,6 +245,20 @@ function session(req, res, sid) {
   return s;
 }
 
+/**
+ * The desktop app's JavaScript Console host page (tmconsole://, src-tauri/src/console.rs), served
+ * exactly as Rust serves it (the same page and CSP, read from that file) so the browser e2e runs the
+ * console the way the packaged app does.
+ */
+function consoleHost(res, network) {
+  const rs = readFileSync(new URL("../src-tauri/src/console.rs", import.meta.url), "utf8");
+  const html = rs.slice(rs.indexOf('r#"') + 3, rs.indexOf('"#;'));
+  const connect = network ? "https: http://localhost:* http://127.0.0.1:*" : "'none'";
+  const csp = /format!\("(default-src[^"]*)"\)/.exec(rs)[1].replace("{connect}", connect);
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": csp, "Cache-Control": "no-store" });
+  res.end(html);
+}
+
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = url.pathname;
@@ -251,6 +266,7 @@ createServer(async (req, res) => {
   try {
     // ── test controls ──
     if (p === "/__test/reset") return reset(), send(res, 200, { ok: true });
+    if (p === "/__console/host.html") return consoleHost(res, url.searchParams.get("net") !== "0");
     if (p === "/__test/launch") {
       const ticket = randomBytes(24).toString("base64url");
       state.tickets.set(ticket, { used: false });
