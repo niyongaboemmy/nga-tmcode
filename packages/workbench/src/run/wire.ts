@@ -1,7 +1,7 @@
 import { onDocumentChanged } from "../monaco/documents";
 import { onExternalChanges } from "../monaco/external";
 import { useWorkbench } from "../state/store";
-import { TESTS_FILE, loadTests } from "./testService";
+import { TESTS_FILES, loadTests } from "./testService";
 import { wireTestEditor } from "../testing/editor";
 import { wireRunHub } from "./runHub";
 
@@ -23,9 +23,9 @@ export function wireRunServices() {
     }
   });
   onExternalChanges((paths) => {
-    if (paths.includes(TESTS_FILE) && !useWorkbench.getState().dirty[TESTS_FILE]) void loadTests();
+    if (paths.some((p) => TESTS_FILES.includes(p) && !useWorkbench.getState().dirty[p])) void loadTests();
   });
   onDocumentChanged((path) => {
-    if (path === TESTS_FILE && !useWorkbench.getState().dirty[path]) void loadTests();
+    if (TESTS_FILES.includes(path) && !useWorkbench.getState().dirty[path]) void loadTests();
   });
 }

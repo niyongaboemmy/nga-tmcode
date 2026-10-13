@@ -18,7 +18,7 @@ const STATUS_ICON: Record<TestItem["status"], { icon: string; cls: string; label
 const SAMPLE = `{
   "entry": "main.py",
   "tests": [
-    { "id": "t1", "name": "example", "input": "2\\n80\\n90\\n", "expected_output": "85.0 A\\n" }
+    { "id": "t1", "name": "example", "input": "2\\n80\\n90\\n", "expected_output": "85.0 A\\n", "points": 1 }
   ]
 }
 `;
@@ -90,7 +90,7 @@ export function TestingView() {
           className="tm-button tm-button--secondary tm-button--block"
           onClick={async () => {
             const fs = getPlatform().fs;
-            await fs.createDir(".tmcode").catch(() => {});
+            await fs.createDir(TESTS_FILE.slice(0, TESTS_FILE.lastIndexOf("/"))).catch(() => {});
             await fs.writeFile(TESTS_FILE, SAMPLE);
             openFile(TESTS_FILE, { pinned: true });
           }}

@@ -7,23 +7,35 @@ import { getPlatform, log, notify, openEditorInput, setTests, updateTest, useWor
 import { startRun } from "./runService";
 
 /**
- * Visible tests (plan §8.1): run locally for feedback only. In practice mode
- * they come from `.tmcode/tests.json`; in an exam, from the Task Mentor
- * package. Local results are advisory — the grade is a server re-run.
+ * Visible tests (plan §8.1): run locally for feedback only. In practice mode they come from
+ * `.nga/tests.json` (the Runtime Catalog's format: starters and Task Mentor use it) or TMCode's
+ * older `.tmcode/tests.json`; in an exam, from the Task Mentor package. Local results are advisory:
+ * the grade is a server re-run.
  */
-export const TESTS_FILE = ".tmcode/tests.json";
+export const TESTS_FILES = [".nga/tests.json", ".tmcode/tests.json"];
+/** Where new example tests go when the folder has none yet. */
+export const TESTS_FILE = TESTS_FILES[0];
 
 interface TestsFile {
   entry: string;
-  tests: { id: string; name?: string; input: string; expected_output: string }[];
+  tests: { id: string; name?: string; input: string; expected_output: string; points?: number }[];
+}
+
+/** The folder's tests file: the first of TESTS_FILES that exists, else where a new one goes. */
+export async function testsFile(): Promise<{ path: string; text: string | null }> {
+  const fs = getPlatform().fs;
+  for (const path of TESTS_FILES) {
+    const text = await fs.readFile(path).catch(() => null);
+    if (text !== null) return { path, text };
+  }
+  return { path: TESTS_FILE, text: null };
 }
 
 export async function loadTests() {
-  const fs = getPlatform().fs;
-  let raw: string;
-  try {
-    raw = await fs.readFile(TESTS_FILE);
-  } catch {
+  const found = await testsFile();
+  const raw = found.text;
+  const TESTS_FILE = found.path;
+  if (raw === null) {
     setTests({ entry: null, items: [], source: null });
     return;
   }
