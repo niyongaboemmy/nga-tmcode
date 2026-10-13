@@ -15,6 +15,8 @@ export interface ExamTaskState {
   entry: string;
   visible_tests: VisibleTest[];
   hidden_test_count: number;
+  /** "unit": the teacher's unit tests check it when the student submits (no example tests). */
+  check_with?: "io" | "unit";
   /** Highest journal seq for this task, synced or not. */
   last_seq: number;
 }

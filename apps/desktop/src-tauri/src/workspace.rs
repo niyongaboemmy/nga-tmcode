@@ -642,3 +642,62 @@ mod tests {
         assert_eq!(read_file(&root, "bom.txt").unwrap(), "hi");
     }
 }
+
+/// Files and folders copied in Finder / Windows Explorer (absolute paths), for Paste in the Explorer.
+/// Read with the system's own tools, so nothing extra is linked in; empty when there are none.
+#[tauri::command]
+pub async fn ws_clipboard_files() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(clipboard_files).await.unwrap_or_default()
+}
+
+fn clipboard_files() -> Vec<String> {
+    use std::process::Command;
+    #[cfg(target_os = "macos")]
+    let out = Command::new("/usr/bin/osascript")
+        .args([
+            "-l",
+            "JavaScript",
+            "-e",
+            "ObjC.import('AppKit'); var items = $.NSPasteboard.generalPasteboard.pasteboardItems; var out = []; if (items) { for (var i = 0; i < items.count; i++) { var s = items.objectAtIndex(i).stringForType('public.file-url'); if (s) out.push(ObjC.unwrap(s)); } } out.join('\\n')",
+        ])
+        .output();
+    #[cfg(windows)]
+    let out = {
+        use std::os::windows::process::CommandExt;
+        Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }"])
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .output()
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let out = Command::new("sh")
+        .args(["-c", "wl-paste -t text/uri-list 2>/dev/null || xclip -selection clipboard -t text/uri-list -o 2>/dev/null"])
+        .output();
+    let Ok(out) = out else { return Vec::new() };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.strip_prefix("file://").map(|p| percent_decode(p)).unwrap_or_else(|| l.to_string()))
+        .filter(|p| std::path::Path::new(p).exists())
+        .collect()
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+

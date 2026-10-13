@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { showPanel } from "../../state/store";
-import { summarize, type TestResult } from "../../testing/parsers";
+import { summarize, type TestResult } from "@nga/runtimes/testing";
 import { procAvailable, rerunFailed, revealResult, runAllSuites, runSuite, stopSuite, useFrameworkTests, type SuiteState } from "../../testing/service";
-import type { TestSuite } from "../../testing/frameworks";
+import type { TestSuite } from "@nga/runtimes/testing";
 import { ActionButton, Codicon } from "../../widgets/icons";
 
 const ICON: Record<TestResult["status"], { icon: string; cls: string; label: string }> = {

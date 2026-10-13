@@ -3,8 +3,8 @@ import { inExam } from "../exam/state";
 import { activeFilePath, getPlatform, notify, revealView, useWorkbench } from "../state/store";
 import { showInputBox } from "../widgets/QuickPick";
 import { currentRun } from "../run/runHub";
-import { loadTests, runTests, TESTS_FILE } from "../run/testService";
-import { summarize } from "./parsers";
+import { loadTests, runTests, testsFile } from "../run/testService";
+import { summarize } from "@nga/runtimes/testing";
 import { resolveTest, type TestChoice } from "./resolve";
 import { procAvailable, runFileTests, runSuite, useFrameworkTests } from "./service";
 
@@ -57,7 +57,7 @@ export async function runSmartTest() {
 
 /**
  * Add a Test: one example (input → expected output) for the Run target, written to
- * .tmcode/tests.json by TMCode (no JSON by hand), then run.
+ * the folder's tests file (.nga/tests.json) by TMCode (no JSON by hand), then run.
  */
 export async function addExampleTest() {
   const target = currentRun().action;
@@ -68,17 +68,18 @@ export async function addExampleTest() {
   const expected = await showInputBox({ prompt: "What should it print?", placeholder: "e.g. 7" });
   if (expected === undefined) return;
   const fs = getPlatform().fs;
-  let data: { entry: string; tests: { id: string; name: string; input: string; expected_output: string }[] } = { entry, tests: [] };
+  const file = await testsFile();
+  let data: { entry: string; tests: { id: string; name: string; input: string; expected_output: string; points?: number }[] } = { entry, tests: [] };
   try {
-    const old = JSON.parse(await fs.readFile(TESTS_FILE)) as typeof data;
+    const old = JSON.parse(file.text ?? "") as typeof data;
     if (old?.entry === entry && Array.isArray(old.tests)) data = old;
   } catch {
     /* first test */
   }
   const n = data.tests.length + 1;
-  data.tests.push({ id: String(n), name: `Example ${n}`, input: input.replace(/\\n/g, "\n"), expected_output: expected.replace(/\\n/g, "\n") });
-  await fs.createDir(".tmcode").catch(() => {});
-  await fs.writeFile(TESTS_FILE, JSON.stringify(data, null, 2));
+  data.tests.push({ id: String(n), name: `Example ${n}`, input: input.replace(/\\n/g, "\n"), expected_output: expected.replace(/\\n/g, "\n"), points: 1 });
+  await fs.createDir(file.path.slice(0, file.path.lastIndexOf("/"))).catch(() => {});
+  await fs.writeFile(file.path, JSON.stringify(data, null, 2));
   await loadTests();
   notify("info", `Added Example ${n} for ${entry.split("/").pop()}. Test runs it now and after every change.`, undefined, { owner: "add-test" });
   return runTests();

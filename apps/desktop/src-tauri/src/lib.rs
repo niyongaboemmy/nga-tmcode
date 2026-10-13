@@ -308,6 +308,7 @@ pub fn run() {
         .manage(PendingOpen::default())
         .manage(git::Git::default())
         .manage(account::Account::default())
+        .manage(account::Streams::default())
         .manage(github::GitHub::default())
         .manage(exthost::ExtHosts::default())
         .manage(webview::Webviews::default())
@@ -399,11 +400,19 @@ pub fn run() {
             account::auth_status,
             account::auth_sign_out,
             account::tm_api,
+            account::tm_stream,
+            account::tm_stream_cancel,
             projects::proj_scan,
             projects::proj_read_blob,
             projects::proj_write_blob,
             projects::proj_new_folder,
             projects::proj_use_projects_folder,
+            projects::proj_web_roots,
+            projects::proj_pick_base,
+            projects::proj_default_base,
+            projects::proj_move_folder,
+            workspace::ws_clipboard_files,
+            proc::proc_port_free,
             git::git_info,
             git::git_status,
             git::git_show,

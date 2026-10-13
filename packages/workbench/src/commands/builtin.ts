@@ -279,6 +279,18 @@ export function registerBuiltinCommands() {
   // One Test: the file's tests, its project's, the example tests, or Add a Test (testing/resolve.ts).
   registerCommand({ id: "tmcode.test", title: "Test", category: "Test", enabled: hasWorkspace, run: async () => (await import("../testing/smartTest")).runSmartTest() });
   registerCommand({ id: "tmcode.addTest", title: "Add a Test (Example Input and Output)...", category: "Test", enabled: hasWorkspace, run: async () => (await import("../testing/smartTest")).addExampleTest() });
+  // Task Mentor's code runner: when this computer can't run the program or its unit tests.
+  registerCommand({
+    id: "tmcode.runOnTaskMentor",
+    title: "Run on Task Mentor",
+    category: "Run",
+    enabled: hasActiveFile,
+    run: async () => {
+      const path = activeFilePath();
+      if (path) await (await import("../run/serverRun")).runOnTaskMentor(path);
+    },
+  });
+  registerCommand({ id: "tmcode.runUnitTestsOnTaskMentor", title: "Run Unit Tests on Task Mentor", category: "Test", enabled: hasWorkspace, run: async () => void (await import("../testing/serverUnit")).runUnitTestsOnServer() });
   registerCommand({ id: "tmcode.reloadTests", title: "Reload Tests", category: "Test", enabled: hasWorkspace, run: loadTests });
   registerCommand({ id: "workbench.view.testing", title: "Show Testing", category: "View", run: () => revealView("testing") });
   registerCommand({ id: "tmcode.refreshToolchains", title: "Refresh Toolchains", category: "Run", run: refreshToolchains });

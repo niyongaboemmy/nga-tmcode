@@ -4,7 +4,7 @@ import { getPlatform, openContextMenu, openFile, showDialog, useWorkbench, type 
 import { openExternalUrl } from "../terminal/browser";
 import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
-import { taskMentorWeb } from "../projects/taskMentorLinks";
+import { openInTaskMentor } from "../projects/taskMentorLinks";
 import { useProjects } from "../projects/service";
 import { showAssignment } from "../projects/assignments";
 import { revealComment } from "./comments";
@@ -178,14 +178,10 @@ interface PanelApi {
   returnForChanges(): boolean;
 }
 
-/** Task Mentor's grading page for this practical (and student). */
+/** Task Mentor's Grading page for this activity (and student). */
 function openGradingInTaskMentor(key: string, studentId: number | null) {
-  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
   const { type, id, question_id } = parseKey(key);
-  const q = new URLSearchParams();
-  if (question_id) q.set("question", String(question_id));
-  if (studentId != null) q.set("student", String(studentId));
-  void openExternalUrl(`${taskMentorWeb(api)}/grading/practical/${type}/${id}${q.toString() ? `?${q}` : ""}`);
+  openInTaskMentor({ kind: "grading", type, id, question: question_id, student: studentId });
 }
 
 /** Save & Next's note for the next panel ("Saved Chloe Coder: 20/20."). */
@@ -372,6 +368,9 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       ? [{ kind: "item" as const, label: "Preview the Website", disabled: !row.link?.revision_id || hasHtml === null, run: () => void previewSubmission(row) }]
       : []),
     ...(loaded && row.project?.kind === "tm" ? [{ kind: "item" as const, label: "Compare with Version…", run: () => void compareWithVersion() }] : []),
+    ...(row.project?.kind === "tm"
+      ? [{ kind: "item" as const, label: "Run the Student's Unit Tests", disabled: !row.link?.revision_id, run: () => void import("./unitTests").then((m) => m.runStudentUnitTests(gkey, row)) }]
+      : []),
     ...(canReturn && !returning ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Return for Changes…", run: () => setReturning({ message: "", error: null, busy: false }) }] : []),
     { kind: "separator" },
     { kind: "item", label: shortcuts ? "Hide Shortcuts" : "Shortcuts", run: () => setShortcuts(!shortcuts) },
@@ -493,7 +492,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
         <p className="tm-grade-hint" data-testid="grade-hint">
           <Codicon name="info" />{" "}
           {!roster.activity.can_grade
-            ? "You can follow this practical, but only its teachers can grade it."
+            ? "You can follow this activity, but only its teachers can grade it."
             : row.state === "in_progress"
               ? "In progress: you can grade once the work is submitted."
               : "Not started yet."}{" "}
@@ -906,14 +905,14 @@ export function GradingEditor({ input }: { input: Input }) {
       <header className="tm-grade-head">
         <div className="tm-assignment-kicker">
           <Codicon name={a.type === "quiz" ? "checklist" : "notebook"} />
-          <span>{a.type === "quiz" ? `Quiz practical · ${a.title}` : "Assignment practical"}</span>
+          <span>{a.type === "quiz" ? `Coding question · ${a.title}` : "Code assignment"}</span>
           {a.due_date && <span>· due {when(a.due_date)}</span>}
           {a.max_points > 0 && <span>· {a.max_points} points</span>}
         </div>
         <div className="tm-grade-title-row">
           <h1>{a.question ? a.question.text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : a.title}</h1>
           {a.type === "quiz" && a.questions.length > 1 && (
-            <select className="tm-select" aria-label="Practical question" value={a.question?.id ?? ""} onChange={(e) => openGrading(keyOf("quiz", a.id, Number(e.target.value)))}>
+            <select className="tm-select" aria-label="Coding question" value={a.question?.id ?? ""} onChange={(e) => openGrading(keyOf("quiz", a.id, Number(e.target.value)))}>
               {a.questions.map((q) => (
                 <option key={q.question_id} value={q.question_id}>
                   {q.title}

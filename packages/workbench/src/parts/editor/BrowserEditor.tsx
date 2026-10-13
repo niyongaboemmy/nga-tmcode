@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { openExternalUrl } from "../../terminal/browser";
 import type { EditorInput } from "../../state/store";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { SkeletonLines } from "../../widgets/Skeleton";
-import { DEVICES, type Device } from "./PreviewEditor";
+import { DeviceControls, DeviceStage } from "./deviceView";
 
 type BrowserInput = Extract<EditorInput, { kind: "browser" }>;
 
@@ -30,9 +30,7 @@ export function BrowserEditor({ input }: { input: BrowserInput }) {
   const [reloads, setReloads] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
-  const [device, setDevice] = useState<Device>("responsive");
-  const [scale, setScale] = useState(1);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const url = history.list[history.at];
 
   const navigate = (next: string) => {
@@ -49,23 +47,21 @@ export function BrowserEditor({ input }: { input: BrowserInput }) {
     setLoading(true);
   };
 
-  useLayoutEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-    const fit = () => {
-      const d = DEVICES[device];
-      if (!d.width) return setScale(1);
-      setScale(Math.max(0.2, Math.min(1, (el.clientWidth - 32) / d.width, (el.clientHeight - 32) / d.height)));
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setFullscreen(false);
+      }
     };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [device]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [fullscreen]);
 
-  const d = DEVICES[device];
   return (
-    <div className="tm-preview tm-browser">
+    <div className={`tm-preview tm-browser ${fullscreen ? "is-fullscreen" : ""}`} role={fullscreen ? "dialog" : undefined} aria-modal={fullscreen || undefined}>
       <div className="tm-preview-toolbar">
         <ActionButton icon="arrow-left" label="Back" disabled={history.at === 0} onClick={() => go(-1)} />
         <ActionButton icon="arrow-right" label="Forward" disabled={history.at >= history.list.length - 1} onClick={() => go(1)} />
@@ -88,27 +84,22 @@ export function BrowserEditor({ input }: { input: BrowserInput }) {
           <Codicon name={loading ? "loading" : "globe"} className={loading ? "codicon-modifier-spin" : ""} />
           <input className="tm-browser-url" value={draft} spellCheck={false} aria-label="Address" onChange={(e) => setDraft(e.target.value)} onFocus={(e) => e.target.select()} />
         </form>
-        <div className="tm-segmented" role="radiogroup" aria-label="Device">
-          {(Object.keys(DEVICES) as Device[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={device === k}
-              className={device === k ? "is-on" : ""}
-              title={DEVICES[k].label}
-              aria-label={DEVICES[k].label}
-              onClick={() => setDevice(k)}
-            >
-              <Codicon name={DEVICES[k].icon} />
-              {k !== "responsive" && <span>{DEVICES[k].width}</span>}
-            </button>
-          ))}
-        </div>
+        <DeviceControls />
         <ActionButton icon="link-external" label="Open in External Browser" onClick={() => void openExternalUrl(url)} />
+        <ActionButton icon={fullscreen ? "screen-normal" : "screen-full"} label={fullscreen ? "Exit Full Screen (Escape)" : "Full Screen"} active={fullscreen} aria-pressed={fullscreen} onClick={() => setFullscreen(!fullscreen)} />
       </div>
-      <div ref={stageRef} className={`tm-preview-stage ${d.width ? "is-device" : ""}`}>
-        <div className="tm-preview-device" style={d.width ? { width: d.width, height: d.height, transform: `scale(${scale})` } : undefined}>
+      <DeviceStage
+        overlay={
+          <>
+        {loading && loadedOnce && <div className="tm-progress tm-browser-progress" role="progressbar" aria-label="Loading" />}
+        {loading && !loadedOnce && (
+          <div className="tm-preview-loading">
+            <SkeletonLines lines={7} label={`Loading ${url}`} />
+          </div>
+        )}
+          </>
+        }
+      >
           <iframe
             key={`${history.at}:${reloads}`}
             title={`Browser ${url}`}
@@ -122,14 +113,7 @@ export function BrowserEditor({ input }: { input: BrowserInput }) {
             }}
             data-testid="browser-frame"
           />
-        </div>
-        {loading && loadedOnce && <div className="tm-progress tm-browser-progress" role="progressbar" aria-label="Loading" />}
-        {loading && !loadedOnce && (
-          <div className="tm-preview-loading">
-            <SkeletonLines lines={7} label={`Loading ${url}`} />
-          </div>
-        )}
-      </div>
+      </DeviceStage>
     </div>
   );
 }

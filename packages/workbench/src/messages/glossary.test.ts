@@ -26,6 +26,30 @@ const BANNED: [RegExp, string][] = [
   [/answered \$\{?res\.status|answered \d{3}\./, "plain words, with the code behind Details"],
 ];
 
+/**
+ * The school's vocabulary (CODE_RUNNER_PLAN §4): Project · Starter · Code assignment · Coding
+ * question · Grading · Code runner. Checked in what the user reads only (strings and JSX text), since
+ * code keeps its old internal names (quizPractical, practical_questions…).
+ */
+const VOCABULARY: [RegExp, string][] = [
+  [/\b[Tt]emplates?\b/, "Starter"],
+  [/\b[Pp]racticals?\b/, "Code assignment / Coding question"],
+  [/\b(your|assignment|its|a) workspaces?\b/i, "Project"],
+  [/\b(Judge0|tm-judge|[Jj]udge)\b/, "Code runner"],
+];
+
+/** The user-facing text of a source file: string literals and JSX text (comments removed). */
+function userText(code: string): string[] {
+  const out: string[] = [];
+  for (const m of code.matchAll(/"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`|>([^<>{}\n]+)</g)) {
+    // Placeholders hold code (`${practical.title}`), not words.
+    const t = (m[1] ?? m[2] ?? m[3] ?? "").replace(/\$\{[^}]*\}/g, "…");
+    // Words, not identifiers or paths: a space between letters.
+    if (/[A-Za-z][a-z]* [a-z]/.test(t) && !/^[\w./-]+$/.test(t)) out.push(t);
+  }
+  return out;
+}
+
 const sample = { what: '"To-do list"', title: "To-do list", name: "Ben", n: 2, done: 1, total: 2, list: "Ben: not handed in yet", score: 18, max: 20, why: "you're offline", doing: "save", method: "GET", path: "/x", status: 500, code: "X", files: 3 };
 const texts = (Object.keys(CATALOG) as MessageId[]).map((id) => [id, msg(id, sample)] as const);
 
@@ -86,6 +110,17 @@ describe("glossary in the workbench", () => {
       for (const [bad, use] of BANNED) {
         const m = code.match(bad);
         if (m) hits.push(`${f.slice(root.length + 1)}: "${m[0]}" — use ${use}`);
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it("says Project, Starter, Code assignment, Coding question and Code runner", () => {
+    const more = ["exam", "run", "testing", "commands", "messages", "debug"].flatMap((d) => files(join(root, d)));
+    const hits: string[] = [];
+    for (const f of [...scanned, ...more]) {
+      for (const t of userText(stripComments(readFileSync(f, "utf8")))) {
+        for (const [bad, use] of VOCABULARY) if (bad.test(t)) hits.push(`${f.slice(root.length + 1)}: "${t.slice(0, 80)}" — use ${use}`);
       }
     }
     expect(hits).toEqual([]);

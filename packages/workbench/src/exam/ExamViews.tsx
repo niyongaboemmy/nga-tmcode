@@ -134,17 +134,33 @@ export function TaskView() {
       {task && (
         <div className="tm-pane-body tm-scroll tm-taskview-brief">
           <article className="tm-md" dangerouslySetInnerHTML={{ __html: brief }} />
-          <div className="tm-taskview-tests">
+          <div className="tm-taskview-tests" data-testid="task-tests">
             <Codicon name="beaker" />
-            <span>
-              {task.visible_tests.length} example test{task.visible_tests.length === 1 ? "" : "s"} you can run
-              {task.hidden_test_count > 0 && <> · {task.hidden_test_count} hidden test{task.hidden_test_count === 1 ? "" : "s"} graded by Task Mentor</>}
-            </span>
-            {task.visible_tests.length > 0 && phase === "active" && (
-              <button type="button" className="tm-link-button" onClick={() => executeCommand("tmcode.runTests")}>
-                Run them
-              </button>
+            {task.check_with === "unit" ? (
+              <span>Your teacher's tests check this when you submit. You can run your own tests here.</span>
+            ) : task.visible_tests.length === 0 ? (
+              <span>
+                No example tests for this task
+                {task.hidden_test_count > 0 && <> · {task.hidden_test_count} hidden test{task.hidden_test_count === 1 ? "" : "s"} graded by Task Mentor</>}
+              </span>
+            ) : (
+              <span>
+                {task.visible_tests.length} example test{task.visible_tests.length === 1 ? "" : "s"} you can run
+                {task.hidden_test_count > 0 && <> · {task.hidden_test_count} hidden test{task.hidden_test_count === 1 ? "" : "s"} graded by Task Mentor</>}
+              </span>
             )}
+            {task.check_with === "unit"
+              ? phase === "active" && (
+                  <button type="button" className="tm-link-button" onClick={() => executeCommand("workbench.view.testing")}>
+                    Open Testing
+                  </button>
+                )
+              : task.visible_tests.length > 0 &&
+                phase === "active" && (
+                  <button type="button" className="tm-link-button" onClick={() => executeCommand("tmcode.runTests")}>
+                    Run them
+                  </button>
+                )}
           </div>
         </div>
       )}

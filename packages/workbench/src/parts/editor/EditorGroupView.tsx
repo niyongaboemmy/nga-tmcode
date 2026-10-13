@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import {
   activateEditor,
@@ -58,6 +59,76 @@ import { SnippetsEditor } from "../../snippets/SnippetsEditor";
 import type { SplitDirection } from "../../state/layout";
 
 const EDITOR_DRAG = "application/x-tmcode-editor";
+
+/**
+ * Dragging a tab (to another place, another group, or an edge to split) uses pointer events: the
+ * desktop's native file-drop handler swallows HTML5 drops inside the page.
+ */
+const useTabDrag = create<{ over: { group: number; index: number } | { group: number; zone: SplitDirection | "center" } | null }>(() => ({ over: null }));
+
+function startTabDrag(e: ReactPointerEvent, fromGroup: number, input: EditorInput, title: string) {
+  if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey) return;
+  const start = { x: e.clientX, y: e.clientY };
+  let ghost: HTMLDivElement | null = null;
+  type Over = { group: number; index: number } | { group: number; zone: SplitDirection | "center" };
+  const hit = (x: number, y: number): Over | null => {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    const groupEl = el?.closest("[data-group]") as HTMLElement | null;
+    if (!el || !groupEl) return null;
+    const group = Number(groupEl.dataset.group);
+    const bar = el.closest(".tm-tabs-bar");
+    if (bar) {
+      const tab = el.closest("[role=tab][data-editor-id]") as HTMLElement | null;
+      const tabs = [...bar.querySelectorAll<HTMLElement>("[role=tab][data-editor-id]")];
+      return { group, index: tab ? tabs.indexOf(tab) : tabs.length };
+    }
+    const content = el.closest(".tm-editor-content") as HTMLElement | null;
+    if (!content) return null;
+    const r = content.getBoundingClientRect();
+    return { group, zone: dropZone(x - r.left, y - r.top, r.width, r.height) };
+  };
+  const cleanup = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("keydown", key, true);
+    ghost?.remove();
+    useTabDrag.setState({ over: null });
+  };
+  const move = (ev: PointerEvent) => {
+    if (!ghost) {
+      if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+      ghost = document.createElement("div");
+      ghost.className = "tm-drag-ghost";
+      ghost.textContent = title;
+      document.body.append(ghost);
+    }
+    ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 8}px)`;
+    useTabDrag.setState({ over: hit(ev.clientX, ev.clientY) });
+  };
+  const up = (ev: PointerEvent) => {
+    const dragged = !!ghost;
+    cleanup();
+    if (!dragged) return;
+    const target = hit(ev.clientX, ev.clientY);
+    if (!target) return;
+    const groups = useWorkbench.getState().groups;
+    const to = groups.find((g) => g.id === target.group);
+    if (!to) return;
+    if ("index" in target) {
+      // A dropped tab lands among its kind: before the first unpinned tab at the earliest, unless it is pinned.
+      const pinnedCount = to.editors.filter((x) => x.sticky && x.id !== input.id).length;
+      moveEditor(fromGroup, input.id, to.id, input.sticky ? Math.min(target.index, pinnedCount) : Math.max(target.index, pinnedCount));
+    } else if (target.zone === "center") {
+      if (fromGroup !== to.id) moveEditor(fromGroup, input.id, to.id, to.editors.length);
+    } else moveEditorToNewGroup(fromGroup, input.id, to.id, target.zone);
+  };
+  const key = (ev: globalThis.KeyboardEvent) => {
+    if (ev.key === "Escape") cleanup();
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", up, true);
+  window.addEventListener("keydown", key, true);
+}
 
 /** Where a dragged tab lands on an editor: an edge splits, the middle moves it into this group. */
 export function dropZone(x: number, y: number, width: number, height: number): SplitDirection | "center" {
@@ -286,8 +357,12 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
   // Webview panel titles change from the extension.
   useWebviews((s) => s.entries);
   const os = getPlatform().os;
-  const [dragOver, setDragOver] = useState<number | null>(null);
+  const [htmlDragOver, setDragOver] = useState<number | null>(null);
   const [dropOn, setDropOn] = useState<SplitDirection | "center" | null>(null);
+  // A tab dragged with the pointer (startTabDrag): where it would land in this group.
+  const pointerOver = useTabDrag((s) => (s.over && s.over.group === group.id ? s.over : null));
+  const dragOver = htmlDragOver ?? (pointerOver && "index" in pointerOver ? pointerOver.index : null);
+  const pointerZone = pointerOver && "zone" in pointerOver ? pointerOver.zone : null;
   const tabsRef = useRef<HTMLDivElement>(null);
   const active = group.editors.find((e) => e.id === group.activeId) ?? null;
   const isActiveGroup = activeGroup === group.id;
@@ -355,10 +430,6 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
     requestAnimationFrame(() => tabsRef.current?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus());
   };
 
-  const onDragStart = (e: DragEvent, input: EditorInput) => {
-    e.dataTransfer.setData(EDITOR_DRAG, JSON.stringify({ group: group.id, id: input.id }));
-    e.dataTransfer.effectAllowed = "move";
-  };
   const onDrop = (e: DragEvent, index: number) => {
     const raw = e.dataTransfer.getData(EDITOR_DRAG);
     setDragOver(null);
@@ -433,8 +504,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
                     isDirty ? "is-dirty" : "",
                     dragOver === i ? "is-drop-before" : "",
                   ].join(" ")}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, input)}
+                  onPointerDown={(e) => startTabDrag(e, group.id, input, titleOf(input))}
                   onDragOver={(e) => {
                     if (acceptsDrag(e)) {
                       e.preventDefault();
@@ -542,7 +612,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         }}
         onDrop={onContentDrop}
       >
-        {dropOn && <div className={`tm-editor-drop is-${dropOn}`} data-testid="editor-drop-overlay" aria-hidden />}
+        {(dropOn ?? pointerZone) && <div className={`tm-editor-drop is-${dropOn ?? pointerZone}`} data-testid="editor-drop-overlay" aria-hidden />}
         {/* Keep Monaco mounted while switching between files of this group. */}
         {group.editors.some((e) => e.kind === "file" && !isMediaFile(e.path)) && (
           <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path)}>

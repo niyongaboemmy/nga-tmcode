@@ -5,9 +5,9 @@ import { monaco } from "../monaco/setup";
 import { revealInEditor } from "../monaco/reveal";
 import { useRunHub } from "../run/runHub";
 import { getPlatform, log, notify, showPanel, useWorkbench } from "../state/store";
-import { detectSuites, setPythonCommand, setShellOs, suiteForFile, testAt, type Scope, type TestSuite } from "./frameworks";
-import { summarize, type TestResult } from "./parsers";
-import { parseRun } from "./report";
+import { detectSuites, setPythonCommand, setShellOs, suiteForFile, testAt, type Scope, type TestSuite } from "@nga/runtimes/testing";
+import { summarize, type TestResult } from "@nga/runtimes/testing";
+import { parseRun } from "@nga/runtimes/testing";
 
 /**
  * Framework tests (pytest, Vitest, Jest, node:test, JUnit via Maven/Gradle,

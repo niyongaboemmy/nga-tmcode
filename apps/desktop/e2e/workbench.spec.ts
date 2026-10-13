@@ -38,7 +38,7 @@ test("Home when no folder is open", async ({ page }) => {
   await expect(page.getByTestId("home-signin-card")).toContainText("Sign in to see your assignments");
   await expect(page.getByTestId("home-signin-card").getByRole("button", { name: "Sign in" })).toBeVisible();
   await expect(page.getByTestId("welcome-exam-card")).toContainText("Taking an exam? Open it from Task Mentor.");
-  await expect(page.getByTestId("home-practise").getByRole("button", { name: "New Project from Template..." })).toBeVisible();
+  await expect(page.getByTestId("home-practise").getByRole("button", { name: "New Project from Starter..." })).toBeVisible();
 });
 
 test("single click opens a preview tab, double click pins it", async ({ page }) => {

@@ -62,10 +62,10 @@ export function normaliseGrading<A extends { rubric?: unknown; max_points?: unkn
   return { ...a, rubric, max_points };
 }
 
-/** "The criteria add up to 18, but the practical is worth 20 points." (null when they match). */
+/** "The criteria add up to 18, but the activity is worth 20 points." (null when they match). */
 export function rubricMismatch(rubric: { max_score: number }[], points: number): string | null {
   if (!rubric.length) return null;
   const sum = rubric.reduce((n, c) => n + c.max_score, 0);
   if (Math.abs(sum - points) < 1e-9) return null;
-  return `The criteria add up to ${sum}, but the practical is worth ${points} points.`;
+  return `The criteria add up to ${sum}, but the activity is worth ${points} points.`;
 }

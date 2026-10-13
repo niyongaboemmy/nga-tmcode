@@ -80,6 +80,9 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
 | `POST /sessions/:sid/telemetry` | `{ seq, events: TelemetryEvent[] }` (`packages/protocol/src/telemetry.ts`) | `{ ok: true }` | Idempotent per `(sid, seq)`. Stored for Phase 4 (replay and flags). |
 | `POST /sessions/:sid/heartbeat` | `{ synced_seq, current_question, focus: "in"\|"out" }` | `{ server_time, deadline, status: "active"\|"superseded"\|"revoked"\|"ended", paused, message }` | Every 10 s while online. A deadline extension is picked up here. |
 | `POST /sessions/:sid/server-run` | `{ question_id, files }` | `{ tests: [{ id, verdict, passed, stdout, stderr, time_ms }] }` | Visible tests only, on tm-judge. TMCode calls it when the task's language tool is missing on the computer ("Running on Task Mentor… (queued)"). Rate-limited (10/min): `429 RATE_LIMITED`, with `retry_after_s` in the body or a `Retry-After` header if available, else TMCode counts its own runs ("Run again in 40 s"). |
+| `GET /sessions/:sid/code/capabilities` | — | `{ success, data: { interactive, pty, unit_tests, unit_test_languages, previews: false } }` | Task Mentor's code runner for this exam (§3.1). 404 on a Task Mentor without it: TMCode then keeps to server-run. |
+| `POST /sessions/:sid/code/sessions` | `{ language?, kind?, entry?, files, pty? }` | `201 { success, data: { id } }` | A live run owned by the exam's student (§3.1). |
+| `POST /sessions/:sid/code/test` | `{ question_id, files, language?, kind?, test_filter? }` | as `/api/code/test` | The student's **own** unit tests on their own files (never the teacher's `unit_test_files`). `400 QUESTION_NOT_IN_EXAM`. |
 | `POST /sessions/:sid/submit` | `{ final: [{ question_id, seq }] }` | `{ status: "grading" }` | See below the table. |
 | `GET /sessions/:sid/results` | — | `{ status: "grading"\|"hidden"\|"released", score?, max_score?, questions?: [{ question_id, points, max_points, tests: [{ id, name, hidden, passed, verdict? }] }] }` | `verdict` (optional, same values as server-run) lets TMCode say why an example test failed. Released by the quiz's existing visibility rules (`resultVisibility`). |
 
@@ -93,6 +96,30 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
 **Submit** (`POST /sessions/:sid/submit`):
 - The listed seqs must be stored.
 - It marks the submission completed, ends the session, and queues grading (`tmcode_runs`): all tests, visible and hidden, run on tm-judge.
+
+### 3.1 Task Mentor's code runner from TMCode (0.17)
+
+TMCode runs code on Task Mentor when the computer can't (the language's tools are missing, the browser build). Two prefixes, the same endpoints and answers as Task Mentor's `/api/code` (`{ success, data }`; errors `{ success: false, code, message }`):
+
+| Prefix | Auth | Used for |
+|---|---|---|
+| `/api/tmcode/code` | TMCode user token (signed in), `PROJECTS_USE` | Practice: projects, assignments, grading |
+| `/api/tmcode/sessions/:sid/code` | The exam's session token; the session must be active (`409 SESSION_SUPERSEDED`) | Exams; no `/run` (exams keep `server-run`), `/test` takes the `question_id` |
+
+| Endpoint | Body | Response |
+|---|---|---|
+| `GET /capabilities` | — | `{ interactive, pty, unit_tests, unit_test_languages, previews }` |
+| `POST /run` (signed in only) | `{ language?, kind?, entry?, files (1–100, 1 MB), tests (1–10): [{ id, input, expected_output? }] }` | `{ engine, language, entry, kind, files_sent, compile, tests: [{ id, verdict, passed, stdout, stderr, time_ms }], unit, error }` |
+| `POST /test` | `{ language?, kind?, test_filter?, files }` | the same shape; `unit: { framework, verdict, total, passed, failed, skipped, errors, time_ms, output, truncated, tests: TestResult[] }`. `409 UNIT_TESTS_UNAVAILABLE`, `422 NO_UNIT_TESTS` |
+| `POST /sessions` | `{ language?, kind?, entry?, files, pty? }` | `201 { id }` (one live run per student; a new one stops the old) |
+| `GET /sessions/:id/events` | — | `text/event-stream`, the runner's events relayed as they are (§5.6): `stage`, `stdout`, `stderr`, `error`, `exit` (last) |
+| `POST /sessions/:id/input` | `{ data? }` \| `{ eof: true }` \| `{ signal: "SIGINT" \| "SIGTERM" }` | `204`; `409 SESSION_ENDED` after the end |
+| `DELETE /sessions/:id` | — | `204` |
+
+- **Gating:** TMCode asks `capabilities` first (cached a minute) and shows a server feature only when it is on: live runs need `interactive`, unit tests `unit_tests` (and the language in `unit_test_languages` when listed). No answer means an older Task Mentor, and TMCode behaves as before.
+- **Streaming:** the desktop app streams the signed-in events through its own `tm_stream` command (the token never reaches the page); exams stream through the platform's fetch with the exam token.
+- **Exam package:** each task may carry `check_with: "io" | "unit"`. A `"unit"` task has no example tests; the brief says the teacher's tests check it on submit and the student can run their own tests on Task Mentor.
+- **Rate limits:** as `/api/code` (`429 RATE_LIMITED`); exams 10 a minute per session.
 
 ## 4. Snapshot chain (tamper evidence)
 

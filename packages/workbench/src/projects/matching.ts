@@ -37,7 +37,7 @@ export function normalizeActivity(raw: Record<string, unknown>): LinkableActivit
       ? (raw.practical_questions as Record<string, unknown>[])
           .map((q) => ({
             question_id: Number(q.question_id),
-            title: String(q.title ?? "TMCode practical"),
+            title: String(q.title ?? "Code assignment"),
             points: Number(q.points ?? 0),
             // Servers that say where the student stands (else TMCode works it out from their projects).
             ...(typeof q.state === "string" ? { state: q.state as PracticalQuestion["state"] } : {}),
@@ -92,7 +92,7 @@ export function assessmentItems(list: LinkableActivity[], current?: { activity_t
           id: `${a.activity_type}:${a.activity_id}:${q.question_id}`,
           label: q.title,
           icon: "beaker",
-          description: [`Quiz practical · ${a.title}`, plural(q.points, "point", "points"), subject, isCurrent(q.question_id) ? "current" : ""].filter(Boolean).join(" · "),
+          description: [`Coding question · ${a.title}`, plural(q.points, "point", "points"), subject, isCurrent(q.question_id) ? "current" : ""].filter(Boolean).join(" · "),
           detail: when || undefined,
           separator: first ? subject : undefined,
         });
@@ -278,15 +278,15 @@ async function startQuizPracticalNow(quiz: { activity_id: number; title: string;
     // 6.3: the practical's brief beside the code, as for assignments (Submit is there).
     const { showQuizPractical } = await import("./quizPractical");
     showQuizPractical(quiz.activity_id, q.question_id, { toSide: true });
-    if (created) notify("info", `Your workspace for "${q.title}" is ready${project.head ? " with the starter files" : ""}. Keep the quiz "${quiz.title}" open in Task Mentor, then Submit from the brief.`, undefined, { kind: "result" });
+    if (created) notify("info", `Your project for "${q.title}" is ready${project.head ? " with the starter files" : ""}. Keep the quiz "${quiz.title}" open in Task Mentor, then Submit from the brief.`, undefined, { kind: "result" });
     void refreshProjects();
     return true;
   } catch (e) {
-    if (e instanceof TmError && e.code === "ACTIVITY_CLOSED") notify("info", `"${quiz.title}" is closed: its practical can't be started.`);
+    if (e instanceof TmError && e.code === "ACTIVITY_CLOSED") notify("info", `"${quiz.title}" is closed: its coding question can't be started.`);
     else notifyError(e);
     return false;
   }
 }
 
-/** startQuizPractical, shown as activity from its first step: "Preparing your workspace…". */
-export const startQuizPractical = (...args: Parameters<typeof startQuizPracticalNow>) => track("Preparing your workspace…", () => startQuizPracticalNow(...args));
+/** startQuizPractical, shown as activity from its first step: "Preparing your project…". */
+export const startQuizPractical = (...args: Parameters<typeof startQuizPracticalNow>) => track("Preparing your project…", () => startQuizPracticalNow(...args));

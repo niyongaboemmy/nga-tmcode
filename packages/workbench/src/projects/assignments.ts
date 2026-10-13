@@ -264,7 +264,7 @@ async function startAssignmentNow(id: number) {
     const { project, created } = await api<{ project: Project; created: boolean }>("POST", `/assignments/${id}/start`, {});
     const a = get().details[id] ?? (await loadAssignment(id));
     const folder = slug(`${a?.course_name ?? ""}-${a?.title ?? project.name}`);
-    const opened = await openProject(project.id, { folderName: folder });
+    const opened = await openProject(project.id, { folderName: folder, language: a?.language ?? null });
     if (!opened) return;
     markJourney("first-start");
     showAssignment(id, { toSide: true });
@@ -288,19 +288,10 @@ async function isEmptyWorkspace() {
   return !entries.some((e) => !e.name.startsWith("."));
 }
 
-/** Templates that fit an assignment's language ("html", "javascript", "python", "java" …), best first. */
+/** Starters that fit an assignment's language ("html", "javascript", "python", "java" …), best first. */
 export async function startersFor(language: string | null | undefined) {
-  const { TEMPLATES } = await import("./templates");
-  const lang = (language ?? "").toLowerCase();
-  const web = /^(html|css|web|javascript|js)$/.test(lang);
-  const fits = (t: (typeof TEMPLATES)[number]) => {
-    const tl = t.language.toLowerCase();
-    if (!lang) return false;
-    if (web) return t.category === "Websites" || tl === "html" || (lang === "javascript" && tl === "javascript" && t.category === "Languages");
-    return tl === lang || (lang === "c++" && tl === "cpp") || (lang === "c#" && tl === "csharp");
-  };
-  // The assignment's language only: a Python assignment never offers a React app (no language known: the plain languages).
-  return lang ? TEMPLATES.filter(fits) : TEMPLATES.filter((t) => t.category === "Languages");
+  const { startersForLanguage } = await import("./starters");
+  return startersForLanguage(language);
 }
 
 const FIRST_FILE: Record<string, string> = {
@@ -340,7 +331,7 @@ export function openAssignmentLanguage(): string | null {
 }
 
 /**
- * An empty assignment workspace: pick how to begin (a template in the
+ * An empty assignment workspace: pick how to begin (a starter in the
  * assignment's language) or keep it empty. The files are saved to Task Mentor.
  */
 async function offerStarter(a: AssignmentSummary | null): Promise<boolean> {
@@ -352,19 +343,19 @@ async function offerStarter(a: AssignmentSummary | null): Promise<boolean> {
     placeholder: "Choose starter files (you can change everything)",
     matchOnDescription: true,
     items: [
-      ...starters.slice(0, 8).map((t, i) => ({ id: t.id, label: t.label, description: t.description, icon: t.icon, separator: i === 0 ? (a?.language ? `for ${a.language}` : "starters") : undefined })),
+      ...starters.slice(0, 8).map((t, i) => ({ id: t.id, label: t.title, description: t.description, icon: t.icon ?? "file-code", separator: i === 0 ? (a?.language ? `for ${a.language}` : "starters") : undefined })),
       { id: "__empty", label: "Start with an empty project", description: "Create the files yourself", icon: "new-file", pinLast: true, separator: "other" },
     ],
   });
   if (!pick || pick.id === "__empty") return false;
-  const { templateById } = await import("./templates");
-  const tpl = templateById(pick.id);
+  const { starterById } = await import("./starters");
+  const tpl = starterById(pick.id);
   if (!tpl) return false;
-  const { writeTemplate, offerSetup } = await import("./commands");
+  const { writeStarter, offerSetup } = await import("./commands");
   focusCodeGroup();
-  await writeTemplate(tpl);
-  await saveToTaskMentor({ message: `Started from the ${tpl.label} template`, quiet: true });
-  notify("info", `Your project starts from the ${tpl.label} template and is saved to Task Mentor. Save as you go, then Submit.`);
+  await writeStarter(tpl);
+  await saveToTaskMentor({ message: `Started from the ${tpl.title} starter`, quiet: true });
+  notify("info", `Your project starts from the ${tpl.title} starter and is saved to Task Mentor. Save as you go, then Submit.`);
   await offerSetup(tpl);
   return true;
 }
@@ -432,7 +423,7 @@ export async function publishAsStarter() {
   const pick = await showQuickPick({
     placeholder: `Use "${b.name}" as the starter files of…`,
     matchOnDescription: true,
-    items: list.map((a) => ({ id: String(a.id), label: a.title, description: `${a.course_name ?? ""} · ${a.kind === "case_study" ? "case study" : "practical"}`, icon: "mortar-board" })),
+    items: list.map((a) => ({ id: String(a.id), label: a.title, description: `${a.course_name ?? ""} · ${a.kind === "case_study" ? "case study" : "code assignment"}`, icon: "mortar-board" })),
   });
   if (!pick) return;
   const a = list.find((x) => String(x.id) === pick.id)!;
@@ -549,5 +540,5 @@ export function groupAssignments(list: AssignmentSummary[]) {
   return groups;
 }
 
-/** startAssignment, shown as activity from its first step: "Preparing your workspace…". */
-export const startAssignment = (...args: Parameters<typeof startAssignmentNow>) => track("Preparing your workspace…", () => startAssignmentNow(...args));
+/** startAssignment, shown as activity from its first step: "Preparing your project…". */
+export const startAssignment = (...args: Parameters<typeof startAssignmentNow>) => track("Preparing your project…", () => startAssignmentNow(...args));

@@ -1,4 +1,3 @@
-// Copied from packages/workbench/src/testing/report.ts (TMCode keeps its own copy for now; keep the two in step until the workbench imports @nga/runtimes).
 import type { TestSuite } from "./frameworks";
 import { parseMinitest, parseCargo, parseDartJson, parseGoJson, parseJest, parseJUnit, parseRspec, parseSwift, parseTrx, parseUnittest, type TestResult } from "./parsers";
 

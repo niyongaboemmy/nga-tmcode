@@ -3,7 +3,7 @@ import { pathOfUri } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
 import { activeFilePath, useWorkbench } from "../state/store";
-import { isTestFile, testDeclarations } from "./frameworks";
+import { isTestFile, testDeclarations } from "@nga/runtimes/testing";
 import { applyMarkers, failedResults, procAvailable, rerunFailed, runAllSuites, runFileTests, runTestAt, suiteOfFile, useFrameworkTests, wireFrameworkTests } from "./service";
 
 const RUN_TEST = "_tmcode.tests.runTest";

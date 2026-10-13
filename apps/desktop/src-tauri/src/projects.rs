@@ -298,11 +298,144 @@ pub fn proj_new_folder(base: Option<String>, slug: String) -> Result<String, Str
     Err("Could not find a free folder name".into())
 }
 
-/// The next "Open in TMCode" clone of a GitHub project goes to `~/TMCode Projects`.
+/// A local web server's document root (XAMPP, MAMP, WAMP, Laragon, LAMPP, Apache): projects saved
+/// there are served at `url` (PHP sites that use Apache and MySQL instead of `php -S`).
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct WebRoot {
+    /// "XAMPP", "MAMP", "WAMP", "Laragon", "Apache", "Sites".
+    pub server: String,
+    pub path: String,
+    /// What a folder `<path>/<name>` is served at: `<url>/<name>`.
+    pub url: String,
+}
+
+/// The `Listen` port of an Apache config (80 when it says nothing or can't be read).
+fn apache_port(conf: &std::path::Path, default: u16) -> u16 {
+    fs::read_to_string(conf)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .map(str::trim)
+                .find(|l| l.starts_with("Listen "))
+                .and_then(|l| l["Listen ".len()..].trim().rsplit(':').next().and_then(|p| p.trim().parse().ok()))
+        })
+        .unwrap_or(default)
+}
+
+fn local_url(port: u16) -> String {
+    if port == 80 { "http://localhost".into() } else { format!("http://localhost:{port}") }
+}
+
+/// The web-server document roots on this computer (folders that exist, writable ones only).
+pub fn detect_web_roots(home: &std::path::Path) -> Vec<WebRoot> {
+    let mut found = Vec::new();
+    let mut add = |server: &str, root: std::path::PathBuf, url: String| {
+        let writable = root.is_dir() && fs::metadata(&root).map(|m| !m.permissions().readonly()).unwrap_or(false);
+        if writable && !found.iter().any(|w: &WebRoot| w.path == root.to_string_lossy()) {
+            found.push(WebRoot { server: server.into(), path: root.to_string_lossy().into_owned(), url });
+        }
+    };
+    #[cfg(target_os = "macos")]
+    {
+        let x = std::path::PathBuf::from("/Applications/XAMPP/xamppfiles");
+        add("XAMPP", x.join("htdocs"), local_url(apache_port(&x.join("etc/httpd.conf"), 80)));
+        add("XAMPP", std::path::PathBuf::from("/Applications/XAMPP/htdocs"), local_url(apache_port(&x.join("etc/httpd.conf"), 80)));
+        let m = std::path::PathBuf::from("/Applications/MAMP");
+        add("MAMP", m.join("htdocs"), local_url(apache_port(&m.join("conf/apache/httpd.conf"), 8888)));
+        add("Sites", home.join("Sites"), "http://localhost".into());
+    }
+    #[cfg(windows)]
+    {
+        for drive in ["C:", "D:"] {
+            let x = std::path::PathBuf::from(format!("{drive}\\xampp"));
+            add("XAMPP", x.join("htdocs"), local_url(apache_port(&x.join("apache\\conf\\httpd.conf"), 80)));
+            for w in ["wamp64", "wamp"] {
+                add("WAMP", std::path::PathBuf::from(format!("{drive}\\{w}\\www")), "http://localhost".into());
+            }
+            add("Laragon", std::path::PathBuf::from(format!("{drive}\\laragon\\www")), "http://localhost".into());
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let x = std::path::PathBuf::from("/opt/lampp");
+        add("XAMPP", x.join("htdocs"), local_url(apache_port(&x.join("etc/httpd.conf"), 80)));
+        add("Apache", std::path::PathBuf::from("/var/www/html"), "http://localhost".into());
+        let _ = home;
+    }
+    found
+}
+
 #[tauri::command]
-pub fn proj_use_projects_folder(app: tauri::AppHandle) -> Result<String, String> {
+pub fn proj_web_roots() -> Vec<WebRoot> {
+    detect_web_roots(&dirs_home())
+}
+
+/// "Choose a folder…" for where new projects go (None: cancelled).
+#[tauri::command]
+pub async fn proj_pick_base(app: tauri::AppHandle, title: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(folder) = app.dialog().file().set_title(title).blocking_pick_folder() else { return Ok(None) };
+    let path = folder.into_path().map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for e in fs::read_dir(from)? {
+        let e = e?;
+        let target = to.join(e.file_name());
+        if e.file_type()?.is_dir() {
+            copy_tree(&e.path(), &target)?;
+        } else {
+            fs::copy(e.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Moves a project folder into `base` (XAMPP htdocs, another drive…): `<base>/<name>`, or `<name>-2`…
+/// when taken. Across drives it copies, then removes the original only once the copy is complete.
+pub fn move_folder(from: &Path, base: &Path) -> Result<std::path::PathBuf, String> {
+    if !from.is_dir() {
+        return Err(format!("'{}' is not a folder.", from.display()));
+    }
+    let name = from.file_name().ok_or("The folder has no name.")?.to_string_lossy().into_owned();
+    fs::create_dir_all(base).map_err(|e| e.to_string())?;
+    let base_real = dunce::canonicalize(base).unwrap_or(base.to_path_buf());
+    let from_real = dunce::canonicalize(from).unwrap_or(from.to_path_buf());
+    if base_real.starts_with(&from_real) {
+        return Err("A folder can't be moved into itself.".into());
+    }
+    let target = (1..100)
+        .map(|n| base_real.join(if n == 1 { name.clone() } else { format!("{name}-{n}") }))
+        .find(|p| !p.exists())
+        .ok_or("Could not find a free folder name")?;
+    if fs::rename(&from_real, &target).is_err() {
+        copy_tree(&from_real, &target).map_err(|e| format!("Could not copy the project: {e}"))?;
+        fs::remove_dir_all(&from_real).map_err(|e| format!("The project was copied to {}, but the old folder could not be removed: {e}", target.display()))?;
+    }
+    Ok(target)
+}
+
+#[tauri::command]
+pub fn proj_move_folder(from: String, base: String) -> Result<String, String> {
+    move_folder(Path::new(&from), Path::new(&base)).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// The default projects folder (`~/TMCode Projects`), for showing where projects go.
+#[tauri::command]
+pub fn proj_default_base() -> String {
+    dirs_home().join("TMCode Projects").to_string_lossy().into_owned()
+}
+
+/// The next "Open in TMCode" clone of a GitHub project goes to `~/TMCode Projects` (or the chosen base).
+#[tauri::command]
+pub fn proj_use_projects_folder(app: tauri::AppHandle, base: Option<String>) -> Result<String, String> {
     use tauri::Manager;
-    let base = dirs_home().join("TMCode Projects");
+    let base = match base {
+        Some(b) if !b.is_empty() => std::path::PathBuf::from(b),
+        _ => dirs_home().join("TMCode Projects"),
+    };
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let base = dunce::canonicalize(&base).unwrap_or(base);
     app.state::<crate::git::Git>().set_clone_parent(base.clone());
@@ -316,6 +449,35 @@ fn dirs_home() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moves_a_project_folder_into_another_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("TMCode Projects/shop");
+        fs::create_dir_all(src.join("css")).unwrap();
+        fs::write(src.join("index.php"), "<?php echo 1;").unwrap();
+        fs::write(src.join("css/site.css"), "body{}").unwrap();
+        let htdocs = dir.path().join("htdocs");
+        fs::create_dir_all(htdocs.join("shop")).unwrap();
+        let moved = move_folder(&src, &htdocs).unwrap();
+        assert!(moved.ends_with("shop-2"));
+        assert!(moved.join("css/site.css").is_file());
+        assert!(!src.exists());
+        assert!(move_folder(&moved, &moved.join("inner")).is_err());
+    }
+
+    #[test]
+    fn reads_the_apache_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let conf = dir.path().join("httpd.conf");
+        fs::write(&conf, "# Listen 12\nServerName x\nListen 8080\n").unwrap();
+        assert_eq!(apache_port(&conf, 80), 8080);
+        fs::write(&conf, "Listen 127.0.0.1:8888\n").unwrap();
+        assert_eq!(apache_port(&conf, 80), 8888);
+        assert_eq!(apache_port(&dir.path().join("missing.conf"), 80), 80);
+        assert_eq!(local_url(80), "http://localhost");
+        assert_eq!(local_url(8888), "http://localhost:8888");
+    }
 
     #[test]
     fn scan_honours_gitignore_tmignore_and_build_folders() {
