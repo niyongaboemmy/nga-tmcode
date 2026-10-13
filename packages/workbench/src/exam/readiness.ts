@@ -143,7 +143,8 @@ export function extraLanguageChecks(found: Toolchain[]): CheckItem[] {
 
 /** Every language TMCode runs on this computer, once per toolset (TypeScript shares Node.js). */
 export function computerProfiles(): Profile[] {
-  const seen = new Set<string>();
+  // PHP, Ruby, Kotlin, Dart, Swift: listed as optional (EXTRA_LANGUAGES), never a failure.
+  const seen = new Set<string>(EXTRA_LANGUAGES.map((l) => l.tool === "kotlinc" ? "kotlinc+java" : l.tool));
   return PROFILES.filter((p) => {
     const key = toolsFor(p).join("+");
     if (!key || seen.has(key)) return false;

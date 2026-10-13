@@ -298,7 +298,10 @@ describe("more technologies", () => {
   });
 
   it("single files of many languages run in a terminal", () => {
-    const run = (p: string) => fileActions(p, { webRoot: null })[0];
+    const all = (p: string) => fileActions(p, { webRoot: null });
+    const run = (p: string) => all(p).find((a) => a.kind !== "runFile")!;
+    // PHP, Ruby, Kotlin, Dart, Swift run in the Run panel first (keyboard input, example tests).
+    for (const f of ["src/hello.php", "a.rb", "a.kt", "a.dart", "a.swift"]) expect(all(f)[0]).toMatchObject({ kind: "runFile", entry: f, needs: "runner" });
     expect(run("src/hello.php")).toMatchObject({ kind: "task", command: 'php "hello.php"', cwd: "src" });
     expect(run("a.rb").command).toBe('ruby "a.rb"');
     expect(run("a.dart").command).toBe('dart run "a.dart"');
@@ -364,7 +367,7 @@ describe("one Run: resolveRun", () => {
 
   it("a folder of Ruby exercises runs the one being edited; a script beside a Node package runs itself", () => {
     const rb = detectProjects([folder({ "app.rb": "puts 1", "two.rb": "puts 2" })]);
-    expect(resolveRun({ projects: rb, file: fileActions("two.rb", { webRoot: null }), activePath: "two.rb", pins: {}, ctx: DESKTOP }).action?.command).toBe('ruby "two.rb"');
+    expect(resolveRun({ projects: rb, file: fileActions("two.rb", { webRoot: null }), activePath: "two.rb", pins: {}, ctx: DESKTOP }).action?.entry).toBe("two.rb");
     const node = detectProjects([folder({ "package.json": pkg({ name: "x" }), "index.js": "console.log(1)", "tool.js": "console.log(2)" })]);
     const r = resolveRun({ projects: node, file: fileActions("tool.js", { webRoot: null, source: "console.log(2)" }), activePath: "tool.js", pins: {}, ctx: DESKTOP });
     expect(r.action?.entry).toBe("tool.js");

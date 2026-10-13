@@ -759,6 +759,8 @@ export interface FileContext {
 }
 
 const JS_EXTS = ["js", "mjs", "cjs", "ts", "mts", "cts"];
+/** Terminal languages that also have a Run-panel profile (packages/profiles). */
+const PANEL_RUNNERS: Record<string, string> = { php: "PHP", rb: "Ruby", kt: "Kotlin", dart: "Dart", swift: "Swift" };
 const COMPILED: Record<string, string> = { c: "C", cpp: "C++", cc: "C++", cxx: "C++", java: "Java", go: "Go", rs: "Rust" };
 
 /** What ▶ can do with the active file, best first. */
@@ -804,6 +806,9 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     out.push(action({ id: `logicPreview:${path}`, kind: "logicPreview", label: `${name} (Truth Tables)`, icon: "table", description: "Every expression's truth table", entry: path }));
   } else if (ext in TERMINAL_RUNNERS) {
     const r = TERMINAL_RUNNERS[ext];
+    // Languages with a Run-panel profile (PHP, Ruby, Kotlin, Dart, Swift) run there first: keyboard
+    // input and example tests; the terminal stays one choice away.
+    if (ext in PANEL_RUNNERS) out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `${PANEL_RUNNERS[ext]} in the Run panel`, entry: path, needs: "runner" }));
     out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${r.lang} in a terminal`, command: r.run(name), prelude: r.prelude?.(name), cwd: dir }), ...debug());
     if (r.repl) out.push(action({ id: `repl::${ext}`, kind: "repl", label: r.repl.label, icon: "terminal", command: r.repl.command, cwd: dir }));
   } else if (ext === "md" || ext === "markdown" || ext === "svg") {
