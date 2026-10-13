@@ -3,7 +3,8 @@
 // every single-file hello (and every wave B–D hello) must run, and every starter with
 // .nga/tests.json must pass its stdin → stdout cases (whitespace-normalised).
 // With --projects it also runs each new project/api/data starter's unit tests
-// (make test, mvn test, gradle test, pytest, npm test, go test, cargo test).
+// (make test, mvn test, gradle test, pytest, npm test, go test, cargo test,
+// phpunit, rspec, busted, bats, testthat).
 // Missing toolchains are skipped, never failures.
 //
 //   node packages/runtimes/scripts/verify-starters.mjs [--projects] [--only <id-substring>]
@@ -38,7 +39,8 @@ rmSync(tool);
 
 // rustup's cargo first (Homebrew's can be broken next to rustup).
 const PATH = [join(homedir(), ".cargo/bin"), process.env.PATH].join(":");
-const env = { ...process.env, PATH, NO_COLOR: "1", CARGO_TERM_COLOR: "never" };
+// Gems go into each project's vendor/bundle (a system Ruby's gem dir needs sudo).
+const env = { ...process.env, PATH, NO_COLOR: "1", CARGO_TERM_COLOR: "never", BUNDLE_PATH: process.env.BUNDLE_PATH ?? "vendor/bundle" };
 const PY = process.env.PYTHON ?? "python3";
 const has = (cmd) => spawnSync("sh", ["-c", `command -v ${cmd}`], { env }).status === 0;
 const TOOLS = { c: "cc", cpp: "c++", java: "javac", python: PY, javascript: "node", typescript: "node", go: "go", rust: "rustc", sql: "sqlite3" };
@@ -150,6 +152,8 @@ function prepare(s, dir) {
       return r.ok ? { run: ["./verify-bin", []] } : fail("rustc", r);
     }
     case "sql": {
+      // PostgreSQL / MySQL starters need a database server: tm-judge's container tier runs them.
+      if (kind !== "sql/sqlite") return { skip: `${kind} needs a database server (tm-judge container tier)` };
       if (files.includes("schema.sql") && files.includes("seed.sql")) {
         const r = sh("sqlite3", ["-bail", "verify.db", ".read schema.sql", ".read seed.sql"], { cwd: dir });
         if (!r.ok) return fail("seed", r);
@@ -188,6 +192,11 @@ const UNIT = {
   "go/web": [["go", ["test", "./..."]]],
   "rust/cargo": [["cargo", ["test", "--quiet"]]],
   "rust/web": [["cargo", ["test", "--quiet"]]],
+  "php/composer": [["composer", ["install", "--no-interaction", "--no-progress", "--quiet"]], ["php", ["vendor/bin/phpunit"]]],
+  "ruby/bundler": [["bundle", ["install", "--quiet"]], ["bundle", ["exec", "rspec"]]],
+  "lua/single": [["busted", []]],
+  "bash/single": [["bats", ["test"]]],
+  "r/project": [["Rscript", ["-e", "testthat::test_dir('tests/testthat', stop_on_failure = TRUE)"]]],
 };
 
 const results = [];

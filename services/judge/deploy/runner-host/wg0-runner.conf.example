@@ -1,0 +1,10 @@
+# /etc/wireguard/wg0.conf on the RUNNER HOST (bootstrap.sh writes this file for you).
+[Interface]
+Address = 10.66.0.2/24
+ListenPort = 51820
+PrivateKey = <contents of /etc/wireguard/runner.key>
+
+[Peer]
+# the app host; it dials in, so no Endpoint here
+PublicKey = <app host public key (/etc/wireguard/app.pub on the app host)>
+AllowedIPs = 10.66.0.1/32

@@ -1,0 +1,20 @@
+{
+  "id": "lua-hello",
+  "language": "lua",
+  "kind": "lua/single",
+  "title": "Lua – Hello, world",
+  "description": "The smallest Lua program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.lua",
+  "open": [
+    "main.lua"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.3",
+  "tools": [
+    "lua"
+  ]
+}

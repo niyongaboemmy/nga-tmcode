@@ -32,6 +32,9 @@ Paths the catalog doesn't know can be overridden in `.judge.env`, e.g. `JUDGE_TO
 
 **Memory:** Maven, Gradle and cargo builds get up to 1 GB each. With `JUDGE_CONCURRENCY=2` raise `SLICE_MEMORY` (e.g. `SLICE_MEMORY=2400M bash install.sh`) if the host has room, or run project grading at concurrency 1.
 
+## Tier 3 (containers) and the dedicated runner host
+On this shared host tm-judge runs the isolate tiers only: Docker isn't installed and `JUDGE_CONTAINERS` is unset, so `/v1/health` lists no `containers`, `pty`, `previews` or `databases` features and container kinds (C#/.NET, Kotlin Gradle, Spring Boot, Flutter, web servers, PostgreSQL/MySQL) are listed as unavailable. The dedicated runner host (Oracle Cloud Always Free, arm64, linked by WireGuard) is set up by `deploy/runner-host/bootstrap.sh`; see `deploy/runner-host/README.md`, which also lists conservative settings should tier 3 ever be turned on here. Runner images: `services/judge/images/` (`build-images.sh`).
+
 ## Connect Task Mentor
 Set these in Task Mentor's server environment (GitHub secrets used by its deploy):
 ```

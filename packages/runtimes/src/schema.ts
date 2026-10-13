@@ -148,6 +148,10 @@ export type Detect = z.infer<typeof DetectSchema>;
 export const TierSchema = z.enum(["browser", "isolate", "isolate-build", "container"]);
 export type Tier = z.infer<typeof TierSchema>;
 
+/** Database sidecars a tier-3 run can ask for. */
+export const ServiceSchema = z.enum(["postgres", "mysql"]);
+export type Service = z.infer<typeof ServiceSchema>;
+
 export const KindDefSchema = z.strictObject({
   /** "<language>/<type>", e.g. "java/maven". */
   id: z.string().regex(/^[a-z0-9]+\/[a-z0-9-]+$/),
@@ -171,6 +175,12 @@ export const KindDefSchema = z.strictObject({
   limits: z.partialRecord(z.enum(["restore", "build", "run", "test", "serve"]), LimitsSchema),
   /** Starter ids (§14); filled from the starters' manifests at build time. */
   starters: z.array(z.string()),
+  /**
+   * Tier 3 only: database sidecars started for every run of this kind (a
+   * per-run internal network, tmpfs data, schema.sql/seed.sql loaded, fresh
+   * per I/O test). The program gets DATABASE_URL and PG* / MYSQL_* variables.
+   */
+  services: z.array(ServiceSchema).optional(),
   /** Browser kinds: how TMCode previews it. */
   preview: z.enum(["static", "bundle-react", "dist"]).optional(),
   notes: z.string().optional(),

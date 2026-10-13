@@ -33,6 +33,7 @@ export function validateCatalog(catalog: Catalog): string[] {
     }
     if (k.tier !== "browser" && !k.steps.run && !k.steps.test && !k.steps.serve) problems.push(`kind ${k.id}: no run, test or serve step`);
     if (k.tier !== "container" && k.steps.serve) problems.push(`kind ${k.id}: serve steps need tier "container"`);
+    if (k.tier !== "container" && k.services?.length) problems.push(`kind ${k.id}: database services need tier "container"`);
     for (const [name, step] of Object.entries(k.steps)) {
       if (step?.runsProjectScripts && k.tier === "isolate") problems.push(`kind ${k.id}: step ${name} runs project scripts in tier "isolate" (use isolate-build)`);
     }

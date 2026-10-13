@@ -1,0 +1,28 @@
+{
+  "id": "sql-mysql-select",
+  "language": "sql",
+  "kind": "sql/mysql",
+  "title": "SQL – Filter and sort (MySQL)",
+  "description": "Write one SELECT against a small students table in MySQL; the expected result is checked",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.sql",
+  "open": [
+    "main.sql",
+    "schema.sql"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "readonly": [
+    "schema.sql",
+    "seed.sql"
+  ],
+  "tags": [
+    "select",
+    "where",
+    "order-by",
+    "mysql"
+  ],
+  "since": "2026.10.3"
+}

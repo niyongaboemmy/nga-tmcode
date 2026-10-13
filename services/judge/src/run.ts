@@ -8,6 +8,7 @@
 import { judge, RequestError, type RunRequest, type RunResponse } from "./judge.ts";
 import { languageById } from "./languages.ts";
 import { runProject, type ProjectRequest, type ProjectResponse } from "./project.ts";
+import type { ContainerSandbox } from "./containers.ts";
 import type { Sandbox } from "./sandbox.ts";
 import type { Toolchains } from "./toolchains.ts";
 
@@ -17,6 +18,8 @@ export interface JudgeEnv {
   toolchains: Toolchains;
   /** Seconds for a whole project request. */
   budgetS?: number;
+  /** Tier 3 (Docker + gVisor), when enabled and usable. */
+  containers?: ContainerSandbox;
 }
 
 export type AnyRunRequest = Partial<RunRequest> & Partial<ProjectRequest>;
@@ -24,8 +27,8 @@ export type AnyRunRequest = Partial<RunRequest> & Partial<ProjectRequest>;
 export function isProjectRequest(req: AnyRunRequest): boolean {
   if (req.kind !== undefined && req.kind !== null) return true;
   if (typeof req.language === "string" && languageById(req.language)) {
-    // A profile asked for unit tests runs as its single-file kind.
-    return Array.isArray(req.actions) && req.actions.includes("test");
+    // A profile asked for unit tests (or a database) runs as its single-file kind.
+    return (Array.isArray(req.actions) && req.actions.includes("test")) || (Array.isArray(req.services) && req.services.length > 0);
   }
   return true;
 }
@@ -33,6 +36,6 @@ export function isProjectRequest(req: AnyRunRequest): boolean {
 export async function run(sandbox: Sandbox, env: JudgeEnv, body: unknown): Promise<RunResponse | ProjectResponse> {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new RequestError("Body must be a JSON object.");
   const req = body as AnyRunRequest;
-  if (isProjectRequest(req)) return runProject(sandbox, { toolchains: env.toolchains, budgetS: env.budgetS }, req as ProjectRequest);
+  if (isProjectRequest(req)) return runProject(sandbox, { toolchains: env.toolchains, budgetS: env.budgetS, containers: env.containers }, req as ProjectRequest);
   return judge(sandbox, env.programs, req as RunRequest);
 }
