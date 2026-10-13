@@ -35,6 +35,8 @@ export const RUNTIMES: RuntimeDef[] = [
       javac: "/usr/lib/jvm/java-21-openjdk-amd64/bin/javac",
       mvn: "/opt/maven/bin/mvn",
       gradle: "/opt/gradle/bin/gradle",
+      // Not run directly: listing it mounts /opt/junit in the box (java/single unit tests).
+      junit: "/opt/junit/junit-platform-console-standalone.jar",
     },
     // Gradle's own home is per run (/tmp); dependencies come from the read-only cache layer gradle-school.
     env: { ...BOX_ENV, JAVA_TOOL_OPTIONS: "-XX:+UseSerialGC -Xss16m -Dfile.encoding=UTF-8", GRADLE_USER_HOME: "/tmp/gradle-home", GRADLE_RO_DEP_CACHE: "/caches/gradle-school" },

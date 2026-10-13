@@ -171,18 +171,6 @@ if [ "${SKIP_TOOLCHAINS:-}" != "1" ]; then
     sudo tar -xzf "$dl/$f" -C /opt/uv --strip-components=1
   fi
 
-  # JUnit console launcher (java/single unit tests; Maven Central sha1).
-  jar="/opt/junit/junit-platform-console-standalone.jar"
-  if [ ! -f "/opt/junit/.v${JUNIT_CONSOLE_VERSION}" ]; then
-    u="https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_CONSOLE_VERSION}/junit-platform-console-standalone-${JUNIT_CONSOLE_VERSION}.jar"
-    fetch "$u" "$dl/junit.jar"
-    fetch "$u.sha1" "$dl/junit.jar.sha1"
-    check_sum sha1 "$dl/junit.jar" "$(cut -d' ' -f1 "$dl/junit.jar.sha1")"
-    sudo mkdir -p /opt/junit
-    sudo install -m 0644 "$dl/junit.jar" "$jar"
-    sudo touch "/opt/junit/.v${JUNIT_CONSOLE_VERSION}"
-  fi
-
   # ── Wave D: one function per language (catalog runtime in brackets). Each runs in its own
   # subshell with `set -e`, so the first failing command ends that language only.
   apt_d() { sudo apt-get install -y -qq --no-install-recommends "$@" >/dev/null; }
@@ -336,6 +324,20 @@ if [ "${SKIP_TOOLCHAINS:-}" != "1" ]; then
     printf '   %-28s %s\n' "$t" "$("$t" --version 2>&1 | head -1 || echo MISSING)"
   done
 fi
+
+# JUnit console launcher (java/single unit tests; Maven Central sha1). Small (~2.5 MB),
+# so it is installed even with SKIP_TOOLCHAINS=1: without it Java unit tests can't run.
+jar="/opt/junit/junit-platform-console-standalone.jar"
+if [ ! -f "/opt/junit/.v${JUNIT_CONSOLE_VERSION}" ]; then
+  u="https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${JUNIT_CONSOLE_VERSION}/junit-platform-console-standalone-${JUNIT_CONSOLE_VERSION}.jar"
+  fetch "$u" "$dl/junit.jar"
+  fetch "$u.sha1" "$dl/junit.jar.sha1"
+  check_sum sha1 "$dl/junit.jar" "$(cut -d' ' -f1 "$dl/junit.jar.sha1")"
+  sudo mkdir -p /opt/junit
+  sudo install -m 0644 "$dl/junit.jar" "$jar"
+  sudo touch "/opt/junit/.v${JUNIT_CONSOLE_VERSION}"
+fi
+sudo chmod -R a+rX /opt/junit
 
 echo "== 3/6 isolate ${ISOLATE_VERSION}"
 if ! command -v isolate >/dev/null || ! isolate --version 2>&1 | grep -q "${ISOLATE_VERSION#v}"; then

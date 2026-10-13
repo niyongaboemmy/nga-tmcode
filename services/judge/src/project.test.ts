@@ -388,6 +388,17 @@ describe.runIf(can("cpp/cmake"))("cpp/cmake (starter cpp-cmake-gtest)", () => {
   });
 });
 
+// The JUnit console launcher is installed by install.sh (and by CI's isolate job).
+describe.runIf(can("java/single") && existsSync("/opt/junit/junit-platform-console-standalone.jar"))("java/single with JUnit 5 (starter java-junit)", () => {
+  it("compiles the program and its tests with javac, then runs JUnit", async () => {
+    const r = await project({ kind: "java/single", files: starter("java", "java-junit"), actions: ["build", "test"] });
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
+    expect(r.unit?.framework, JSON.stringify({ steps: r.steps, unit: r.unit })).toBeTruthy();
+    expect(r.unit?.verdict, r.unit?.output).toBe("passed");
+    expect(r.unit?.total).toBe(4);
+  });
+});
+
 describe.runIf(!!SITE && can("python/project"))("python/project with pytest (site-packages cache layer)", () => {
   it("runs pytest and returns per-test results", async () => {
     const r = await project({ files: starter("python", "python-pytest"), actions: ["test"] });
