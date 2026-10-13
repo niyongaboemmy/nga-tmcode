@@ -9477,3 +9477,85 @@ button.tm-setting-badge {
   pointer-events: none;
   white-space: nowrap;
 }
+
+/* Live Preview and the built-in browser (deviceView.tsx): a page at a real screen size, in its own
+   shape, centred, with its size below; Full Screen puts the preview over the whole window. */
+.tm-preview-stage.is-device {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: auto;
+  padding: 20px 16px 12px;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--foreground) 10%, transparent) 1px, transparent 0) 0 0 / 18px 18px,
+    color-mix(in srgb, var(--foreground) 5%, var(--editor-bg));
+}
+.tm-preview-sizer {
+  position: relative;
+  flex: none;
+  margin: auto;
+}
+.tm-preview-stage.is-device .tm-preview-sizer > .tm-preview-device {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: content-box;
+  transform-origin: top left;
+  border-style: solid;
+  border-color: #17181c;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35), 0 0 0 1px color-mix(in srgb, var(--foreground) 18%, transparent);
+  transition: width 160ms ease, height 160ms ease;
+}
+.tm-preview-stage.is-device .tm-preview-device.is-phone {
+  border-radius: 40px;
+}
+.tm-preview-stage.is-device .tm-preview-device.is-phone .tm-preview-frame {
+  border-radius: 28px;
+}
+.tm-preview-stage.is-device .tm-preview-device.is-tablet {
+  border-radius: 26px;
+}
+.tm-preview-stage.is-device .tm-preview-device.is-tablet .tm-preview-frame {
+  border-radius: 12px;
+}
+.tm-preview-stage.is-device .tm-preview-device.is-laptop {
+  border-radius: 6px;
+}
+.tm-preview-dims {
+  flex: none;
+  margin-top: 10px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--description);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.tm-preview-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--foreground);
+  background: transparent;
+  cursor: pointer;
+}
+.tm-preview-zoom:hover {
+  background: var(--list-hover-bg);
+}
+.tm-preview.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+}
+.tm-preview.is-fullscreen .tm-preview-toolbar {
+  height: 40px;
+}
