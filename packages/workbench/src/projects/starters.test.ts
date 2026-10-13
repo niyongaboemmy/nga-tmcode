@@ -46,6 +46,8 @@ describe("starters (from the Runtime Catalog)", () => {
     expect(startersForLanguage("html").every((s) => s.language === "web" || s.language === "javascript")).toBe(true);
     expect(startersForLanguage("klingon")).toEqual([]);
     expect(startersForLanguage(null).every((s) => s.purpose === "hello")).toBe(true);
+    // Most-used first: an empty assignment with no language offers Python before C.
+    expect(startersForLanguage(null).slice(0, 2).map((s) => s.language)).toEqual(["python", "javascript"]);
   });
 
   it.each(STARTERS.map((s) => [s.id, s] as const))("%s: its files, tests, and TMCode knows how to run it", async (_id, s) => {

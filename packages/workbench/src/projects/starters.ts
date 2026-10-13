@@ -88,7 +88,10 @@ export function catalogLanguage(language: string | null | undefined): string | n
  * the first program of each common language.
  */
 export function startersForLanguage(language: string | null | undefined): Starter[] {
-  if (!(language ?? "").trim()) return STARTERS.filter((s) => s.purpose === "hello" && FIRST.includes(s.language) && s.language !== "web");
+  if (!(language ?? "").trim()) {
+    // Most-used languages first (Python before C), so the first few offered are the likely ones.
+    return STARTERS.filter((s) => s.purpose === "hello" && FIRST.includes(s.language) && s.language !== "web").sort((a, b) => FIRST.indexOf(a.language) - FIRST.indexOf(b.language));
+  }
   const key = catalogLanguage(language);
   if (!key) return [];
   const own = catalogStartersFor(STARTERS, key);

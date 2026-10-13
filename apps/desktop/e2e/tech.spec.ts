@@ -41,7 +41,7 @@ test("starters come from the Runtime Catalog: a language first, then its starter
   for (const language of ["Website (HTML, CSS, JavaScript)", "Python", "Java", "SQL", "Dart"]) await expect(pick).toContainText(language);
   await expect(pick).toContainText("more languages");
   await page.locator(".tm-quick-pick input").fill("Java");
-  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: /^Java\b(?!Script)/ }).first().click();
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: /^Java(?!Script)/ }).first().click();
   await page.locator(".tm-quick-pick input").fill("Spring");
   await expect(pick.locator(".tm-qi-item", { hasText: "Spring Boot" }).first()).toBeVisible();
   await page.keyboard.press("Escape");
