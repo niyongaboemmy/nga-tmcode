@@ -1,5 +1,5 @@
 /** C, C++, Go, Rust (§13.1). */
-import { entry, kind, MANAGED_RUN, out, report, sources, testFilter, LIMITS, reportTo } from "./kit";
+import { entry, kind, MANAGED_RUN, out, sources, testFilter, LIMITS, reportTo } from "./kit";
 
 const C_SRC = "*.c";
 const CPP_SRC = ["*.cpp", "*.cc", "*.cxx"];
@@ -37,7 +37,8 @@ function nativeProjects(lang: "c" | "cpp", runtime: string, srcs: string[], labe
         restore: { tool: "cmake", args: ["-S", ".", "-B", "build", "-DCMAKE_BUILD_TYPE=Release", "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"], runsProjectScripts: true },
         build: { tool: "cmake", args: ["--build", "build", "-j2"], runsProjectScripts: true },
         run: run("build/app"),
-        test: { tool: "ctest", args: ["--test-dir", "build", "--output-on-failure", "--output-junit", report], report: "junit", path: "build/ctest-junit.xml" },
+        // ctest puts a relative --output-junit file in the build folder (--test-dir), so the name is the file's, not its box path.
+        test: { tool: "ctest", args: ["--test-dir", "build", "--output-on-failure", "--output-junit", "ctest-junit.xml"], report: "junit", path: "build/ctest-junit.xml" },
       },
       tier: "isolate-build",
       notes: "The program target is called `app` (the starters' convention); unit tests are registered with add_test (GoogleTest via gtest_discover_tests for C++).",
