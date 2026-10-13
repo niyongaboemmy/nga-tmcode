@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, normalize } from "node:path";
@@ -276,6 +277,23 @@ export function extraMounts(program: string): string[] {
   return root && root !== "/" ? [root] : [];
 }
 
+/**
+ * extraMounts for a program and, when it is a symlink, for its real file too:
+ * /usr/bin/go → /opt/hostedtoolcache/go/1.25.1/x64/bin/go (a CI runner, update-alternatives)
+ * only works in a box that also sees the target's install folder.
+ */
+export function toolMounts(program: string, real: (p: string) => string = realpathSync): string[] {
+  const own = extraMounts(program);
+  if (!program.startsWith("/")) return own;
+  let target: string;
+  try {
+    target = real(program);
+  } catch {
+    return own;
+  }
+  return target === program ? own : [...new Set([...own, ...extraMounts(target)])];
+}
+
 export function parseMeta(text: string): Record<string, string> {
   const meta: Record<string, string> = {};
   for (const line of text.split("\n")) {
@@ -361,7 +379,7 @@ export class IsolateSandbox implements Sandbox {
           // Read-only system config (the JVM reads /etc/java-*); the sandbox user can't read root-only files.
           "--dir=/etc:noexec",
           // Toolchains and cache layers: read-only (isolate's default for --dir).
-          ...topDirs([...dirs, ...extraMounts(argv[0])]).map((d) => `--dir=${d}`),
+          ...topDirs([...dirs, ...toolMounts(argv[0])]).map((d) => `--dir=${d}`),
           ...mounts.map((m) => `--dir=${m.inside}=${m.host}`),
           ...(cwd && cwd !== "." ? [`--chdir=/box/${cwd}`] : []),
           "--run",
