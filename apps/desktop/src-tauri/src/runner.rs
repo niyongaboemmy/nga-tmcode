@@ -288,7 +288,7 @@ pub fn expand(args: &[String], entry: &Path, out: &Path) -> Result<Vec<String>, 
             result.extend(found.into_iter().map(|p| p.to_string_lossy().into_owned()));
             continue;
         }
-        // Windows runs `main.exe`: name the build output so (go and rustc don't add the extension).
+        // Windows runs `main.exe`, and go and rustc don't add the extension: name the build output that way.
         let arg = if cfg!(windows) && arg == "{out}/main" { "{out}/main.exe".to_string() } else { arg.clone() };
         result.push(
             arg.replace("{entry_stem}", &stem)
@@ -728,7 +728,8 @@ mod tests {
         let args = expand(&["{sources:c}".into(), "-o".into(), "{out}/main".into(), "{entry_stem}".into()], &root.join("main.c"), &out).unwrap();
         assert_eq!(args.len(), 5);
         assert!(args[0].ends_with("main.c") && args[1].ends_with("util.c"));
-        assert_eq!(args[3], format!("{}/main", out.display()));
+        // Windows runs main.exe, so the build output is named that way there.
+        assert_eq!(args[3], format!("{}/main{}", out.display(), if cfg!(windows) { ".exe" } else { "" }));
         assert_eq!(args[4], "main");
         assert!(expand(&["{sources:java}".into()], &root.join("main.c"), &out).is_err());
     }
