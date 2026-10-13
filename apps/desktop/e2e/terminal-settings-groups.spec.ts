@@ -68,9 +68,11 @@ test("Split Down puts a group under the editor; a tab dropped on an edge splits 
   await openPinned(page, "main.py");
   await palette(page, "Split Editor Down");
   await expect(groups(page)).toHaveCount(2);
-  const [top, bottom] = [await groups(page).nth(0).boundingBox(), await groups(page).nth(1).boundingBox()];
-  expect(bottom!.y).toBeGreaterThan(top!.y + top!.height / 2);
-  expect(Math.abs(bottom!.x - top!.x)).toBeLessThan(4);
+  // Once both groups are laid out (right after the split, the new one may not have a box yet).
+  await expect.poll(async () => {
+    const [top, bottom] = [await groups(page).nth(0).boundingBox(), await groups(page).nth(1).boundingBox()];
+    return !!top && !!bottom && bottom.y > top.y + top.height / 2 && Math.abs(bottom.x - top.x) < 4;
+  }).toBe(true);
   await expect(tab(page, "main.py", groups(page).nth(1))).toBeVisible();
 
   // Drag README.md's tab onto the right edge of the top editor: a third group appears on the right.
