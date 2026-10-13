@@ -28,6 +28,8 @@ const STARTERS = join(ROOT, "packages/runtimes/starters");
 
 /** Homebrew's cargo is often broken on macOS: prefer rustup's real toolchain binaries. */
 function rustOverrides(): Record<string, string> {
+  // A real install (deploy/install-languages.sh) wins: the box can't read the user's home.
+  if (existsSync("/opt/rust/bin/rustc")) return {};
   const dir = join(homedir(), ".rustup/toolchains");
   if (!existsSync(dir)) return {};
   const tc = readdirSync(dir).find((d) => d.startsWith("stable"));
@@ -698,3 +700,109 @@ describe.runIf(can("rust/cargo") && !!caches["cargo-registry-school"])("rust/car
     expect(r.tests[0].verdict).toBe("accepted");
   }, 300_000);
 });
+
+// ───────────── the playground languages (deploy/install-languages.sh) ─────────────
+
+describe("C# on the isolate tier (csharp/script)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tm-judge-cs-"));
+  const fake = (name: string) => {
+    const p = join(dir, name);
+    writeFileSync(p, "#!/bin/sh\n");
+    chmodSync(p, 0o755);
+    return p;
+  };
+  const tools = { dotnet: fake("dotnet"), "csharp-build": fake("csharp-build") };
+  const program = [{ path: "Program.cs", content: 'Console.WriteLine("Hello");\n' }];
+
+  it("is what a single C# file resolves to on a runner without containers", () => {
+    const t = resolveToolchains({ lookup: false, overrides: { "dotnet-10": tools } });
+    expect(availability(t, kindById("csharp/script")!).available).toBe(true);
+    expect(availability(t, kindById("csharp/single")!).available).toBe(false); // container tier
+    expect(resolveProject(t, { files: program, tests: [{ id: "a", input: "" }] }).kind.id).toBe("csharp/script");
+    expect(resolveProject(t, { language: "csharp", files: program, tests: [{ id: "a", input: "" }] }).kind.id).toBe("csharp/script");
+  });
+  it("needs the csharp-build wrapper, not only dotnet", () => {
+    // Where the wrapper is installed, the catalog's own path finds it.
+    if (existsSync("/usr/local/lib/nga/csharp-build")) return;
+    const t = resolveToolchains({ lookup: false, overrides: { "dotnet-10": { dotnet: tools.dotnet } } });
+    expect(availability(t, kindById("csharp/script")!)).toMatchObject({ available: false, missing: ["csharp-build"] });
+    expect(() => resolveProject(t, { files: program, tests: [{ id: "a", input: "" }] })).toThrow(/C#/);
+  });
+  it("builds every .cs file into one dll and runs it with dotnet", () => {
+    const t = resolveToolchains({ lookup: false, overrides: { "dotnet-10": tools } });
+    const k = kindById("csharp/script")!;
+    const ctx: TokenContext = { entry: "Program.cs", files: ["Program.cs", "Util.cs", "notes.txt"], mainClass: "", testFilter: [], reportPath: null };
+    const build = stepArgv(t, k, k.steps.build!, ctx);
+    expect(build[0]).toBe(tools["csharp-build"]);
+    expect(build.slice(2)).toEqual(["Program.cs", "Util.cs"]);
+    expect(build[1]).toMatch(/main\.dll$/);
+    const runArgv = stepArgv(t, k, k.steps.run!, ctx);
+    expect(runArgv[0]).toBe(tools.dotnet);
+    expect(runArgv[1]).toBe(build[1]);
+  });
+});
+
+/** One program per language: reads a name, prints a greeting; plus a compile/runtime error. */
+const GREETERS: Array<{ kind: string; files: { path: string; content: string }[]; broken: { path: string; content: string } }> = [
+  { kind: "php/single", files: [{ path: "main.php", content: '<?php\n$name = trim(fgets(STDIN));\necho "Hello, $name!\\n";\n' }], broken: { path: "main.php", content: "<?php\necho $x->y();\n" } },
+  { kind: "ruby/single", files: [{ path: "main.rb", content: 'name = gets.to_s.strip\nputs "Hello, #{name}!"\n' }], broken: { path: "main.rb", content: "nope_undefined_method\n" } },
+  { kind: "bash/single", files: [{ path: "main.sh", content: 'read -r name\necho "Hello, $name!"\n' }], broken: { path: "main.sh", content: "no_such_command_here\n" } },
+  {
+    kind: "csharp/script",
+    files: [{ path: "Program.cs", content: 'var name = Console.ReadLine()?.Trim();\nConsole.WriteLine($"Hello, {name}!");\n' }],
+    broken: { path: "Program.cs", content: "Console.WriteLine(undefinedThing)\n" },
+  },
+  {
+    kind: "kotlin/single",
+    files: [{ path: "Main.kt", content: 'fun main() {\n    val name = readLine()?.trim()\n    println("Hello, $name!")\n}\n' }],
+    broken: { path: "Main.kt", content: "fun main() { println(undefinedThing) }\n" },
+  },
+  { kind: "swift/single", files: [{ path: "main.swift", content: 'let name = readLine() ?? ""\nprint("Hello, \\(name)!")\n' }], broken: { path: "main.swift", content: "print(undefinedThing)\n" } },
+  {
+    kind: "go/single",
+    files: [{ path: "main.go", content: 'package main\n\nimport (\n\t"bufio"\n\t"fmt"\n\t"os"\n\t"strings"\n)\n\nfunc main() {\n\tname, _ := bufio.NewReader(os.Stdin).ReadString(\'\\n\')\n\tfmt.Printf("Hello, %s!\\n", strings.TrimSpace(name))\n}\n' }],
+    broken: { path: "main.go", content: "package main\n\nfunc main() { undefinedThing() }\n" },
+  },
+  {
+    kind: "rust/single",
+    files: [{ path: "main.rs", content: 'use std::io::Read;\n\nfn main() {\n    let mut name = String::new();\n    std::io::stdin().read_to_string(&mut name).unwrap();\n    println!("Hello, {}!", name.trim());\n}\n' }],
+    broken: { path: "main.rs", content: "fn main() { undefined_thing(); }\n" },
+  },
+];
+
+/** CI names the kinds it installed: those must be runnable, not silently skipped. */
+const REQUIRED_KINDS = (process.env.JUDGE_TEST_REQUIRE_KINDS ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+describe.runIf(REQUIRED_KINDS.length > 0)("required kinds (JUDGE_TEST_REQUIRE_KINDS)", () => {
+  for (const id of REQUIRED_KINDS) {
+    it(`${id} is runnable on this machine`, () => {
+      const k = kindById(id);
+      expect(k, `unknown kind ${id}`).toBeTruthy();
+      expect(can(id), JSON.stringify(availability(tc, k!))).toBe(true);
+    });
+  }
+});
+
+for (const g of GREETERS) {
+  describe.runIf(can(g.kind))(`${g.kind}: a program with input, in a real box`, () => {
+    it("runs it against each input", async () => {
+      const r = await project({
+        files: g.files,
+        tests: [
+          { id: "aline", input: "Aline\n", expected_output: "Hello, Aline!\n" },
+          { id: "jean", input: "Jean\n", expected_output: "Hello, Jean!\n" },
+        ],
+      });
+      expect(r.kind, JSON.stringify(r)).toBe(g.kind);
+      expect(r.compile?.ok ?? true, r.compile?.output).toBe(true);
+      expect(r.tests.map((t) => [t.id, t.verdict]), JSON.stringify(r.tests)).toEqual([
+        ["aline", "accepted"],
+        ["jean", "accepted"],
+      ]);
+    }, 120_000);
+    it("reports a broken program clearly", async () => {
+      const r = await project({ files: [g.broken], tests: [{ id: "1", input: "" }] });
+      expect(["compile-error", "runtime-error"]).toContain(r.tests[0].verdict);
+      expect(`${r.compile?.output ?? ""}${r.tests[0].stderr ?? ""}`.length).toBeGreaterThan(0);
+    }, 120_000);
+  });
+}

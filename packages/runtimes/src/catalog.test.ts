@@ -21,12 +21,18 @@ describe("runtime catalog", () => {
     expect(k.id.startsWith(`${k.language === "javascript" ? "js" : k.language === "typescript" ? "ts" : k.language}/`) || ["flutter/app", "web/static", "web/react-cdn"].includes(k.id)).toBe(true);
   });
 
-  it("lists about 25 languages, wave A enabled and later waves as data", () => {
+  it("lists about 25 languages: wave A and the installed later languages enabled, the rest as data", () => {
     expect(LANGUAGES.length).toBeGreaterThanOrEqual(24);
     for (const key of ["c", "cpp", "java", "python", "javascript", "typescript", "go", "rust", "sql"]) {
       expect(LANGUAGES.find((l) => l.key === key)).toMatchObject({ wave: "A", enabled: true });
     }
-    for (const l of LANGUAGES.filter((x) => x.wave !== "A")) expect(l.enabled).toBe(false);
+    // Offered since deploy/install-languages.sh installs them (each with an enabled single-file kind).
+    const later = ["php", "ruby", "bash", "kotlin", "csharp", "swift"];
+    for (const key of later) {
+      expect(LANGUAGES.find((l) => l.key === key)?.enabled, key).toBe(true);
+      expect(KINDS.some((k) => k.language === key && k.enabled && k.tier !== "container" && !!k.steps.run), key).toBe(true);
+    }
+    for (const l of LANGUAGES.filter((x) => x.wave !== "A" && !later.includes(x.key))) expect(l.enabled, l.key).toBe(false);
   });
 
   it("has every wave A kind, enabled, with a run step", () => {
@@ -50,7 +56,7 @@ describe("runtime catalog", () => {
   });
 
   it("allows file locks in isolate only where a tool can't work without them", () => {
-    expect(KINDS.filter((k) => k.fileLocks).map((k) => k.id)).toEqual(["go/module"]);
+    expect(KINDS.filter((k) => k.fileLocks).map((k) => k.id)).toEqual(["go/single", "go/module"]); // go build locks its cache
   });
 
   it("never runs container kinds on a shared runner", () => {

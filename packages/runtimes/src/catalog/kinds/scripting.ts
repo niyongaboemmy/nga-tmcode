@@ -239,6 +239,7 @@ export const SCRIPTING_KINDS = [
   // ── PHP ──
   kind({
     id: "php/single",
+    enabled: true,
     language: "php",
     label: "PHP – script",
     runtime: "php-8.3",
@@ -294,13 +295,16 @@ export const SCRIPTING_KINDS = [
   // ── Ruby ──
   kind({
     id: "ruby/single",
+    enabled: true,
     language: "ruby",
     label: "Ruby – script",
     runtime: "ruby-3.2",
     wave: "B",
     detect: { anyOf: ["*.rb"], none: ["Gemfile"], priority: 10 },
     entry: { default: "main.rb" },
-    steps: { run: { tool: "ruby", args: ["-e", "STDOUT.sync=true; load ARGV[0]", entry] } },
+    // ARGV.shift: `gets` reads the files left in ARGV before stdin, so with the entry still
+    // there every `gets` returned the program's own first line instead of the input.
+    steps: { run: { tool: "ruby", args: ["-e", "STDOUT.sync=true; load ARGV.shift", entry] } },
     tier: "isolate",
   }),
   kind({
@@ -359,6 +363,7 @@ export const SCRIPTING_KINDS = [
   }),
   kind({
     id: "bash/single",
+    enabled: true,
     language: "bash",
     label: "Bash – script",
     runtime: "bash-5",

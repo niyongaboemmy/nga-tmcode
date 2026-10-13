@@ -1,5 +1,5 @@
 /** .NET, functional languages, Swift, Dart and Flutter (§13.3, §13.5, §13.6). */
-import { entry, kind, LIMITS, MANAGED_RUN, reportTo } from "./kit";
+import { entry, kind, LIMITS, MANAGED_RUN, out, reportTo, sources } from "./kit";
 
 const DOTNET_ENV = { DOTNET_CLI_TELEMETRY_OPTOUT: "1", MSBUILDDISABLENODEREUSE: "1", UseSharedCompilation: "false" };
 /** .NET builds (MSBuild worker nodes, many threads) run in tier 3; console programs get a PTY there. */
@@ -18,6 +18,26 @@ export const OTHER_KINDS = [
     tier: "container",
     limits: DOTNET_LIMITS,
     notes: ".NET 10 file-based `dotnet run app.cs`, or a pre-restored template csproj with Program.cs swapped in.",
+  }),
+  kind({
+    // The runner host has no container tier: C# single files build with Roslyn's csc (the
+    // csharp-build wrapper adds the framework references, implicit usings and a runtimeconfig)
+    // and run on the shared runtime. Ranked below csharp/single, so a runner with containers
+    // keeps using `dotnet run`; detection only offers kinds the runner can run.
+    id: "csharp/script",
+    enabled: true,
+    language: "csharp",
+    label: "C# – single file (csc)",
+    runtime: "dotnet-10",
+    wave: "C",
+    detect: { anyOf: ["*.cs"], none: ["*.csproj", "*.sln"], priority: 9 },
+    entry: { default: "Program.cs", find: "main-decl" },
+    steps: {
+      build: { tool: "csharp-build", args: [out("main.dll"), sources("cs")] },
+      run: { tool: "dotnet", args: [out("main.dll")] },
+    },
+    tier: "isolate-build",
+    limits: { build: { cpu_s: 30, wall_s: 60, memory_mb: 1024, processes: 128, disk_mb: 256 }, run: MANAGED_RUN },
   }),
   kind({
     id: "csharp/console",
@@ -108,6 +128,7 @@ export const OTHER_KINDS = [
   }),
   kind({
     id: "swift/single",
+    enabled: true,
     language: "swift",
     label: "Swift – single file",
     runtime: "swift-6",

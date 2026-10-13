@@ -1,0 +1,49 @@
+#!/bin/sh
+# csharp-build <output.dll> <source.cs>...
+#
+# Builds a C# program the light way, for the csharp/script kind: Roslyn's csc straight from the
+# .NET SDK (no MSBuild, no NuGet, no network), against the newest reference pack, with the
+# implicit usings an SDK project would have, and writes the runtimeconfig so `dotnet out.dll`
+# runs it on the shared runtime. Works with any SDK >= 8. Installed to /usr/local/lib/nga/
+# by deploy/install-languages.sh; it runs inside the judge's box.
+set -eu
+[ $# -ge 2 ] || { echo "usage: csharp-build <output.dll> <source.cs>..." >&2; exit 2; }
+out="$1"; shift
+
+dotnet_bin="$(command -v dotnet || true)"
+[ -n "$dotnet_bin" ] || { echo "csharp-build: the .NET SDK (dotnet) is not installed" >&2; exit 127; }
+dotnet_bin="$(readlink -f "$dotnet_bin")"
+root="$(dirname "$dotnet_bin")"
+latest() { for p in "$@"; do [ -e "$p" ] && echo "$p"; done | sort -V | tail -1; }
+
+sdk="$(latest "$root"/sdk/[0-9]*)"
+csc="$sdk/Roslyn/bincore/csc.dll"
+[ -f "$csc" ] || { echo "csharp-build: no C# compiler in $root/sdk (install a .NET SDK, not only the runtime)" >&2; exit 127; }
+fw="$(latest "$root"/shared/Microsoft.NETCore.App/[0-9]*)"
+[ -n "$fw" ] || { echo "csharp-build: no .NET runtime in $root/shared" >&2; exit 127; }
+ver="$(basename "$fw")"
+major="${ver%%.*}"
+ref="$(latest "$root"/packs/Microsoft.NETCore.App.Ref/"$major".*/ref/net*)"
+[ -n "$ref" ] || ref="$fw" # no reference pack: compile against the runtime's own assemblies
+
+dir="$(dirname "$out")"
+mkdir -p "$dir"
+# What `<ImplicitUsings>enable</ImplicitUsings>` gives a console project, so lesson code that
+# leaves out `using System;` (top-level statements) still builds.
+cat > "$dir/GlobalUsings.g.cs" <<'CS'
+global using System;
+global using System.Collections.Generic;
+global using System.IO;
+global using System.Linq;
+global using System.Net.Http;
+global using System.Threading;
+global using System.Threading.Tasks;
+CS
+rsp="$dir/csc.rsp"
+: > "$rsp"
+for d in "$ref"/*.dll; do printf '%s\n' "-r:$d" >> "$rsp"; done
+cat > "${out%.dll}.runtimeconfig.json" <<JSON
+{"runtimeOptions":{"tfm":"net${major}.0","framework":{"name":"Microsoft.NETCore.App","version":"${ver}"},"configProperties":{"System.Globalization.Invariant":true,"System.GC.Server":false}}}
+JSON
+exec "$dotnet_bin" "$csc" -nologo -noconfig -langversion:latest -nullable:disable -optimize+ -deterministic \
+  -target:exe -nowarn:CS1701,CS1702,CS8019 -out:"$out" @"$rsp" "$dir/GlobalUsings.g.cs" "$@"

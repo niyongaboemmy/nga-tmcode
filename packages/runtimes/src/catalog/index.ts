@@ -11,7 +11,7 @@ import { LANGUAGES } from "./languages";
 import { RUNTIMES } from "./runtimes";
 
 /** Bumped when the catalog changes: `<year>.<month>.<n>`. */
-export const CATALOG_VERSION = "2026.10.3";
+export const CATALOG_VERSION = "2026.10.4";
 
 export const KINDS: KindDef[] = [...SYSTEMS_KINDS, ...JVM_KINDS, ...SCRIPTING_KINDS, ...WEB_KINDS, ...DATA_KINDS, ...OTHER_KINDS, ...LONGTAIL_KINDS];
 
