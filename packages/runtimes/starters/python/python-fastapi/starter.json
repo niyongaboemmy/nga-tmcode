@@ -1,0 +1,26 @@
+{
+  "id": "python-fastapi",
+  "language": "python",
+  "kind": "python/fastapi",
+  "title": "Python – FastAPI to-do API",
+  "description": "A small REST to-do API with FastAPI and one test using its TestClient",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "main.py",
+  "open": [
+    "main.py",
+    "tests/test_main.py"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "pytest",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "fastapi",
+    "rest",
+    "pytest"
+  ],
+  "since": "2026.10.1"
+}

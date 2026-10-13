@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-jquery",
+  "language": "web",
+  "kind": "web/static",
+  "title": "Website with jQuery",
+  "description": "jQuery 3: DOM, events, animations and a JSON request",
+  "level": "beginner",
+  "purpose": "web",
+  "entry": "index.html",
+  "open": [
+    "index.html"
+  ],
+  "tags": [
+    "websites",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "globe",
+  "aliases": [
+    "jquery"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "rust-hello",
+  "language": "rust",
+  "kind": "rust/single",
+  "title": "Rust – Hello, world",
+  "description": "The smallest Rust program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.rs",
+  "open": [
+    "main.rs"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

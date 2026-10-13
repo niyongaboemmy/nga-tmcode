@@ -1,0 +1,24 @@
+test_adds (test_calc.CalcTest) ... ok
+test_errors (test_calc.CalcTest) ... ERROR
+test_fails (test_calc.CalcTest) ... FAIL
+
+======================================================================
+ERROR: test_errors (test_calc.CalcTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/ws/test_calc.py", line 14, in test_errors
+    raise ValueError("boom")
+ValueError: boom
+
+======================================================================
+FAIL: test_fails (test_calc.CalcTest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/ws/test_calc.py", line 11, in test_fails
+    self.assertEqual(add(2, 2), 5)
+AssertionError: 4 != 5
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+FAILED (failures=1, errors=1)

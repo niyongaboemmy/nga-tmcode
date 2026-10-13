@@ -1,0 +1,17 @@
+{
+  "id": "python-hello",
+  "language": "python",
+  "kind": "python/single",
+  "title": "Python – Hello, world",
+  "description": "The smallest Python program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.py",
+  "open": [
+    "main.py"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

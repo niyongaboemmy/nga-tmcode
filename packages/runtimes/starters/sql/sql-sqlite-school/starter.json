@@ -1,0 +1,28 @@
+{
+  "id": "sql-sqlite-school",
+  "language": "sql",
+  "kind": "sql/sqlite",
+  "title": "SQL – School database (joins and grouping)",
+  "description": "A students and marks database with queries using JOIN, GROUP BY and HAVING",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "queries.sql",
+  "open": [
+    "queries.sql",
+    "schema.sql",
+    "seed.sql"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "readonly": [
+    "schema.sql",
+    "seed.sql"
+  ],
+  "tags": [
+    "join",
+    "group-by",
+    "aggregates"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,30 @@
+{
+  "id": "rust-axum-api",
+  "language": "rust",
+  "kind": "rust/web",
+  "title": "Rust – axum to-do API",
+  "description": "A small REST to-do API with axum and one integration test driving the router directly",
+  "level": "advanced",
+  "purpose": "api",
+  "entry": "src/main.rs",
+  "open": [
+    "src/routes.rs",
+    "tests/api.rs"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "cargo",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "Cargo.toml",
+    "Cargo.lock"
+  ],
+  "tags": [
+    "axum",
+    "rest",
+    "tokio"
+  ],
+  "since": "2026.10.1"
+}

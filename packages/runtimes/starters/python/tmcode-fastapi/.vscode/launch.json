@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "FastAPI",
+      "module": "uvicorn",
+      "args": [
+        "main:app",
+        "--reload"
+      ]
+    }
+  ]
+}

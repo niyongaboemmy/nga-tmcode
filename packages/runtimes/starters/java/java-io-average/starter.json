@@ -1,0 +1,21 @@
+{
+  "id": "java-io-average",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Java – Average of numbers (input/output)",
+  "description": "Reads numbers until the end of input and prints how many there were and their average",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "Main.java",
+  "open": [
+    "Main.java"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "loops"
+  ],
+  "since": "2026.10.1"
+}

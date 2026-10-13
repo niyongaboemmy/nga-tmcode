@@ -1,0 +1,29 @@
+{
+  "id": "tmcode-fastapi",
+  "language": "python",
+  "kind": "python/fastapi",
+  "title": "Python API (FastAPI)",
+  "description": "Typed endpoints with automatic docs at /docs",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "main.py",
+  "open": [
+    "main.py"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "python"
+  ],
+  "setup": {
+    "command": "python -m pip install -r requirements.txt",
+    "note": "Installs FastAPI and Uvicorn"
+  },
+  "aliases": [
+    "fastapi"
+  ]
+}

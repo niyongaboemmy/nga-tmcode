@@ -1,0 +1,29 @@
+{
+  "id": "go-module-test",
+  "language": "go",
+  "kind": "go/module",
+  "title": "Go – Module with tests",
+  "description": "A Go module with an internal package and one table-driven test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "main.go",
+  "open": [
+    "main.go",
+    "internal/grades/grades.go",
+    "internal/grades/grades_test.go"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "go",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "go.mod"
+  ],
+  "tags": [
+    "go-test",
+    "packages"
+  ],
+  "since": "2026.10.1"
+}

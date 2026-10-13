@@ -1,0 +1,35 @@
+{
+  "id": "tmcode-django",
+  "language": "python",
+  "kind": "python/django",
+  "title": "Python Web (Django)",
+  "description": "A Django site with a view, a JSON endpoint and SQLite",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "site_app/views.py",
+  "open": [
+    "site_app/views.py"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "django",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "python"
+  ],
+  "setup": {
+    "command": "python -m pip install -r requirements.txt && python manage.py migrate",
+    "note": "Installs Django and creates the database"
+  },
+  "aliases": [
+    "django"
+  ]
+}

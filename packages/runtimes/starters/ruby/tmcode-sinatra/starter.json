@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-sinatra",
+  "language": "ruby",
+  "kind": "ruby/sinatra",
+  "title": "Ruby API (Sinatra)",
+  "description": "A small Ruby web app with JSON routes",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "app.rb",
+  "open": [
+    "app.rb"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "ruby",
+  "tools": [
+    "ruby",
+    "bundle"
+  ],
+  "setup": {
+    "command": "bundle install",
+    "note": "Installs Sinatra"
+  },
+  "aliases": [
+    "sinatra"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "fsharp-hello",
+  "language": "fsharp",
+  "kind": "fsharp/script",
+  "title": "F# – Hello, world",
+  "description": "The smallest F# program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.fsx",
+  "open": [
+    "main.fsx"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "dotnet"
+  ]
+}

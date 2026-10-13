@@ -1,0 +1,31 @@
+{
+  "id": "tmcode-go",
+  "language": "go",
+  "kind": "go/module",
+  "title": "Go",
+  "description": "A Go module with a test",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "main.go",
+  "open": [
+    "main.go"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "go",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "go"
+  ],
+  "aliases": [
+    "go"
+  ]
+}

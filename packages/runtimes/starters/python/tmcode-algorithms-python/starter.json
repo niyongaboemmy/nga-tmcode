@@ -1,0 +1,28 @@
+{
+  "id": "tmcode-algorithms-python",
+  "language": "python",
+  "kind": "python/single",
+  "title": "Algorithms (Python)",
+  "description": "Sorting, binary search and GCD with input/output tests",
+  "level": "beginner",
+  "purpose": "algorithms",
+  "entry": "algorithms.py",
+  "open": [
+    "algorithms.py"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "learning",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "list-ordered",
+  "tools": [
+    "python"
+  ],
+  "aliases": [
+    "algorithms-python"
+  ]
+}

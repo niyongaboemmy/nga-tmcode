@@ -1,0 +1,27 @@
+{
+  "id": "sql-io-select",
+  "language": "sql",
+  "kind": "sql/sqlite",
+  "title": "SQL – Filter and sort (query exercise)",
+  "description": "Write one SELECT against a small students table; the expected result is checked",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.sql",
+  "open": [
+    "main.sql",
+    "schema.sql"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "readonly": [
+    "schema.sql",
+    "seed.sql"
+  ],
+  "tags": [
+    "select",
+    "where",
+    "order-by"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "nim-hello",
+  "language": "nim",
+  "kind": "nim/single",
+  "title": "Nim – Hello, world",
+  "description": "The smallest Nim program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.nim",
+  "open": [
+    "main.nim"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "nim"
+  ]
+}

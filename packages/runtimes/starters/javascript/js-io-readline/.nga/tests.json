@@ -1,0 +1,26 @@
+{
+  "entry": "main.js",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "one line",
+      "input": "4 9 2\n",
+      "expected_output": "Biggest: 9\nSmallest: 2\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "several lines with negatives",
+      "input": "3\n-7\n10\n",
+      "expected_output": "Biggest: 10\nSmallest: -7\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "no numbers",
+      "input": "",
+      "expected_output": "No numbers\n",
+      "points": 1
+    }
+  ]
+}

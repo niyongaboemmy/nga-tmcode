@@ -1,0 +1,28 @@
+{
+  "id": "tmcode-algorithms-java",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Algorithms (Java)",
+  "description": "Merge sort, binary search and GCD with tests",
+  "level": "beginner",
+  "purpose": "algorithms",
+  "entry": "Main.java",
+  "open": [
+    "Main.java"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "learning",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "list-ordered",
+  "tools": [
+    "java"
+  ],
+  "aliases": [
+    "algorithms-java"
+  ]
+}

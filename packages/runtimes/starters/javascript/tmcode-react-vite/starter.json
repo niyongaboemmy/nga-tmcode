@@ -1,0 +1,30 @@
+{
+  "id": "tmcode-react-vite",
+  "language": "javascript",
+  "kind": "js/vite",
+  "title": "React (Vite + TypeScript)",
+  "description": "React 19 + Vite dev server, opens in the built-in browser",
+  "level": "intermediate",
+  "purpose": "web",
+  "entry": "src/App.tsx",
+  "open": [
+    "src/App.tsx"
+  ],
+  "tags": [
+    "frontend-frameworks",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-misc",
+  "tools": [
+    "node",
+    "npm"
+  ],
+  "setup": {
+    "command": "npm install",
+    "note": "Installs React and Vite"
+  },
+  "aliases": [
+    "react-vite"
+  ]
+}

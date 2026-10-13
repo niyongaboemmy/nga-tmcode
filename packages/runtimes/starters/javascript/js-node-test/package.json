@@ -1,0 +1,12 @@
+{
+  "name": "math-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/math.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "pretest": "node -e \"require('node:fs').mkdirSync('reports', { recursive: true })\"",
+    "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/junit.xml"
+  }
+}

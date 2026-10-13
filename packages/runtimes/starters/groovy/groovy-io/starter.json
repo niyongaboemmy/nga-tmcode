@@ -1,0 +1,25 @@
+{
+  "id": "groovy-io",
+  "language": "groovy",
+  "kind": "groovy/single",
+  "title": "Groovy – Sum of two numbers (input/output)",
+  "description": "Reads two whole numbers on one line and prints their sum",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.groovy",
+  "open": [
+    "main.groovy"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "groovy",
+    "java"
+  ]
+}

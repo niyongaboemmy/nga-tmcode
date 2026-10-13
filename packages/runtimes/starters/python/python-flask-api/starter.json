@@ -1,0 +1,26 @@
+{
+  "id": "python-flask-api",
+  "language": "python",
+  "kind": "python/flask",
+  "title": "Python – Flask to-do API",
+  "description": "A small REST to-do API with Flask and one test using Flask's test client",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "app.py",
+  "open": [
+    "app.py",
+    "tests/test_app.py"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "pytest",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "flask",
+    "rest",
+    "pytest"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,32 @@
+{
+  "id": "tmcode-python",
+  "language": "python",
+  "kind": "python/single",
+  "title": "Python",
+  "description": "A Python program with a test and a debug configuration",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.py",
+  "open": [
+    "main.py"
+  ],
+  "tests": {
+    "io": ".nga/tests.json",
+    "unit": {
+      "framework": "pytest",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "python"
+  ],
+  "aliases": [
+    "python"
+  ]
+}

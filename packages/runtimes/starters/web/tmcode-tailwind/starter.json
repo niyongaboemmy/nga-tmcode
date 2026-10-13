@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-tailwind",
+  "language": "web",
+  "kind": "web/static",
+  "title": "Website with Tailwind CSS",
+  "description": "Utility-first styling with the Tailwind Play CDN",
+  "level": "beginner",
+  "purpose": "web",
+  "entry": "index.html",
+  "open": [
+    "index.html"
+  ],
+  "tags": [
+    "websites",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-color",
+  "aliases": [
+    "tailwind"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "ts-hello",
+  "language": "typescript",
+  "kind": "ts/single",
+  "title": "TypeScript – Hello, world",
+  "description": "The smallest TypeScript program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.ts",
+  "open": [
+    "main.ts"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

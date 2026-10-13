@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-typescript",
+  "language": "typescript",
+  "kind": "ts/single",
+  "title": "TypeScript (single file)",
+  "description": "TypeScript that runs in the JavaScript Console, no setup",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "main.ts",
+  "open": [
+    "main.ts"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-namespace",
+  "aliases": [
+    "typescript"
+  ]
+}

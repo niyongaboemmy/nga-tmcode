@@ -1,0 +1,25 @@
+{
+  "id": "tmcode-ruby",
+  "language": "ruby",
+  "kind": "ruby/single",
+  "title": "Ruby",
+  "description": "A Ruby script with classes and blocks",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "main.rb",
+  "open": [
+    "main.rb"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "ruby",
+  "tools": [
+    "ruby"
+  ],
+  "aliases": [
+    "ruby"
+  ]
+}

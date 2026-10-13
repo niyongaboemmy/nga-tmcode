@@ -1,0 +1,21 @@
+{
+  "id": "c-io-sum",
+  "language": "c",
+  "kind": "c/single",
+  "title": "C – Sum of numbers (input/output)",
+  "description": "Reads whole numbers until the end of input and prints their sum",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.c",
+  "open": [
+    "main.c"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "loops"
+  ],
+  "since": "2026.10.1"
+}

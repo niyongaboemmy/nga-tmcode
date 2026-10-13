@@ -1,0 +1,26 @@
+{
+  "entry": "main.ts",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "one line",
+      "input": "the quick brown fox\n",
+      "expected_output": "Lines: 1\nWords: 4\nLongest: quick\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "two lines",
+      "input": "Rwanda is\nbeautiful\n",
+      "expected_output": "Lines: 2\nWords: 3\nLongest: beautiful\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "empty input",
+      "input": "",
+      "expected_output": "Lines: 0\nWords: 0\nLongest: -\n",
+      "points": 1
+    }
+  ]
+}

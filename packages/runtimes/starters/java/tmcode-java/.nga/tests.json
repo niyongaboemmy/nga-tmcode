@@ -1,0 +1,12 @@
+{
+  "entry": "Main.java",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "greets Ada",
+      "input": "Ada\n",
+      "expected_output": "What is your name? Hello, Ada!\n",
+      "points": 1
+    }
+  ]
+}

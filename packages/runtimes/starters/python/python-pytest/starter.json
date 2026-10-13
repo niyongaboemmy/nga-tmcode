@@ -1,0 +1,28 @@
+{
+  "id": "python-pytest",
+  "language": "python",
+  "kind": "python/project",
+  "title": "Python – Package with pytest",
+  "description": "A src-layout package (a shopping cart) with one pytest test file",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/shop/cart.py",
+  "open": [
+    "src/shop/cart.py",
+    "tests/test_cart.py"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "pytest",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "pyproject.toml"
+  ],
+  "tags": [
+    "pytest",
+    "classes"
+  ],
+  "since": "2026.10.1"
+}

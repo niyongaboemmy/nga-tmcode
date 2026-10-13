@@ -1,0 +1,20 @@
+{
+  "id": "erlang-hello",
+  "language": "erlang",
+  "kind": "erlang/escript",
+  "title": "Erlang – Hello, world",
+  "description": "The smallest Erlang program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.erl",
+  "open": [
+    "main.erl"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "escript"
+  ]
+}

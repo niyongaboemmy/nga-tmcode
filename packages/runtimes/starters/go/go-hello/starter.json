@@ -1,0 +1,17 @@
+{
+  "id": "go-hello",
+  "language": "go",
+  "kind": "go/single",
+  "title": "Go – Hello, world",
+  "description": "The smallest Go program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.go",
+  "open": [
+    "main.go"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,28 @@
+{
+  "id": "js-node-test",
+  "language": "javascript",
+  "kind": "js/npm",
+  "title": "JavaScript – npm project with node:test",
+  "description": "An npm package with a small module and one test file using Node's built-in test runner (no dependencies)",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/math.js",
+  "open": [
+    "src/math.js",
+    "test/math.test.js"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "node",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "package.json"
+  ],
+  "tags": [
+    "node-test",
+    "modules"
+  ],
+  "since": "2026.10.1"
+}

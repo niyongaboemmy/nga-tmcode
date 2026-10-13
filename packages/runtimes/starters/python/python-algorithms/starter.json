@@ -1,0 +1,23 @@
+{
+  "id": "python-algorithms",
+  "language": "python",
+  "kind": "python/single",
+  "title": "Python – Sorting and searching (input/output)",
+  "description": "Insertion sort and binary search on numbers read from input",
+  "level": "beginner",
+  "purpose": "algorithms",
+  "entry": "algorithms.py",
+  "open": [
+    "algorithms.py"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "algorithms",
+    "sorting",
+    "searching",
+    "io"
+  ],
+  "since": "2026.10.1"
+}

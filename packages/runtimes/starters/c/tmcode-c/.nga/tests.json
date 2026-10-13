@@ -1,0 +1,19 @@
+{
+  "entry": "main.c",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "three numbers",
+      "input": "4 8 6\n",
+      "expected_output": "Count: 3\nSum: 18.00\nAverage: 6.00\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "no numbers",
+      "input": "",
+      "expected_output": "No numbers\n",
+      "points": 1
+    }
+  ]
+}

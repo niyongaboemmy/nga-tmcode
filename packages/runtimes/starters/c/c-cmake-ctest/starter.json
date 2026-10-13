@@ -1,0 +1,26 @@
+{
+  "id": "c-cmake-ctest",
+  "language": "c",
+  "kind": "c/cmake",
+  "title": "C – CMake project with CTest",
+  "description": "A calculator library and program built with CMake, with one CTest unit test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/main.c",
+  "open": [
+    "src/main.c",
+    "src/calc.c",
+    "tests/test_calc.c"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "ctest",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "cmake",
+    "ctest"
+  ],
+  "since": "2026.10.1"
+}

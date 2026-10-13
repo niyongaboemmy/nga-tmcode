@@ -1,0 +1,5 @@
+app
+main
+*.o
+build/
+tests/run_tests

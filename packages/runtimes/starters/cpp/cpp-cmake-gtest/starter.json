@@ -1,0 +1,27 @@
+{
+  "id": "cpp-cmake-gtest",
+  "language": "cpp",
+  "kind": "cpp/cmake",
+  "title": "C++ – CMake project with GoogleTest",
+  "description": "A bank account class built with CMake and tested with GoogleTest",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/main.cpp",
+  "open": [
+    "src/main.cpp",
+    "src/bank.cpp",
+    "tests/bank_test.cpp"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "googletest",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "cmake",
+    "googletest",
+    "classes"
+  ],
+  "since": "2026.10.1"
+}

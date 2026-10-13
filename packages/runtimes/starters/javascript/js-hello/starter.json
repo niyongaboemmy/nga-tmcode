@@ -1,0 +1,17 @@
+{
+  "id": "js-hello",
+  "language": "javascript",
+  "kind": "js/single",
+  "title": "JavaScript – Hello, world",
+  "description": "The smallest Node.js program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.js",
+  "open": [
+    "main.js"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

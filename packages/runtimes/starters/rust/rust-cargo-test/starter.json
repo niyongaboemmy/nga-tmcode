@@ -1,0 +1,30 @@
+{
+  "id": "rust-cargo-test",
+  "language": "rust",
+  "kind": "rust/cargo",
+  "title": "Rust – Cargo project with tests",
+  "description": "A Cargo package with a library, a binary, a unit test and an integration test",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "src/main.rs",
+  "open": [
+    "src/main.rs",
+    "src/lib.rs",
+    "tests/integration.rs"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "cargo",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "Cargo.toml",
+    "Cargo.lock"
+  ],
+  "tags": [
+    "cargo",
+    "testing"
+  ],
+  "since": "2026.10.1"
+}

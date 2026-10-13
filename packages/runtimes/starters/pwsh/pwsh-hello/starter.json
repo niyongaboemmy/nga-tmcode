@@ -1,0 +1,20 @@
+{
+  "id": "pwsh-hello",
+  "language": "pwsh",
+  "kind": "pwsh/single",
+  "title": "PowerShell – Hello, world",
+  "description": "The smallest PowerShell program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.ps1",
+  "open": [
+    "main.ps1"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "pwsh"
+  ]
+}

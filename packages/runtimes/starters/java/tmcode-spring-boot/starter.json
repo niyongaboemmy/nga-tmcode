@@ -1,0 +1,32 @@
+{
+  "id": "tmcode-spring-boot",
+  "language": "java",
+  "kind": "java/spring-boot",
+  "title": "Java API (Spring Boot)",
+  "description": "Spring Boot 3 REST controller with Maven",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "src/main/java/rw/ac/nga/demo/TodoController.java",
+  "open": [
+    "src/main/java/rw/ac/nga/demo/TodoController.java"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "maven",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "coffee",
+  "tools": [
+    "java",
+    "mvn"
+  ],
+  "aliases": [
+    "spring-boot"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "vb-hello",
+  "language": "vb",
+  "kind": "vb/console",
+  "title": "Visual Basic – Hello, world",
+  "description": "The smallest Visual Basic program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "Program.vb",
+  "open": [
+    "Program.vb"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "dotnet"
+  ]
+}

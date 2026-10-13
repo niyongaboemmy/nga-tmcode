@@ -1,0 +1,35 @@
+{
+  "id": "tmcode-flutter",
+  "language": "dart",
+  "kind": "flutter/app",
+  "title": "Flutter App",
+  "description": "A Flutter app for web, desktop and phones (hot reload)",
+  "level": "intermediate",
+  "purpose": "project",
+  "entry": "lib/main.dart",
+  "open": [
+    "lib/main.dart"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "flutter",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "mobile-desktop",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "device-mobile",
+  "tools": [
+    "flutter"
+  ],
+  "setup": {
+    "command": "flutter create . --platforms=web,android,ios,macos,windows,linux && flutter pub get",
+    "note": "Adds the platform folders and downloads packages"
+  },
+  "aliases": [
+    "flutter"
+  ]
+}

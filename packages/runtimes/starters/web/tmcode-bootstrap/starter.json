@@ -1,0 +1,22 @@
+{
+  "id": "tmcode-bootstrap",
+  "language": "web",
+  "kind": "web/static",
+  "title": "Website with Bootstrap 5",
+  "description": "A responsive landing page: navbar, cards, grid and a modal",
+  "level": "beginner",
+  "purpose": "web",
+  "entry": "index.html",
+  "open": [
+    "index.html"
+  ],
+  "tags": [
+    "websites",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "layout",
+  "aliases": [
+    "bootstrap"
+  ]
+}

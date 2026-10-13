@@ -1,0 +1,16 @@
+#cloud-config
+# Oracle Cloud (or any cloud-init) user data for the tm-judge runner host.
+# Fill in the three values below, then pass this file at launch (README.md step 4).
+# The bootstrap log ends up in /var/log/tm-judge-bootstrap.log (takes 30-60 min with images and caches).
+write_files:
+  - path: /etc/tm-judge/bootstrap.env
+    permissions: "0600"
+    content: |
+      APP_PUBLIC_IP=REPLACE_WITH_APP_HOST_PUBLIC_IP
+      ADMIN_CIDR=REPLACE_WITH_YOUR_IP/32
+      # The app host's WireGuard public key (cat /etc/wireguard/app.pub on the app host); may stay empty at first.
+      APP_WG_PUBKEY=
+package_update: true
+packages: [git, ca-certificates]
+runcmd:
+  - [bash, -c, "git clone -q --depth 1 https://github.com/niyongaboemmy/nga-tmcode.git /opt/nga-tmcode-bootstrap && bash /opt/nga-tmcode-bootstrap/services/judge/deploy/runner-host/bootstrap.sh > /var/log/tm-judge-bootstrap.log 2>&1"]

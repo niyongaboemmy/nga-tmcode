@@ -1,0 +1,21 @@
+{
+  "id": "groovy-hello",
+  "language": "groovy",
+  "kind": "groovy/single",
+  "title": "Groovy – Hello, world",
+  "description": "The smallest Groovy program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.groovy",
+  "open": [
+    "main.groovy"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "groovy",
+    "java"
+  ]
+}

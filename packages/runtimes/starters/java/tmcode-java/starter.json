@@ -1,0 +1,28 @@
+{
+  "id": "tmcode-java",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Java (single file)",
+  "description": "Main.java with keyboard input and tests, no build tool",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "Main.java",
+  "open": [
+    "Main.java"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "coffee",
+  "tools": [
+    "java"
+  ],
+  "aliases": [
+    "java"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "tmcode-flask",
+  "language": "python",
+  "kind": "python/flask",
+  "title": "Python API (Flask)",
+  "description": "Flask routes with JSON and a debug configuration",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "app.py",
+  "open": [
+    "app.py"
+  ],
+  "tags": [
+    "backend-apis",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "server",
+  "tools": [
+    "python"
+  ],
+  "setup": {
+    "command": "python -m pip install -r requirements.txt",
+    "note": "Installs Flask"
+  },
+  "aliases": [
+    "flask"
+  ]
+}

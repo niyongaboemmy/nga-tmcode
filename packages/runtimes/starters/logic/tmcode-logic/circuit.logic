@@ -1,0 +1,6 @@
+# A half adder and a full adder
+Sum = A xor B
+Carry = A and B
+
+FullSum = A xor B xor Cin
+FullCarry = (A and B) or (Cin and (A xor B))

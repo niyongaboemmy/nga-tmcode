@@ -1,0 +1,33 @@
+{
+  "entry": "main.py",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "addition",
+      "input": "2 + 3\n",
+      "expected_output": "5\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "division with decimals",
+      "input": "10 / 4\n",
+      "expected_output": "2.5\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "several lines",
+      "input": "7 * 6\n9 - 12\n",
+      "expected_output": "42\n-3\n",
+      "points": 1
+    },
+    {
+      "id": "t4",
+      "name": "division by zero",
+      "input": "1 / 0\n",
+      "expected_output": "Error: division by zero\n",
+      "points": 1
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "entry": "algorithms.py",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "sorts and finds",
+      "input": "18 12 25 3 7\n18\n",
+      "expected_output": "Sorted: 3 7 12 18 25\nIndex of 18 = 3\nGCD of first two: 6\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "missing value",
+      "input": "3 1 2\n5\n",
+      "expected_output": "Sorted: 1 2 3\nIndex of 5 = -1\nGCD of first two: 1\n",
+      "points": 1
+    }
+  ]
+}

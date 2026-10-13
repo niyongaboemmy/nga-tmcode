@@ -1,0 +1,29 @@
+{
+  "id": "js-express-api",
+  "language": "javascript",
+  "kind": "js/express",
+  "title": "JavaScript – Express to-do API",
+  "description": "A small REST to-do API with Express and one Vitest + Supertest integration test",
+  "level": "intermediate",
+  "purpose": "api",
+  "entry": "src/app.js",
+  "open": [
+    "src/app.js",
+    "test/app.test.js"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "vitest",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "package.json"
+  ],
+  "tags": [
+    "express",
+    "rest",
+    "vitest"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "tmcode-lua",
+  "language": "lua",
+  "kind": "lua/single",
+  "title": "Lua",
+  "description": "A Lua script",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "main.lua",
+  "open": [
+    "main.lua"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "lua"
+  ],
+  "aliases": [
+    "lua"
+  ]
+}

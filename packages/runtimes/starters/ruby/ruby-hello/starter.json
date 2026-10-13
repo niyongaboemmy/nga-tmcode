@@ -1,0 +1,20 @@
+{
+  "id": "ruby-hello",
+  "language": "ruby",
+  "kind": "ruby/single",
+  "title": "Ruby – Hello, world",
+  "description": "The smallest Ruby program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.rb",
+  "open": [
+    "main.rb"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.3",
+  "tools": [
+    "ruby"
+  ]
+}

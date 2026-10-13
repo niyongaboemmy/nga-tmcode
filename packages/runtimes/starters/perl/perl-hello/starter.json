@@ -1,0 +1,20 @@
+{
+  "id": "perl-hello",
+  "language": "perl",
+  "kind": "perl/single",
+  "title": "Perl – Hello, world",
+  "description": "The smallest Perl program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.pl",
+  "open": [
+    "main.pl"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "perl"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "sql-hello",
+  "language": "sql",
+  "kind": "sql/sqlite",
+  "title": "SQL – Hello, world",
+  "description": "The smallest SQL query",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.sql",
+  "open": [
+    "main.sql"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

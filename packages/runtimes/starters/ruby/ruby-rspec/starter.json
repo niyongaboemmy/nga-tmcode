@@ -1,0 +1,32 @@
+{
+  "id": "ruby-rspec",
+  "language": "ruby",
+  "purpose": "project",
+  "kind": "ruby/bundler",
+  "title": "Ruby – Bundler project with RSpec",
+  "description": "A small module that turns marks into letter grades, with one RSpec spec file",
+  "level": "intermediate",
+  "entry": "main.rb",
+  "open": [
+    "lib/grades.rb",
+    "spec/grades_spec.rb"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "rspec",
+      "command": "test"
+    }
+  },
+  "readonly": [
+    "Gemfile"
+  ],
+  "tags": [
+    "rspec",
+    "modules"
+  ],
+  "tools": [
+    "ruby",
+    "bundle"
+  ],
+  "since": "2026.10.3"
+}

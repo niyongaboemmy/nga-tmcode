@@ -1,0 +1,19 @@
+{
+  "id": "java-packages",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Java – Packages and classes",
+  "description": "A program split into packages (rw.ac.nga and rw.ac.nga.model) without a build tool",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "src/rw/ac/nga/Main.java",
+  "open": [
+    "src/rw/ac/nga/Main.java",
+    "src/rw/ac/nga/model/Student.java"
+  ],
+  "tags": [
+    "oop",
+    "packages"
+  ],
+  "since": "2026.10.1"
+}

@@ -1,0 +1,26 @@
+{
+  "entry": "main.cpp",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "three marks",
+      "input": "3\n85 72 40\n",
+      "expected_output": "85 A\n72 B\n40 F\nAverage: 65.67\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "one mark",
+      "input": "1\n50\n",
+      "expected_output": "50 D\nAverage: 50.00\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "no marks",
+      "input": "0\n",
+      "expected_output": "No marks\n",
+      "points": 1
+    }
+  ]
+}

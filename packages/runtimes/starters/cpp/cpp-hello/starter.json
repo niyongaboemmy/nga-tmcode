@@ -1,0 +1,17 @@
+{
+  "id": "cpp-hello",
+  "language": "cpp",
+  "kind": "cpp/single",
+  "title": "C++ – Hello, world",
+  "description": "The smallest C++ program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.cpp",
+  "open": [
+    "main.cpp"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

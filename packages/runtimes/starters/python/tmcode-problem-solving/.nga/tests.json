@@ -1,0 +1,26 @@
+{
+  "entry": "solution.py",
+  "tests": [
+    {
+      "id": "t1",
+      "name": "n = 5",
+      "input": "5\n",
+      "expected_output": "1 2 Fizz 4 Buzz\n",
+      "points": 1
+    },
+    {
+      "id": "t2",
+      "name": "n = 15",
+      "input": "15\n",
+      "expected_output": "1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz\n",
+      "points": 1
+    },
+    {
+      "id": "t3",
+      "name": "n = 1",
+      "input": "1\n",
+      "expected_output": "1\n",
+      "points": 1
+    }
+  ]
+}

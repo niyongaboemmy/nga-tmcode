@@ -1,0 +1,28 @@
+{
+  "id": "tmcode-c",
+  "language": "c",
+  "kind": "c/make",
+  "title": "C Programming",
+  "description": "A C program with a Makefile, input tests and debugging",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "main.c",
+  "open": [
+    "main.c"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-class",
+  "tools": [
+    "cc"
+  ],
+  "aliases": [
+    "c"
+  ]
+}

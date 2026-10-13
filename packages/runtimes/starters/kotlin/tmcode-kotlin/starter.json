@@ -1,0 +1,26 @@
+{
+  "id": "tmcode-kotlin",
+  "language": "kotlin",
+  "kind": "kotlin/single",
+  "title": "Kotlin",
+  "description": "A Kotlin program compiled with kotlinc",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "Main.kt",
+  "open": [
+    "Main.kt"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-method",
+  "tools": [
+    "kotlinc",
+    "java"
+  ],
+  "aliases": [
+    "kotlin"
+  ]
+}

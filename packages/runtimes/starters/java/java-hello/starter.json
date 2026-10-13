@@ -1,0 +1,17 @@
+{
+  "id": "java-hello",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Java – Hello, world",
+  "description": "The smallest Java program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "Main.java",
+  "open": [
+    "Main.java"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.1"
+}

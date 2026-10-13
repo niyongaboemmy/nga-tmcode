@@ -1,0 +1,26 @@
+{
+  "id": "tmcode-c-structures",
+  "language": "c",
+  "kind": "c/make",
+  "title": "C: Data Structures (multi-file)",
+  "description": "A linked list and a stack across .h/.c files with a Makefile",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "main.c",
+  "open": [
+    "main.c"
+  ],
+  "tags": [
+    "languages",
+    "tmcode-template"
+  ],
+  "since": "2026.10.1",
+  "icon": "symbol-structure",
+  "tools": [
+    "cc",
+    "make"
+  ],
+  "aliases": [
+    "c-structures"
+  ]
+}

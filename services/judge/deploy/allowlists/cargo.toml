@@ -1,0 +1,19 @@
+# Crates vendored into cargo-registry-school (CODE_RUNNER_PLAN §18.2).
+# Starters' Cargo.toml files are added automatically.
+[package]
+name = "nga-school-allowlist"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+itertools = "0.13"
+chrono = "0.4"
+axum = "0.7"

@@ -1,0 +1,29 @@
+{
+  "id": "tmcode-problem-solving",
+  "language": "python",
+  "kind": "python/single",
+  "title": "Problem Solving (Python)",
+  "description": "A problem statement, a solution file and tests to pass",
+  "level": "beginner",
+  "purpose": "algorithms",
+  "entry": "PROBLEM.md",
+  "open": [
+    "PROBLEM.md"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "learning",
+    "tmcode-template",
+    "unsolved"
+  ],
+  "since": "2026.10.1",
+  "icon": "lightbulb",
+  "tools": [
+    "python"
+  ],
+  "aliases": [
+    "problem-solving"
+  ]
+}

@@ -1,0 +1,8 @@
+# Go modules in go-mod-school (CODE_RUNNER_PLAN §18.2), module@version.
+# Starters' go.mod files are added automatically.
+github.com/gin-gonic/gin@v1.10.0
+github.com/stretchr/testify@v1.9.0
+github.com/gorilla/mux@v1.8.1
+github.com/spf13/cobra@v1.8.1
+modernc.org/sqlite@v1.34.1
+gotest.tools/gotestsum@v1.12.0
