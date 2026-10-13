@@ -5,7 +5,8 @@
  * in the Testing view, failures first.
  */
 import { create } from "zustand";
-import type { TestResult } from "@nga/runtimes/testing";
+import type { Framework, TestResult } from "@nga/runtimes/testing";
+import { useFrameworkTests } from "./service";
 import { saveAll } from "../monaco/documents";
 import { log, notify, revealView, useWorkbench } from "../state/store";
 import { capabilities, codeErrorWords, codeTransport, runsUnitTests, unitTestsOnServer, verdictWords, type CodeFile, type CodeTransport, type UnitReport } from "../run/codeRunner";
@@ -36,9 +37,37 @@ export function setExamUnitTarget(fn: typeof examTarget) {
   examTarget = fn;
 }
 
-/** The workspace's language for the runner: the project the Run hub found (its catalog kind). */
+/** The catalog language of each test framework (the runner's `unit_test_languages`). */
+const FRAMEWORK_LANGUAGE: Record<Framework, string> = {
+  pytest: "python",
+  unittest: "python",
+  django: "python",
+  vitest: "javascript",
+  jest: "javascript",
+  node: "javascript",
+  maven: "java",
+  gradle: "java",
+  go: "go",
+  cargo: "rust",
+  dart: "dart",
+  flutter: "dart",
+  phpunit: "php",
+  laravel: "php",
+  rspec: "ruby",
+  rails: "ruby",
+  dotnet: "csharp",
+  swift: "swift",
+};
+
+/**
+ * The open folder's test language: its test suites' (a website with `app.test.js` is JavaScript), else
+ * its own project's catalog kind; null when it has several or none (Task Mentor detects it).
+ */
 function workspaceLanguage(): string | null {
-  const p = useRunHub.getState().projects.find((x) => x.catalogKind);
+  const fromSuites = [...new Set(useFrameworkTests.getState().suites.map((x) => FRAMEWORK_LANGUAGE[x.framework]))];
+  if (fromSuites.length === 1) return fromSuites[0];
+  if (fromSuites.length > 1) return null;
+  const p = useRunHub.getState().projects.find((x) => x.dir === "" && !x.loose && x.catalogKind);
   return p?.catalogKind?.split("/")[0] ?? null;
 }
 

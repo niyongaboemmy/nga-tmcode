@@ -160,7 +160,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     };
     // Ben saved once before submitting: version 2 (an earlier try), version 3 (submitted).
     await work(21, { "index.html": "<h1>Ben's list</h1>\n<script src=\"app.js\"></script>\n", "app.js": "const items = [];\n" }, { type: "assignment", id: 51 }, true, [{ "index.html": "<h1>Ben's list</h1>\n", "app.js": "// TODO: add items\nlet x;\n" }]);
-    await work(22, { "index.html": "<h1>Chloe's list</h1>\n", "app.js": "// todo\n", "README.md": "# Chloe\n" }, { type: "assignment", id: 51 }, true);
+    await work(22, { "index.html": "<h1>Chloe's list</h1>\n", "app.js": "// todo\n", "README.md": "# Chloe\n", "app.test.js": 'const test = require("node:test");\ntest("adds an item", () => {});\ntest("removes an item", () => {\n  fail("not done yet");\n});\n' }, { type: "assignment", id: 51 }, true);
     await work(23, { "index.html": "<h1>Dan</h1>\n" }, { type: "assignment", id: 51 }, false);
     await work(21, { "index.html": "<nav>Ben's navbar</nav>\n" }, { type: "quiz", id: 78, question_id: 501 }, true);
   }

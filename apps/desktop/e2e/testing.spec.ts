@@ -34,9 +34,11 @@ test("pytest results in the Testing view: run all, failure at its line, run one 
   await page.reload();
   await expect(page.locator(".tm-statusbar")).toBeVisible();
 
-  await command(page, "File: New Project from Template");
+  await command(page, "File: New Project from Starter");
   await page.locator(".tm-quick-pick input").fill("Python");
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: /^Python/ }).first().click();
+  // The Python starter itself (pytest-ready), not its other starters.
+  await page.locator(".tm-quick-pick .tm-qi-item").filter({ has: page.locator(".tm-qi-label", { hasText: /^Python$/ }) }).click();
   await page.locator(".tm-quick-pick input").fill("py-tests");
   await page.keyboard.press("Enter");
   await expect(page.locator(".tm-toast", { hasText: "Created py-tests" })).toBeVisible({ timeout: 15_000 });
@@ -98,9 +100,11 @@ test("filter and only-failed narrow the results; a missing tool explains how to 
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.locator(".tm-statusbar")).toBeVisible();
-  await command(page, "File: New Project from Template");
+  await command(page, "File: New Project from Starter");
   await page.locator(".tm-quick-pick input").fill("Python");
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: /^Python/ }).first().click();
+  // The Python starter itself (pytest-ready), not its other starters.
+  await page.locator(".tm-quick-pick .tm-qi-item").filter({ has: page.locator(".tm-qi-label", { hasText: /^Python$/ }) }).click();
   await page.locator(".tm-quick-pick input").fill("py-filter");
   await page.keyboard.press("Enter");
   await expect(page.locator(".tm-toast", { hasText: "Created py-filter" })).toBeVisible({ timeout: 15_000 });

@@ -146,7 +146,7 @@ test("a completed assignment is read-only: no editing, saving or submitting", as
   await page.locator('.tm-explorer [data-path="app.js"]').dblclick();
   await page.locator(".monaco-editor .view-lines").first().click();
   await page.keyboard.type("x");
-  await expect(page.locator(".monaco-editor-overlaymessage")).toContainText("is completed: this workspace is read-only");
+  await expect(page.locator(".monaco-editor-overlaymessage")).toContainText("is completed: this project is read-only");
 
   // The side bar's one line says Closed (0.16: no Save button there at all).
   // Students have no Projects icon (guided plan H): the palette still opens the view.
@@ -262,7 +262,7 @@ test("a quiz's TMCode practical starts from the Assignments view, then is submit
   await expect(row).toContainText("Build a navbar");
   await expect(row).toContainText("Web Quiz 3");
   await row.getByRole("button", { name: "Start" }).click();
-  await expect(page.locator(".tm-toast", { hasText: "Your workspace for \"Build a navbar\" is ready" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".tm-toast", { hasText: "Your project for \"Build a navbar\" is ready" })).toBeVisible({ timeout: 15_000 });
   await page.locator('.tm-activity[data-view="explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
 
@@ -292,9 +292,9 @@ test("the assessment list offers a quiz's practical questions directly and start
   await page.locator(".tm-quick-pick input").fill("Navbar");
   await page.keyboard.press("Enter");
   const navbar = page.locator(".tm-quick-pick .tm-qi-item", { hasText: "Build a navbar" });
-  await expect(navbar).toContainText("Quiz practical · Web Quiz 3");
+  await expect(navbar).toContainText("Coding question · Web Quiz 3");
   await navbar.click();
-  await page.locator(".tm-dialog").getByRole("button", { name: "Start the Practical" }).click();
+  await page.locator(".tm-dialog").getByRole("button", { name: "Start the Question" }).click();
   await expect(page.getByTestId("assignment-page")).toHaveAttribute("data-source", "quiz", { timeout: 15_000 });
   await page.locator('.tm-activity[data-view="explorer"]').click();
   await expect(page.locator('.tm-explorer [data-path="index.html"]')).toBeVisible();
@@ -415,7 +415,7 @@ test("an assignment without starter files offers starters, saves the choice and 
   await expect(pick.locator(".tm-qi-item").last()).toContainText("Start with an empty project");
   await pick.locator(".tm-qi-item", { hasText: /^Python/ }).first().click();
   await expect(page.locator(".tm-tab", { hasText: "main.py" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".tm-toast", { hasText: "starts from the Python template" })).toBeVisible();
+  await expect(page.locator(".tm-toast", { hasText: /starts from the Python.* starter/ })).toBeVisible();
   // Saved to Task Mentor as the first revision of the student's project.
   const revs = await mock(page, (m) => m.state().revisions.filter((r) => r.files.includes("main.py")).length);
   expect(revs).toBeGreaterThan(0);

@@ -511,7 +511,12 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
     return true;
   }
   const guide = guideById(missing.guide);
-  notify("warning", `${guide.language} isn't installed on this computer yet, so TMCode can't run ${a.label.replace(/^Run /, "")}. Install it once, then choose Check Again.`, [
+  // Task Mentor's code runner can run a program file meanwhile (when it offers live runs).
+  const file = a.kind === "runFile" || a.kind === "task" ? (a.entry ?? activeFilePath()) : null;
+  const { canRunOnTaskMentor, runOnTaskMentor } = await import("./serverRun");
+  const remote = !!file && (await canRunOnTaskMentor());
+  notify("warning", `${guide.language} isn't installed on this computer yet, so TMCode can't run ${a.label.replace(/^Run /, "")}. Install it once, then choose Check Again${remote ? ", or run it on Task Mentor" : ""}.`, [
+    ...(remote ? [{ label: "Run on Task Mentor", run: () => void runOnTaskMentor(file!, `${guide.language} isn't installed on this computer, so ${basename(file!)} runs on Task Mentor.`) }] : []),
     { label: "How to Install", run: () => showInstallGuide(missing.guide) },
     {
       label: "Check Again",
