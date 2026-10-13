@@ -72,7 +72,9 @@ sudo apt-get install -y -qq --no-install-recommends \
 # Nice to have, and not in every Ubuntu release (e.g. 26.04 has no python3.12):
 # each one only if the release offers it, so a missing package never stops the update.
 optional=""
-for pkg in python3.12 python3.12-venv gcc-13 g++-13 libgtest-dev libcmocka-dev; do
+# python3-pytest: Python unit tests work even when the toolchains (and the
+# site-packages cache layer) are skipped with SKIP_TOOLCHAINS=1.
+for pkg in python3.12 python3.12-venv python3-pytest gcc-13 g++-13 libgtest-dev libcmocka-dev; do
   if [ -n "$(apt-cache policy "$pkg" 2>/dev/null | sed -n 's/ *Candidate: //p' | grep -v '(none)')" ]; then
     optional="$optional $pkg"
   else
