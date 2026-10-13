@@ -1,5 +1,108 @@
 # Changelog
 
+## 0.17.0 — 2026-10-13
+
+**TMCode 0.17: runs everywhere.** When your computer can't run a program or its tests, Task Mentor runs them for you, with input you can type. New projects start from the same starters Task Mentor uses. The workspace is easier to use: files move by dragging, pasting shows its result, and PHP websites can live in XAMPP's folder.
+
+### When your computer can't run it, Task Mentor can
+
+- **Run on Task Mentor.** If the language isn't installed (or you're in the browser), the message that says so has **Run on Task Mentor**. Your program runs there and its output appears in the Run panel as it comes.
+- **Type your program's input** in the line under the Run panel and press Enter. **Ctrl+C** stops the program, **End of Input** tells it there's nothing more to read, and **Stop** ends the run.
+- **This works in exams too**, so a program that reads input can be tried even on a computer without the language.
+- **Example tests run on Task Mentor** when your computer can't run them, for any language Task Mentor knows. The Testing view says "run on Task Mentor", and each result says why it failed in plain words.
+- **Unit tests on Task Mentor.** pytest, JUnit, node:test, go test and others run there when they can't run here. The results are in the Testing view, failures first, each with its message and a link to the file and line.
+- **Colours you can read at a glance:** green passed; red wrong answer, crash or didn't compile; orange a limit (too slow, too much memory or output, a missing package); blue information.
+- All of this appears only when your Task Mentor offers it. With an older Task Mentor, TMCode works as before.
+
+### Coding questions checked by unit tests
+
+- A coding question that your teacher checks with unit tests says so: "Your teacher's tests check this when you submit. You can run your own tests here." There's no empty "Run them" button.
+- **Open Testing** runs your own tests on Task Mentor (never your teacher's tests).
+
+### New projects from starters
+
+- **New Project from Starter…** asks for a language, then a starter: a first program, an exercise with input and output, a project with tests, a website or an API. The starters are the same as Task Mentor's, so a project starts the same way everywhere.
+- An assignment with no starter files offers starters for its language only.
+- Run and Test know many more languages (Haskell, Zig, Ada, Lua, R and others) from the same list Task Mentor uses. Example tests can live in `.nga/tests.json` (the starters' file) or `.tmcode/tests.json`.
+
+### The workspace
+
+- **The brief's bottom bar** sits on the tab's bottom edge, full width.
+- **Drag a file or folder onto a folder to move it.** Editor tabs drag to another group or an edge again.
+- **Paste shows what it did:** it opens the folder, selects what arrived, and says "Copied main.py to py". Files copied in Finder or File Explorer paste in too, and Edit › Cut, Copy and Paste work on the Explorer.
+- **Clicking a file that is already open brings its tab forward**, wherever it is.
+- **Sync Now** on the brief sends your work and gets anything newer. When the network comes back, TMCode sends what you saved while offline.
+- **Pictures in the brief keep their shape**; click one to see it full size.
+- **Live Preview:** phone, tablet and laptop frames in their real shape, turned sideways, zoomed, **Full Screen**, and **Open in Browser**.
+
+### PHP websites and where projects live
+
+- **Projects Folder** (Settings) chooses where new projects go.
+- **XAMPP, MAMP, WAMP and Laragon are found.** Starting a PHP assignment asks once whether it goes in the web server's folder (served at `http://localhost/…`) or your Projects Folder.
+- A PHP project in a web server's folder gets **Open in XAMPP** first. Elsewhere it runs with PHP's own server on a free port, and opens the page you're editing.
+- **Projects: Move This Project…** moves a project (into htdocs, another drive…) and reopens it there.
+
+### Running languages
+
+- PHP, Ruby, Kotlin, Dart and Swift run in the Run panel with keyboard input and example tests.
+- Go and Rust on Windows find the program they built; Kotlin on Windows runs both steps.
+- A script beside a Node.js package runs the script you're editing. A web page in a subfolder finds `../style.css`.
+- Single-file C# says it needs .NET 10 (or a project), with How to Install.
+
+### Teachers
+
+- **Run the Student's Unit Tests** (More Actions in the grade panel, or the palette): the graded version's unit tests run on this computer when it has the tools, else on Task Mentor. Failures come first, each with its message and file:line.
+- **Open in Task Mentor** goes to Task Mentor's new pages: To grade, a student's work in Grading, Projects, Starters and the Playground.
+- Words are the same as Task Mentor's: Project, Starter, Code assignment, Coding question, Grading, To grade.
+
+### Needs a Task Mentor update
+
+Running on Task Mentor needs the Task Mentor version with TMCode's code runner routes and its runner (tm-judge) for live runs and unit tests. Until then these buttons don't appear.
+
+### All changes
+
+- e2e: Split Down test waits until both groups are laid out before comparing their positions (null box on CI WebKit)
+- e2e: the crash-relaunch test waits until the newer run is in the local journal ("Offline: 1 change saved"), not just "Offline", which a missed heartbeat also shows (flaky on CI WebKit, main too)
+- install.sh: /opt/junit is set up after the toolchain step now; don't chmod it there
+- JUnit console jar installed executable: tm-judge counts (and mounts) only executable tools
+- Java unit tests without Maven: JUnit console always installed, on javac's classpath, mounted in the box
+- install.sh: python3-pytest from the distro, so Python unit tests work without the toolchain step
+- Rust test: on Windows the build output is main.exe (the 0.17 Go/Rust fix)
+- tm-judge build: bundle @nga/runtimes' dependencies (zod) on a judge-only install
+- Starters: an assignment with no language offers the most-used languages' first programs first (Python was cut off); e2e Java pick
+- Brief: the hidden footer is gone once it slides away (visibility), so one Submit is on screen
+- Code runner: e2e journeys (practice live run, tests and unit tests on Task Mentor, exam unit question and live run, no code runner, grading), the missing-tool card offers Task Mentor, unit-test language from the test suites; e2e updated for starters and the new words; protocol §3.1 and 0.17 release notes
+- Task Mentor's code runner: live runs, example tests and unit tests on Task Mentor when this computer can't
+- Testing: example tests are read from .nga/tests.json (the starters' file) as well as .tmcode/tests.json; new tests go to whichever the project has
+- Task Mentor links: the new routes (/code/projects/:id, /grading/:type/:id?question=&student=, /grading, /assignments/:id/work, /code/playground, /code/starters), one address builder (grading's and the exam's copies removed)
+- Vocabulary: Starter, Code assignment, Coding question, Project, Grading (no more template, practical, workspace in what the user reads); the glossary test bans the retired words in user-facing text
+- runtimes: ctest writes its JUnit report where the judge reads it
+- tm-judge: go/module may take file locks inside isolate
+- Starters and run detection from the Runtime Catalog: New Project from Starter (language, then starter), an empty assignment's starters, the Run hub's kinds (catalog decides, TMCode's local layer runs), any catalog language's single file runs in a terminal from the catalog's steps; old templates and the terminal-runner list removed
+- tm-judge: mount a symlinked tool's real folder; CI installs GoogleTest
+- Testing: one copy of the test frameworks and report parsers, in @nga/runtimes (the workbench imports @nga/runtimes/testing; TMCode's 0.17 fixes moved there: unittest fallback, selected Python, node:test without package.json, one suite per tests/ folder)
+- tm-judge tests: show the build output when a catalog build fails
+- tm-judge install: work on Ubuntu 26.04 (no python3.12 package)
+- Review: workspace, files and project locations (gap analysis and fixes)
+- e2e: workspace fixes (pinned brief footer + Sync Now, drag to move, paste opens its folder, open file comes to the front, preview device/landscape/full screen)
+- PHP's built-in server uses a free port (8000, else the next free one); location chooser skips a one-option list
+- Run panel profiles for PHP, Ruby, Kotlin, Dart and Swift (keyboard input, example tests, install check; terminal still one choice away); tab dragging between groups uses pointer events (desktop drops)
+- Live Preview and the built-in browser: device frames in their own shape, landscape, zoom (fit/50/75/100%), size label, remembered choice, Full Screen (Escape closes), Open in Browser
+- Explorer: move by dragging (pointer drag; the desktop's native file-drop handler swallowed HTML5 drops), paste opens the folder and says what it did, paste files copied in Finder/File Explorer, Edit menu Cut/Copy/Paste act on the Explorer, macOS drop position; a file already open comes to the front (never opens in the brief's place); run fixes: Windows .exe for Go/Rust, Ruby exercises, Kotlin on PowerShell, .cts, a script beside a Node package, subfolder HTML pages, PHP server opens the edited page, single-file C# needs .NET 10
+- Project location: Projects Folder setting, PHP websites offered the computer's web server folder (XAMPP/MAMP/WAMP/Laragon/Apache, detected with its port), Choose a Folder for templates, Move This Project, Open in XAMPP run action; brief footer pinned to the tab's edge; brief images keep their shape and open full size; Sync Now and resync when back online
+- runtimes: wave B starters — hello + io for PHP, Ruby, Lua, Bash, R, plus unit-test projects
+- runner host: previews on a separate site (sslip.io / DuckDNS), not a subdomain of amashuri.com
+- docs: PROTOCOL §5.6–5.9 — PTY sessions, container tier, previews, per-run databases
+- tm-judge: runner host bootstrap (Oracle Always Free A1 + WireGuard), shared-host fallback
+- tm-judge: runner images for the container kinds (amd64 + arm64) and build-images.sh
+- tm-judge: tier 3 — Docker + gVisor containers, PTY sessions, server previews, per-run databases
+- runtimes: per-run database services; sql/postgres and sql/mysql move to tier 3
+- runtimes: wave C/D catalog — 28 long-tail languages, hello + io starters for 36
+- tm-judge: interactive Sessions API (live pipes over server-sent events)
+- tm-judge: run projects from the Runtime Catalog (build, unit tests, caches, checkers)
+- @nga/runtimes: runtime catalog, detection and starter projects (wave A)
+- tm-judge: compile-error verdict, fresh box per test, Java packages, output caps
+
 ## 0.16.0 — 2026-10-12
 
 **TMCode 0.16: calm and guided.** Run, Test and Stop each have one button that says what it will do and why. Your work saves itself, the brief keeps its one main button on screen, and fewer messages ask for your attention. Students get a simpler screen; teachers get one set of numbers and a Grade button.
