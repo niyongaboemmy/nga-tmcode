@@ -264,7 +264,7 @@ async function startAssignmentNow(id: number) {
     const { project, created } = await api<{ project: Project; created: boolean }>("POST", `/assignments/${id}/start`, {});
     const a = get().details[id] ?? (await loadAssignment(id));
     const folder = slug(`${a?.course_name ?? ""}-${a?.title ?? project.name}`);
-    const opened = await openProject(project.id, { folderName: folder });
+    const opened = await openProject(project.id, { folderName: folder, language: a?.language ?? null });
     if (!opened) return;
     markJourney("first-start");
     showAssignment(id, { toSide: true });

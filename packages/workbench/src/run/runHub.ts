@@ -158,9 +158,12 @@ export async function scanWorkspace() {
   const sub = (s: FolderSnapshot) => s.dirs.filter((d) => !SKIP.has(d) && !d.startsWith(".")).map((d) => (s.dir ? `${s.dir}/${d}` : d));
   const level1 = await Promise.all(sub(root).slice(0, 40).map(snapshot));
   const level2 = await Promise.all(level1.flatMap(sub).slice(0, 80).map(snapshot));
+  // A project inside XAMPP/MAMP/WAMP's web folder also runs as Apache serves it (http://localhost/…).
+  const { servedBy, webRoots, withWebServer } = await import("../projects/location");
+  const served = servedBy(useWorkbench.getState().workspace?.root, await webRoots());
   if (gen !== scanGen) return;
   const folders = [root, ...level1, ...level2];
-  set({ projects: detectProjects(folders), folders, scanning: false });
+  set({ projects: withWebServer(detectProjects(folders), served), folders, scanning: false });
 }
 
 async function hasIndex(dir: string) {
@@ -284,6 +287,8 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
     case "livePreview":
       return openPreview(a.root ?? "", a.entry ?? "index.html", a.preview ?? "static");
     case "openBrowser": {
+      // A page served by the computer's own web server (the project lives in htdocs).
+      if (a.url) return openBrowser(a.url, { toSide: true });
       const url = await getPlatform().preview!.publish(a.root ?? "", a.entry ?? "index.html", {}, { internet: useWorkbench.getState().policy.internet_in_preview });
       return openExternalUrl(url);
     }

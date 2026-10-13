@@ -3007,7 +3007,14 @@ kbd,
   cursor: pointer;
 }
 .tm-markdown-body img {
+  /* Keep the picture's own shape: a width/height from the editor never stretches it. */
   max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.tm-assignment-page .tm-markdown-body img {
+  cursor: zoom-in;
 }
 .tm-markdown-body img.is-broken {
   outline: 1px dashed var(--border);
@@ -9285,24 +9292,42 @@ button.tm-setting-badge {
   margin-top: auto;
 }
 
-/* Work mode (guided plan D): the brief's sticky footer keeps the status and the one main button on screen. */
-.tm-assignment-page > .tm-brief-footer {
-  position: sticky;
+/* Work mode (guided plan D): the brief's footer keeps the status and the one main button on screen.
+   The page scrolls inside a shell; the footer is pinned to the shell's bottom edge, full width. */
+.tm-assignment-shell {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--editor-bg);
+}
+.tm-assignment-shell > .tm-assignment-page {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  /* Room for the footer, so it never covers the brief's last lines. */
+  padding-bottom: 96px;
+}
+.tm-assignment-shell > .tm-brief-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  max-width: none;
-  margin: 24px calc(-1 * clamp(16px, 4vw, 48px)) -48px;
-  padding: 10px clamp(16px, 4vw, 48px) 10px;
+  padding: 10px clamp(16px, 4vw, 48px);
   border-top: 1px solid var(--border);
-  background: var(--editor-bg);
-  box-shadow: 0 -6px 12px -10px rgba(0, 0, 0, 0.35);
+  background: color-mix(in srgb, var(--editor-bg) 94%, var(--foreground));
+  box-shadow: 0 -8px 16px -12px rgba(0, 0, 0, 0.45);
+  transition: transform var(--dur-fast, 120ms) ease, opacity var(--dur-fast, 120ms) ease;
 }
-.tm-assignment-page > .tm-brief-footer.is-hidden {
-  visibility: hidden;
+.tm-assignment-shell > .tm-brief-footer.is-hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
 }
 .tm-brief-footer-status {
   display: inline-flex;
@@ -9395,4 +9420,43 @@ button.tm-setting-badge {
 .tm-grade-final-hint {
   margin: 0 0 6px;
   font-size: 12px;
+}
+
+/* A brief's picture at full size (widgets/lightbox.ts). */
+.tm-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+  animation: tm-lightbox-in var(--dur-fast, 120ms) ease;
+}
+.tm-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.tm-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  font-size: 18px;
+}
+@keyframes tm-lightbox-in {
+  from {
+    opacity: 0;
+  }
 }

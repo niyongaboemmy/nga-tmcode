@@ -92,6 +92,8 @@ export interface RunAction {
   preview?: "static" | "bundle-react";
   /** Where a dev server usually listens, used until the terminal prints its real URL. */
   port?: number;
+  /** openBrowser: an address served by a local web server (XAMPP, MAMP…), opened as is. */
+  url?: string;
   /** What the host must provide. */
   needs: "none" | "runner" | "terminal" | "debugger" | "preview-origin";
   /** Dev servers, REPLs and tasks never run in an exam. */

@@ -728,7 +728,7 @@ export async function offerSaveBeforeSwitch(nextName: string, nextProjectId?: nu
 
 // ── Open a project (Projects view, tmcode://project deep link) ────────────
 
-async function openProjectNow(projectId: number, opts: { folderName?: string } = {}): Promise<boolean> {
+async function openProjectNow(projectId: number, opts: { folderName?: string; language?: string | null } = {}): Promise<boolean> {
   if (!projectsSupported()) return false;
   if (!(await requireSignIn({ label: opts.folderName ? "your project" : "the project", run: () => openProject(projectId, opts) }))) return false;
   // Unsaved files first (Cancel keeps the open folder), not after cloning or downloading.
@@ -753,13 +753,17 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
   }
   const { project } = await api<{ project: Project }>("GET", `/projects/${projectId}`);
   const host = getPlatform().account!;
+  // A new folder: where it goes (the Projects Folder; for PHP work, maybe the web server's folder).
+  const { chooseBase } = await import("./location");
+  const base = await chooseBase({ name: project.name, language: opts.language ?? project.language ?? null });
+  if (base === null) return false;
   if (project.kind === "github") {
     const git = getPlatform().git;
     if (!git || !project.repo_url) {
       notify("error", "This GitHub project has no repository link, or git is not available.");
       return false;
     }
-    await host.useProjectsFolderForClone?.();
+    await host.useProjectsFolderForClone?.(base);
     const progress = notifyProgress(`Cloning ${project.repo_full_name ?? project.name}…`);
     try {
       const path = await git.clone(project.repo_url, (e) => e.type === "progress" && progress.update({ message: `Cloning: ${e.line}` })).done;
@@ -772,7 +776,7 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
     }
     await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: "github", name: project.name, base_revision_id: null, base: null });
   } else {
-    const path = await host.newFolder(opts.folderName ?? project.slug);
+    const path = await host.newFolder(opts.folderName ?? project.slug, base);
     // The browser build (dev server, e2e) has no OS paths: its folders reopen like recent ones.
     // Kept the current folder: never bind or pull this project into it.
     if (!(await (getPlatform().openPath ? openPathFromOs(path) : openRecent(path)))) return false;
@@ -784,6 +788,14 @@ async function openProjectNow(projectId: number, opts: { folderName?: string } =
   await bindWorkspace();
   void showBriefOfCurrent(projectId);
   return true;
+}
+
+/** Projects: Move This Project… — every remembered project at the old folder now lives at the new one. */
+export async function rememberMovedFolder(from: string, to: string) {
+  const store = getPlatform().store;
+  const map = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
+  for (const [id, path] of Object.entries(map)) if (path === from) map[id] = to;
+  await store.set(FOLDERS_KEY, map);
 }
 
 /** An assignment's workspace opens with its brief beside the code (from Projects, Start or Continue alike). */
@@ -1058,6 +1070,13 @@ function startHeartbeats() {
     if (autoTimer || ["local-changes", "both", "error"].includes(get().sync)) scheduleAutoSave(0);
   });
   window.addEventListener("beforeunload", () => void sendPresence(false));
+  // Back online after working offline: check, and send what was saved meanwhile.
+  window.addEventListener("online", () => {
+    if (!get().binding || get().binding?.kind !== "tm") return;
+    void recheck().then(() => {
+      if (autoSaveMode() !== "off" && ["local-changes", "both", "error"].includes(get().sync)) scheduleAutoSave(0);
+    });
+  });
 }
 
 /** Assignment workspaces save to Task Mentor this long after the last file save (projects.autoSave "assignments"): one saving story, Ctrl+S is enough. */

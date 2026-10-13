@@ -7,6 +7,7 @@ import { isExternalHref, renderDocMarkdown } from "../widgets/docMarkdown";
 import { taskMentorHtml } from "../widgets/richHtml";
 import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
+import { showImageLightbox } from "../widgets/lightbox";
 import { api, autoSaveMode, compareConflict, recheck, useProjects } from "./service";
 import { changeCount } from "./plan";
 import { normalizeRubric, rubricResults, rubricTotal, type RubricResult } from "./rubric";
@@ -39,6 +40,12 @@ const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString([], { d
 
 /** Links in the brief open in the system browser, never inside the workbench. */
 function onBriefClick(e: React.MouseEvent) {
+  // A picture in the brief opens at full size (its own shape), over everything.
+  const img = (e.target as HTMLElement).closest(".tm-markdown-body img") as HTMLImageElement | null;
+  if (img && !(e.target as HTMLElement).closest("a")) {
+    showImageLightbox(img.currentSrc || img.src, img.alt);
+    return;
+  }
   const a = (e.target as HTMLElement).closest("a");
   const href = a?.getAttribute("href");
   if (!href) return;
@@ -190,6 +197,12 @@ export function BriefSyncLine() {
           Compare
         </button>
       )}
+      {/* Saving is automatic; Sync Now sends the work at once (e.g. back online after working offline). */}
+      {!failing && !busy && sync !== "conflict" && sync !== "unbound" && (
+        <button type="button" className="tm-link-button tm-brief-sync-now" onClick={() => executeCommand("projects.save")} data-testid="assignment-sync-now" title="Send your work to Task Mentor now, and get anything newer">
+          <Codicon name="sync" /> Sync Now
+        </button>
+      )}
     </p>
   );
 }
@@ -294,6 +307,8 @@ function AssignmentBrief({ input }: { input: Input }) {
   ) : null;
 
   return (
+    // The page scrolls; the footer is pinned to the tab's bottom edge outside it (never floating over the content).
+    <div className="tm-assignment-shell">
     <div className="tm-assignment-page" data-testid="assignment-page" onClick={onBriefClick}>
       <header className="tm-assignment-head">
         <div className="tm-assignment-kicker">
@@ -572,9 +587,10 @@ function AssignmentBrief({ input }: { input: Input }) {
         </section>
       )}
       {!brief && !instructions && <p className="tm-muted">No brief was written for this assignment. Open it in Task Mentor for any details.</p>}
-      {!teaching && footerMain && (
-        <BriefFooter status={STUDENT_STATUS_LABEL[status]} tone={status} label={footerMain.label} icon={footerMain.icon} busy={!!busy || saving} onClick={footerMain.run} />
-      )}
+    </div>
+    {!teaching && footerMain && (
+      <BriefFooter status={STUDENT_STATUS_LABEL[status]} tone={status} label={footerMain.label} icon={footerMain.icon} busy={!!busy || saving} onClick={footerMain.run} />
+    )}
     </div>
   );
 }
@@ -587,7 +603,7 @@ export function BriefFooter(props: { status: string; tone: string; label: string
   const ref = useRef<HTMLDivElement>(null);
   const [cardVisible, setCardVisible] = useState(true);
   useEffect(() => {
-    const page = ref.current?.closest(".tm-assignment-page");
+    const page = ref.current?.parentElement?.querySelector(".tm-assignment-page");
     const card = page?.querySelector('[data-testid="assignment-next-step"]');
     if (!page || !card || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(([e]) => setCardVisible(e.isIntersecting), { root: page, threshold: 0.2 });

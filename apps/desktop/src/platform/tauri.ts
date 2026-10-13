@@ -430,6 +430,10 @@ function createTauriAccount(): AccountHost {
     readBlob: (path) => invoke("proj_read_blob", { path }),
     writeBlob: (path, sha256, gzBase64) => invoke("proj_write_blob", { path, sha256, gzBase64 }),
     newFolder: (slug, base) => invoke("proj_new_folder", { slug, base: base ?? null }),
-    useProjectsFolderForClone: () => invoke("proj_use_projects_folder"),
+    useProjectsFolderForClone: (base) => invoke("proj_use_projects_folder", { base: base ?? null }),
+    webRoots: () => invoke("proj_web_roots"),
+    pickBase: (title) => invoke("proj_pick_base", { title }),
+    defaultBase: () => invoke("proj_default_base"),
+    moveFolder: (from, base) => invoke("proj_move_folder", { from, base }),
   };
 }
