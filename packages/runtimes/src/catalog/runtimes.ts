@@ -41,10 +41,12 @@ export const RUNTIMES: RuntimeDef[] = [
   },
   {
     id: "python-3.12",
-    label: "Python 3.12 (pytest, uv)",
-    install: { apt: ["python3.12", "python3.12-venv"], script: "install-uv-and-site-packages.sh" },
+    // The id stays (cache layers and images use it); the interpreter is the system's Python 3
+    // (3.12 on Ubuntu 24.04, 3.14 on 26.04, which has no python3.12 package).
+    label: "Python 3 (pytest, uv)",
+    install: { apt: ["python3", "python3-venv"], script: "install-uv-and-site-packages.sh" },
     version: ["python3", "--version"],
-    tools: { python3: "/usr/bin/python3.12", uv: "/opt/uv/uv" },
+    tools: { python3: "/usr/bin/python3", uv: "/opt/uv/uv" },
     // .pydeps: packages a restore step installed from the wheelhouse; site-packages-school: the prebuilt shared layer (pytest, numpy…).
     env: { ...BOX_ENV, PYTHONUNBUFFERED: "1", PYTHONDONTWRITEBYTECODE: "1", MPLBACKEND: "Agg", OPENBLAS_NUM_THREADS: "1", PYTHONPATH: "/box/.pydeps:/caches/site-packages-school" },
   },

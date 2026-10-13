@@ -64,11 +64,23 @@ fi
 
 echo "== 1/6 packages"
 sudo apt-get update -qq
+# Needed everywhere: one install, fails loudly.
 sudo apt-get install -y -qq --no-install-recommends \
   build-essential pkg-config git libcap-dev libsystemd-dev libseccomp-dev \
   curl ca-certificates unzip xz-utils coreutils \
-  python3 python3.12 python3.12-venv gcc-13 g++-13 make cmake libgtest-dev libcmocka-dev \
-  sqlite3 openjdk-21-jdk-headless >/dev/null
+  python3 python3-venv make cmake sqlite3 openjdk-21-jdk-headless >/dev/null
+# Nice to have, and not in every Ubuntu release (e.g. 26.04 has no python3.12):
+# each one only if the release offers it, so a missing package never stops the update.
+optional=""
+for pkg in python3.12 python3.12-venv gcc-13 g++-13 libgtest-dev libcmocka-dev; do
+  if [ -n "$(apt-cache policy "$pkg" 2>/dev/null | sed -n 's/ *Candidate: //p' | grep -v '(none)')" ]; then
+    optional="$optional $pkg"
+  else
+    echo "   (skipping $pkg: not in this Ubuntu release)"
+  fi
+done
+# shellcheck disable=SC2086
+[ -z "$optional" ] || sudo apt-get install -y -qq --no-install-recommends $optional >/dev/null
 
 echo "== 2/6 project toolchains"
 ARCH="$(uname -m)"
