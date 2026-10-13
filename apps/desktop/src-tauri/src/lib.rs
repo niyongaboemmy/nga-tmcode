@@ -24,6 +24,7 @@ mod extensions;
 mod exthost;
 mod git;
 mod github;
+mod console;
 mod preview;
 mod pty;
 mod runner;
@@ -314,6 +315,7 @@ pub fn run() {
         .manage(webview::Webviews::default())
         .register_uri_scheme_protocol(preview::SCHEME, preview::handle)
         .register_uri_scheme_protocol(webview::SCHEME, webview::handle)
+        .register_uri_scheme_protocol(console::SCHEME, console::handle)
         .invoke_handler(tauri::generate_handler![
             app_info,
             set_native_theme,

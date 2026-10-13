@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { getDocument, saveAll } from "../monaco/documents";
 import { getPlatform, log, showPanel } from "../state/store";
+import { useExam } from "../exam/state";
 import { dirname, extname } from "../util/paths";
 import { decodeMappings, inspectValue, originalPosition, type JsValue, type SourceMapLike } from "./jsInspect";
 
 /**
  * The JavaScript Console (Panel): runs a JS/TS file in a sandboxed Web Worker
+ * (in the desktop app, inside a hidden frame on the tmconsole: origin, whose CSP allows eval)
  * and shows its console output as structured values — expandable objects,
  * errors with clickable stacks — like the browser devtools console. The same
  * worker then answers typed expressions (a REPL), so it works in the browser
@@ -47,7 +49,7 @@ const get = useJsConsole.getState;
 
 // ───────────── the worker ─────────────
 
-const WORKER_SOURCE = `
+export const WORKER_SOURCE = `
 const inspectValue = ${String(inspectValue)};
 const refs = new Map();
 let refSeq = 0;
@@ -72,6 +74,24 @@ function fmt(args) {
   });
   return [head, ...rest];
 }
+// console.table as Node draws it: (index) plus a column per key (Values for primitives).
+function table(data, only) {
+  if (data === null || typeof data !== "object") return null;
+  const cell = (v) => v === undefined ? "" : typeof v === "string" ? "'" + v + "'" : v !== null && typeof v === "object" ? (Array.isArray(v) ? "[" + v.length + "]" : "{…}") : String(v);
+  const rows = data instanceof Map ? [...data.entries()].map(([k, v], i) => [String(i), { Key: k, Values: v }]) : Object.keys(data).map((k) => [k, data[k]]);
+  const keys = [];
+  let values = false;
+  for (const [, r] of rows) {
+    if (r !== null && typeof r === "object") { for (const k of Object.keys(r)) if (!keys.includes(k)) keys.push(k); }
+    else values = true;
+  }
+  const cols = ["(index)", ...(Array.isArray(only) ? keys.filter((k) => only.includes(k)) : keys), ...(values ? ["Values"] : [])];
+  const body = rows.map(([i, r]) => cols.map((c) => c === "(index)" ? i : c === "Values" ? (r !== null && typeof r === "object" ? "" : cell(r)) : r !== null && typeof r === "object" ? cell(r[c]) : ""));
+  const w = cols.map((c, j) => Math.max(c.length, ...body.map((b) => b[j].length)) + 2);
+  const pad = (t, n) => { const l = Math.floor((n - t.length) / 2); return " ".repeat(l) + t + " ".repeat(n - t.length - l); };
+  const line = (a, b, c) => a + w.map((n) => "─".repeat(n)).join(b) + c;
+  return [line("┌", "┬", "┐"), "│" + cols.map((c, j) => pad(c, w[j])).join("│") + "│", line("├", "┼", "┤"), ...body.map((b) => "│" + b.map((t, j) => pad(t, w[j])).join("│") + "│"), line("└", "┴", "┘")].join("\\n");
+}
 function emit(level, args, extra) { send(Object.assign({ type: "console", level, args: args.map(ser), group }, extra || {})); }
 const con = {
   log: (...a) => emit("log", fmt(a)),
@@ -81,7 +101,7 @@ const con = {
   error: (...a) => emit("error", fmt(a)),
   dir: (v) => emit("log", [v]),
   dirxml: (...a) => emit("log", a),
-  table: (v) => emit("log", [v]),
+  table: (v, cols) => { const t = table(v, cols); emit("log", t === null ? [v] : [t]); },
   trace: (...a) => emit("log", a.length ? fmt(a) : ["console.trace()"], { trace: String(new Error().stack || "").split("\\n").slice(2).join("\\n") }),
   assert: (c, ...a) => { if (!c) emit("error", ["Assertion failed:", ...fmt(a)]); },
   count: (l = "default") => { counts[l] = (counts[l] || 0) + 1; emit("log", [l + ": " + counts[l]]); },
@@ -95,8 +115,64 @@ const con = {
   clear: () => send({ type: "clear" }),
 };
 Object.defineProperty(self, "console", { value: con, configurable: true, writable: true });
-self.addEventListener("error", (e) => { emit("error", [e.error || e.message], { uncaught: true }); e.preventDefault(); });
-self.addEventListener("unhandledrejection", (e) => { emit("error", ["Uncaught (in promise)", e.reason], { uncaught: true }); e.preventDefault(); });
+
+// A program has finished when nothing is left to run, as in Node: no timers, intervals or network
+// requests (and body reads) still pending. Until then output keeps arriving under "running".
+let run = null;
+let busy = 0;
+const live = new Set();
+const T = { setTimeout: setTimeout.bind(self), clearTimeout: clearTimeout.bind(self), setInterval: setInterval.bind(self), clearInterval: clearInterval.bind(self) };
+function settle() {
+  if (run) T.setTimeout(() => {
+    if (run && !busy && !live.size) { send({ type: "done", ok: !run.failed, ms: performance.now() - run.t0 }); run = null; }
+  }, 0);
+}
+function exit(code) {
+  for (const id of live) { T.clearTimeout(id); T.clearInterval(id); }
+  live.clear();
+  if (run) send({ type: "done", ok: code === 0, code, ms: performance.now() - run.t0 });
+  run = null;
+}
+const callback = (f) => typeof f === "function" ? f : () => (0, eval)(String(f));
+self.setTimeout = function (f, ms, ...a) {
+  const id = T.setTimeout(() => { live.delete(id); try { callback(f)(...a); } finally { settle(); } }, ms);
+  live.add(id);
+  return id;
+};
+self.setInterval = function (f, ms, ...a) {
+  const id = T.setInterval(() => callback(f)(...a), ms);
+  live.add(id);
+  return id;
+};
+self.clearTimeout = self.clearInterval = function (id) {
+  T.clearTimeout(id);
+  T.clearInterval(id);
+  if (live.delete(id)) settle();
+};
+const track = (p) => { busy++; const done = () => { busy--; settle(); }; p.then(done, done); return p; };
+if (self.fetch) { const f = self.fetch; self.fetch = function (...a) { return track(f.apply(this, a)); }; }
+if (self.Response) for (const k of ["json", "text", "arrayBuffer", "blob", "formData"]) {
+  const f = Response.prototype[k];
+  if (f) Response.prototype[k] = function (...a) { return track(f.apply(this, a)); };
+}
+// No page here, so no dialogs: alert is shown in the console; input needs Node.js (readline).
+self.alert = (m) => emit("info", ["alert: " + (m === undefined ? "" : String(m))]);
+self.prompt = self.confirm = function () {
+  throw new Error("prompt() and confirm() need a web page: the JavaScript Console has no dialogs. To read input, use \\"Run with Node.js\\" (readline), or run an HTML page with Live Preview.");
+};
+
+self.addEventListener("error", (e) => {
+  e.preventDefault();
+  if (e.error && typeof e.error === "object" && "__exit" in e.error) return exit(e.error.__exit);
+  emit("error", [e.error || e.message], { uncaught: true });
+  if (run) run.failed = true;
+});
+self.addEventListener("unhandledrejection", (e) => {
+  e.preventDefault();
+  if (e.reason && typeof e.reason === "object" && "__exit" in e.reason) return exit(e.reason.__exit);
+  emit("error", ["Uncaught (in promise)", e.reason], { uncaught: true });
+  if (run) { run.failed = true; settle(); }
+});
 const require = (name) => {
   throw new Error("Cannot find module '" + name + "'. The JavaScript Console runs code like a browser does; use \\"Run with Node.js\\" for Node.js modules and npm packages.");
 };
@@ -130,13 +206,18 @@ onmessage = async (e) => {
     };
     // A classic script at global scope: its top-level declarations stay visible to the REPL afterwards.
     Object.assign(self, { require, module, exports: module.exports, process, __filename: m.file, __dirname: m.dir });
+    run = { t0, failed: false };
     try {
-      importScripts(m.url);
-      send({ type: "done", ok: true, ms: performance.now() - t0 });
+      // The program is loaded where it runs, so its stack positions name this URL (mapped back to the student's files).
+      const url = URL.createObjectURL(new Blob([m.code], { type: "text/javascript" }));
+      send({ type: "program", url });
+      importScripts(url);
     } catch (err) {
-      if (err && typeof err === "object" && "__exit" in err) send({ type: "done", ok: err.__exit === 0, code: err.__exit, ms: performance.now() - t0 });
-      else { emit("error", [err], { uncaught: true }); send({ type: "done", ok: false, ms: performance.now() - t0 }); }
+      if (err && typeof err === "object" && "__exit" in err) return exit(err.__exit);
+      emit("error", [err], { uncaught: true });
+      run.failed = true;
     }
+    settle();
   } else if (m.type === "eval") {
     try {
       let v = evaluate(m.code);
@@ -154,14 +235,25 @@ onmessage = async (e) => {
 `;
 
 type WorkerMessage =
+  | { type: "program"; url: string }
   | { type: "console"; level: ConsoleLevel; args: JsValue[]; group: number; uncaught?: boolean; trace?: string }
   | { type: "clear" }
   | { type: "done"; ok: boolean; ms: number; code?: number }
   | { type: "result"; id: number; value: JsValue; error?: boolean }
   | { type: "expanded"; id: number; entries: [string, JsValue][] };
 
-let worker: Worker | null = null;
-let workerUrl: string | null = null;
+/**
+ * Where programs run. In the desktop app the workbench's CSP forbids eval and blob: scripts
+ * (and a blob: worker inherits that), so the worker lives in a hidden frame on its own origin
+ * (tmconsole://, src-tauri/src/console.rs) whose CSP allows them; the browser build has no such
+ * policy and starts the worker directly. Either way: post, terminate, and messages back.
+ */
+interface ConsoleHost {
+  post(message: unknown): void;
+  terminate(): void;
+}
+
+let host: Promise<ConsoleHost> | null = null;
 let seq = 0;
 let entrySeq = 0;
 let pendingEval = false;
@@ -169,24 +261,91 @@ const pending = new Map<number, (data: unknown) => void>();
 /** The running program: its script URL and how stack positions map back to the student's files. */
 let mapping: { file: string; url: string; map: SourceMapLike | null; decoded: number[][][] | null } | null = null;
 
-function spawn(): Worker {
-  workerUrl ??= URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
-  const w = new Worker(workerUrl);
-  w.onmessage = (e: MessageEvent) => onWorkerMessage(e.data as WorkerMessage);
-  w.onerror = (e) => {
-    push({ level: "error", args: [{ t: "str", v: e.message || "The console worker failed" }] });
-    finish({ ok: false, ms: 0 });
-  };
-  return w;
+const onHostError = (message: string) => {
+  push({ level: "error", args: [{ t: "str", v: message || "The console worker failed" }] });
+  finish({ ok: false, ms: 0 });
+};
+
+/** The console host page's URL in the desktop app (null: start the worker here). Exams get no network. */
+export function consoleHostUrl(): string | null {
+  // e2e: the mock server serves the same page with the same CSP.
+  const override = (globalThis as { __TMCODE_CONSOLE_BASE__?: string }).__TMCODE_CONSOLE_BASE__;
+  const platform = getPlatform();
+  if (!override && platform.kind !== "desktop") return null;
+  const base = override ?? (platform.os === "windows" ? "http://tmconsole.localhost" : "tmconsole://localhost");
+  return `${base}/host.html?net=${useExam.getState().quiz ? 0 : 1}`;
 }
 
-function ensureWorker() {
-  worker ??= spawn();
-  return worker;
+function directHost(): ConsoleHost {
+  const url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
+  const w = new Worker(url);
+  URL.revokeObjectURL(url);
+  w.onmessage = (e: MessageEvent) => onWorkerMessage(e.data as WorkerMessage);
+  w.onerror = (e) => {
+    e.preventDefault();
+    onHostError(e.message);
+  };
+  return { post: (m) => w.postMessage(m), terminate: () => w.terminate() };
+}
+
+function frameHost(src: string): Promise<ConsoleHost> {
+  return new Promise((resolve, reject) => {
+    const frame = document.createElement("iframe");
+    frame.src = src;
+    frame.title = "JavaScript Console sandbox";
+    frame.setAttribute("aria-hidden", "true");
+    frame.tabIndex = -1;
+    // Its own origin (not the workbench's): same-origin only gives it that origin back.
+    frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    frame.style.cssText = "position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none;";
+    frame.dataset.testid = "js-console-host";
+    const send = (m: unknown) => frame.contentWindow?.postMessage(m, "*");
+    let ready = false;
+    const timer = window.setTimeout(() => {
+      if (ready) return;
+      cleanup();
+      reject(new Error("The JavaScript Console's sandbox didn't start."));
+    }, 10_000);
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.contentWindow || !e.data?.tmconsole) return;
+      const m = e.data as { kind: string; data?: unknown; message?: string };
+      if (m.kind === "ready" && !ready) {
+        ready = true;
+        window.clearTimeout(timer);
+        send({ type: "spawn", source: WORKER_SOURCE });
+        resolve({
+          post: (data) => send({ type: "post", data }),
+          terminate: () => {
+            send({ type: "terminate" });
+            cleanup();
+          },
+        });
+      } else if (m.kind === "message") onWorkerMessage(m.data as WorkerMessage);
+      else if (m.kind === "error") onHostError(m.message ?? "");
+    };
+    const cleanup = () => {
+      window.removeEventListener("message", onMessage);
+      frame.remove();
+    };
+    window.addEventListener("message", onMessage);
+    document.body.appendChild(frame);
+  });
+}
+
+function ensureHost(): Promise<ConsoleHost> {
+  if (!host) {
+    const src = consoleHostUrl();
+    host = src ? frameHost(src) : Promise.resolve(directHost());
+    host.catch(() => (host = null));
+  }
+  return host;
 }
 
 function onWorkerMessage(m: WorkerMessage) {
   switch (m.type) {
+    case "program":
+      if (mapping) mapping.url = m.url;
+      break;
     case "console": {
       const args = m.args.map(fixStacks);
       if (m.uncaught && args[0]?.t === "err") args[0] = { ...args[0], name: `Uncaught ${args[0].name}` };
@@ -360,11 +519,14 @@ export async function runInJsConsole(path: string, opts: { reveal?: boolean } = 
     code = b.code;
     map = b.map;
   }
-  if (mapping) URL.revokeObjectURL(mapping.url);
-  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
-  mapping = { file: path, url, map, decoded: map ? decodeMappings(map) : null };
+  // The worker reports the URL it loaded the program from ("program"), for the stack positions.
+  mapping = { file: path, url: "\u0000", map, decoded: map ? decodeMappings(map) : null };
   pendingEval = false;
-  ensureWorker().postMessage({ type: "run", url, file: path, dir: dirname(path) });
+  try {
+    (await ensureHost()).post({ type: "run", code, file: path, dir: dirname(path) });
+  } catch (e) {
+    onHostError((e as Error).message);
+  }
 }
 
 /** The REPL: evaluates one input in the current context (a program's globals stay visible). */
@@ -374,13 +536,19 @@ export async function evaluateInJsConsole(code: string) {
   set({ history: [trimmed, ...get().history.filter((h) => h !== trimmed)].slice(0, 100) });
   push({ level: "input", args: [{ t: "str", v: trimmed }] });
   const id = ++seq;
-  const w = ensureWorker();
+  let w: ConsoleHost;
+  try {
+    w = await ensureHost();
+  } catch (e) {
+    push({ level: "error", args: [{ t: "str", v: (e as Error).message }] });
+    return;
+  }
   const wasRunning = get().status === "running";
   if (!wasRunning) set({ status: "running", startedAt: Date.now() });
   pendingEval = true;
   const reply = (await new Promise((resolve) => {
     pending.set(id, resolve as (data: unknown) => void);
-    w.postMessage({ type: "eval", id, code: trimmed });
+    w.post({ type: "eval", id, code: trimmed });
   })) as Extract<WorkerMessage, { type: "result" }>;
   pendingEval = false;
   const value = fixStacks(reply.value);
@@ -389,13 +557,14 @@ export async function evaluateInJsConsole(code: string) {
 }
 
 /** Loads the children of an object that was too deep to send at once. */
-export function expandRef(ref: number): Promise<[string, JsValue][]> {
-  if (!worker) return Promise.resolve([]);
+export async function expandRef(ref: number): Promise<[string, JsValue][]> {
+  if (!host) return [];
   const id = ++seq;
-  const w = worker;
+  const w = await host.catch(() => null);
+  if (!w) return [];
   return new Promise<[string, JsValue][]>((resolve) => {
     pending.set(id, (m) => resolve(((m as Extract<WorkerMessage, { type: "expanded" }>).entries ?? []).map(([k, v]) => [k, fixStacks(v)])));
-    w.postMessage({ type: "expand", id, ref });
+    w.post({ type: "expand", id, ref });
     setTimeout(() => {
       if (pending.delete(id)) resolve([]);
     }, 3000);
@@ -403,11 +572,17 @@ export function expandRef(ref: number): Promise<[string, JsValue][]> {
 }
 
 function stopWorker() {
-  worker?.terminate();
-  worker = null;
+  const h = host;
+  host = null;
+  void h?.then((x) => x.terminate()).catch(() => undefined);
   for (const r of pending.values()) r({ type: "result", value: { t: "undef", v: "undefined" } });
   pending.clear();
 }
+
+// An exam starting (or ending) changes the console's network access: the next input gets a fresh host.
+useExam.subscribe((s, prev) => {
+  if (!!s.quiz !== !!prev.quiz && host) stopWorker();
+});
 
 /** Stop: ends a runaway program (an endless loop) and starts a fresh context. */
 export function stopJsConsole() {
