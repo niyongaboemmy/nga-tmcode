@@ -99,4 +99,5 @@ jobs:
         working-directory: services/judge
         env:
           JUDGE_TEST_SANDBOX: isolate
-        run: npx vitest run --config vitest.config.ts
+        # Verbose: the log shows which real-box cases ran and which were skipped (toolchain missing).
+        run: npx vitest run --config vitest.config.ts --reporter=verbose
