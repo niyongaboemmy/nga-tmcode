@@ -806,3 +806,88 @@ for (const g of GREETERS) {
     }, 120_000);
   });
 }
+
+// ───────────── programs split over several files (playgrounds, projects) ─────────────
+
+type F = { path: string; content: string };
+/**
+ * Each program reads a number, asks a second file to double it, prints "Total: <2n>".
+ * `profile`: sent the way Task Mentor sends the six fixed languages (language profile id).
+ */
+const MULTI_FILE: Array<{ kind: string; profile?: string; entry: string; files: F[] }> = [
+  { kind: "python/single", profile: "python-3", entry: "main.py", files: [
+    { path: "main.py", content: "from helpers import double\n\nn = int(input())\nprint(f'Total: {double(n)}')\n" },
+    { path: "helpers.py", content: "def double(x):\n    return x * 2\n" },
+  ] },
+  { kind: "js/single", profile: "node-22", entry: "main.js", files: [
+    { path: "main.js", content: "const { double } = require('./utils');\nconst n = Number(require('fs').readFileSync(0, 'utf8').trim());\nconsole.log(`Total: ${double(n)}`);\n" },
+    { path: "utils.js", content: "module.exports = { double: (x) => x * 2 };\n" },
+  ] },
+  { kind: "ts/single", profile: "typescript", entry: "main.ts", files: [
+    { path: "main.ts", content: "import { double } from './utils';\nimport * as fs from 'fs';\nconst n: number = Number(fs.readFileSync(0, 'utf8').trim());\nconsole.log(`Total: ${double(n)}`);\n" },
+    { path: "utils.ts", content: "export function double(x: number): number {\n    return x * 2;\n}\n" },
+  ] },
+  { kind: "c/single", profile: "c17", entry: "main.c", files: [
+    { path: "main.c", content: '#include <stdio.h>\n#include "maths.h"\n\nint main(void) {\n    int n;\n    scanf("%d", &n);\n    printf("Total: %d\\n", twice(n));\n    return 0;\n}\n' },
+    { path: "maths.h", content: "#ifndef MATHS_H\n#define MATHS_H\nint twice(int x);\n#endif\n" },
+    { path: "maths.c", content: '#include "maths.h"\n\nint twice(int x) {\n    return x * 2;\n}\n' },
+  ] },
+  { kind: "cpp/single", profile: "cpp17", entry: "main.cpp", files: [
+    { path: "main.cpp", content: '#include <iostream>\n#include "calc.hpp"\n\nint main() {\n    int n;\n    std::cin >> n;\n    std::cout << "Total: " << Calc::twice(n) << std::endl;\n}\n' },
+    { path: "calc.hpp", content: "#pragma once\nstruct Calc {\n    static int twice(int x);\n};\n" },
+    { path: "calc.cpp", content: '#include "calc.hpp"\n\nint Calc::twice(int x) { return x * 2; }\n' },
+  ] },
+  { kind: "java/single", profile: "java-21", entry: "Main.java", files: [
+    { path: "Main.java", content: "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        int n = new Scanner(System.in).nextInt();\n        System.out.println(\"Total: \" + Calculator.twice(n));\n    }\n}\n" },
+    { path: "Calculator.java", content: "public class Calculator {\n    public static int twice(int x) {\n        return x * 2;\n    }\n}\n" },
+  ] },
+  { kind: "go/single", entry: "main.go", files: [
+    { path: "main.go", content: 'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar n int\n\tfmt.Scan(&n)\n\tfmt.Printf("Total: %d\\n", twice(n))\n}\n' },
+    { path: "util.go", content: "package main\n\nfunc twice(x int) int { return x * 2 }\n" },
+  ] },
+  { kind: "rust/single", entry: "main.rs", files: [
+    { path: "main.rs", content: 'mod util;\n\nfn main() {\n    let mut s = String::new();\n    std::io::stdin().read_line(&mut s).unwrap();\n    let n: i64 = s.trim().parse().unwrap();\n    println!("Total: {}", util::twice(n));\n}\n' },
+    { path: "util.rs", content: "pub fn twice(x: i64) -> i64 {\n    x * 2\n}\n" },
+  ] },
+  { kind: "php/single", entry: "main.php", files: [
+    { path: "main.php", content: "<?php\nrequire_once __DIR__ . '/lib/maths.php';\n$n = (int) trim(fgets(STDIN));\necho 'Total: ' . twice($n) . \"\\n\";\n" },
+    { path: "lib/maths.php", content: "<?php\nfunction twice(int $x): int {\n    return $x * 2;\n}\n" },
+  ] },
+  { kind: "ruby/single", entry: "main.rb", files: [
+    { path: "main.rb", content: "require_relative 'maths'\n\nn = gets.to_i\nputs \"Total: #{Maths.twice(n)}\"\n" },
+    { path: "maths.rb", content: "module Maths\n  def self.twice(x)\n    x * 2\n  end\nend\n" },
+  ] },
+  { kind: "bash/single", entry: "main.sh", files: [
+    { path: "main.sh", content: 'source "$(dirname "$0")/lib.sh"\nread -r n\necho "Total: $(twice "$n")"\n' },
+    { path: "lib.sh", content: "twice() { echo $(( $1 * 2 )); }\n" },
+  ] },
+  { kind: "csharp/script", entry: "Program.cs", files: [
+    { path: "Program.cs", content: 'int n = int.Parse(Console.ReadLine()!.Trim());\nConsole.WriteLine($"Total: {Calculator.Twice(n)}");\n' },
+    { path: "Calculator.cs", content: "public static class Calculator\n{\n    public static int Twice(int x) => x * 2;\n}\n" },
+  ] },
+  { kind: "kotlin/single", entry: "Main.kt", files: [
+    { path: "Main.kt", content: 'fun main() {\n    val n = readLine()!!.trim().toInt()\n    println("Total: ${twice(n)}")\n}\n' },
+    { path: "Util.kt", content: "fun twice(x: Int): Int = x * 2\n" },
+  ] },
+  { kind: "swift/single", entry: "main.swift", files: [
+    { path: "main.swift", content: 'let n = Int(readLine()!)!\nprint("Total: \\(twice(n))")\n' },
+    { path: "util.swift", content: "func twice(_ x: Int) -> Int { x * 2 }\n" },
+  ] },
+];
+
+for (const m of MULTI_FILE) {
+  describe.runIf(can(m.kind))(`${m.kind}: a program over ${m.files.length} files, in a real box`, () => {
+    const tests = [{ id: "21", input: "21\n", expected_output: "Total: 42\n" }];
+    it("links the files the language's way (imports, includes, headers, modules)", async () => {
+      const r = await project({ files: m.files, entry: m.entry, tests } as ProjectRequest);
+      expect(r.compile?.ok ?? true, r.compile?.output).toBe(true);
+      expect(r.tests.map((t) => t.verdict), JSON.stringify(r.tests)).toEqual(["accepted"]);
+    }, 180_000);
+    if (m.profile) {
+      it("also as Task Mentor sends it (language profile)", async () => {
+        const r = (await run(sandbox, env, { language: m.profile, entry: m.entry, files: m.files, tests })) as RunResponse;
+        expect(r.tests.map((t) => t.verdict), JSON.stringify(r)).toEqual(["accepted"]);
+      }, 180_000);
+    }
+  });
+}

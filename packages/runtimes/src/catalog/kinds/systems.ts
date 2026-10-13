@@ -86,7 +86,8 @@ export const SYSTEMS_KINDS = [
     detect: { anyOf: ["*.go"], none: ["go.mod"], priority: 10 },
     entry: { default: "main.go", find: "main-decl" },
     steps: {
-      build: { tool: "go", args: ["build", "-o", out("main"), entry] },
+      // Every .go file: a program split over files (package main) builds as one.
+      build: { tool: "go", args: ["build", "-o", out("main"), sources("go")] },
       run: { tool: "stdbuf", args: ["-oL", out("main")] },
     },
     tier: "isolate",

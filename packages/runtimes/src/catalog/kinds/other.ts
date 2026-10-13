@@ -135,7 +135,8 @@ export const OTHER_KINDS = [
     wave: "C",
     detect: { anyOf: ["*.swift"], none: ["Package.swift"], priority: 10 },
     entry: { default: "main.swift" },
-    steps: { build: { tool: "swiftc", args: ["-O", "-module-cache-path", "/tmp/mc", entry, "-o", { out: "main" }] }, run: { tool: "stdbuf", args: ["-oL", { out: "main" }] } },
+    // Every .swift file (top-level code stays in main.swift, as swiftc requires).
+    steps: { build: { tool: "swiftc", args: ["-O", "-module-cache-path", "/tmp/mc", sources("swift"), "-o", { out: "main" }] }, run: { tool: "stdbuf", args: ["-oL", { out: "main" }] } },
     tier: "isolate-build",
   }),
   kind({
