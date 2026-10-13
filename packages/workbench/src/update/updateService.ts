@@ -68,7 +68,8 @@ export async function showReleaseNotes() {
   if (!info) return;
   const choice = await showDialog({
     message: `TMCode ${info.version}`,
-    detail: `${info.notes?.trim() || "No release notes."}\n\nYou have version ${info.current_version}.`,
+    detail: `${info.notes?.trim() || "No release notes."}\n\n*You have version ${info.current_version}.*`,
+    markdown: true,
     buttons: [
       { id: "install", label: "Install and Restart", primary: true },
       { id: "later", label: "Later" },

@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import DOMPurify from "dompurify";
+import { renderMarkdown } from "./markdown";
 import { closeContextMenu, dismissNotification, pauseToast, resumeToast, useWorkbench, type Notification } from "../state/store";
 import { Codicon } from "./icons";
 import { markRead, showNotificationCenter, useNotificationCenter, visibleToasts } from "../state/notificationCenter";
@@ -141,11 +143,14 @@ export function Dialog() {
             <p id="tm-dialog-msg" className="tm-dialog-message">
               {dialog.message}
             </p>
-            {dialog.detail && (
-              <p id="tm-dialog-detail" className="tm-dialog-detail">
-                {dialog.detail}
-              </p>
-            )}
+            {dialog.detail &&
+              (dialog.markdown ? (
+                <div id="tm-dialog-detail" className="tm-dialog-detail tm-dialog-md" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(dialog.detail)) }} />
+              ) : (
+                <p id="tm-dialog-detail" className="tm-dialog-detail">
+                  {dialog.detail}
+                </p>
+              ))}
           </div>
         </div>
         <div className="tm-dialog-buttons">

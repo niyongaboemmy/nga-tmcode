@@ -137,6 +137,8 @@ export interface DialogButton {
 export interface DialogRequest {
   message: string;
   detail?: string;
+  /** Show `detail` as Markdown (release notes); raw HTML stays text, links don't open. */
+  markdown?: boolean;
   severity?: "info" | "warning";
   buttons: DialogButton[];
   cancelId: string;
