@@ -127,6 +127,7 @@
     "allow-proj-default-base",
     "allow-proj-move-folder",
     "allow-ws-clipboard-files",
+    "allow-proc-port-free",
     "allow-proj-use-projects-folder",
     "allow-git-info",
     "allow-git-status",

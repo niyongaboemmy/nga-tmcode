@@ -154,6 +154,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
     openExternal: (url) => invoke("open_external", { url }),
+    portFree: (port) => invoke<boolean>("proc_port_free", { port }),
     clipboard: {
       readText: async () => (await import("@tauri-apps/plugin-clipboard-manager")).readText().then((t) => t ?? ""),
       writeText: async (text) => (await import("@tauri-apps/plugin-clipboard-manager")).writeText(text),

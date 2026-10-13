@@ -295,6 +295,7 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
     case "devServer":
       // Project scripts (npm run dev, manage.py…) run the folder author's code: ask once in a cloned folder.
       if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
+      a = await withFreePort(a);
       return startDevServer(a);
     case "task":
       if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
@@ -509,6 +510,17 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
     },
   ], { owner: "preflight", kind: "failure" });
   return false;
+}
+
+/** PHP's built-in server on a free port: 8000, else the next free one (XAMPP or another project may hold it). */
+async function withFreePort(a: RunAction): Promise<RunAction> {
+  const m = /^(php\s+-S\s+localhost:)(\d+)/.exec(a.command ?? "");
+  const free = getPlatform().portFree;
+  if (!m || !free) return a;
+  for (let port = Number(m[2]); port < Number(m[2]) + 20; port++) {
+    if (await free(port).catch(() => true)) return port === Number(m[2]) ? a : { ...a, command: a.command!.replace(`${m[1]}${m[2]}`, `${m[1]}${port}`), port };
+  }
+  return a;
 }
 
 /** `php -S … -t <docroot>` started while a page of that site is open: the page's address under the server. */

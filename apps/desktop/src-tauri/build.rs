@@ -97,6 +97,7 @@ fn main() {
             "proj_default_base",
             "proj_move_folder",
             "ws_clipboard_files",
+            "proc_port_free",
             "proj_use_projects_folder",
             // git & GitHub
             "git_info",

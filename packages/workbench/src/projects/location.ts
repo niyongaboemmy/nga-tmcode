@@ -91,7 +91,8 @@ export async function chooseBase(opts: { name: string; language?: string | null;
   const mode = settings()["projects.phpLocation"] ?? "ask";
   const servers = php && mode !== "projectsFolder" ? await webRoots() : [];
   if (php && mode === "webServer" && servers.length) return servers[0].path;
-  if (!servers.length && !opts.ask) return folder;
+  // Nothing to choose between (no web server; no folder picker in the browser build): the Projects Folder.
+  if (!servers.length && (!opts.ask || !host?.pickBase)) return folder;
   const defaultPath = folder ?? (await host?.defaultBase?.().catch(() => undefined)) ?? "~/TMCode Projects";
   const pick = await showQuickPick({
     title: `Where should "${opts.name}" go?`,
