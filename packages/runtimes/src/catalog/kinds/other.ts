@@ -25,6 +25,7 @@ export const OTHER_KINDS = [
     // and run on the shared runtime. Ranked below csharp/single, so a runner with containers
     // keeps using `dotnet run`; detection only offers kinds the runner can run.
     id: "csharp/script",
+    enabled: true,
     language: "csharp",
     label: "C# – single file (csc)",
     runtime: "dotnet-10",
@@ -127,6 +128,7 @@ export const OTHER_KINDS = [
   }),
   kind({
     id: "swift/single",
+    enabled: true,
     language: "swift",
     label: "Swift – single file",
     runtime: "swift-6",

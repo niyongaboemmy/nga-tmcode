@@ -239,6 +239,7 @@ export const SCRIPTING_KINDS = [
   // ── PHP ──
   kind({
     id: "php/single",
+    enabled: true,
     language: "php",
     label: "PHP – script",
     runtime: "php-8.3",
@@ -294,6 +295,7 @@ export const SCRIPTING_KINDS = [
   // ── Ruby ──
   kind({
     id: "ruby/single",
+    enabled: true,
     language: "ruby",
     label: "Ruby – script",
     runtime: "ruby-3.2",
@@ -361,6 +363,7 @@ export const SCRIPTING_KINDS = [
   }),
   kind({
     id: "bash/single",
+    enabled: true,
     language: "bash",
     label: "Bash – script",
     runtime: "bash-5",

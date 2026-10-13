@@ -85,6 +85,7 @@ export const JVM_KINDS = [
   }),
   kind({
     id: "kotlin/single",
+    enabled: true,
     language: "kotlin",
     label: "Kotlin – single file",
     runtime: "kotlin-2",

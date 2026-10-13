@@ -6,10 +6,16 @@ const L = (key: string, label: string, family: Language["family"], wave: Languag
   label,
   family,
   wave,
-  enabled: wave === "A",
+  enabled: wave === "A" || OFFERED_LATER.has(key),
   extensions,
   monaco_language,
 });
+
+/**
+ * Later-wave languages offered now: the runner installs them (services/judge/deploy/
+ * install-languages.sh) and runs their single-file kinds on the isolate tier.
+ */
+const OFFERED_LATER = new Set(["php", "ruby", "bash", "kotlin", "csharp", "swift"]);
 
 export const LANGUAGES: Language[] = [
   // wave A
