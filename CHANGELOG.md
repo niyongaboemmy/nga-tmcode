@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.17.1 — 2026-10-13
+
+**TMCode 0.17.1: every view in reach.** The activity bar shows all its views while they fit, and the More menu lists each one once.
+
+### Activity bar
+
+- **Every view stays in the bar while there's room.** Students still see Assignments, Files, Search and Run first, in plain words, then Testing, Source Control, Extensions and any extension's views. A handful of icons is never tucked away.
+- **More (…) appears only when the window is too short** for all the icons, and holds just the ones that didn't fit. The view you have open is never moved under More.
+- **No more doubles:** "Extensions" appeared twice in the More menu. Each view is listed once.
+
+### All changes
+
+- Activity bar: every view while it fits, More only when short, each view once
+- CI: list each judge test in the isolate job (which real-box cases ran or were skipped)
+- tm-judge: fix the starter sweep findings (SQLite locks, non-source entries, objc probe, Python data without uv)
+
 ## 0.17.0 — 2026-10-13
 
 **TMCode 0.17: runs everywhere.** When your computer can't run a program or its tests, Task Mentor runs them for you, with input you can type. New projects start from the same starters Task Mentor uses. The workspace is easier to use: files move by dragging, pasting shows its result, and PHP websites can live in XAMPP's folder.
