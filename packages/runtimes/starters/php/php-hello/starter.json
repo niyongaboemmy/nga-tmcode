@@ -1,0 +1,20 @@
+{
+  "id": "php-hello",
+  "language": "php",
+  "kind": "php/single",
+  "title": "PHP – Hello, world",
+  "description": "The smallest PHP program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.php",
+  "open": [
+    "main.php"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.3",
+  "tools": [
+    "php"
+  ]
+}
