@@ -122,7 +122,7 @@ lang_swift() {                                                      # [swift-6] 
   local deps
   deps="$(available binutils gnupg libc6-dev libedit2 libncurses6 libsqlite3-0 libxml2 libxml2-16 libz3-4 libz3-dev tzdata zlib1g-dev unzip libcurl4t64 libcurl4 libgcc-13-dev libstdc++-13-dev libgcc-14-dev libstdc++-14-dev libgcc-15-dev libstdc++-15-dev)"
   # shellcheck disable=SC2086
-  apt_get $deps || return 1
+  apt_get $deps || { echo "swift: couldn't install its system libraries:$deps" >&2; return 1; }
   local suffix="ubuntu24.04" dir="ubuntu2404"
   [ "$ARCH" = aarch64 ] && suffix="ubuntu24.04-aarch64" && dir="ubuntu2404-aarch64"
   local name="swift-${SWIFT_VERSION}-RELEASE-${suffix}"
@@ -130,10 +130,14 @@ lang_swift() {                                                      # [swift-6] 
   fetch "$base/$name.tar.gz" "$dl/swift.tar.gz" || return 1
   fetch "$base/$name.tar.gz.sig" "$dl/swift.tar.gz.sig" || return 1
   fetch "https://www.swift.org/keys/all-keys.asc" "$dl/swift-keys.asc" || return 1
+  # swift.org serves the key file gzip-compressed without saying so (no Content-Encoding).
+  if [ "$(head -c 2 "$dl/swift-keys.asc" | od -An -tx1 | tr -d ' \n')" = "1f8b" ]; then
+    gunzip -c "$dl/swift-keys.asc" >"$dl/swift-keys.txt" && mv "$dl/swift-keys.txt" "$dl/swift-keys.asc"
+  fi
   local gh
   gh="$(mktemp -d)"
-  GNUPGHOME="$gh" gpg --batch --quiet --import "$dl/swift-keys.asc" 2>/dev/null || { rm -rf "$gh"; return 1; }
-  GNUPGHOME="$gh" gpg --batch --quiet --verify "$dl/swift.tar.gz.sig" "$dl/swift.tar.gz" 2>/dev/null || { echo "swift: signature check failed" >&2; rm -rf "$gh"; return 1; }
+  GNUPGHOME="$gh" gpg --batch --quiet --import "$dl/swift-keys.asc" || { echo "swift: couldn't import swift.org's signing keys" >&2; rm -rf "$gh"; return 1; }
+  GNUPGHOME="$gh" gpg --batch --quiet --verify "$dl/swift.tar.gz.sig" "$dl/swift.tar.gz" || { echo "swift: signature check failed" >&2; rm -rf "$gh"; return 1; }
   rm -rf "$gh"
   $SUDO rm -rf "/opt/swift-${SWIFT_VERSION}" && $SUDO mkdir -p "/opt/swift-${SWIFT_VERSION}"
   $SUDO tar -xzf "$dl/swift.tar.gz" -C "/opt/swift-${SWIFT_VERSION}" --strip-components=1 || return 1
