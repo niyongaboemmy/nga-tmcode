@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.17.3 — 2026-10-13
+
+**TMCode 0.17.3: the JavaScript Console works in the app.** Programs run, typed expressions are answered, and output arrives the way Node shows it.
+
+### JavaScript Console
+
+- **It runs again in the desktop app.** Running a file showed "NetworkError" and typing an expression showed "EvalError": the app's security rules blocked them. The console now runs in its own sealed sandbox, so both work while the rest of TMCode stays protected.
+- **Finished means finished.** A program counts as done only when nothing is left to run: timers, intervals, `await` and `fetch` all complete before "Finished in … ms", as in Node. An interval keeps it running until it is cleared (or you press Stop).
+- **`process.exit(code)` ends the program**, including from a timer, and nothing after it runs.
+- **An error in a callback fails the run**, after the rest of the program has finished.
+- **`console.table` draws a real table**, with an (index) column and a column per key, like Node.
+- **`alert()` shows its message in the console.** `prompt()` and `confirm()` explain where input works instead (Run with Node.js, or an HTML page in Live Preview).
+
+### Exams
+
+- **No network for the console during an exam.** Programs can't reach the internet while an exam is open.
+
+### All changes
+
+- Run the JavaScript Console in its own sandbox origin (0.17.3)
+- go/single needs file locks in isolate (go build locks its cache); tests use /opt/rust when installed; clearer broken-program and wrapper checks
+- Catalog 2026.10.4: offer PHP, Ruby, Bash, Kotlin, C# and Swift (single-file kinds enabled)
+- install-languages: swift.org's key file is gzip-compressed without saying so; show gpg/apt errors
+- Runner languages: PHP, Ruby, Bash, C#, Kotlin, Swift, Go and Rust on the isolate host
+
 ## 0.17.2 — 2026-10-13
 
 **TMCode 0.17.2: release notes that fit.** The update window keeps its buttons on screen and shows the notes properly formatted.
