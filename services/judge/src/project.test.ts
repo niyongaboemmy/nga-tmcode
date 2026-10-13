@@ -382,9 +382,9 @@ describe.runIf(can("c/make"))("c/make (starter c-structs-make)", () => {
 describe.runIf(can("cpp/cmake"))("cpp/cmake (starter cpp-cmake-gtest)", () => {
   it("configures, builds and runs ctest", async () => {
     const r = await project({ kind: "cpp/cmake", files: starter("cpp", "cpp-cmake-gtest"), actions: ["build", "test"] });
-    expect(r.compile?.ok).toBe(true);
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
     expect(r.unit?.framework).toBe("ctest");
-    expect(r.unit?.total).toBeGreaterThan(0);
+    expect(r.unit?.total, JSON.stringify({ steps: r.steps, unit: r.unit })).toBeGreaterThan(0);
   });
 });
 
@@ -504,7 +504,7 @@ describe.runIf(can("go/module"))("go/module with go test -json (starter go-modul
   it("builds, tests and runs", async () => {
     const r = await project({ files: starter("go", "go-module-test"), actions: ["build", "run", "test"], tests: [{ id: "1", input: "" }] });
     expect(r.kind).toBe("go/module");
-    expect(r.compile?.ok).toBe(true);
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
     expect(r.unit?.framework).toBe("go-test");
     expect(r.unit?.verdict).toBe("passed");
     expect(r.unit?.total).toBeGreaterThan(0);
@@ -520,7 +520,7 @@ describe.runIf(can("go/module"))("go/module with go test -json (starter go-modul
       actions: ["build"],
     });
     expect(r.compile?.ok).toBe(false);
-    expect(r.error).toMatchObject({ code: "PACKAGE_NOT_AVAILABLE", manager: "go" });
+    expect(r.error, r.compile?.output).toMatchObject({ code: "PACKAGE_NOT_AVAILABLE", manager: "go" });
     expect(r.error?.package).toContain("github.com/nga-school/not-cached");
   }, 120_000);
 });

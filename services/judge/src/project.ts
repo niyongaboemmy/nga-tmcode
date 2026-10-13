@@ -29,7 +29,7 @@ import {
 } from "./judge.ts";
 import { javaMainClass, languageById } from "./languages.ts";
 import { missingPackage, missingPackageMessage, type MissingPackage } from "./packages.ts";
-import { extraMounts, restoreSnapshot, type Box, type ExecResult, type Limits, type Mount, type Sandbox } from "./sandbox.ts";
+import { restoreSnapshot, toolMounts, type Box, type ExecResult, type Limits, type Mount, type Sandbox } from "./sandbox.ts";
 import { entryStem, renderArgs, renderToken, TEST_FILTER, testFilterArgs, type TokenContext } from "./tokens.ts";
 import { availability, CATALOG_VERSION, containerCapable, OPTIONAL_TOOLS, runtimeChain, servicesReason, toolPath, type StepName, type Toolchains } from "./toolchains.ts";
 import { containerToolchains, imageFor, type ContainerSandbox } from "./containers.ts";
@@ -259,8 +259,8 @@ export function boxSetup(tc: Toolchains, kind: KindDef) {
   env.PATH = [...binDirs, "/usr/local/bin", "/usr/bin", "/bin"].join(":");
   env.NO_COLOR = "1";
   const mounts: Mount[] = kind.caches.filter((c) => tc.caches.has(c)).map((c) => ({ inside: `/caches/${c}`, host: tc.caches.get(c)! }));
-  const dirs = [...new Set(toolPaths.flatMap(extraMounts))];
-  return { env, mounts, dirs };
+  const dirs = [...new Set(toolPaths.flatMap((p) => toolMounts(p)))];
+  return { env, mounts, dirs, fileLocks: !!kind.fileLocks };
 }
 
 /** argv for a step: the resolved tool + rendered tokens. An optional wrapper (stdbuf) that isn't installed is dropped. */
@@ -405,7 +405,7 @@ export async function runProject(sandbox: Sandbox, env: ProjectEnv, req: Project
 
   let box: Box;
   try {
-    box = await where.sandbox.acquire({ mounts: setup.mounts, dirs: setup.dirs, image: where.image, network: db?.network });
+    box = await where.sandbox.acquire({ mounts: setup.mounts, dirs: setup.dirs, fileLocks: setup.fileLocks, image: where.image, network: db?.network });
   } catch (e) {
     await db?.dispose();
     throw e;

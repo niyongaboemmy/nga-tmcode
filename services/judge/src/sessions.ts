@@ -158,7 +158,7 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
   const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => s && (!s.when || s.when.exists.every(exists)));
   const run = kind.steps.run!;
   return {
-    acquire: { mounts: setup.mounts, dirs: setup.dirs, image: where.image },
+    acquire: { mounts: setup.mounts, dirs: setup.dirs, fileLocks: setup.fileLocks, image: where.image },
     sandbox: where.image ? where.sandbox : undefined,
     services: resolved.services,
     tty: req.pty ? termSize(req.cols, req.rows) : undefined,

@@ -66,10 +66,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # libgtest-dev: the cpp/cmake starter finds GoogleTest (install.sh installs it on runners too).
       - name: Language runtimes and isolate build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev libseccomp-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless
+          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev libseccomp-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless libgtest-dev
       - name: Build and start isolate v2.7
         run: |
           git clone --depth 1 --branch v2.7 https://github.com/ioi/isolate /tmp/isolate

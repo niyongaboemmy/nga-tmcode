@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeOutput as protocolNormalize } from "../../../packages/protocol/src/output";
 import { capBytes, judge, normalizeOutput, resolvePrograms, validate, type RunRequest } from "./judge.ts";
 import { javaMainClass } from "./languages.ts";
-import { extraMounts, IsolateSandbox, LocalSandbox, parseMeta, statusFromMeta, type Sandbox } from "./sandbox.ts";
+import { extraMounts, IsolateSandbox, toolMounts, LocalSandbox, parseMeta, statusFromMeta, type Sandbox } from "./sandbox.ts";
 
 /**
  * Runs against the local (unsandboxed) driver by default; CI on Linux sets
@@ -55,6 +55,14 @@ describe("extra mounts", () => {
     expect(extraMounts("/opt/hostedtoolcache/node/24.1.0/x64/bin/node")).toEqual(["/opt/hostedtoolcache/node/24.1.0/x64"]);
     expect(extraMounts("/home/u/.nvm/versions/node/v22.1.0/bin/node")).toEqual(["/home/u/.nvm/versions/node/v22.1.0"]);
     expect(extraMounts("./main")).toEqual([]);
+  });
+  it("mounts a symlinked tool's real install folder", () => {
+    const links: Record<string, string> = { "/usr/bin/go": "/opt/hostedtoolcache/go/1.25.1/x64/bin/go" };
+    const real = (p: string) => links[p] ?? p;
+    expect(toolMounts("/usr/bin/go", real)).toEqual(["/opt/hostedtoolcache/go/1.25.1/x64"]);
+    expect(toolMounts("/usr/bin/gcc-13", real)).toEqual([]);
+    expect(toolMounts("/opt/go/bin/go", real)).toEqual(["/opt/go"]);
+    expect(toolMounts("/missing/bin/x", () => { throw new Error("ENOENT"); })).toEqual(["/missing"]);
   });
 });
 

@@ -49,6 +49,10 @@ describe("runtime catalog", () => {
     }
   });
 
+  it("allows file locks in isolate only where a tool can't work without them", () => {
+    expect(KINDS.filter((k) => k.fileLocks).map((k) => k.id)).toEqual(["go/module"]);
+  });
+
   it("never runs container kinds on a shared runner", () => {
     for (const k of KINDS.filter((x) => x.tier === "container")) expect(k.enabled, k.id).toBe(false);
   });
