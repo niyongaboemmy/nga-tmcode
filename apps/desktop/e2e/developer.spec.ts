@@ -73,6 +73,32 @@ test("check for updates, read the notes, install", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => localStorage.getItem("tmcode:mock-installed"))).toContain("9.9.9");
 });
 
+test("long release notes: formatted, scrollable, and the buttons stay on screen", async ({ page }) => {
+  const long = Array.from({ length: 40 }, (_, i) => `- **Change ${i + 1}:** something that got better in this release`).join("\n");
+  const notes = `**TMCode 9.9.9: a big one.** Many changes.\n\n### Editor\n\n${long}`;
+  await page.setViewportSize({ width: 900, height: 560 });
+  await fresh(page, { "tmcode:mock-update": JSON.stringify({ version: "9.9.9", current_version: "0.1.0", notes, date: null }) });
+  await page.keyboard.press("ControlOrMeta+Shift+p");
+  await page.keyboard.type("check for updates");
+  await page.keyboard.press("Enter");
+  await page.locator(".tm-status-update").click();
+  const dialog = page.locator(".tm-dialog");
+  // Markdown, not raw marks.
+  await expect(dialog.locator(".tm-dialog-md h3")).toHaveText("Editor");
+  await expect(dialog.locator(".tm-dialog-md li")).toHaveCount(40);
+  await expect(dialog).not.toContainText("**");
+  await expect(dialog).not.toContainText("###");
+  // The dialog fits the window, the notes scroll, the buttons are on screen.
+  const box = (await dialog.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(560);
+  const body = dialog.locator(".tm-dialog-body");
+  expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(dialog.getByRole("button", { name: "Install and Restart" })).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Later" })).toBeInViewport();
+  await dialog.getByRole("button", { name: "Later" }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test("up to date: a manual check says so", async ({ page }) => {
   await fresh(page);
   await page.keyboard.press("ControlOrMeta+Shift+p");
