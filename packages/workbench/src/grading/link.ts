@@ -38,7 +38,7 @@ export function parseGradingLink(link: string): GradingLink | null {
 async function openNow(link: GradingLink) {
   if (!useGrading.getState().activities) await refreshGrading({ rosters: false });
   if (!useGrading.getState().grader) {
-    notify("info", "Grading is for the teachers of this practical.");
+    notify("info", "Grading is for the teachers of this activity.");
     return;
   }
   revealView("grading");
@@ -51,7 +51,7 @@ async function openNow(link: GradingLink) {
   if (!roster || !link.student) return;
   const row = roster.rows.find((r) => r.student?.id === link.student);
   if (!row?.student) {
-    notify("info", "That student isn't in this practical's list.");
+    notify("info", "That student isn't in this activity's list.");
     return;
   }
   selectStudent(key, row.student.id);
@@ -66,7 +66,7 @@ export async function openGradingLink(link: GradingLink) {
   if (inExam()) return notify("info", "Grading is not available during an exam.");
   const account = useProjects.getState().account;
   if (account?.signed_in && link.api && account.tm_api.replace(/\/+$/, "") !== link.api) {
-    return notify("error", `This practical belongs to ${link.api}, but TMCode is signed in to ${account.tm_api}.`);
+    return notify("error", `This activity belongs to ${link.api}, but TMCode is signed in to ${account.tm_api}.`);
   }
   if (!signedIn()) {
     const off = useProjects.subscribe((s) => {

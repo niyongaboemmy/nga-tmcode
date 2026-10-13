@@ -306,12 +306,12 @@ let readOnlyByProject = false;
 export function lockReason(project: Project | null | undefined): string | null {
   if (!project) return null;
   const name = `"${project.assignment?.title ?? project.name}"`;
-  if (project.read_only) return `${name} is completed: this workspace is read-only.`;
+  if (project.read_only) return `${name} is completed: this project is read-only.`;
   if (project.my_role && project.my_role !== "owner" && (project.status === "submitted" || project.status === "graded")) {
     return `Reviewing ${project.owner?.name ?? "a student"}'s submission: ${project.name} (read-only).`;
   }
   if (project.status === "submitted") return msg("lock.submitted", { name });
-  if (project.status === "graded") return `${name} is graded: this workspace is read-only.`;
+  if (project.status === "graded") return `${name} is graded: this project is read-only.`;
   if (project.status === "removed") return msg("lock.removed", { name });
   return null;
 }

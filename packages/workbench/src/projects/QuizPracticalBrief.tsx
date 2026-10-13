@@ -41,7 +41,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
   if (!ref || !summary || !view) {
     return (
       <div className="tm-assignment-page" data-testid="assignment-page">
-        <p className="tm-muted">This quiz practical isn't in your list any more. Refresh Assignments, or open the quiz in Task Mentor.</p>
+        <p className="tm-muted">This coding question isn't in your list any more. Refresh Assignments, or open the quiz in Task Mentor.</p>
       </div>
     );
   }
@@ -113,7 +113,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
             <h2>
               <Codicon name="checklist" /> First, open the quiz in Task Mentor
             </h2>
-            <p>Your practical is handed in during your quiz attempt. Keep the quiz open while you work here.</p>
+            <p>Your answer is handed in during your quiz attempt. Keep the quiz open while you work here.</p>
           </div>
         )}
         {quizFirst && quizButton}
@@ -123,7 +123,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
             <h2>
               <Codicon name="clock" /> Opens {opensLabel(opensAt)}
             </h2>
-            <p>The practical starts when the quiz opens.</p>
+            <p>The question starts when the quiz opens.</p>
           </div>
         ) : status === "not_started" ? (
           <>
@@ -153,7 +153,7 @@ export function QuizPracticalBrief({ input }: { input: Input }) {
             <h2>
               <Codicon name="lock" /> Closed
             </h2>
-            <p>The quiz is closed: this practical no longer takes work.</p>
+            <p>The quiz is closed: this question no longer takes work.</p>
           </div>
         ) : !here ? (
           <>

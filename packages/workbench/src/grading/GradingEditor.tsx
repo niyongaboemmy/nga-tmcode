@@ -493,7 +493,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
         <p className="tm-grade-hint" data-testid="grade-hint">
           <Codicon name="info" />{" "}
           {!roster.activity.can_grade
-            ? "You can follow this practical, but only its teachers can grade it."
+            ? "You can follow this activity, but only its teachers can grade it."
             : row.state === "in_progress"
               ? "In progress: you can grade once the work is submitted."
               : "Not started yet."}{" "}
@@ -906,14 +906,14 @@ export function GradingEditor({ input }: { input: Input }) {
       <header className="tm-grade-head">
         <div className="tm-assignment-kicker">
           <Codicon name={a.type === "quiz" ? "checklist" : "notebook"} />
-          <span>{a.type === "quiz" ? `Quiz practical · ${a.title}` : "Assignment practical"}</span>
+          <span>{a.type === "quiz" ? `Coding question · ${a.title}` : "Code assignment"}</span>
           {a.due_date && <span>· due {when(a.due_date)}</span>}
           {a.max_points > 0 && <span>· {a.max_points} points</span>}
         </div>
         <div className="tm-grade-title-row">
           <h1>{a.question ? a.question.text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : a.title}</h1>
           {a.type === "quiz" && a.questions.length > 1 && (
-            <select className="tm-select" aria-label="Practical question" value={a.question?.id ?? ""} onChange={(e) => openGrading(keyOf("quiz", a.id, Number(e.target.value)))}>
+            <select className="tm-select" aria-label="Coding question" value={a.question?.id ?? ""} onChange={(e) => openGrading(keyOf("quiz", a.id, Number(e.target.value)))}>
               {a.questions.map((q) => (
                 <option key={q.question_id} value={q.question_id}>
                   {q.title}

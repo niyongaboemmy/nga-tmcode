@@ -309,7 +309,7 @@ function AssessmentCard({ project, links, busy }: { project: Project; links: Lin
   // Draft-like: work can go on and be handed in.
   const status: Status = projectStatus === "removed" ? "removed" : derived === "submitted" ? "submitted" : derived === "graded" ? "graded" : "draft";
   const title = link?.activity?.title ?? project.assignment?.title ?? (link ? `${TYPE_LABEL[link.activity_type].one} ${link.activity_id}` : null);
-  const kind = link ? (link.question_id ? "Quiz practical" : TYPE_LABEL[link.activity_type].one) : project.assignment ? "Assignment" : null;
+  const kind = link ? (link.question_id ? "Coding question" : TYPE_LABEL[link.activity_type].one) : project.assignment ? "Assignment" : null;
   // Handed in: no countdown (late or not is the submission's, not the date's).
   const due = status === "submitted" || status === "graded" ? "" : dueText(link?.activity?.due_date ?? assignment?.due_date, link?.activity?.open !== false && !project.read_only);
   const closed = link?.activity?.open === false || derived === "closed";
@@ -423,7 +423,7 @@ function SharePresence({ project }: { project: Project }) {
   const shared = project.share_presence !== false;
   const locked = !!project.assignment && !project.read_only;
   return (
-    <label className={`tm-switch-row ${locked ? "is-locked" : ""}`} title={locked ? "Teachers follow assignment workspaces while the assignment is open." : "Teachers can see when you work on this project"}>
+    <label className={`tm-switch-row ${locked ? "is-locked" : ""}`} title={locked ? "Teachers follow assignment projects while the assignment is open." : "Teachers can see when you work on this project"}>
       <input
         type="checkbox"
         role="switch"

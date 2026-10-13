@@ -465,7 +465,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       {
         key: "projects.folder",
         label: "Projects: Projects Folder",
-        description: "Where new projects and assignment workspaces are created. Empty: the TMCode Projects folder in your home folder. Projects: Move This Project… moves one that already exists.",
+        description: "Where new projects are created, assignments' included. Empty: the TMCode Projects folder in your home folder. Projects: Move This Project… moves one that already exists.",
         type: "string",
         placeholder: "~/TMCode Projects",
       },
@@ -488,7 +488,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       {
         key: "scm.showInAssignments",
         label: "Source Control in Assignments",
-        description: "Show Source Control (git) in assignment workspaces. Off: the view and its change count are hidden there, since your work is saved to Task Mentor.",
+        description: "Show Source Control (git) in assignment projects. Off: the view and its change count are hidden there, since your work is saved to Task Mentor.",
         type: "boolean",
       },
       {

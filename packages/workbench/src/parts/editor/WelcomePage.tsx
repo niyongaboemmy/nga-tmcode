@@ -205,7 +205,7 @@ function TeacherHome() {
           <span>To grade</span>
         </div>
         <h2 className="tm-home-title" data-testid="home-to-grade-summary">
-          {toGrade ? `${plural(toGrade, "submission")} to grade in ${plural(practicals, "practical")}` : activities.length ? "Nothing waiting to be graded" : "No TMCode practicals in your subjects yet"}
+          {toGrade ? `${plural(toGrade, "submission")} to grade in ${plural(practicals, "activity", "activities")}` : activities.length ? "Nothing waiting to be graded" : "No code assignments or coding questions in your subjects yet"}
           {draftText && <span className="tm-home-title-extra">{draftText}</span>}
         </h2>
         <div className="tm-home-actions">
@@ -354,7 +354,7 @@ export function WelcomePage() {
             <section data-testid="home-practise">
               <h2>Practise on your own</h2>
               <HomeLink icon="folder-opened" label="Open Folder..." command="workbench.action.files.openFolder" kb="mod+o" />
-              <HomeLink icon="new-folder" label="New Project from Template..." command="workbench.action.newProjectFromTemplate" />
+              <HomeLink icon="new-folder" label="New Project from Starter..." command="workbench.action.newProjectFromTemplate" />
               <HomeLink icon="new-file" label="New File..." command="explorer.newFile" kb="mod+alt+n" />
             </section>
             <section>

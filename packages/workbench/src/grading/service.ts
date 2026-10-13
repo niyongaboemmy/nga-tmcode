@@ -468,7 +468,7 @@ export async function returnForChanges(key: string, row: RosterRow, message: str
     notify("info", allowResubmission ? msg("return.resubmit", { name: row.student?.name ?? "The student" }) : msg("return.done", { name: row.student?.name ?? "the student" }), undefined, { kind: "result", important: true, owner: `grading-result:${key}` });
     return { ok: true };
   } catch (e) {
-    if (e instanceof TmError && e.code === "RETURN_NOT_SUPPORTED") return { ok: false, unsupported: true, error: "Quiz practicals can't be returned for changes. Grade the answer as it is." };
+    if (e instanceof TmError && e.code === "RETURN_NOT_SUPPORTED") return { ok: false, unsupported: true, error: "Coding questions can't be returned for changes. Grade the answer as it is." };
     if (e instanceof TmError && e.code === "PROJECT_GRADED") {
       return e.body.allow_resubmission === true
         ? { ok: false, canAllowResubmission: true, error: "This work is already graded. Allow Resubmission takes the grade back so the student can change it and submit again." }

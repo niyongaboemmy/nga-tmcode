@@ -239,7 +239,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
   const opens = notYet ? `Opens ${opensLabel(opensAt)}` : null;
   const start = async () => {
     if (busy) return;
-    if (notYet) return notify("info", `"${quiz.title}" opens ${opensLabel(opensAt)}. Its practical starts then.`);
+    if (notYet) return notify("info", `"${quiz.title}" opens ${opensLabel(opensAt)}. Its coding question starts then.`);
     setBusy(true);
     try {
       await startQuizPractical(quiz, q);
@@ -259,7 +259,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
       data-row-nav
       aria-busy={busy || undefined}
       aria-disabled={notYet || undefined}
-      title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}\n${opens ?? "Open its workspace (keep the quiz open in Task Mentor)"}`}
+      title={`${q.title}\n${quiz.title}${quiz.course_name ? ` · ${quiz.course_name}` : ""}\n${opens ?? "Open its project (keep the quiz open in Task Mentor)"}`}
       data-status={state}
       onClick={() => showQuizPractical(quiz.activity_id, q.question_id)}
       onDoubleClick={() => void start()}
@@ -310,7 +310,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
         </span>
       </span>
       {here && (
-        <span className="tm-open-here" title="Your work for this practical is the folder open in this window">
+        <span className="tm-open-here" title="Your work for this question is the folder open in this window">
           <Codicon name="folder-opened" /> Open here
         </span>
       )}
@@ -320,7 +320,7 @@ function QuizPracticalRow({ quiz, q }: { quiz: LinkableActivity; q: PracticalQue
           className="tm-button tm-button--small tm-button--secondary tm-row-action"
           disabled={busy || notYet}
           tabIndex={-1}
-          title={opens ? `${opens}: it can't be started yet` : state === "not_started" ? "Create your workspace from the starter files" : "Open your work for this practical"}
+          title={opens ? `${opens}: it can't be started yet` : state === "not_started" ? "Create your project from the starter files" : "Open your work for this question"}
           onClick={(e) => {
             e.stopPropagation();
             void start();
@@ -412,7 +412,7 @@ export function AssignmentsView() {
         {ended && <SessionEndedBanner />}
         <div className="tm-view-empty tm-projects-signin" data-testid="assignments-signin">
           <Codicon name="mortar-board" className="tm-projects-hero" />
-          <h3>Practicals and case studies</h3>
+          <h3>Code assignments</h3>
           <p>Sign in with your NGA account to see the coding assignments of your subjects, start them with your teacher's starter files, and submit from here.</p>
           <button type="button" className="tm-button tm-button--block" disabled={signInBusy} onClick={() => void signIn()}>
             <Codicon name={signInBusy ? "loading" : "account"} className={signInBusy ? "codicon-modifier-spin" : ""} /> {signInBusy ? msg("signin.waiting") : msg("signin.button")}
@@ -560,7 +560,7 @@ export function AssignmentsView() {
             </Section>
           )}
           {practicalCount > 0 && (
-            <Section title="Quiz Practicals" count={practicalCount}>
+            <Section title="Coding questions" count={practicalCount}>
               {quizzes.flatMap((quiz) => (quiz.practical_questions ?? []).map((q) => <QuizPracticalRow key={`${quiz.activity_id}:${q.question_id}`} quiz={quiz} q={q} />))}
             </Section>
           )}

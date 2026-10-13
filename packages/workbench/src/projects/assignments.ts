@@ -423,7 +423,7 @@ export async function publishAsStarter() {
   const pick = await showQuickPick({
     placeholder: `Use "${b.name}" as the starter files of…`,
     matchOnDescription: true,
-    items: list.map((a) => ({ id: String(a.id), label: a.title, description: `${a.course_name ?? ""} · ${a.kind === "case_study" ? "case study" : "practical"}`, icon: "mortar-board" })),
+    items: list.map((a) => ({ id: String(a.id), label: a.title, description: `${a.course_name ?? ""} · ${a.kind === "case_study" ? "case study" : "code assignment"}`, icon: "mortar-board" })),
   });
   if (!pick) return;
   const a = list.find((x) => String(x.id) === pick.id)!;
@@ -540,5 +540,5 @@ export function groupAssignments(list: AssignmentSummary[]) {
   return groups;
 }
 
-/** startAssignment, shown as activity from its first step: "Preparing your workspace…". */
-export const startAssignment = (...args: Parameters<typeof startAssignmentNow>) => track("Preparing your workspace…", () => startAssignmentNow(...args));
+/** startAssignment, shown as activity from its first step: "Preparing your project…". */
+export const startAssignment = (...args: Parameters<typeof startAssignmentNow>) => track("Preparing your project…", () => startAssignmentNow(...args));

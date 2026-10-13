@@ -79,7 +79,7 @@ export async function diffWithStarter(path?: string) {
   try {
     const base = await starterOf(row);
     if (!base) {
-      notify("info", "This practical has no starter files to compare with.");
+      notify("info", "This activity has no starter files to compare with.");
       return;
     }
     const target = path ?? fileInView() ?? (await changesAgainst(row, base))[0]?.path;

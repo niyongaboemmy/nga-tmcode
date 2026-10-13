@@ -205,10 +205,10 @@ async function newProject(opts: { from?: "folder" } = {}) {
     // A quiz's TMCode practical: Task Mentor creates the project from the question's starter files.
     const go = await showDialog({
       severity: "info",
-      message: `"${assessment.question.title}" is a TMCode practical`,
-      detail: `Start it to get your teacher's starter files in a workspace linked to the quiz "${assessment.title}". The name you typed isn't needed: Task Mentor names the workspace after the question.`,
+      message: `"${assessment.question.title}" is a coding question`,
+      detail: `Start it to get your teacher's starter files in a project linked to the quiz "${assessment.title}". The name you typed isn't needed: Task Mentor names the project after the question.`,
       buttons: [
-        { id: "start", label: "Start the Practical", primary: true },
+        { id: "start", label: "Start the Question", primary: true },
         { id: "cancel", label: "Cancel" },
       ],
       cancelId: "cancel",
@@ -222,10 +222,10 @@ async function newProject(opts: { from?: "folder" } = {}) {
     if (practical) {
       const go = await showDialog({
         severity: "info",
-        message: `"${practical.title}" is a TMCode practical`,
+        message: `"${practical.title}" is a code assignment`,
         detail: "Start it from the Assignments view instead: you get your teacher's starter files and the brief beside your code.",
         buttons: [
-          { id: "start", label: "Start the Practical", primary: true },
+          { id: "start", label: "Start the Assignment", primary: true },
           { id: "cancel", label: "Cancel" },
         ],
         cancelId: "cancel",
