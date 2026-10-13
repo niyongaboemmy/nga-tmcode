@@ -1,0 +1,25 @@
+{
+  "id": "java-junit",
+  "language": "java",
+  "kind": "java/single",
+  "title": "Java – class with JUnit 5 tests (no build tool)",
+  "description": "A small Grades class and its JUnit 5 tests, compiled with javac: no Maven or Gradle needed",
+  "level": "beginner",
+  "purpose": "project",
+  "entry": "Main.java",
+  "open": [
+    "Grades.java",
+    "GradesTest.java"
+  ],
+  "tests": {
+    "unit": {
+      "framework": "junit5",
+      "command": "test"
+    }
+  },
+  "tags": [
+    "junit",
+    "unit-tests"
+  ],
+  "since": "2026.10.4"
+}

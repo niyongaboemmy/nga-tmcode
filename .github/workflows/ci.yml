@@ -71,6 +71,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev libseccomp-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless libgtest-dev
+      # The JUnit console launcher, as install.sh puts it (java/single unit tests).
+      - name: JUnit console launcher
+        run: |
+          u=https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.11.3/junit-platform-console-standalone-1.11.3.jar
+          curl -fsSL -o /tmp/junit.jar "$u" && curl -fsSL -o /tmp/junit.jar.sha1 "$u.sha1"
+          echo "$(cut -d' ' -f1 /tmp/junit.jar.sha1)  /tmp/junit.jar" | sha1sum -c -
+          sudo install -D -m 0755 /tmp/junit.jar /opt/junit/junit-platform-console-standalone.jar
       - name: Build and start isolate v2.7
         run: |
           git clone --depth 1 --branch v2.7 https://github.com/ioi/isolate /tmp/isolate

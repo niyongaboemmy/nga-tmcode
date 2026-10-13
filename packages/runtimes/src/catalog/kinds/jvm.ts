@@ -18,7 +18,8 @@ export const JVM_KINDS = [
     detect: { anyOf: ["*.java"], none: BUILD_FILES, priority: 10 },
     entry: { default: "Main.java", find: "main-decl" },
     steps: {
-      build: { tool: "javac", args: ["-encoding", "UTF-8", "-d", out("classes"), sources("java")] },
+      // The JUnit console jar carries the JUnit 5 API, so test classes compile beside the program.
+      build: { tool: "javac", args: ["-encoding", "UTF-8", "-cp", "/opt/junit/junit-platform-console-standalone.jar", "-d", out("classes"), sources("java")] },
       run: { tool: "java", args: [...JVM_RUN, "-cp", out("classes"), mainClass] },
       test: {
         tool: "java",
