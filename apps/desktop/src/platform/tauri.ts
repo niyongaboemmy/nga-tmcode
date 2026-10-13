@@ -28,6 +28,7 @@ import type {
   StoredExtension,
   TerminalSession,
   TerminalProfile,
+  TmStreamEvent,
   Toolchain,
   UpdateInfo,
   UpdateProgress,
@@ -413,6 +414,7 @@ function createTauriGit(): GitHost {
 }
 
 // ───────────── NGA account + projects (account.rs, projects.rs) ─────────────
+let streamIds = 0;
 function createTauriAccount(): AccountHost {
   return {
     status: (refresh = false) => invoke("auth_status", { refresh }),
@@ -430,6 +432,13 @@ function createTauriAccount(): AccountHost {
       };
     },
     request: (request) => invoke("tm_api", { request }),
+    async stream(path, onEvent) {
+      const id = ++streamIds;
+      const channel = new Channel<TmStreamEvent>();
+      channel.onmessage = onEvent;
+      await invoke("tm_stream", { id, path, onEvent: channel });
+      return { cancel: () => void invoke("tm_stream_cancel", { id }).catch(() => {}) };
+    },
     scan: (l = {}) => invoke("proj_scan", { maxFiles: l.maxFiles ?? null, maxFileMb: l.maxFileMb ?? null, maxTotalMb: l.maxTotalMb ?? null }),
     readBlob: (path) => invoke("proj_read_blob", { path }),
     writeBlob: (path, sha256, gzBase64) => invoke("proj_write_blob", { path, sha256, gzBase64 }),

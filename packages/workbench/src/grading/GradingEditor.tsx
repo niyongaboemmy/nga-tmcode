@@ -368,6 +368,9 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       ? [{ kind: "item" as const, label: "Preview the Website", disabled: !row.link?.revision_id || hasHtml === null, run: () => void previewSubmission(row) }]
       : []),
     ...(loaded && row.project?.kind === "tm" ? [{ kind: "item" as const, label: "Compare with Version…", run: () => void compareWithVersion() }] : []),
+    ...(row.project?.kind === "tm"
+      ? [{ kind: "item" as const, label: "Run the Student's Unit Tests", disabled: !row.link?.revision_id, run: () => void import("./unitTests").then((m) => m.runStudentUnitTests(gkey, row)) }]
+      : []),
     ...(canReturn && !returning ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Return for Changes…", run: () => setReturning({ message: "", error: null, busy: false }) }] : []),
     { kind: "separator" },
     { kind: "item", label: shortcuts ? "Hide Shortcuts" : "Shortcuts", run: () => setShortcuts(!shortcuts) },

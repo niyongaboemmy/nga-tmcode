@@ -66,6 +66,8 @@ export interface TestItem {
   stderr?: string;
   message?: string;
   duration_ms?: number;
+  /** The code runner's verdict when it ran on Task Mentor (its status colour: a limit is orange). */
+  verdict?: string;
 }
 
 export interface RunState {
@@ -79,6 +81,8 @@ export interface RunState {
   inputFile?: string | null;
   /** When the current run (or its run step) started, for the elapsed-time readout. */
   startedAt?: number;
+  /** The run is on Task Mentor's code runner (the Run panel shows its input line, Ctrl+C, End of Input). */
+  remote?: boolean;
 }
 
 export interface EditorGroup {

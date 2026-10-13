@@ -3,8 +3,35 @@ import { getPlatform, openFile, useWorkbench, type TestItem } from "../../state/
 import { useEffect, useState } from "react";
 import { TESTS_FILE, openTestDiff, runTests, useServerRun } from "../../run/testService";
 import { useFrameworkTests } from "../../testing/service";
+
+/** Whether Task Mentor's code runner answers (signed in or in an exam): its tests can run there. */
+function useCodeRunnerReady(): boolean {
+  const root = useWorkbench((s) => s.workspace?.root ?? null);
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void capabilities().then((c) => live && setOk(!!c));
+    return () => {
+      live = false;
+    };
+  }, [root]);
+  return ok;
+}
+
+/** A test's icon: its status, coloured by the code runner's verdict when it ran there (a limit is orange). */
+function iconOf(t: TestItem) {
+  const s = STATUS_ICON[t.status];
+  if (!t.verdict || t.status === "passed" || t.status === "running" || t.status === "queued") return s;
+  const tone = verdictTone(t.verdict);
+  return tone === "limit" ? { ...s, cls: "is-limit" } : tone === "info" ? { ...s, cls: "is-info" } : s;
+}
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { FrameworkTests } from "./FrameworkTests";
+import { ServerUnitTests } from "./ServerUnitTests";
+import { capabilities, verdictTone } from "../../run/codeRunner";
+import { procAvailable } from "../../testing/service";
+import { useServerUnit } from "../../testing/serverUnit";
+import { useExam } from "../../exam/state";
 
 const STATUS_ICON: Record<TestItem["status"], { icon: string; cls: string; label: string }> = {
   idle: { icon: "circle-large-outline", cls: "is-idle", label: "Not run" },
@@ -55,18 +82,43 @@ export function TestingView() {
   const tests = useWorkbench((s) => s.tests);
   const workspace = useWorkbench((s) => s.workspace);
   const hasSuites = useFrameworkTests((s) => s.suites.length > 0);
-  const canRun = !!getPlatform().runner;
+  const suiteProblem = useFrameworkTests((s) => Object.values(s.state).some((x) => !!x.problem));
+  const serverReady = useCodeRunnerReady();
+  const serverUnitUsed = useServerUnit((s) => s.ranAt !== null || s.status === "running");
+  const unitQuestion = useExam((s) => {
+    const t = s.tasks.find((x) => x.question_id === s.activeTask) ?? s.tasks[0];
+    return s.phase !== "idle" && t?.check_with === "unit";
+  });
+  // Exams run example tests on Task Mentor themselves; outside one, the code runner does when this computer can't.
+  const canRun = !!getPlatform().runner || (serverReady && tests.source !== "exam");
+  // Unit tests on Task Mentor: where this computer can't run them (browser, exam, a missing tool), or once used.
+  const showServerUnit = unitQuestion || serverUnitUsed || ((hasSuites || !tests.items.length) && (!procAvailable() || suiteProblem));
+  const remoteRun = useServerRun((s) => s.remote);
   const passed = tests.items.filter((t) => t.status === "passed").length;
   const failed = tests.items.filter((t) => t.status === "failed" || t.status === "error").length;
   const done = tests.items.filter((t) => ["passed", "failed", "error"].includes(t.status)).length;
 
   if (!workspace) return <div className="tm-view-empty">Open a folder or start a task from Task Mentor to see its tests.</div>;
 
+  if (unitQuestion && !tests.items.length) {
+    return (
+      <div className="tm-pane tm-testing">
+        <div className="tm-pane-body tm-scroll">
+          <p className="tm-test-note" data-testid="unit-question-note">
+            <Codicon name="info" /> Your teacher's tests check this when you submit. You can run your own tests here.
+          </p>
+          <ServerUnitTests title="My Tests on Task Mentor" />
+        </div>
+      </div>
+    );
+  }
+
   if (!tests.items.length && hasSuites) {
     return (
       <div className="tm-pane tm-testing">
         <div className="tm-pane-body tm-scroll">
           <FrameworkTests />
+          {showServerUnit && <ServerUnitTests />}
         </div>
       </div>
     );
@@ -106,6 +158,7 @@ export function TestingView() {
       {hasSuites && (
         <div className="tm-fwtests-wrap tm-scroll">
           <FrameworkTests />
+          {showServerUnit && <ServerUnitTests />}
         </div>
       )}
       <div className="tm-pane-header" aria-label="Tests">
@@ -137,7 +190,7 @@ export function TestingView() {
       )}
       <div className="tm-pane-body tm-scroll" role="tree" aria-label="Tests">
         {tests.items.map((t) => {
-          const s = STATUS_ICON[t.status];
+          const s = iconOf(t);
           return (
             <div
               key={t.id}
@@ -165,7 +218,7 @@ export function TestingView() {
         })}
       </div>
       <p className="tm-test-note">
-        <Codicon name="info" /> These are sample tests checked on your computer. Your grade comes from Task Mentor, which also runs hidden tests.
+        <Codicon name="info" /> These are sample tests{remoteRun ? " run on Task Mentor" : " checked on your computer"}. Your grade comes from Task Mentor, which also runs hidden tests.
       </p>
     </div>
   );

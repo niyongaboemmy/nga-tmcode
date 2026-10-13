@@ -104,13 +104,19 @@ export async function runTests(ids?: string[]) {
     await saveAll();
     if (await serverRunner!(ids)) return;
   }
+  // Outside an exam: Task Mentor's code runner runs them when this computer can't (any catalog language).
+  if (tests.source !== "exam" && (!profile?.local || !getPlatform().runner || (await missingTools(profile)).length > 0)) {
+    const { runExampleTestsOnServer } = await import("./serverRun");
+    await saveAll();
+    if (await runExampleTestsOnServer(ids)) return;
+  }
   if (!profile?.local) {
     notify("warning", `There is no way to run '${tests.entry}' locally.`);
     return;
   }
   await saveAll();
   const selected = tests.items.filter((t) => !ids || ids.includes(t.id));
-  for (const t of selected) updateTest(t.id, { status: "queued", actual: undefined, stderr: undefined, message: undefined, duration_ms: undefined });
+  for (const t of selected) updateTest(t.id, { status: "queued", actual: undefined, stderr: undefined, message: undefined, duration_ms: undefined, verdict: undefined });
   setTests({ running: true });
   let built = false;
   let passed = 0;

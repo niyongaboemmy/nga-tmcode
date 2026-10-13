@@ -625,6 +625,8 @@ export interface TmRequest {
   response?: "json" | "base64";
 }
 
+export type TmStreamEvent = { type: "status"; status: number } | { type: "data"; data: string } | { type: "end" } | { type: "error"; message: string };
+
 export interface TmResponse<T = unknown> {
   status: number;
   body: T;
@@ -666,6 +668,11 @@ export interface AccountHost {
   onChange(cb: (s: AccountStatus) => void): () => void;
   /** Authenticated Task Mentor request (/api/tmcode/… only). */
   request<T = unknown>(req: TmRequest): Promise<TmResponse<T>>;
+  /**
+   * Authenticated Task Mentor GET whose body keeps coming (a live run's Server-Sent Events): the
+   * status, then the body piece by piece, then the end. Older desktop builds don't have it.
+   */
+  stream?(path: string, onEvent: (e: TmStreamEvent) => void): Promise<{ cancel(): void }>;
   /** The open folder's files as git sees them (sha256 + size). */
   scan(limits?: { maxFiles?: number; maxFileMb?: number; maxTotalMb?: number }): Promise<ProjectScan>;
   /** [sha256, gzip+base64] of a workspace file. */

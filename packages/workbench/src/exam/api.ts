@@ -176,10 +176,10 @@ export class TmApi {
       /* not JSON */
     }
     if (!res.ok) {
-      const d = (data ?? {}) as { error_code?: string; message?: string } & Record<string, unknown>;
+      const d = (data ?? {}) as { error_code?: string; code?: string; message?: string } & Record<string, unknown>;
       const retry = Number(res.headers?.get?.("Retry-After") ?? res.headers?.get?.("RateLimit-Reset"));
       if (d.retry_after_s === undefined && Number.isFinite(retry) && retry > 0) d.retry_after_s = retry;
-      throw new ApiError(res.status, d.error_code ?? `HTTP_${res.status}`, d.message ?? `Task Mentor answered ${res.status}.`, d);
+      throw new ApiError(res.status, d.error_code ?? d.code ?? `HTTP_${res.status}`, d.message ?? `Task Mentor answered ${res.status}.`, d);
     }
     return data as T;
   }
@@ -264,6 +264,39 @@ export class TmApi {
       { question_id, files },
       60_000,
     );
+  }
+
+  /** Task Mentor's code runner for this exam (`/sessions/:sid/code/*`: capabilities, live runs, unit tests). */
+  code<T>(method: string, path: string, body?: unknown, timeoutMs = 90_000) {
+    return this.call<T>(method, `/sessions/${this.sid}/code${path}`, body, timeoutMs);
+  }
+
+  /** A streamed GET under the exam's code runner (a live run's events), piece by piece. */
+  codeStream(path: string, on: { status?(status: number): void; data(text: string): void; end(error?: string): void }): { cancel(): void } {
+    const ctrl = new AbortController();
+    void (async () => {
+      const res = await this.fetchImpl(`${this.base}/api/tmcode/sessions/${this.sid}/code${path}`, {
+        method: "GET",
+        headers: { Accept: "text/event-stream", ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) },
+        signal: ctrl.signal,
+      });
+      on.status?.(res.status);
+      if (!res.body) {
+        on.data(await res.text());
+        return on.end();
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        on.data(decoder.decode(value, { stream: true }));
+      }
+      on.end();
+    })().catch((e) => {
+      if (!ctrl.signal.aborted) on.end(String((e as Error)?.message ?? e));
+    });
+    return { cancel: () => ctrl.abort() };
   }
 
   submit(final: { question_id: number; seq: number }[]) {

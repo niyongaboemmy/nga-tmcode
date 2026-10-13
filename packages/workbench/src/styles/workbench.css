@@ -9559,3 +9559,40 @@ button.tm-setting-badge {
 .tm-preview.is-fullscreen .tm-preview-toolbar {
   height: 40px;
 }
+
+/* A run on Task Mentor's code runner: its input line under the Run console. */
+.tm-terminal:has(.tm-remote-run) {
+  display: flex;
+  flex-direction: column;
+}
+.tm-terminal:has(.tm-remote-run) > .tm-terminal-host {
+  flex: 1;
+  min-height: 0;
+}
+.tm-remote-run {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--panel-border, var(--border));
+}
+.tm-remote-run .tm-input {
+  flex: 1;
+  min-width: 0;
+}
+.tm-remote-run-where {
+  font-size: 11px;
+  color: var(--description);
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .tm-remote-run {
+    flex-wrap: wrap;
+  }
+}
+.tm-test-icon.is-limit {
+  color: var(--warning);
+}
+.tm-test-icon.is-info {
+  color: var(--focus-border);
+}

@@ -159,6 +159,16 @@ export function registerGradingCommands() {
   });
   registerCommand({ id: "grading.addComment", title: "Add Line Comment", category: "Grading", enabled: canAddCommentHere, run: addCommentAtCursor });
   registerCommand({ id: "grading.diffStarter", title: "Changes vs Starter", category: "Grading", enabled: () => !!reviewTarget()?.row.project, run: () => diffWithStarter() });
+  registerCommand({
+    id: "grading.runUnitTests",
+    title: "Run the Student's Unit Tests",
+    category: "Grading",
+    enabled: () => reviewTarget()?.row.project?.kind === "tm",
+    run: async () => {
+      const t = reviewTarget();
+      if (t) await (await import("./unitTests")).runStudentUnitTests(t.gkey, t.row);
+    },
+  });
   registerCommand({ id: "grading.compareVersion", title: "Compare with Version…", category: "Grading", enabled: () => !!reviewTarget()?.row.project, run: () => compareWithVersion() });
   registerCommand({
     id: "grading.releaseDrafts",
