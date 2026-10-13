@@ -9322,12 +9322,15 @@ button.tm-setting-badge {
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--editor-bg) 94%, var(--foreground));
   box-shadow: 0 -8px 16px -12px rgba(0, 0, 0, 0.45);
-  transition: transform var(--dur-fast, 120ms) ease, opacity var(--dur-fast, 120ms) ease;
+  transition: transform var(--dur-fast, 120ms) ease, opacity var(--dur-fast, 120ms) ease, visibility 0s;
 }
+/* Gone once it has slid away: one Submit on screen, and nothing for a screen reader to find. */
 .tm-assignment-shell > .tm-brief-footer.is-hidden {
   transform: translateY(100%);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  transition: transform var(--dur-fast, 120ms) ease, opacity var(--dur-fast, 120ms) ease, visibility 0s linear var(--dur-fast, 120ms);
 }
 .tm-brief-footer-status {
   display: inline-flex;
