@@ -107,6 +107,11 @@ const MAIN_PATTERNS: Record<string, RegExp> = {
   scala: /\bdef\s+main\s*\(|@main\b|extends\s+App\b/,
   dart: /\bvoid\s+main\s*\(|^main\s*\(/m,
   haskell: /^main\s*=|^main\s*::/m,
+  zig: /\bpub\s+fn\s+main\s*\(/,
+  d: /\bvoid\s+main\s*\(|\bint\s+main\s*\(/,
+  v: /\bfn\s+main\s*\(/,
+  gleam: /\bpub\s+fn\s+main\s*\(/,
+  vb: /\bSub\s+Main\s*\(/i,
 };
 
 const ENTRY_NAMES = ["main", "index", "app", "program", "solution", "server"];

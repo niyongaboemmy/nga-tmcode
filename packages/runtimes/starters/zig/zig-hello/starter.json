@@ -1,0 +1,20 @@
+{
+  "id": "zig-hello",
+  "language": "zig",
+  "kind": "zig/single",
+  "title": "Zig – Hello, world",
+  "description": "The smallest Zig program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.zig",
+  "open": [
+    "main.zig"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "zig"
+  ]
+}

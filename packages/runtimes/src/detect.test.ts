@@ -51,6 +51,36 @@ describe("detect", () => {
     expect(kindOf({ "laws.logic": "" })).toBe("logic/tables");
   });
 
+  it("wave D: shared extensions go to the language whose content matches", () => {
+    // *.pl: Perl unless it has Prolog clauses.
+    expect(kindOf({ "main.pl": 'use strict;\nprint "Hi\\n";\n' })).toBe("perl/single");
+    expect(kindOf({ "main.pl": "main :-\n    writeln('Hi').\n" })).toBe("prolog/single");
+    // *.m: GNU Octave unless it imports headers or declares classes (Objective-C).
+    expect(kindOf({ "main.m": "disp('Hi');\n" })).toBe("octave/single");
+    expect(kindOf({ "main.m": "#import <Foundation/Foundation.h>\nint main(void) { return 0; }\n" })).toBe("objc/single");
+    // *.v: V when it declares fn main, Verilog when it has modules.
+    expect(kindOf({ "main.v": "fn main() {\n\tprintln('Hi')\n}\n" })).toBe("v/single");
+    expect(kindOf({ "main.v": "module main;\n  initial $display(\"Hi\");\nendmodule\n" })).toBe("verilog/iverilog");
+    // *.d: D source, not a Makefile dependency file next to C code.
+    expect(kindOf({ "main.d": "import std.stdio;\nvoid main() {}\n" })).toBe("d/single");
+    expect(kindOf({ "main.c": "int main(void){}", "main.d": "main.o: main.c util.h\n" })).toBe("c/single");
+  });
+
+  it("wave D build tools beat their single files", () => {
+    expect(kindOf({ "build.zig": "", "src/main.zig": "pub fn main() void {}" })).toBe("zig/build");
+    expect(kindOf({ "main.zig": "pub fn main() void {}" })).toBe("zig/single");
+    expect(kindOf({ "app.nimble": "", "src/app.nim": "" })).toBe("nim/nimble");
+    expect(kindOf({ "fpm.toml": "", "app/main.f90": "" })).toBe("fortran/fpm");
+    expect(kindOf({ "dune-project": "(lang dune 3.0)", "bin/main.ml": "" })).toBe("ocaml/dune");
+    expect(kindOf({ "rebar.config": "", "src/app.erl": "" })).toBe("erlang/rebar3");
+    expect(kindOf({ "gleam.toml": 'name = "app"', "src/app.gleam": "", "src/app_ffi.erl": "" })).toBe("gleam/project");
+    expect(kindOf({ "build.gradle": "plugins { id 'groovy' }", "src/main/groovy/App.groovy": "" })).toBe("groovy/gradle");
+    expect(kindOf({ "build.gradle": "plugins { id 'java' }", "src/main/java/App.java": "" })).toBe("java/gradle");
+    expect(kindOf({ "App.fsproj": "<Project/>", "Program.fs": "" })).toBe("fsharp/console");
+    expect(kindOf({ "Tests.fsproj": "Microsoft.NET.Test.Sdk", "Tests.fs": "" })).toBe("fsharp/test");
+    expect(kindOf({ "App.vbproj": "<Project/>", "Program.vb": "" })).toBe("vb/console");
+  });
+
   it("ignores dependency and build folders, and returns nothing for no code", () => {
     expect(detect(["node_modules/x/index.js", "README.md"])).toEqual([]);
     expect(kindOf({ "target/classes/Main.java": "", "main.py": "" })).toBe("python/single");
@@ -100,6 +130,13 @@ describe("entryFor", () => {
     expect(entryFor("go/module", Object.keys(go), reader(go))).toBe("main.go");
     expect(entryFor("sql/sqlite", ["schema.sql", "seed.sql", "queries.sql"])).toBe("queries.sql");
     expect(entryFor("web/static", ["about.html", "index.html", "style.css"])).toBe("index.html");
+  });
+
+  it("wave D entries: Gleam and VB declare main", () => {
+    const gleam = { "gleam.toml": "", "src/util.gleam": "pub fn twice(x) { x * 2 }", "src/app.gleam": "pub fn main() {}" };
+    expect(entryFor("gleam/project", Object.keys(gleam), reader(gleam))).toBe("src/app.gleam");
+    const vb = { "App.vbproj": "", "Helpers.vb": "Module Helpers\nEnd Module", "Start.vb": "Module Start\n  Sub Main()\n  End Sub\nEnd Module" };
+    expect(entryFor("vb/console", Object.keys(vb), reader(vb))).toBe("Start.vb");
   });
 
   it("null when the project has no file of the language", () => {

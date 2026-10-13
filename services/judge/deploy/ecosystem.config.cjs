@@ -21,7 +21,8 @@ module.exports = {
       cwd: path.join(appDir, "services/judge"),
       // Plain JavaScript built by install.sh (scripts/build.mjs).
       script: "dist/server.mjs",
-      max_memory_restart: "150M",
+      // Project runs hold a build snapshot (up to 64 MB) in memory while they run.
+      max_memory_restart: "400M",
       env: {
         NODE_ENV: "production",
         JUDGE_HOST: "127.0.0.1",

@@ -1,0 +1,20 @@
+{
+  "id": "crystal-hello",
+  "language": "crystal",
+  "kind": "crystal/single",
+  "title": "Crystal – Hello, world",
+  "description": "The smallest Crystal program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.cr",
+  "open": [
+    "main.cr"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "crystal"
+  ]
+}

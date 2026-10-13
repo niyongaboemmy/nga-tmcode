@@ -1,0 +1,20 @@
+{
+  "id": "tcl-hello",
+  "language": "tcl",
+  "kind": "tcl/single",
+  "title": "Tcl – Hello, world",
+  "description": "The smallest Tcl program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.tcl",
+  "open": [
+    "main.tcl"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "tclsh"
+  ]
+}

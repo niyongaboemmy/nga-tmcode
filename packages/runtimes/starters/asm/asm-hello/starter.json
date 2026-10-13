@@ -1,0 +1,21 @@
+{
+  "id": "asm-hello",
+  "language": "asm",
+  "kind": "asm/nasm",
+  "title": "Assembly – Hello, world",
+  "description": "The smallest Assembly program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.asm",
+  "open": [
+    "main.asm"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "nasm",
+    "gcc"
+  ]
+}

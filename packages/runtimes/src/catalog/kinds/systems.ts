@@ -102,7 +102,7 @@ export const SYSTEMS_KINDS = [
     steps: {
       build: { tool: "go", args: ["build", "-o", out("app"), "."] },
       run: { tool: "stdbuf", args: ["-oL", out("app")] },
-      test: { tool: "gotestsum", args: [reportTo("--junitfile="), "--", "./...", testFilter], report: "junit", path: "go-junit.xml" },
+      test: { tool: "go", args: ["test", "-json", "./...", testFilter], report: "go" },
     },
     tier: "isolate-build",
     caches: ["go-mod-school"],

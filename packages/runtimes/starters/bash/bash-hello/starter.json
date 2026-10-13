@@ -1,0 +1,20 @@
+{
+  "id": "bash-hello",
+  "language": "bash",
+  "kind": "bash/single",
+  "title": "Bash – Hello, world",
+  "description": "The smallest Bash program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.sh",
+  "open": [
+    "main.sh"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.3",
+  "tools": [
+    "bash"
+  ]
+}

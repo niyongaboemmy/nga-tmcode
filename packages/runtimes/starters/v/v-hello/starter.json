@@ -1,0 +1,20 @@
+{
+  "id": "v-hello",
+  "language": "v",
+  "kind": "v/single",
+  "title": "V – Hello, world",
+  "description": "The smallest V program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.v",
+  "open": [
+    "main.v"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "v"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "gleam-hello",
+  "language": "gleam",
+  "kind": "gleam/project",
+  "title": "Gleam – Hello, world",
+  "description": "The smallest Gleam program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "src/app.gleam",
+  "open": [
+    "src/app.gleam"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "gleam",
+    "erl"
+  ]
+}

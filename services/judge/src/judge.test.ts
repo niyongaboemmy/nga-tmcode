@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeOutput as protocolNormalize } from "../../../packages/protocol/src/output";
-import { judge, normalizeOutput, resolvePrograms, validate, type RunRequest } from "./judge.ts";
+import { capBytes, judge, normalizeOutput, resolvePrograms, validate, type RunRequest } from "./judge.ts";
+import { javaMainClass } from "./languages.ts";
 import { extraMounts, IsolateSandbox, LocalSandbox, parseMeta, statusFromMeta, type Sandbox } from "./sandbox.ts";
 
 /**
@@ -18,6 +19,22 @@ const run = (req: Omit<RunRequest, "tests"> & { tests?: RunRequest["tests"] }) =
 describe("normalizeOutput", () => {
   it("is the same rule as the protocol package", () => {
     for (const s of ["a\r\nb\r\n", "x  \n\n", "", "  lead"]) expect(normalizeOutput(s)).toBe(protocolNormalize(s));
+  });
+});
+
+describe("capBytes", () => {
+  it("cuts on UTF-8 byte counts without splitting characters", () => {
+    expect(capBytes("abc", 3)).toEqual({ text: "abc", cut: false });
+    expect(capBytes("abcd", 3)).toEqual({ text: "abc", cut: true });
+    expect(capBytes("aé", 2)).toEqual({ text: "a", cut: true });
+  });
+});
+
+describe("javaMainClass", () => {
+  it("adds the package declaration to the entry stem", () => {
+    expect(javaMainClass("Main", "public class Main {}")).toBe("Main");
+    expect(javaMainClass("Main", "package rw.ac.nga;\npublic class Main {}")).toBe("rw.ac.nga.Main");
+    expect(javaMainClass("App", "/* package fake; */\n// package nope;\n  package a.b ;\nclass App {}")).toBe("a.b.App");
   });
 });
 
@@ -84,6 +101,45 @@ describe.runIf(has("python3"))("python-3", () => {
   it("stops runaway output", async () => {
     const r = await run({ language: "python-3", entry: "main.py", files: [{ path: "main.py", content: "while True: print('x' * 1000)\n" }], limits: { output_kb: 64, wall_s: 5 } });
     expect(r.tests[0].verdict).toBe("output-limit");
+    expect(r.tests[0].truncated).toBe(true);
+  });
+
+  it("returns stdout up to output_kb and stderr up to 64 KB, flagging cuts", async () => {
+    const r = await run({
+      language: "python-3",
+      entry: "main.py",
+      files: [{ path: "main.py", content: "import sys\nsys.stdout.write('o' * 200 * 1024)\nsys.stderr.write('e' * 100 * 1024)\n" }],
+      limits: { output_kb: 512 },
+    });
+    expect(r.tests[0].verdict).toBe("ok");
+    expect(r.tests[0].stdout.length).toBe(200 * 1024);
+    expect(r.tests[0].stderr.length).toBe(64 * 1024);
+    expect(r.tests[0].truncated).toBe(true);
+
+    const small = await run({ language: "python-3", entry: "main.py", files: [{ path: "main.py", content: "print('hi')\n" }] });
+    expect(small.tests[0].truncated).toBe(false);
+  });
+
+  it("gives every test a fresh box: files written by one test are gone in the next", async () => {
+    const code = "import os\nprint('leaked' if os.path.exists('leak.txt') else 'clean')\nopen('leak.txt', 'w').write('x')\nprint('src' if os.path.exists('main.py') and os.path.exists('data/in.txt') else 'nosrc')\n";
+    const r = await judge(sandbox, programs, {
+      language: "python-3",
+      entry: "main.py",
+      files: [
+        { path: "main.py", content: code },
+        { path: "data/in.txt", content: "1\n" },
+      ],
+      tests: [
+        { id: "1", input: "", expected_output: "clean\nsrc\n" },
+        { id: "2", input: "", expected_output: "clean\nsrc\n" },
+        { id: "3", input: "", expected_output: "clean\nsrc\n" },
+      ],
+    });
+    expect(r.tests.map((t) => [t.id, t.verdict, t.stdout])).toEqual([
+      ["1", "accepted", "clean\nsrc\n"],
+      ["2", "accepted", "clean\nsrc\n"],
+      ["3", "accepted", "clean\nsrc\n"],
+    ]);
   });
 });
 
@@ -105,11 +161,23 @@ describe.runIf(has("gcc"))("c17", () => {
     expect(r.tests.every((t) => t.passed)).toBe(true);
   });
 
-  it("returns compiler errors and fails every test", async () => {
-    const r = await run({ language: "c17", entry: "main.c", files: [{ path: "main.c", content: "int main(void) { return 0 }\n" }] });
+  it("returns compiler errors and fails every test with compile-error", async () => {
+    const r = await judge(sandbox, programs, {
+      language: "c17",
+      entry: "main.c",
+      files: [{ path: "main.c", content: "int main(void) { return 0 }\n" }],
+      tests: [
+        { id: "1", input: "", expected_output: "" },
+        { id: "2", input: "" },
+      ],
+    });
     expect(r.compile?.ok).toBe(false);
     expect(r.compile?.output).toMatch(/main\.c:1:/);
-    expect(r.tests[0].passed).toBe(false);
+    expect(r.tests.map((t) => [t.verdict, t.passed])).toEqual([
+      ["compile-error", false],
+      ["compile-error", false],
+    ]);
+    expect(r.tests[0].stderr).toMatch(/main\.c:1:/);
   });
 });
 
@@ -122,6 +190,26 @@ describe.runIf(has("javac", "java"))("java-21", () => {
       tests: [{ id: "1", input: "21\n", expected_output: "42\n" }],
     });
     expect(r.tests[0].verdict).toBe("accepted");
+  });
+
+  it("runs an entry in a package and a subfolder (two files)", async () => {
+    const r = await judge(sandbox, programs, {
+      language: "java-21",
+      entry: "src/rw/ac/nga/Main.java",
+      files: [
+        {
+          path: "src/rw/ac/nga/Main.java",
+          content: "package rw.ac.nga;\n\nimport java.util.Scanner;\n\npublic class Main {\n  public static void main(String[] a) {\n    System.out.println(Calc.twice(new Scanner(System.in).nextInt()));\n  }\n}\n",
+        },
+        { path: "src/rw/ac/nga/Calc.java", content: "package rw.ac.nga;\n\nclass Calc {\n  static int twice(int n) { return n * 2; }\n}\n" },
+      ],
+      tests: [
+        { id: "1", input: "21\n", expected_output: "42\n" },
+        { id: "2", input: "5\n", expected_output: "10\n" },
+      ],
+    });
+    expect(r.compile?.ok).toBe(true);
+    expect(r.tests.map((t) => t.verdict)).toEqual(["accepted", "accepted"]);
   });
 });
 
@@ -144,6 +232,7 @@ describe.runIf(has("node"))("typescript", () => {
     const r = await run({ language: "typescript", entry: "main.ts", files: [{ path: "main.ts", content: "const x: number = ;\n" }] });
     expect(r.compile?.ok).toBe(false);
     expect(r.compile?.output).toMatch(/main\.ts:1:/);
+    expect(r.tests[0].verdict).toBe("compile-error");
   });
 });
 

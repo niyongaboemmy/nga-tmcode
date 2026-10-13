@@ -1,0 +1,20 @@
+{
+  "id": "lisp-hello",
+  "language": "lisp",
+  "kind": "lisp/single",
+  "title": "Common Lisp – Hello, world",
+  "description": "The smallest Common Lisp program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.lisp",
+  "open": [
+    "main.lisp"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "sbcl"
+  ]
+}

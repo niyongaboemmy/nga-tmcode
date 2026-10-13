@@ -1,0 +1,20 @@
+{
+  "id": "ocaml-hello",
+  "language": "ocaml",
+  "kind": "ocaml/single",
+  "title": "OCaml – Hello, world",
+  "description": "The smallest OCaml program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.ml",
+  "open": [
+    "main.ml"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "ocaml"
+  ]
+}

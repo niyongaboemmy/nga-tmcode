@@ -1,0 +1,20 @@
+{
+  "id": "scheme-hello",
+  "language": "scheme",
+  "kind": "scheme/single",
+  "title": "Scheme – Hello, world",
+  "description": "The smallest Scheme program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.scm",
+  "open": [
+    "main.scm"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "guile"
+  ]
+}

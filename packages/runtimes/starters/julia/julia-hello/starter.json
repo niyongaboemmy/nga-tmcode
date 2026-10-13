@@ -1,0 +1,20 @@
+{
+  "id": "julia-hello",
+  "language": "julia",
+  "kind": "julia/single",
+  "title": "Julia – Hello, world",
+  "description": "The smallest Julia program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.jl",
+  "open": [
+    "main.jl"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "julia"
+  ]
+}

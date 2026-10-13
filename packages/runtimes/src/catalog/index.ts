@@ -2,6 +2,7 @@
 import type { Catalog, KindDef } from "../schema";
 import { DATA_KINDS } from "./kinds/data";
 import { JVM_KINDS } from "./kinds/jvm";
+import { LONGTAIL_KINDS } from "./kinds/longtail";
 import { OTHER_KINDS } from "./kinds/other";
 import { SCRIPTING_KINDS } from "./kinds/scripting";
 import { SYSTEMS_KINDS } from "./kinds/systems";
@@ -10,9 +11,9 @@ import { LANGUAGES } from "./languages";
 import { RUNTIMES } from "./runtimes";
 
 /** Bumped when the catalog changes: `<year>.<month>.<n>`. */
-export const CATALOG_VERSION = "2026.10.1";
+export const CATALOG_VERSION = "2026.10.3";
 
-export const KINDS: KindDef[] = [...SYSTEMS_KINDS, ...JVM_KINDS, ...SCRIPTING_KINDS, ...WEB_KINDS, ...DATA_KINDS, ...OTHER_KINDS];
+export const KINDS: KindDef[] = [...SYSTEMS_KINDS, ...JVM_KINDS, ...SCRIPTING_KINDS, ...WEB_KINDS, ...DATA_KINDS, ...OTHER_KINDS, ...LONGTAIL_KINDS];
 
 export { LANGUAGES, RUNTIMES };
 

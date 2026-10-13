@@ -1,0 +1,23 @@
+# Python packages in the school wheelhouse (wheels-school) and the shared
+# site-packages layer (site-packages-school). CODE_RUNNER_PLAN §18.2.
+# Add a package here, re-run deploy/build-caches.sh, then restart tm-judge.
+pytest
+hypothesis
+numpy
+pandas
+matplotlib
+scipy
+scikit-learn
+flask
+fastapi
+uvicorn
+httpx
+django
+pydantic
+sqlalchemy
+requests
+beautifulsoup4
+pillow
+sympy
+networkx
+rich

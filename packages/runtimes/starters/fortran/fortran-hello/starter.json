@@ -1,0 +1,20 @@
+{
+  "id": "fortran-hello",
+  "language": "fortran",
+  "kind": "fortran/single",
+  "title": "Fortran – Hello, world",
+  "description": "The smallest Fortran program",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "main.f90",
+  "open": [
+    "main.f90"
+  ],
+  "tags": [
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "gfortran"
+  ]
+}

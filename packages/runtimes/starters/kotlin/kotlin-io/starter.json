@@ -1,0 +1,25 @@
+{
+  "id": "kotlin-io",
+  "language": "kotlin",
+  "kind": "kotlin/single",
+  "title": "Kotlin – Sum of two numbers (input/output)",
+  "description": "Reads two whole numbers on one line and prints their sum",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "Main.kt",
+  "open": [
+    "Main.kt"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "kotlinc",
+    "java"
+  ]
+}

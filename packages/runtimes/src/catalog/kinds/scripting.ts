@@ -4,10 +4,15 @@ import { entry, kind, LIMITS, MANAGED_RUN, out, testFilter, reportTo } from "./k
 const PY_MANIFESTS = ["requirements.txt", "pyproject.toml", "Pipfile"];
 const PY_DEPS = "requirements.txt|pyproject.toml|Pipfile|*.py";
 const PYTEST = { tool: "python3", args: ["-m", "pytest", "-q", "-p", "no:cacheprovider", reportTo("--junitxml="), testFilter], report: "junit" as const, path: "pytest-junit.xml" };
-const UV_RESTORE = { tool: "uv", args: ["pip", "install", "--offline", "--no-index", "--find-links", "/caches/wheels", "-r", "requirements.txt"], when: { exists: ["requirements.txt"] }, runsProjectScripts: true };
+/** Installs into the project's .pydeps (on PYTHONPATH) from the school wheelhouse only. */
+const UV_RESTORE = { tool: "uv", args: ["pip", "install", "--offline", "--no-index", "--find-links", "/caches/wheels-school", "--target", ".pydeps", "-r", "requirements.txt"], when: { exists: ["requirements.txt"] }, runsProjectScripts: true };
 const PY_PROJECT_LIMITS = { ...LIMITS["isolate-build"], run: { cpu_s: 10, wall_s: 20, memory_mb: 512, processes: 32, output_kb: 1024 } };
 
-const NPM_CI = { tool: "npm", args: ["ci", "--offline", "--cache", "/caches/npm", "--no-audit", "--no-fund"], runsProjectScripts: true };
+/**
+ * Offline install from the read-only npm cache layer (packuments + tarballs), so it
+ * works with or without a package-lock.json (a lock file is respected).
+ */
+const NPM_CI = { tool: "npm", args: ["install", "--offline", "--cache", "/caches/npm-school", "--no-audit", "--no-fund", "--no-save"], runsProjectScripts: true };
 const NPM_TEST = { tool: "npm", args: ["test", "--silent"], runsProjectScripts: true, report: "junit" as const, path: "reports/junit.xml" };
 const NODE_PROJECT_LIMITS = { ...LIMITS["isolate-build"], run: MANAGED_RUN };
 const JS_SRC = ["*.js", "*.mjs", "*.cjs"];
@@ -25,6 +30,7 @@ export const SCRIPTING_KINDS = [
     entry: { default: "main.py", find: "main-decl" },
     steps: { run: { tool: "python3", args: ["-u", entry] }, test: PYTEST },
     tier: "isolate",
+    caches: ["site-packages-school"],
   }),
   kind({
     id: "python/project",

@@ -1,0 +1,25 @@
+{
+  "id": "gleam-io",
+  "language": "gleam",
+  "kind": "gleam/project",
+  "title": "Gleam – Sum of two numbers (input/output)",
+  "description": "Reads two whole numbers on one line and prints their sum",
+  "level": "beginner",
+  "purpose": "io-exercise",
+  "entry": "src/app.gleam",
+  "open": [
+    "src/app.gleam"
+  ],
+  "tests": {
+    "io": ".nga/tests.json"
+  },
+  "tags": [
+    "io",
+    "basics"
+  ],
+  "since": "2026.10.2",
+  "tools": [
+    "gleam",
+    "erl"
+  ]
+}
