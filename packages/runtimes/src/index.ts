@@ -6,7 +6,7 @@
  */
 export * from "./schema";
 export { CATALOG, CATALOG_VERSION, KINDS, LANGUAGES, RUNTIMES, kindById, kindsOf, languageByKey, runtimeById } from "./catalog";
-export { detect, detectKind, entryFor, isTestPath, javaMainClass, matchName, IGNORED_PATH, type DetectedKind, type DetectOptions, type FileReader } from "./detect";
+export { detect, detectKind, entryFor, isEntrySource, isTestPath, javaMainClass, matchName, IGNORED_PATH, type DetectedKind, type DetectOptions, type FileReader } from "./detect";
 export { startersFor } from "./starters";
 export { validateCatalog, validateStarter, validateStarters, type StarterInput } from "./validate";
 export * as testing from "./testing";

@@ -1,12 +1,13 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { kindById } from "../../../packages/runtimes/src/index.ts";
 import { check, checkerProblem } from "./checkers.ts";
 import { resolvePrograms, type RunResponse } from "./judge.ts";
 import { missingPackage } from "./packages.ts";
-import { cacheFiles, resolveProject, runLimits, stepArgv, type ProjectRequest, type ProjectResponse } from "./project.ts";
+import { cacheFiles, missingModule, resolveProject, runLimits, stepArgv, type ProjectRequest, type ProjectResponse } from "./project.ts";
 import { isProjectRequest, run, type JudgeEnv } from "./run.ts";
 import { IsolateSandbox, LocalSandbox, localPath, restoreSnapshot, type Sandbox } from "./sandbox.ts";
 import { renderArgs, testFilterArgs, type TokenContext } from "./tokens.ts";
@@ -438,6 +439,114 @@ describe.runIf(can("python/single"))("python/single fresh state per run", () => 
     const code = "import os\nprint('leaked' if os.path.exists('leak.txt') else 'clean')\nopen('leak.txt', 'w').write('x')\n";
     const r = await project({ kind: "python/single", files: [{ path: "main.py", content: code }], tests: [1, 2, 3].map((i) => ({ id: String(i), input: "", expected_output: "clean" })) });
     expect(r.tests.map((t) => t.verdict)).toEqual(["accepted", "accepted", "accepted"]);
+  });
+});
+
+// ───────────── sweep findings (every catalog starter on a production runner) ─────────────
+
+describe("entries that aren't source files", () => {
+  it("ignores a requested PROBLEM.md and runs the kind's entry", () => {
+    if (!can("python/single")) return;
+    const files = starter("python", "tmcode-problem-solving");
+    const r = resolveProject(tc, { kind: "python/single", entry: "PROBLEM.md", files, tests: [{ id: "1", input: "" }] });
+    expect(r.entry).toBe("solution.py");
+    expect(resolveProject(tc, { kind: "python/single", entry: "solution.py", files }).entry).toBe("solution.py");
+    expect(() => resolveProject(tc, { kind: "python/single", entry: "nope.py", files })).toThrow(/not among the files/);
+  });
+});
+
+describe.runIf(can("python/single"))("python/single starter tmcode-problem-solving", () => {
+  it("runs solution.py, not PROBLEM.md (unsolved: wrong answers, no SyntaxError)", async () => {
+    const r = await project({ kind: "python/single", entry: "PROBLEM.md", files: starter("python", "tmcode-problem-solving"), tests: [{ id: "t1", input: "5\n", expected_output: "1 2 Fizz 4 Buzz\n" }] });
+    expect(r.entry).toBe("solution.py");
+    expect(r.tests[0].stderr).not.toMatch(/SyntaxError/);
+    expect(r.tests[0].stdout.trim(), JSON.stringify(r.tests[0])).toBe("5");
+    expect(r.tests[0].verdict).toBe("wrong-answer");
+  });
+});
+
+describe.runIf(can("sql/sqlite"))("sql/sqlite with a schema and seed (starter sql-io-select)", () => {
+  it("builds the seed database and passes the I/O test (no file locks in the box)", async () => {
+    const files = starter("sql", "sql-io-select");
+    const io = JSON.parse(files.find((f) => f.path === ".nga/tests.json")!.content) as { tests: { id: string; input: string; expected_output: string }[] };
+    const r = await project({ kind: "sql/sqlite", files, tests: io.tests.map((t) => ({ id: t.id, input: t.input, expected_output: t.expected_output })) });
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
+    expect(r.tests.map((t) => t.verdict), JSON.stringify({ compile: r.compile, tests: r.tests })).toEqual(io.tests.map(() => "accepted"));
+  });
+  it("runs the sql-sqlite-school queries against the seeded tables", async () => {
+    const r = await project({ kind: "sql/sqlite", files: starter("sql", "sql-sqlite-school"), tests: [{ id: "1", input: "" }] });
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
+    expect(r.tests[0].verdict, JSON.stringify(r.tests[0])).toBe("ok");
+    expect(r.tests[0].stdout.length).toBeGreaterThan(0);
+  });
+});
+
+describe("toolchain requires checks (Objective-C front end)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tm-judge-req-"));
+  const script = (name: string, body: string) => {
+    const p = join(dir, name);
+    writeFileSync(p, `#!/bin/sh\n${body}\n`);
+    chmodSync(p, 0o755);
+    return p;
+  };
+  // gcc -print-prog-name=X prints the bare name when the front end isn't installed, a path when it is.
+  const without = script("gcc-without", 'case "$1" in -print-*) echo "${1#*=}" ;; *) echo gcc ;; esac');
+  const withIt = script("gcc-with", `echo "${dir}/gcc-with"`);
+  const objc = kindById("objc/single")!;
+  it("reports objc/single unavailable when gcc has no cc1obj", () => {
+    const t = resolveToolchains({ lookup: false, overrides: { "gobjc-13": { gcc: without } } });
+    const a = availability(t, objc);
+    expect(a.available).toBe(false);
+    expect(a.missing).toContain("cc1obj (gobjc-13)");
+    expect(catalogView(t).unavailable.find((u) => u.id === "objc/single")?.reason).toMatch(/cc1obj/);
+    expect(() => resolveProject(t, { kind: "objc/single", files: [{ path: "main.m", content: "int main(void){return 0;}" }] })).toThrow(/cc1obj/);
+    // gcc-13 itself (c/single) is unaffected.
+    expect(availability(resolveToolchains({ lookup: false, overrides: { "*": { gcc: without } } }), kindById("c/single")!).missing).not.toContain("cc1obj (gobjc-13)");
+  });
+  it("offers it when the checks name real files", () => {
+    const t = resolveToolchains({ lookup: false, overrides: { "gobjc-13": { gcc: withIt } } });
+    expect(availability(t, objc)).toMatchObject({ available: true, missing: [] });
+  });
+  it("matches what this machine's gcc says", () => {
+    const gcc = tc.runtimes.get("gobjc-13")?.tools.gcc;
+    if (!gcc) return;
+    const front = spawnSync(gcc, ["-print-prog-name=cc1obj"], { encoding: "utf8" }).stdout.trim();
+    if (!(front.startsWith("/") && existsSync(front))) expect(availability(tc, objc).available).toBe(false);
+  });
+});
+
+describe("python/data on a runner without uv", () => {
+  const python3 = tc.runtimes.get("python-3.12")?.tools.python3 ?? null;
+  const noUv = resolveToolchains({ lookup: false, overrides: python3 ? { "python-3.12": { python3 } } : {}, caches });
+  const data = kindById("python/data")!;
+  it("stays available and skips the requirements.txt restore", () => {
+    if (!python3) return;
+    expect(noUv.runtimes.get("python-3.12")?.tools.uv).toBeNull();
+    expect(availability(noUv, data)).toMatchObject({ available: true, missing: [], missing_optional: [] });
+  });
+  it("maps a failed import to package-not-available", () => {
+    expect(missingModule("Traceback (most recent call last):\n  File \"a.py\", line 1\nModuleNotFoundError: No module named 'pandas.core'\n")).toEqual({ manager: "pip", package: "pandas" });
+    expect(missingModule("NameError: name 'x' is not defined")).toBeNull();
+  });
+  const runs = !!python3 && (!useIsolate || !python3.startsWith(`${homedir()}/`));
+  it.runIf(runs)("runs on the system's packages; a package it lacks is package-not-available", async () => {
+    const e: JudgeEnv = { ...env, toolchains: noUv };
+    const files = [
+      { path: "requirements.txt", content: "pandas\nnga_not_a_real_package\n" },
+      { path: "analysis.py", content: "print('rows', 3)\n" },
+    ];
+    const ok = await project({ kind: "python/data", files, tests: [{ id: "1", input: "", expected_output: "rows 3" }] }, e);
+    expect(ok.steps.map((s) => s.step)).not.toContain("restore");
+    expect(ok.tests[0].verdict, JSON.stringify(ok)).toBe("accepted");
+    const bad = await project({ kind: "python/data", files: [files[0], { path: "analysis.py", content: "import nga_not_a_real_package\n" }], tests: [{ id: "1", input: "", expected_output: "x" }] }, e);
+    expect(bad.tests[0].verdict, JSON.stringify(bad)).toBe("package-not-available");
+    expect(bad.error).toMatchObject({ code: "PACKAGE_NOT_AVAILABLE", manager: "pip", package: "nga_not_a_real_package" });
+  });
+  const hasData = runs && spawnSync(python3!, ["-c", "import pandas, matplotlib, pytest"]).status === 0;
+  it.runIf(hasData)("runs the python-data-marks starter and its pytest suite with apt's pandas and matplotlib", async () => {
+    const r = await project({ kind: "python/data", files: starter("python", "python-data-marks"), actions: ["build", "run", "test"], tests: [{ id: "1", input: "" }] }, { ...env, toolchains: noUv });
+    expect(r.tests[0].verdict, JSON.stringify(r.tests[0])).toBe("ok");
+    expect(r.unit?.verdict, r.unit?.output).toBe("passed");
   });
 });
 

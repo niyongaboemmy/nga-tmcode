@@ -2,7 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CATALOG, LANGUAGES, kindById } from "./catalog";
-import { detect, entryFor } from "./detect";
+import { detect, entryFor, isEntrySource } from "./detect";
 import { loadStarters } from "./node/starters";
 import { IoTestsSchema, StarterManifestSchema } from "./schema";
 import { startersFor } from "./starters";
@@ -45,6 +45,8 @@ describe("starters", () => {
       expect(Math.floor(top.score / 1000)).toBe(Math.floor(mine!.score / 1000));
     }
     expect(entryFor(kind!, paths, read)).not.toBeNull();
+    // The runner runs the entry: it must be a source file of the kind (never PROBLEM.md or a README).
+    if (kind!.steps.run) expect(isEntrySource(kind!, m.entry), `entry ${m.entry}`).toBe(true);
   });
 
   it("give every wave A language a hello, an io-exercise and a project with a unit test", () => {

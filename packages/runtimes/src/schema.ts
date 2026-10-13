@@ -25,6 +25,23 @@ export const RuntimeDefSchema = z.strictObject({
   env: z.record(z.string(), z.string()).optional(),
   /** Other runtimes this one builds on (TypeScript uses node-22). */
   uses: z.array(z.string()).optional(),
+  /**
+   * Parts of the toolchain that have no program of their own, checked by asking
+   * one of its tools: the command's first output line must be the absolute path
+   * of an existing file. gcc -print-prog-name=cc1obj names the Objective-C
+   * front end when gobjc is installed, and prints a bare "cc1obj" when it isn't.
+   */
+  requires: z
+    .array(
+      z.strictObject({
+        /** What is missing when the check fails ("cc1obj"). */
+        name: z.string().min(1),
+        /** A logical tool of this runtime. */
+        tool: z.string().min(1),
+        args: z.array(z.string()),
+      }),
+    )
+    .optional(),
 });
 export type RuntimeDef = z.infer<typeof RuntimeDefSchema>;
 
@@ -85,6 +102,12 @@ export const StepSchema = z.strictObject({
   when: z.strictObject({ exists: z.array(z.string()).min(1) }).optional(),
   /** The step executes the project's own build logic (npm scripts, make, mvn, gradle): policy may forbid it in exams. */
   runsProjectScripts: z.boolean().optional(),
+  /**
+   * Skip the step (instead of answering RUNTIME_UNAVAILABLE) when its tool isn't
+   * installed: the run goes on with what the runtime already has (Python's uv
+   * restore: the system's packages, a missing import is package-not-available).
+   */
+  ifInstalled: z.boolean().optional(),
 });
 export type Step = z.infer<typeof StepSchema>;
 

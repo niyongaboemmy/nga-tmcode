@@ -232,7 +232,8 @@ export function containerToolchains(tc: Toolchains): Toolchains {
   let v = cTc.get(tc);
   if (!v) {
     const runtimes = new Map<string, RuntimeState>();
-    for (const def of CATALOG.runtimes) runtimes.set(def.id, { def, tools: { ...def.tools }, version: tc.runtimes.get(def.id)?.version ?? null });
+    // The image carries the whole toolchain (gobjc included): no host checks.
+    for (const def of CATALOG.runtimes) runtimes.set(def.id, { def, tools: { ...def.tools }, version: tc.runtimes.get(def.id)?.version ?? null, missingParts: [] });
     v = { ...tc, runtimes };
     cTc.set(tc, v);
   }

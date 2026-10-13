@@ -188,6 +188,22 @@ function fromManifest(k: KindDef, files: string[], read?: FileReader): string | 
 }
 
 /**
+ * Whether a file can be a kind's entry: a source file of its language (or the
+ * sibling language: a .ts entry for a JavaScript framework app), headers aside.
+ * A README.md or PROBLEM.md is never the program, whatever a manifest says.
+ */
+export function isEntrySource(kind: KindDef | string, path: string): boolean {
+  const k = typeof kind === "string" ? KINDS.find((x) => x.id === kind) : kind;
+  if (!k) return false;
+  const name = base(path);
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return false;
+  const ext = name.slice(dot + 1).toLowerCase();
+  if (NOT_ENTRY_EXT.has(ext)) return false;
+  return [k.language, SIBLING[k.language]].some((l) => (languageByKey(l ?? "")?.extensions ?? []).some((e) => e.toLowerCase() === ext));
+}
+
+/**
  * The file a kind runs: from the manifest (package.json, Cargo layout…) or the
  * file that declares main, else the kind's default when it exists, else the
  * best-named source file. Null when the project has no file of the language.

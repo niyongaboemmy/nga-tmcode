@@ -15,8 +15,10 @@ export const DATA_KINDS = [
     entry: { default: "main.sql", find: "manifest" },
     steps: {
       // The seed database: schema.sql then seed.sql (when the project has them); each run gets its own copy.
-      build: { tool: "sqlite3", args: ["-bail", { out: "seed.db" }, ".read schema.sql", ".read seed.sql"], when: { exists: ["schema.sql", "seed.sql"] } },
-      run: { tool: "sqlite3", args: ["-bail", "-header", "-box", { out: "seed.db" }], stdin: entry },
+      // -vfs unix-none: no file locks. The database is private to the box, and isolate refuses
+      // fcntl locks (SQLite reported them as "access permission denied"), so the box needs no fileLocks.
+      build: { tool: "sqlite3", args: ["-bail", "-vfs", "unix-none", { out: "seed.db" }, ".read schema.sql", ".read seed.sql"], when: { exists: ["schema.sql", "seed.sql"] } },
+      run: { tool: "sqlite3", args: ["-bail", "-header", "-box", "-vfs", "unix-none", { out: "seed.db" }], stdin: entry },
     },
     tier: "isolate",
     interactive: "none",

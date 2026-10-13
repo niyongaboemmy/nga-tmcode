@@ -18,7 +18,7 @@ await build({
   stdin: {
     contents: `
       export { TEMPLATES } from "./packages/workbench/src/projects/templates.ts";
-      export { detect, entryFor } from "./packages/runtimes/src/detect.ts";
+      export { detect, entryFor, isEntrySource } from "./packages/runtimes/src/detect.ts";
       export { kindById } from "./packages/runtimes/src/catalog/index.ts";
       export { detectSuites, snapshotsOf } from "./packages/runtimes/src/testing/index.ts";
       export { StarterManifestSchema, IoTestsSchema } from "./packages/runtimes/src/schema.ts";
@@ -32,7 +32,7 @@ await build({
   outfile: bundle,
   logLevel: "warning",
 });
-const { TEMPLATES, detect, entryFor, kindById, detectSuites, snapshotsOf, StarterManifestSchema, IoTestsSchema } = await import(pathToFileURL(bundle).href);
+const { TEMPLATES, detect, entryFor, isEntrySource, kindById, detectSuites, snapshotsOf, StarterManifestSchema, IoTestsSchema } = await import(pathToFileURL(bundle).href);
 rmSync(bundle);
 
 /** Templates whose files alone don't say what they are (scaffolded later, or TMCode-only). */
@@ -71,7 +71,9 @@ for (const t of TEMPLATES) {
   const kind = KIND_OVERRIDE[t.id] ?? ranked[0]?.kind;
   if (!kind) throw new Error(`${t.id}: no catalog kind matches ${paths.join(", ")}`);
   const k = kindById(kind);
-  const entry = t.main ?? entryFor(k, paths, read) ?? paths.find((p) => !/readme\.md$/i.test(p)) ?? paths[0];
+  // The template's main file is what TMCode opens; the entry is what the runner runs (never PROBLEM.md).
+  const main = t.main && (!k.steps.run || isEntrySource(k, t.main)) ? t.main : null;
+  const entry = main ?? entryFor(k, paths, read) ?? paths.find((p) => !/readme\.md$/i.test(p)) ?? paths[0];
 
   let purpose = PURPOSE[t.category];
   if (t.category === "Languages") purpose = files[".nga/tests.json"] ? "io-exercise" : "project";
@@ -87,7 +89,7 @@ for (const t of TEMPLATES) {
     level: t.category === "Learning" || t.category === "Languages" || t.category === "Websites" ? "beginner" : "intermediate",
     purpose,
     entry,
-    open: [entry],
+    open: [...new Set([t.main ?? entry, entry])],
     ...(files[".nga/tests.json"] || suite
       ? { tests: { ...(files[".nga/tests.json"] ? { io: ".nga/tests.json" } : {}), ...(suite ? { unit: { framework: suite.framework, command: "test" } } : {}) } }
       : {}),
