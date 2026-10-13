@@ -35,7 +35,8 @@ export const RUNTIMES: RuntimeDef[] = [
       javac: "/usr/lib/jvm/java-21-openjdk-amd64/bin/javac",
       mvn: "/opt/maven/bin/mvn",
       gradle: "/opt/gradle/bin/gradle",
-      // Not run directly: listing it mounts /opt/junit in the box (java/single unit tests).
+      // Not run directly: listing it mounts /opt/junit in the box (java/single unit tests);
+      // tm-judge counts only executable tools, so install.sh installs it 0755.
       junit: "/opt/junit/junit-platform-console-standalone.jar",
     },
     // Gradle's own home is per run (/tmp); dependencies come from the read-only cache layer gradle-school.

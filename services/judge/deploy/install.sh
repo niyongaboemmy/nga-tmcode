@@ -334,9 +334,11 @@ if [ ! -f "/opt/junit/.v${JUNIT_CONSOLE_VERSION}" ]; then
   fetch "$u.sha1" "$dl/junit.jar.sha1"
   check_sum sha1 "$dl/junit.jar" "$(cut -d' ' -f1 "$dl/junit.jar.sha1")"
   sudo mkdir -p /opt/junit
-  sudo install -m 0644 "$dl/junit.jar" "$jar"
+  # 0755: tm-judge counts a catalog tool only when it is executable (that also mounts /opt/junit).
+  sudo install -m 0755 "$dl/junit.jar" "$jar"
   sudo touch "/opt/junit/.v${JUNIT_CONSOLE_VERSION}"
 fi
+sudo chmod 0755 "$jar"
 sudo chmod -R a+rX /opt/junit
 
 echo "== 3/6 isolate ${ISOLATE_VERSION}"
