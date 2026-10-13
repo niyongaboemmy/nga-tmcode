@@ -33,7 +33,7 @@ import { DEFAULT_TTY, type ContainerSandbox } from "./containers.ts";
 import { ServiceError, type ServiceHandle, type ServiceName } from "./services.ts";
 import type { AcquireOptions, Box, ExecResult, Limits, Proc, Sandbox, SessionSignal } from "./sandbox.ts";
 import { testFilterArgs, type TokenContext } from "./tokens.ts";
-import type { Toolchains } from "./toolchains.ts";
+import { stepRuns, type Toolchains } from "./toolchains.ts";
 
 export interface SessionRequest {
   language?: string;
@@ -155,7 +155,7 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
   const setup = boxSetup(tc, kind);
   const ctx: TokenContext = { entry: entry ?? "", files: req.files.map((f) => f.path), mainClass: mainClassOf(entry, req.files), testFilter: testFilterArgs("", null), reportPath: null };
   const exists = (p: string) => req.files.some((f) => f.path === p);
-  const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => s && (!s.when || s.when.exists.every(exists)));
+  const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => stepRuns(tc, kind, s, exists));
   const run = kind.steps.run!;
   return {
     acquire: { mounts: setup.mounts, dirs: setup.dirs, fileLocks: setup.fileLocks, image: where.image },

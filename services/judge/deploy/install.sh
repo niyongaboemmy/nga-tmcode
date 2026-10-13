@@ -74,7 +74,9 @@ sudo apt-get install -y -qq --no-install-recommends \
 optional=""
 # python3-pytest: Python unit tests work even when the toolchains (and the
 # site-packages cache layer) are skipped with SKIP_TOOLCHAINS=1.
-for pkg in python3.12 python3.12-venv python3-pytest gcc-13 g++-13 libgtest-dev libcmocka-dev; do
+# python3-numpy/pandas/matplotlib: the same for python/data projects (without uv the
+# judge skips the requirements.txt restore and runs on these; MPLBACKEND=Agg in the box).
+for pkg in python3.12 python3.12-venv python3-pytest python3-numpy python3-pandas python3-matplotlib gcc-13 g++-13 libgtest-dev libcmocka-dev; do
   if [ -n "$(apt-cache policy "$pkg" 2>/dev/null | sed -n 's/ *Candidate: //p' | grep -v '(none)')" ]; then
     optional="$optional $pkg"
   else

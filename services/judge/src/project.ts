@@ -7,7 +7,7 @@
  * Tools come from the kind's runtime `tools` map (absolute paths), arguments
  * from the catalog plus typed tokens: no shell, no user-supplied commands.
  */
-import { detect, entryFor, javaMainClass as catalogMainClass, kindById, languageByKey, type KindDef, type Limits as KindLimits, type Step, type TestStep } from "../../../packages/runtimes/src/index.ts";
+import { detect, entryFor, isEntrySource, javaMainClass as catalogMainClass, kindById, languageByKey, type KindDef, type Limits as KindLimits, type Step, type TestStep } from "../../../packages/runtimes/src/index.ts";
 import { check, type CheckerSpec } from "./checkers.ts";
 import {
   capBytes,
@@ -31,7 +31,7 @@ import { javaMainClass, languageById } from "./languages.ts";
 import { missingPackage, missingPackageMessage, type MissingPackage } from "./packages.ts";
 import { restoreSnapshot, toolMounts, type Box, type ExecResult, type Limits, type Mount, type Sandbox } from "./sandbox.ts";
 import { entryStem, renderArgs, renderToken, TEST_FILTER, testFilterArgs, type TokenContext } from "./tokens.ts";
-import { availability, CATALOG_VERSION, containerCapable, OPTIONAL_TOOLS, runtimeChain, servicesReason, toolPath, type StepName, type Toolchains } from "./toolchains.ts";
+import { availability, CATALOG_VERSION, containerCapable, OPTIONAL_TOOLS, runtimeChain, servicesReason, stepRuns, toolPath, type StepName, type Toolchains } from "./toolchains.ts";
 import { containerToolchains, imageFor, type ContainerSandbox } from "./containers.ts";
 import { parseServices, ServiceError, startService, type ServiceHandle, type ServiceName } from "./services.ts";
 import { collectResults, frameworkOf, type TestResult as UnitTestResult } from "./unit.ts";
@@ -204,8 +204,11 @@ function resolveFor(tc: Toolchains, kind: KindDef, req: ProjectRequest, paths: s
   let entry: string | null = null;
   if (req.entry !== undefined && req.entry !== null && req.entry !== "") {
     if (!paths.includes(req.entry)) throw new RequestError(`Entry '${req.entry}' is not among the files.`);
-    entry = req.entry;
-  } else entry = entryFor(kind, paths, read);
+    // A requested entry that isn't a source file of the kind (PROBLEM.md, README.md) is the file
+    // the editor opened, not the program: the kind's own rule (main declaration, default) decides.
+    entry = isEntrySource(kind, req.entry) ? req.entry : null;
+  }
+  entry ??= entryFor(kind, paths, read);
   const needsEntry = (s: Step | undefined) => !!s && [...s.args, ...(s.stdin ? [s.stdin] : [])].some((t) => typeof t === "object" && ("entry" in t || "entry_stem" in t || "main_class" in t));
   if (!entry && actions.some((x) => (x === "run" ? needsEntry(kind.steps.run) : x === "build" ? needsEntry(kind.steps.build) : needsEntry(kind.steps.test)))) {
     throw new RequestError(`No entry file found for ${kind.label}; pass "entry".`);
@@ -365,7 +368,10 @@ export async function runProject(sandbox: Sandbox, env: ProjectEnv, req: Project
   };
   const overBudget = (): ExecResult => ({ status: "timeout", exitCode: null, stdout: "", stderr: `Stopped: the request used its whole time budget (${env.budgetS ?? DEFAULT_BUDGET_S} s).`, timeMs: 0, memoryKb: null, message: "budget" });
   const exists = (p: string) => req.files.some((f) => f.path === p);
-  const runsHere = (s: Step | undefined): s is Step => !!s && (!s.when || s.when.exists.every(exists));
+  const runsHere = (s: Step | undefined): s is Step => stepRuns(tc, kind, s, exists);
+  // An ifInstalled restore (uv) skipped on this runner: the project's packages were never installed.
+  const restore = kind.steps.restore;
+  const restoreSkipped = !!restore && (!restore.when || restore.when.exists.every(exists)) && !runsHere(restore);
   let db: ServiceHandle | null = null;
   const stepEnv = (s: Step) => ({ ...setup.env, ...(db?.env ?? {}), ...(s.env ?? {}) });
 
@@ -469,6 +475,12 @@ export async function runProject(sandbox: Sandbox, env: ProjectEnv, req: Project
       if (response.unit.verdict === "package-not-available") {
         const m = missingPackage(`${r.stdout}\n${r.stderr}`);
         if (m) setMissing(m);
+      } else if (restoreSkipped && response.unit.verdict === "error") {
+        const m = missingModule(`${r.stdout}\n${r.stderr}`);
+        if (m) {
+          setMissing(m);
+          response.unit.verdict = "package-not-available";
+        }
       }
     }
 
@@ -497,6 +509,11 @@ export async function runProject(sandbox: Sandbox, env: ProjectEnv, req: Project
         const r = await exec(run, limits, stdin);
         let verdict = VERDICT[r.status];
         if (verdict === "ok" && r.exitCode !== 0) verdict = "runtime-error";
+        const unrestored = verdict === "runtime-error" && restoreSkipped ? missingModule(r.stderr) : null;
+        if (unrestored) {
+          setMissing(unrestored);
+          verdict = "package-not-available";
+        }
         let passed: boolean | null = null;
         const expected = expectedOf(t);
         if (expected !== undefined) {
@@ -526,6 +543,15 @@ export async function runProject(sandbox: Sandbox, env: ProjectEnv, req: Project
   }
 }
 
+
+/**
+ * A Python import that failed because the restore step was skipped (no uv on
+ * this runner): the package isn't on the runner, which is package-not-available.
+ */
+export function missingModule(output: string): MissingPackage | null {
+  const m = /^ModuleNotFoundError: No module named '([\w.]+)'/m.exec(output);
+  return m ? { manager: "pip", package: m[1].split(".")[0] } : null;
+}
 
 function emptyUnit(kind: KindDef, step: TestStep, verdict: UnitVerdict, r: ExecResult | null, output: string): UnitResult {
   return {

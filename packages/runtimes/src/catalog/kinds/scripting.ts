@@ -4,8 +4,12 @@ import { entry, kind, LIMITS, MANAGED_RUN, out, testFilter, reportTo } from "./k
 const PY_MANIFESTS = ["requirements.txt", "pyproject.toml", "Pipfile"];
 const PY_DEPS = "requirements.txt|pyproject.toml|Pipfile|*.py";
 const PYTEST = { tool: "python3", args: ["-m", "pytest", "-q", "-p", "no:cacheprovider", reportTo("--junitxml="), testFilter], report: "junit" as const, path: "pytest-junit.xml" };
-/** Installs into the project's .pydeps (on PYTHONPATH) from the school wheelhouse only. */
-const UV_RESTORE = { tool: "uv", args: ["pip", "install", "--offline", "--no-index", "--find-links", "/caches/wheels-school", "--target", ".pydeps", "-r", "requirements.txt"], when: { exists: ["requirements.txt"] }, runsProjectScripts: true };
+/**
+ * Installs into the project's .pydeps (on PYTHONPATH) from the school wheelhouse only.
+ * A runner without uv (no toolchain layers) skips it and runs on the system's
+ * Python packages (apt python3-numpy, python3-pandas…).
+ */
+const UV_RESTORE = { tool: "uv", args: ["pip", "install", "--offline", "--no-index", "--find-links", "/caches/wheels-school", "--target", ".pydeps", "-r", "requirements.txt"], when: { exists: ["requirements.txt"] }, runsProjectScripts: true, ifInstalled: true };
 const PY_PROJECT_LIMITS = { ...LIMITS["isolate-build"], run: { cpu_s: 10, wall_s: 20, memory_mb: 512, processes: 32, output_kb: 1024 } };
 
 /**

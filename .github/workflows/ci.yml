@@ -67,10 +67,12 @@ jobs:
           node-version: 24
           cache: npm
       # libgtest-dev: the cpp/cmake starter finds GoogleTest (install.sh installs it on runners too).
+      # sqlite3: sql/sqlite starters with a schema and seed. python3-pandas/matplotlib/pytest: python/data
+      # on a runner without uv (install.sh's optional apt packages). No gobjc: objc/single must report unavailable.
       - name: Language runtimes and isolate build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev libseccomp-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless libgtest-dev
+          sudo apt-get install -y --no-install-recommends libcap-dev libsystemd-dev libseccomp-dev pkg-config python3 gcc g++ openjdk-21-jdk-headless libgtest-dev sqlite3 python3-numpy python3-pandas python3-matplotlib python3-pytest
       # The JUnit console launcher, as install.sh puts it (java/single unit tests).
       - name: JUnit console launcher
         run: |
@@ -97,4 +99,5 @@ jobs:
         working-directory: services/judge
         env:
           JUDGE_TEST_SANDBOX: isolate
-        run: npx vitest run --config vitest.config.ts
+        # Verbose: the log shows which real-box cases ran and which were skipped (toolchain missing).
+        run: npx vitest run --config vitest.config.ts --reporter=verbose

@@ -7,6 +7,9 @@
  *   1. JUDGE_TOOLCHAINS: JSON { "<runtime id>": { "<tool>": "/abs/path" }, "*": { "<tool>": "/abs/path" } }
  *   2. the catalog's absolute path (the runner image layout: /opt/go/bin/go…)
  *   3. `command -v <tool>` on the judge's PATH (unless JUDGE_TOOL_LOOKUP=0)
+ * A runtime's `requires` checks (parts with no program of their own, such as
+ * gobjc's cc1obj front end) run once its tool resolves; a failed check makes
+ * every kind of that runtime unavailable, like a missing tool.
  * Cache layers: JUDGE_CACHES = JSON { "<cache id>": "/host/folder" }; a layer
  * counts only when its folder exists and isn't empty. Boxes see it read-only at /caches/<id>.
  */
@@ -31,6 +34,8 @@ export interface RuntimeState {
   tools: Record<string, string | null>;
   /** First line of the version command, null when its tool is missing (filled by `probeVersions`). */
   version: string | null;
+  /** `requires` checks that failed ("cc1obj (gobjc-13)"): the runtime can't run anything. */
+  missingParts: string[];
 }
 
 export interface Toolchains {
@@ -91,6 +96,18 @@ function onPath(tool: string): string | null {
   return lookedUp.get(tool) ?? null;
 }
 
+const checked = new Map<string, boolean>();
+/** A `requires` check: the command's first output line is the absolute path of an existing file. */
+export function requirementMet(bin: string, args: string[]): boolean {
+  const key = JSON.stringify([bin, args]);
+  if (!checked.has(key)) {
+    const r = spawnSync(bin, args, { encoding: "utf8", timeout: 15_000, env: { PATH: `${dirname(bin)}:/usr/local/bin:/usr/bin:/bin`, HOME: "/tmp", LANG: "C.UTF-8" } });
+    const p = (r.stdout ?? "").split("\n")[0].trim();
+    checked.set(key, r.status === 0 && p.startsWith("/") && existsSync(p) && statSync(p).isFile());
+  }
+  return checked.get(key)!;
+}
+
 export function resolveToolchains(opts: ToolchainOptions = {}): Toolchains {
   const overrides = parseJson(opts.overrides, "JUDGE_TOOLCHAINS") as Record<string, Record<string, string>>;
   const cacheMap = parseJson(opts.caches, "JUDGE_CACHES") as Record<string, string>;
@@ -102,7 +119,8 @@ export function resolveToolchains(opts: ToolchainOptions = {}): Toolchains {
       const candidates = [overrides[def.id]?.[tool], overrides["*"]?.[tool], path].filter((p): p is string => typeof p === "string" && p.startsWith("/"));
       tools[tool] = candidates.find(executable) ?? (lookup ? onPath(tool) : null);
     }
-    runtimes.set(def.id, { def, tools, version: null });
+    const missingParts = (def.requires ?? []).filter((q) => !tools[q.tool] || !requirementMet(tools[q.tool]!, q.args)).map((q) => q.name);
+    runtimes.set(def.id, { def, tools, version: null, missingParts });
   }
   const caches = new Map<string, string>();
   for (const [id, host] of Object.entries(cacheMap)) {
@@ -173,9 +191,22 @@ export function availability(tc: Toolchains, kind: KindDef): KindAvailability {
   const steps = kindSteps(kind);
   if (!steps.length) return { available: false, ...none, reason: "no runnable steps" };
   const absent = (list: [StepName, Step][]) => [...new Set(list.map(([, s]) => s.tool).filter((t) => !OPTIONAL_TOOLS.has(t) && !toolPath(tc, kind.runtime, t)))];
-  const missing = absent(steps.filter(([, s]) => !s.when));
-  const missing_optional = absent(steps.filter(([, s]) => !!s.when)).filter((t) => !missing.includes(t));
+  // ifInstalled steps (uv restore) are skipped when their tool is missing: never a reason to refuse.
+  const needed = steps.filter(([, s]) => !s.ifInstalled);
+  const parts = [...new Set(runtimeChain(tc, kind.runtime).flatMap((rt) => rt.missingParts))];
+  const missing = [...absent(needed.filter(([, s]) => !s.when)), ...parts];
+  const missing_optional = absent(needed.filter(([, s]) => !!s.when)).filter((t) => !missing.includes(t));
   return { available: missing.length === 0, missing, missing_optional, missing_caches };
+}
+
+/**
+ * Whether a step runs for these files: its `when` files exist, and an
+ * ifInstalled step's tool is installed (otherwise it is skipped).
+ */
+export function stepRuns(tc: Toolchains, kind: KindDef, step: Step | undefined, exists: (path: string) => boolean): step is Step {
+  if (!step) return false;
+  if (step.when && !step.when.exists.every(exists)) return false;
+  return !step.ifInstalled || !!toolPath(tc, kind.runtime, step.tool);
 }
 
 /** Why the database sidecars a run asks for can't start here (null = they can). */

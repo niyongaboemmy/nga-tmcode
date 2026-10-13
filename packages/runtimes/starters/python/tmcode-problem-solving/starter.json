@@ -6,9 +6,10 @@
   "description": "A problem statement, a solution file and tests to pass",
   "level": "beginner",
   "purpose": "algorithms",
-  "entry": "PROBLEM.md",
+  "entry": "solution.py",
   "open": [
-    "PROBLEM.md"
+    "PROBLEM.md",
+    "solution.py"
   ],
   "tests": {
     "io": ".nga/tests.json"

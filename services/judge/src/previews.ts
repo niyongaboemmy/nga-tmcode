@@ -24,7 +24,7 @@ import { networkBody } from "./services.ts";
 import { boxSetup, buildLimits, cacheFiles, mainClassOf, placement, quiet, resolveProject, startServices, stepArgv, stepFailureText, type ProjectRequest } from "./project.ts";
 import type { Box, Limits, Proc } from "./sandbox.ts";
 import { testFilterArgs, type TokenContext } from "./tokens.ts";
-import type { Toolchains } from "./toolchains.ts";
+import { stepRuns, type Toolchains } from "./toolchains.ts";
 import type { ServiceHandle } from "./services.ts";
 
 /** The sandbox flags Task Mentor's iframe uses too. The preview is on its own origin, so allow-same-origin is that origin. */
@@ -501,7 +501,7 @@ export function containerLauncher(env: LauncherEnv): Launcher {
       box = await env.containers.acquire({ mounts: setup.mounts, image: where.image, network });
       for (const f of req.files) await box.write(f.path, f.content);
       for (const f of cacheFiles(kind, setup.mounts, box, req.files)) await box.write(f.path, f.content);
-      const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => s && (!s.when || s.when.exists.every(exists)));
+      const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => stepRuns(tc, kind, s, exists));
       if (steps.length) hooks.stage("build");
       for (const [name, s] of steps) {
         if (stopped) throw new Error("Stopped.");

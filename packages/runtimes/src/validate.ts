@@ -3,7 +3,7 @@
  * languages, kinds and starters. Used by scripts/build.mjs and the tests.
  * Each function returns human-readable problems (empty = fine).
  */
-import { detect, entryFor } from "./detect";
+import { detect, entryFor, isEntrySource } from "./detect";
 import { CatalogSchema, IoTestsSchema, StarterManifestSchema, type Catalog, type StarterFile, type StarterManifest } from "./schema";
 
 const dupes = (xs: string[]) => [...new Set(xs.filter((x, i) => xs.indexOf(x) !== i))];
@@ -18,6 +18,7 @@ export function validateCatalog(catalog: Catalog): string[] {
   const runtimes = new Map(catalog.runtimes.map((r) => [r.id, r]));
   const languages = new Map(catalog.languages.map((l) => [l.key, l]));
   for (const r of catalog.runtimes) for (const u of r.uses ?? []) if (!runtimes.has(u)) problems.push(`runtime ${r.id}: uses unknown runtime ${u}`);
+  for (const r of catalog.runtimes) for (const q of r.requires ?? []) if (!r.tools[q.tool]) problems.push(`runtime ${r.id}: requires check "${q.name}" uses tool "${q.tool}" that it doesn't provide`);
   for (const k of catalog.kinds) {
     const lang = languages.get(k.language);
     if (!lang) problems.push(`kind ${k.id}: unknown language ${k.language}`);
@@ -103,6 +104,11 @@ export function validateStarter(s: StarterInput, catalog: Catalog): string[] {
       else if (top.language !== m.language || Math.floor(top.score / 1000) !== Math.floor(mine.score / 1000)) p.push(`starter ${id}: detected ${top.kind} ahead of declared ${m.kind}`);
     }
     if (kind.entry && !entryFor(kind, paths, read)) p.push(`starter ${id}: entryFor(${m.kind}) found no entry`);
+    // The runner runs the entry it is given: a README or problem statement would be run as the program.
+    if (kind.steps.run && !isEntrySource(kind, m.entry)) p.push(`starter ${id}: entry ${m.entry} is not a ${kind.language} source file (${m.kind} runs it)`);
+    const io = m.tests?.io ? s.files.find((f) => f.path === m.tests!.io) : undefined;
+    const ioEntry = io ? IoTestsSchema.safeParse(JSON.parse(io.content)).data?.entry : undefined;
+    if (ioEntry && !isEntrySource(kind, ioEntry)) p.push(`starter ${id}: ${m.tests!.io} entry ${ioEntry} is not a ${kind.language} source file`);
   }
   return p;
 }
