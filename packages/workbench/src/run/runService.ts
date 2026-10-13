@@ -34,7 +34,11 @@ async function webRootFor(dir: string): Promise<string | null> {
 export async function targetFor(path: string): Promise<RunTarget | null> {
   const ext = extname(path);
   const web = profileById("web")!;
-  if (ext === "html" || ext === "htm") return { kind: "preview", profile: web, root: dirname(path), entry: basename(path) };
+  if (ext === "html" || ext === "htm") {
+    // The site's folder (nearest index.html above), so ../style.css from a page in pages/ is served.
+    const root = (await webRootFor(dirname(path))) ?? dirname(path);
+    return { kind: "preview", profile: web, root, entry: root ? path.slice(root.length + 1) : path };
+  }
   if (ext === "jsx" || ext === "tsx") {
     const root = await webRootFor(dirname(path));
     return root === null ? null : { kind: "preview", profile: profileById("react")!, root, entry: "index.html" };

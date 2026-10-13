@@ -302,7 +302,8 @@ describe("more technologies", () => {
     expect(run("src/hello.php")).toMatchObject({ kind: "task", command: 'php "hello.php"', cwd: "src" });
     expect(run("a.rb").command).toBe('ruby "a.rb"');
     expect(run("a.dart").command).toBe('dart run "a.dart"');
-    expect(run("a.kt").command).toContain("kotlinc");
+    expect(run("a.kt").prelude).toContain("kotlinc");
+    expect(run("a.kt").command).toBe(`java -jar ".tmcode/build/a.jar"`);
     expect(run("a.lua").command).toBe('lua "a.lua"');
     expect(run("a.R").command).toBe('Rscript "a.R"');
     expect(run("q.sql")).toMatchObject({ kind: "sqlRun", entry: "q.sql", needs: "none" });
@@ -359,6 +360,14 @@ describe("one Run: resolveRun", () => {
     const maven = detectProjects([folder({ "pom.xml": "<project><artifactId>demo</artifactId></project>" }, { dirs: ["src"] })]);
     expect(resolveRun({ projects: maven, file: [], activePath: null, pins: {}, ctx: DESKTOP })).toEqual({ action: null, reason: expect.stringMatching(/Change Run Target/) });
     expect(resolveRun({ projects: [], file: [], activePath: null, pins: {}, ctx: DESKTOP })).toEqual({ action: null, reason: "there is nothing to run here yet" });
+  });
+
+  it("a folder of Ruby exercises runs the one being edited; a script beside a Node package runs itself", () => {
+    const rb = detectProjects([folder({ "app.rb": "puts 1", "two.rb": "puts 2" })]);
+    expect(resolveRun({ projects: rb, file: fileActions("two.rb", { webRoot: null }), activePath: "two.rb", pins: {}, ctx: DESKTOP }).action?.command).toBe('ruby "two.rb"');
+    const node = detectProjects([folder({ "package.json": pkg({ name: "x" }), "index.js": "console.log(1)", "tool.js": "console.log(2)" })]);
+    const r = resolveRun({ projects: node, file: fileActions("tool.js", { webRoot: null, source: "console.log(2)" }), activePath: "tool.js", pins: {}, ctx: DESKTOP });
+    expect(r.action?.entry).toBe("tool.js");
   });
 
   it("a loose PHP script runs as a script", () => {

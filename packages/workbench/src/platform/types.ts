@@ -22,6 +22,8 @@ export interface FileSystem {
   rename(from: string, to: string): Promise<void>;
   /** Copies a file or folder (recursively, binary-safe). */
   copy?(from: string, to: string): Promise<void>;
+  /** Files and folders copied in Finder / Windows Explorer (absolute paths): Paste in the Explorer imports them. */
+  clipboardFiles?(): Promise<string[]>;
   remove(path: string): Promise<void>;
   /** Moves a file or folder to the OS Trash / Recycle Bin; absent where there is none (Delete is then permanent). */
   trash?(path: string): Promise<void>;

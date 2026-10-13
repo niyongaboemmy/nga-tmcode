@@ -408,6 +408,7 @@ pub fn run() {
             projects::proj_pick_base,
             projects::proj_default_base,
             projects::proj_move_folder,
+            workspace::ws_clipboard_files,
             git::git_info,
             git::git_status,
             git::git_show,

@@ -382,6 +382,8 @@ export async function startDevServer(a: RunAction) {
   terminal = null;
   set({ session: { id, action: a, status: "starting", url: null, startedAt: Date.now(), endedAt: null, exitCode: null } });
   let tail = "";
+  // PHP's built-in server: open the page being edited (shop/cart.php), not only the site's front page.
+  const page = phpPageFor(a);
   const owner: TerminalOwner = {
     onReady: (h) => {
       if (get().session?.id === id) terminal = h;
@@ -400,7 +402,7 @@ export async function startDevServer(a: RunAction) {
       const pretty = url.replace(/\/\/(0\.0\.0\.0|\[::\]|127\.0\.0\.1)/, "//localhost");
       patchSession(id, { status: "running", url: pretty });
       if (slowTimer) clearTimeout(slowTimer);
-      if (useWorkbench.getState().settings["run.openBrowserOnStart"]) revealBrowser(pretty);
+      if (useWorkbench.getState().settings["run.openBrowserOnStart"]) revealBrowser(page ? `${pretty.replace(/\/$/, "")}/${page}` : pretty);
       log("Run", `${a.label} is listening on ${pretty}`);
     },
     onExit: (code) => {
@@ -482,6 +484,15 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
   const detected = await p.runner.detect(false).catch(() => null);
   if (!detected) return true;
   const missing = missingFor(a, detected.map((t) => t.tool));
+  // A single .cs file runs with `dotnet run file.cs` from .NET 10 on; older SDKs need a project.
+  const dotnet = detected.find((t) => t.tool === "dotnet");
+  const major = Number(/(\d+)\./.exec(dotnet?.version ?? "")?.[1] ?? 0);
+  if (!missing && dotnet && major > 0 && major < 10 && /^dotnet run "/.test(a.command ?? "")) {
+    notify("info", `Running a single C# file needs .NET 10 (this computer has .NET ${major}). Install .NET 10, or keep your code in a project (a .csproj, from "dotnet new console" in an empty folder): Run then runs the project.`, [
+      { label: "How to Install", run: () => showInstallGuide("csharp") },
+    ], { owner: "preflight", kind: "failure" });
+    return false;
+  }
   if (!missing) {
     dismissNotificationByKey("preflight");
     return true;
@@ -498,6 +509,18 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
     },
   ], { owner: "preflight", kind: "failure" });
   return false;
+}
+
+/** `php -S … -t <docroot>` started while a page of that site is open: the page's address under the server. */
+function phpPageFor(a: RunAction): string | null {
+  if (a.kind !== "devServer" || !/^php\s+-S\b/.test(a.command ?? "")) return null;
+  const path = activeFilePath();
+  if (!path || !/\.(php|html?)$/i.test(path)) return null;
+  const docroot = /\s-t\s+("?)([^"\s]+)\1/.exec(a.command ?? "")?.[2] ?? ".";
+  const base = [a.cwd ?? "", docroot === "." ? "" : docroot].filter(Boolean).join("/");
+  if (base && !path.startsWith(`${base}/`)) return null;
+  const rel = base ? path.slice(base.length + 1) : path;
+  return /^index\.(php|html?)$/i.test(rel) ? null : rel.split("/").map(encodeURIComponent).join("/");
 }
 
 // ───────────── stop across every runner ─────────────

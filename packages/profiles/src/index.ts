@@ -42,7 +42,7 @@ const raw: Profile[] = [
     version: 1,
     label: "TypeScript (Node.js)",
     monaco_language: "typescript",
-    extensions: ["ts", "mts"],
+    extensions: ["ts", "mts", "cts"],
     entry_point: "main.ts",
     template: [{ path: "main.ts", content: 'const greet = (name: string): string => `Hello, ${name}!`;\nconsole.log(greet("NGA"));\n' }],
     // Node 22.6+ runs TypeScript by stripping types; no compiler needed.

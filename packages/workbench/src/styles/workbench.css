@@ -9460,3 +9460,20 @@ button.tm-setting-badge {
     opacity: 0;
   }
 }
+
+/* Explorer: the name of what is being moved, beside the pointer (pointer-event drag). */
+.tm-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  padding: 2px 8px;
+  border: 1px solid var(--focus-border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--foreground);
+  background: var(--widget-bg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+}

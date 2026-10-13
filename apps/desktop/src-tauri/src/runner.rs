@@ -288,6 +288,8 @@ pub fn expand(args: &[String], entry: &Path, out: &Path) -> Result<Vec<String>, 
             result.extend(found.into_iter().map(|p| p.to_string_lossy().into_owned()));
             continue;
         }
+        // Windows runs `main.exe`: name the build output so (go and rustc don't add the extension).
+        let arg = if cfg!(windows) && arg == "{out}/main" { "{out}/main.exe".to_string() } else { arg.clone() };
         result.push(
             arg.replace("{entry_stem}", &stem)
                 .replace("{entry_class}", &java_class)

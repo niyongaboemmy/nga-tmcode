@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { openFileToSide } from "../../commands/vscodeCommands";
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
@@ -31,7 +31,7 @@ import { SkeletonRows } from "../../widgets/Skeleton";
 import { useProjects } from "../../projects/service";
 import { firstFileFor, openAssignmentLanguage, useAssignments } from "../../projects/assignments";
 import { writeClipboardText } from "../../util/clipboard";
-import { copyEntries, cutEntries, duplicateEntry, pasteEntries, useFileClipboard } from "./fileClipboard";
+import { copyEntries, cutEntries, duplicateEntry, pasteEntries } from "./fileClipboard";
 import { rangeBetween, rowLabel, topLevelPaths, typeAheadMatch, visibleChildren, visibleRows, type Row } from "./explorerModel";
 import { importBrowserFiles, importPaths } from "./importFiles";
 import type { DirEntry } from "../../platform/types";
@@ -242,10 +242,33 @@ export function ExplorerView() {
   const os = getPlatform().os;
   const [collapsed, setCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const suppressClick = useRef(false);
+  // Edit › Cut / Copy / Paste from the menu bar (macOS) arrive as DOM clipboard events, not keys:
+  // with the Explorer focused they act on its files, like ⌘X / ⌘C / ⌘V do.
+  const clipboardState = useRef({ selected: [] as string[], folder: "" });
+  useEffect(() => {
+    const onClip = (e: ClipboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el?.closest(".tm-explorer") || el.closest("input, textarea")) return;
+      e.preventDefault();
+      const { selected: paths, folder } = clipboardState.current;
+      if (e.type === "paste") void pasteEntries(folder);
+      else if (paths.length) (e.type === "copy" ? copyEntries : cutEntries)(paths);
+    };
+    for (const t of ["copy", "cut", "paste"]) document.addEventListener(t, onClip as EventListener);
+    return () => {
+      for (const t of ["copy", "cut", "paste"]) document.removeEventListener(t, onClip as EventListener);
+    };
+  }, []);
   const treeRef = useRef<HTMLDivElement>(null);
   const typeAhead = useRef<{ text: string; timer: ReturnType<typeof setTimeout> | null }>({ text: "", timer: null });
 
   const selected = useMemo(() => new Set(selection != null && multi.includes(selection) ? multi : selection != null ? [selection] : []), [selection, multi]);
+  {
+    const sel = selection ?? "";
+    const selDir = !!sel && (dirs[dirname(sel)] ?? []).some((x) => x.path === sel && x.kind === "dir");
+    clipboardState.current = { selected: [...selected], folder: sel ? (selDir ? sel : dirname(sel)) : "" };
+  }
 
   // A selection made elsewhere (opening a file, a new file) replaces the multi-selection.
   useEffect(() => {
@@ -339,7 +362,7 @@ export function ExplorerView() {
       return [
         { kind: "item", label: "Cut", keybinding: os === "mac" ? "⌘X" : "Ctrl+X", run: () => cutEntries(bulk) },
         { kind: "item", label: "Copy", keybinding: os === "mac" ? "⌘C" : "Ctrl+C", run: () => copyEntries(bulk) },
-        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", disabled: !useFileClipboard.getState(), run: () => void pasteEntries(folder) },
+        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", run: () => void pasteEntries(folder) },
         { kind: "separator" },
         { kind: "item", label: `Delete ${bulk.length} Items`, keybinding: os === "mac" ? "⌘⌫" : "Delete", danger: true, run: () => void deleteEntries(bulk) },
       ];
@@ -363,7 +386,7 @@ export function ExplorerView() {
         { kind: "separator" },
         { kind: "item", label: "Cut", keybinding: os === "mac" ? "⌘X" : "Ctrl+X", run: () => cutEntries([entry.path]) },
         { kind: "item", label: "Copy", keybinding: os === "mac" ? "⌘C" : "Ctrl+C", run: () => copyEntries([entry.path]) },
-        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", disabled: !useFileClipboard.getState(), run: () => void pasteEntries(entry.kind === "dir" ? entry.path : dirname(entry.path)) },
+        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", run: () => void pasteEntries(entry.kind === "dir" ? entry.path : dirname(entry.path)) },
         { kind: "item", label: "Duplicate", run: () => void duplicateEntry(entry.path) },
         { kind: "separator" },
         {
@@ -395,6 +418,8 @@ export function ExplorerView() {
   };
 
   const onRowClick = (e: MouseEvent, row: Row) => {
+    // The click that ends a drag is not a click.
+    if (suppressClick.current) return;
     const path = row.entry.path;
     const toggleKey = os === "mac" ? e.metaKey : e.ctrlKey;
     if (e.shiftKey) {
@@ -517,12 +542,78 @@ export function ExplorerView() {
   };
 
   // ── drag & drop: move files and folders between folders; files from the OS are copied in ──
-  const onDragStart = (e: DragEvent, entry: DirEntry) => {
+  // Moves use pointer events, not HTML5 drag and drop: the desktop's native file-drop handler (files
+  // dragged in from Finder / File Explorer arrive with their paths) swallows HTML5 drops in the page.
+  const onRowPointerDown = (e: ReactPointerEvent, entry: DirEntry) => {
+    if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || edit || isProtectedEntry(entry.path)) return;
     const paths = selected.has(entry.path) ? topLevelPaths([...selected]) : [entry.path];
-    e.dataTransfer.setData("application/x-tmcode-path", entry.path);
-    e.dataTransfer.setData("application/x-tmcode-paths", JSON.stringify(paths));
-    e.dataTransfer.setData("text/plain", paths.join("\n"));
-    e.dataTransfer.effectAllowed = "move";
+    const start = { x: e.clientX, y: e.clientY };
+    let ghost: HTMLDivElement | null = null;
+    const folderAtPoint = (x: number, y: number): string | null => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null;
+      if (!el?.closest(".tm-explorer")) return null;
+      const row = el.closest("[data-path]") as HTMLElement | null;
+      if (!row) return "";
+      return row.dataset.kind === "dir" ? row.dataset.path! : dirname(row.dataset.path!);
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("keydown", key, true);
+      ghost?.remove();
+      setDropTarget(null);
+    };
+    const move = (ev: PointerEvent) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return;
+        ghost = document.createElement("div");
+        ghost.className = "tm-drag-ghost";
+        ghost.dataset.testid = "explorer-drag-ghost";
+        ghost.textContent = paths.length === 1 ? basename(paths[0]) : `${paths.length} items`;
+        document.body.append(ghost);
+      }
+      ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 8}px)`;
+      setDropTarget(folderAtPoint(ev.clientX, ev.clientY));
+    };
+    const up = (ev: PointerEvent) => {
+      const dragged = !!ghost;
+      cleanup();
+      if (!dragged) return;
+      suppressClick.current = true;
+      setTimeout(() => (suppressClick.current = false), 0);
+      const folder = folderAtPoint(ev.clientX, ev.clientY);
+      if (folder !== null) void movePaths(paths, folder);
+    };
+    const key = (ev: globalThis.KeyboardEvent) => {
+      if (ev.key === "Escape") cleanup();
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("keydown", key, true);
+  };
+
+  /** Moves files and folders into `folder` (a drag in the Explorer). */
+  const movePaths = async (paths: string[], folder: string) => {
+    if (folder && !expanded[folder]) await toggleDir(folder, true);
+    const names = new Set((await getPlatform().fs.readDir(folder).catch(() => [] as DirEntry[])).map((x) => x.name));
+    let moved = 0;
+    for (const from of paths) {
+      const name = basename(from);
+      if (!from || dirname(from) === folder || isWithin(folder, from)) continue;
+      if (isProtectedEntry(from)) continue;
+      if (names.has(name)) {
+        notify("warning", `A file or folder '${name}' already exists in '${folder || workspace?.name}'.`);
+        continue;
+      }
+      try {
+        await moveEntry(from, join(folder, name));
+        names.add(name);
+        moved++;
+      } catch (err) {
+        notify("error", `Could not move '${name}': ${String((err as Error)?.message ?? err)}`);
+      }
+    }
+    if (moved === 1) select(join(folder, basename(paths.find((p) => names.has(basename(p))) ?? paths[0])));
   };
   const isOsFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files") && !e.dataTransfer.types.includes("application/x-tmcode-path");
   const onDragOver = (e: DragEvent, entry: DirEntry | null) => {
@@ -550,23 +641,7 @@ export function ExplorerView() {
       /* fall back to the single path */
     }
     if (!paths.length) paths = [e.dataTransfer.getData("application/x-tmcode-path")].filter(Boolean);
-    if (folder && !expanded[folder]) await toggleDir(folder, true);
-    const names = new Set((dirs[folder] ?? []).map((x) => x.name));
-    for (const from of paths) {
-      const name = basename(from);
-      if (!from || dirname(from) === folder || isWithin(folder, from)) continue;
-      if (isProtectedEntry(from)) continue;
-      if (names.has(name)) {
-        notify("warning", `A file or folder '${name}' already exists in '${folder || workspace.name}'.`);
-        continue;
-      }
-      try {
-        await moveEntry(from, join(folder, name));
-        names.add(name);
-      } catch (err) {
-        notify("error", `Could not move '${name}': ${String((err as Error)?.message ?? err)}`);
-      }
-    }
+    await movePaths(paths, folder);
   };
 
   const renderEditRow = (atParent: string, depth: number) => {
@@ -630,8 +705,7 @@ export function ExplorerView() {
             git ? `git-${git.color}` : ignored ? "git-ignored" : "",
           ].join(" ")}
           style={{ paddingLeft: 8 + depth * 8 }}
-          draggable
-          onDragStart={(e) => onDragStart(e, entry)}
+          onPointerDown={(e) => onRowPointerDown(e, entry)}
           onDragOver={(e) => onDragOver(e, entry)}
           onDragLeave={() => setDropTarget(null)}
           onDrop={(e) => void onDrop(e, entry)}
