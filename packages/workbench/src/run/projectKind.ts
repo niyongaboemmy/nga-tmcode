@@ -92,6 +92,8 @@ export interface RunAction {
   preview?: "static" | "bundle-react";
   /** Where a dev server usually listens, used until the terminal prints its real URL. */
   port?: number;
+  /** openBrowser: an address served by a local web server (XAMPP, MAMP…), opened as is. */
+  url?: string;
   /** What the host must provide. */
   needs: "none" | "runner" | "terminal" | "debugger" | "preview-origin";
   /** Dev servers, REPLs and tasks never run in an exam. */
@@ -581,7 +583,9 @@ function rubyProject(f: FolderSnapshot): ProjectInfo | null {
   if (prelude) actions.push(action({ id: `task:${f.dir}:bundle-install`, kind: "task", label: `bundle install${where(f.dir)}`, icon: "cloud-download", command: "bundle install", cwd: f.dir }));
   actions.push(action({ id: `repl:${f.dir}:irb`, kind: "repl", label: "Ruby REPL (irb)", icon: "terminal", command: "irb", cwd: f.dir }));
   const sinatra = actions[0]?.id.includes("sinatra");
-  return { kind: sinatra ? "sinatra" : "ruby", label: sinatra ? "Sinatra" : "Ruby", icon: sinatra ? "server" : "ruby", dir: f.dir, actions };
+  // A folder of .rb exercises (no Gemfile, not a web app): each file runs on its own, the one being edited.
+  const loose = !sinatra && !has(f, "Gemfile") && !has(f, "Rakefile") && !has(f, "config.ru");
+  return { kind: sinatra ? "sinatra" : "ruby", label: sinatra ? "Sinatra" : "Ruby", icon: sinatra ? "server" : "ruby", dir: f.dir, actions, ...(loose ? { loose: true } : {}) };
 }
 
 // ───────────── Swift ─────────────
@@ -631,13 +635,19 @@ function logicProject(f: FolderSnapshot): ProjectInfo | null {
 }
 
 /** Single files of languages that run in a terminal (interpreters TMCode doesn't bundle). */
-const TERMINAL_RUNNERS: Record<string, { lang: string; run: (file: string) => string; repl?: { label: string; command: string } }> = {
+const TERMINAL_RUNNERS: Record<string, { lang: string; run: (file: string) => string; prelude?: (file: string) => string; repl?: { label: string; command: string } }> = {
   php: { lang: "PHP", run: (f) => `php "${f}"`, repl: { label: "PHP interactive shell", command: "php -a" } },
   rb: { lang: "Ruby", run: (f) => `ruby "${f}"`, repl: { label: "Ruby REPL (irb)", command: "irb" } },
   dart: { lang: "Dart", run: (f) => `dart run "${f}"` },
   swift: { lang: "Swift", run: (f) => `swift "${f}"`, repl: { label: "Swift REPL", command: "swift repl" } },
   // The jar goes to TMCode's own folder (never saved to Task Mentor), not next to the student's code.
-  kt: { lang: "Kotlin", run: (f) => `kotlinc "${f}" -include-runtime -d ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar" && java -jar ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar"` },
+  // Compile, then run: two steps joined the shell's way (PowerShell 5.1 has no `&&`). The jar goes to
+  // TMCode's own folder (never saved to Task Mentor), not next to the student's code.
+  kt: {
+    lang: "Kotlin",
+    prelude: (f) => `kotlinc "${f}" -include-runtime -d ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar"`,
+    run: (f) => `java -jar ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar"`,
+  },
   kts: { lang: "Kotlin script", run: (f) => `kotlinc -script "${f}"` },
   scala: { lang: "Scala", run: (f) => `scala run "${f}"` },
   cs: { lang: "C#", run: (f) => `dotnet run "${f}"` },
@@ -749,6 +759,8 @@ export interface FileContext {
 }
 
 const JS_EXTS = ["js", "mjs", "cjs", "ts", "mts", "cts"];
+/** Terminal languages that also have a Run-panel profile (packages/profiles). */
+const PANEL_RUNNERS: Record<string, string> = { php: "PHP", rb: "Ruby", kt: "Kotlin", dart: "Dart", swift: "Swift" };
 const COMPILED: Record<string, string> = { c: "C", cpp: "C++", cc: "C++", cxx: "C++", java: "Java", go: "Go", rs: "Rust" };
 
 /** What ▶ can do with the active file, best first. */
@@ -762,9 +774,12 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     ctx.debuggable ? [action({ id: `debug:${path}`, kind: "debug", label: `Debug ${name}`, icon: "debug-alt", description: "Breakpoints and stepping", entry: path, needs: "debugger" })] : [];
 
   if (ext === "html" || ext === "htm") {
+    // Served from the site's folder (the nearest index.html above), so a page in pages/ still finds ../style.css.
+    const root = ctx.webRoot !== null && ctx.webRoot !== undefined && (ctx.webRoot === "" || path.startsWith(`${ctx.webRoot}/`)) ? ctx.webRoot : dir;
+    const entry = root ? path.slice(root.length + 1) : path;
     out.push(
-      action({ id: `livePreview:${dir}:${name}`, kind: "livePreview", label: `${name} (Live Preview)`, icon: "open-preview", description: "Reloads as you edit", root: dir, entry: name, preview: "static" }),
-      action({ id: `openBrowser:${dir}:${name}`, kind: "openBrowser", label: `${name} (Open in Browser)`, icon: "link-external", description: "System browser", root: dir, entry: name, needs: "preview-origin" }),
+      action({ id: `livePreview:${dir}:${name}`, kind: "livePreview", label: `${name} (Live Preview)`, icon: "open-preview", description: "Reloads as you edit", root, entry, preview: "static" }),
+      action({ id: `openBrowser:${dir}:${name}`, kind: "openBrowser", label: `${name} (Open in Browser)`, icon: "link-external", description: "System browser", root, entry, needs: "preview-origin" }),
     );
   } else if ((ext === "jsx" || ext === "tsx") && ctx.webRoot !== null) {
     out.push(action({ id: `livePreview:${ctx.webRoot}:index.html`, kind: "livePreview", label: "React (Live Preview)", icon: "open-preview", description: "Bundled inside TMCode", root: ctx.webRoot, entry: "index.html", preview: "bundle-react" }));
@@ -791,7 +806,10 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     out.push(action({ id: `logicPreview:${path}`, kind: "logicPreview", label: `${name} (Truth Tables)`, icon: "table", description: "Every expression's truth table", entry: path }));
   } else if (ext in TERMINAL_RUNNERS) {
     const r = TERMINAL_RUNNERS[ext];
-    out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${r.lang} in a terminal`, command: r.run(name), cwd: dir }), ...debug());
+    // Languages with a Run-panel profile (PHP, Ruby, Kotlin, Dart, Swift) run there first: keyboard
+    // input and example tests; the terminal stays one choice away.
+    if (ext in PANEL_RUNNERS) out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `${PANEL_RUNNERS[ext]} in the Run panel`, entry: path, needs: "runner" }));
+    out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${r.lang} in a terminal`, command: r.run(name), prelude: r.prelude?.(name), cwd: dir }), ...debug());
     if (r.repl) out.push(action({ id: `repl::${ext}`, kind: "repl", label: r.repl.label, icon: "terminal", command: r.repl.command, cwd: dir }));
   } else if (ext === "md" || ext === "markdown" || ext === "svg") {
     out.push(action({ id: `markdownPreview:${path}`, kind: "markdownPreview", label: `${name} (Preview)`, icon: "open-preview", entry: path }));
@@ -1011,6 +1029,9 @@ export function resolveRun(i: ResolveInput): RunChoice {
       .filter((p) => p.kind !== "markdown" && !p.loose && inDir(i.activePath!, p.dir) && projectFamily(p.kind) === fam)
       .sort((a, b) => b.dir.length - a.dir.length)[0];
     const run = own?.actions.find((a) => ok(a) && isRunLike(a));
+    // A project whose Run is just "run main.js" doesn't take over a script you're editing beside it.
+    const ownFile = run?.kind === "runFile" && run.entry !== i.activePath ? i.file.find((a) => ok(a) && isRunLike(a)) : undefined;
+    if (ownFile) return { action: ownFile, reason: "it's the file you're editing" };
     if (own && run) return { action: run, reason: `${own.dir ? own.dir : "this folder"} is a ${own.label} project` };
   }
 

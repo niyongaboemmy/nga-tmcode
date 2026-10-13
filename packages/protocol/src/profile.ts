@@ -19,7 +19,7 @@ export const LimitsSchema = z.object({
 });
 export type Limits = z.infer<typeof LimitsSchema>;
 
-export const ToolSchema = z.enum(["python", "node", "cc", "cxx", "javac", "java", "go", "rustc", "exe"]);
+export const ToolSchema = z.enum(["python", "node", "cc", "cxx", "javac", "java", "go", "rustc", "php", "ruby", "kotlinc", "dart", "swift", "exe"]);
 export type Tool = z.infer<typeof ToolSchema>;
 
 export const StepSchema = z.object({ tool: ToolSchema, args: z.array(z.string()) });

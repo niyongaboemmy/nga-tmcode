@@ -2,6 +2,7 @@ import { registerCommand } from "../commands/registry";
 import { msg } from "../messages/catalog";
 import { inExam } from "../exam/state";
 import { openInTaskMentor } from "./taskMentorLinks";
+import { chooseBase, moveOpenProject } from "./location";
 import { confirmLeaveWorkspace, getPlatform, notify, openFile, openPathFromOs, openRecent, revealView, showDialog, showPanel, useWorkbench } from "../state/store";
 import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import {
@@ -129,9 +130,12 @@ export async function newProjectFromTemplate() {
   if (!name) return;
   const host = getPlatform().account;
   if (!host) return notify("info", "New projects from templates need the TMCode desktop app.");
+  // Where it goes: the Projects Folder, a folder of the student's choice, or (PHP) the web server's folder.
+  const base = await chooseBase({ name, templateId: tpl.id, language: tpl.language, ask: true });
+  if (base === null) return;
   if (!(await confirmLeaveWorkspace())) return;
   try {
-    const folder = await host.newFolder(slugify(name));
+    const folder = await host.newFolder(slugify(name), base);
     // Kept the current folder (Cancel on unsaved files): never write the template into it.
     if (!(await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder)))) return;
     await writeTemplate(tpl);
@@ -216,7 +220,8 @@ async function newProject(opts: { from?: "folder" } = {}) {
     const matched = assessment !== "none" ? await linkProject(project.id, assessment).catch((e) => (notify("warning", `Created, but not matched: ${(e as Error).message}`), null)) : null;
     if (tpl) {
       const host = getPlatform().account!;
-      const folder = await host.newFolder(slugify(name));
+      const base = await chooseBase({ name, templateId: tpl.id, language: tpl.language });
+      const folder = await host.newFolder(slugify(name), base ?? undefined);
       if (!(await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder)))) {
         notify("info", `Created ${project.name} in Task Mentor. Open it from Projects to start.`);
         return;
@@ -292,6 +297,12 @@ export function registerProjectCommands() {
   });
   registerCommand({ id: "projects.refresh", title: "Refresh Projects", category: "Projects", enabled: () => usable() && signedIn(), run: async () => (await refreshProjects(), await checkSync()) });
   registerCommand({ id: "projects.linkActivity", title: "Change Assessment…", category: "Projects", enabled: bound, run: changeAssessment });
+  registerCommand({ id: "projects.moveFolder", title: "Move This Project…", category: "Projects", aliases: ["htdocs", "xampp", "change folder", "relocate"], enabled: () => !!useWorkbench.getState().workspace && !!getPlatform().account?.moveFolder, run: () => void moveOpenProject() });
+  registerCommand({ id: "projects.findWebServer", title: "Find This Computer's Web Server (XAMPP, MAMP, WAMP…)", category: "Projects", run: async () => {
+    const { webRoots } = await import("./location");
+    const list = await webRoots(true);
+    notify("info", list.length ? `Found ${list.map((r) => `${r.server} (${r.path}, ${r.url})`).join("; ")}. PHP websites can go there.` : "No web server folder found (XAMPP, MAMP, WAMP, Laragon). PHP websites run with PHP's own server instead.");
+  } });
   registerCommand({
     id: "projects.submit",
     title: "Submit…",

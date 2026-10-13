@@ -22,6 +22,8 @@ export interface FileSystem {
   rename(from: string, to: string): Promise<void>;
   /** Copies a file or folder (recursively, binary-safe). */
   copy?(from: string, to: string): Promise<void>;
+  /** Files and folders copied in Finder / Windows Explorer (absolute paths): Paste in the Explorer imports them. */
+  clipboardFiles?(): Promise<string[]>;
   remove(path: string): Promise<void>;
   /** Moves a file or folder to the OS Trash / Recycle Bin; absent where there is none (Delete is then permanent). */
   trash?(path: string): Promise<void>;
@@ -136,6 +138,8 @@ export interface Platform {
   updater?: Updater;
   /** Opens a URL in the system browser. */
   openExternal?(url: string): Promise<void>;
+  /** Desktop: is this local port free for a dev server? */
+  portFree?(port: number): Promise<boolean>;
   /** The system clipboard as text (the terminal's selection is not a DOM selection WebKit can copy). */
   clipboard?: { readText(): Promise<string>; writeText(text: string): Promise<void> };
   /** Sets the OS window title. */
@@ -670,8 +674,23 @@ export interface AccountHost {
   writeBlob(path: string, sha256: string, gzBase64: string): Promise<void>;
   /** A new empty folder for a local copy (default ~/TMCode Projects/<slug>). Absolute path. */
   newFolder(slug: string, base?: string): Promise<string>;
-  /** The next git clone goes into ~/TMCode Projects (instead of a picked folder). */
-  useProjectsFolderForClone?(): Promise<string>;
+  /** The next git clone goes into ~/TMCode Projects, or `base` (instead of a picked folder). */
+  useProjectsFolderForClone?(base?: string): Promise<string>;
+  /** Local web servers' document roots on this computer (XAMPP/MAMP/WAMP/Laragon/Apache htdocs). */
+  webRoots?(): Promise<WebRoot[]>;
+  /** "Choose a folder…" for where new projects go (null: cancelled). */
+  pickBase?(title: string): Promise<string | null>;
+  /** The default projects folder (~/TMCode Projects). */
+  defaultBase?(): Promise<string>;
+  /** Moves a project folder into `base` (renamed when taken). The new absolute path. */
+  moveFolder?(from: string, base: string): Promise<string>;
+}
+
+/** A local web server's document root: a folder `<path>/<name>` is served at `<url>/<name>`. */
+export interface WebRoot {
+  server: string;
+  path: string;
+  url: string;
 }
 
 export interface ApiRequest {

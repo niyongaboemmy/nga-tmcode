@@ -3,7 +3,7 @@ import { PROFILES, profileForPath } from "./index";
 
 describe("built-in profiles", () => {
   it("are valid and uniquely identified", () => {
-    expect(PROFILES.length).toBe(10);
+    expect(PROFILES.length).toBe(15);
     expect(new Set(PROFILES.map((p) => p.id)).size).toBe(PROFILES.length);
   });
 

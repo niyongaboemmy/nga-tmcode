@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getDocument, onDocumentChanged, onDocumentSaved } from "../../monaco/documents";
 import { revealInEditor } from "../../monaco/reveal";
 import { PREVIEW_MESSAGE_KEY, injectIntoHead, inlineAssets, resolveRelative, scrollTag, shimTag } from "../../preview/compose";
@@ -9,16 +9,12 @@ import { getPlatform, notify, updateSetting, useWorkbench, type EditorInput } fr
 import { isWithin, join } from "../../util/paths";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { SkeletonLines } from "../../widgets/Skeleton";
+import { openExternalUrl } from "../../terminal/browser";
+import { DeviceControls, DeviceStage } from "./deviceView";
 
 type PreviewInput = Extract<EditorInput, { kind: "preview" }>;
 
-export const DEVICES = {
-  responsive: { label: "Responsive", icon: "screen-full", width: 0, height: 0 },
-  mobile: { label: "Mobile (375)", icon: "device-mobile", width: 375, height: 667 },
-  tablet: { label: "Tablet (768)", icon: "device-mobile", width: 768, height: 1024 },
-  desktop: { label: "Laptop (1280)", icon: "device-desktop", width: 1280, height: 800 },
-} as const;
-export type Device = keyof typeof DEVICES;
+export { DEVICES, type Device } from "./deviceView";
 
 interface LogLine {
   id: number;
@@ -57,13 +53,12 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
   const [entry, setEntry] = useState(input.entry);
   const [frame, setFrame] = useState<{ url?: string; srcdoc?: string; key: number }>({ key: 0 });
   const [busy, setBusy] = useState(false);
-  const [device, setDevice] = useState<Device>("responsive");
+  // Fullscreen: the preview over the whole window (Escape closes), same page, same device.
+  const [fullscreen, setFullscreen] = useState(false);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [consoleOpen, setConsoleOpen] = useState(true);
   const [title, setTitle] = useState("");
-  const [scale, setScale] = useState(1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const internet = useWorkbench((s) => s.policy.internet_in_preview);
   const updateOn = useWorkbench((s) => s.settings["livePreview.updateOn"]);
@@ -180,28 +175,23 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [logs]);
 
-  // Scale fixed-size devices down to fit the stage.
-  useLayoutEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
-    const fit = () => {
-      const d = DEVICES[device];
-      if (!d.width) return setScale(1);
-      const s = Math.min(1, (el.clientWidth - 32) / d.width, (el.clientHeight - 32) / d.height);
-      setScale(Math.max(0.2, s));
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setFullscreen(false);
+      }
     };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [device]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [fullscreen]);
 
   const errors = logs.filter((l) => l.level === "error").reduce((n, l) => n + l.count, 0);
   const warnings = logs.filter((l) => l.level === "warn").reduce((n, l) => n + l.count, 0);
-  const d = DEVICES[device];
-
   return (
-    <div className="tm-preview">
+    <div className={`tm-preview ${fullscreen ? "is-fullscreen" : ""}`} data-testid="preview" role={fullscreen ? "dialog" : undefined} aria-modal={fullscreen || undefined}>
       <div className="tm-preview-toolbar">
         <ActionButton icon="refresh" label="Reload" onClick={() => void compose()} />
         <div className="tm-preview-address" title={join(input.root, entry)}>
@@ -209,23 +199,7 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
           <span>{join(input.root, entry) || entry}</span>
           {title && <span className="tm-preview-title">— {title}</span>}
         </div>
-        <div className="tm-segmented" role="radiogroup" aria-label="Device">
-          {(Object.keys(DEVICES) as Device[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={device === k}
-              className={device === k ? "is-on" : ""}
-              title={DEVICES[k].label}
-              aria-label={DEVICES[k].label}
-              onClick={() => setDevice(k)}
-            >
-              <Codicon name={DEVICES[k].icon} />
-              {k !== "responsive" && <span>{DEVICES[k].width}</span>}
-            </button>
-          ))}
-        </div>
+        <DeviceControls />
         <ActionButton
           icon={updateOn === "onSave" ? "save" : "zap"}
           label={updateOn === "onSave" ? "Updates on Save (click to update as you type)" : "Updates as You Type (click to update on save)"}
@@ -240,17 +214,30 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
             onClick={() => updateSetting("livePreview.followActiveFile", !follow)}
           />
         )}
+        {frame.url && <ActionButton icon="link-external" label="Open in Browser" onClick={() => void openExternalUrl(frame.url!)} data-testid="preview-open-browser" />}
+        <ActionButton
+          icon={fullscreen ? "screen-normal" : "screen-full"}
+          label={fullscreen ? "Exit Full Screen (Escape)" : "Full Screen"}
+          active={fullscreen}
+          aria-pressed={fullscreen}
+          onClick={() => setFullscreen(!fullscreen)}
+          data-testid="preview-fullscreen"
+        />
         <button type="button" className={`tm-preview-console-toggle ${consoleOpen ? "is-on" : ""}`} onClick={() => setConsoleOpen(!consoleOpen)} aria-pressed={consoleOpen}>
           <Codicon name="debug-console" /> Console
           {errors > 0 && <span className="tm-badge tm-badge--error">{errors}</span>}
           {warnings > 0 && <span className="tm-badge tm-badge--warning">{warnings}</span>}
         </button>
       </div>
-      <div ref={stageRef} className={`tm-preview-stage ${d.width ? "is-device" : ""}`}>
-        <div
-          className="tm-preview-device"
-          style={d.width ? { width: d.width, height: d.height, transform: `scale(${scale})` } : undefined}
-        >
+      <DeviceStage
+        overlay={
+          busy && frame.key === 0 && (
+          <div className="tm-preview-loading">
+            <SkeletonLines lines={7} label={input.profile === "bundle-react" ? "Building the React app" : "Loading the page"} />
+          </div>
+          )
+        }
+      >
           <iframe
             key={frame.key}
             ref={iframeRef}
@@ -261,14 +248,7 @@ export function PreviewEditor({ input }: { input: PreviewInput }) {
             srcDoc={frame.url ? undefined : frame.srcdoc}
             data-testid="preview-frame"
           />
-        </div>
-        {d.width > 0 && scale < 1 && <div className="tm-preview-scale">{Math.round(scale * 100)}%</div>}
-        {busy && frame.key === 0 && (
-          <div className="tm-preview-loading">
-            <SkeletonLines lines={7} label={input.profile === "bundle-react" ? "Building the React app" : "Loading the page"} />
-          </div>
-        )}
-      </div>
+      </DeviceStage>
       {consoleOpen && (
         <div className="tm-preview-console">
           <div className="tm-preview-console-head">

@@ -909,7 +909,20 @@ export function activeFilePath(state: WorkbenchState = get()): string | null {
  * by the next preview); double-click, editing or `pinned` keeps it open.
  */
 export function openFile(path: string, opts: { pinned?: boolean; group?: number } = {}) {
-  const groupId = opts.group ?? get().activeGroup;
+  let groupId = opts.group ?? get().activeGroup;
+  if (opts.group === undefined) {
+    const s = get();
+    const isFile = (e: EditorInput) => e.kind === "file" && e.path === path;
+    // Already open somewhere: bring that tab to the front (the active group's first, then any other).
+    const holder = s.groups.find((g) => g.id === s.activeGroup && g.editors.some(isFile)) ?? s.groups.find((g) => g.editors.some(isFile));
+    if (holder) groupId = holder.id;
+    else {
+      // Never in the brief's place: a file opens in the code's group (the nearest one without a brief in front).
+      const front = (g: (typeof s.groups)[number]) => g.editors.find((e) => e.id === g.activeId);
+      const active = s.groups.find((g) => g.id === s.activeGroup);
+      if (active && isBrief(front(active))) groupId = (s.groups.find((g) => !isBrief(front(g))) ?? s.groups[0]).id;
+    }
+  }
   updateGroup(groupId, (g) => {
     const existing = g.editors.find((e) => e.kind === "file" && e.path === path);
     if (existing) {

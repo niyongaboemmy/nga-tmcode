@@ -158,9 +158,12 @@ export async function scanWorkspace() {
   const sub = (s: FolderSnapshot) => s.dirs.filter((d) => !SKIP.has(d) && !d.startsWith(".")).map((d) => (s.dir ? `${s.dir}/${d}` : d));
   const level1 = await Promise.all(sub(root).slice(0, 40).map(snapshot));
   const level2 = await Promise.all(level1.flatMap(sub).slice(0, 80).map(snapshot));
+  // A project inside XAMPP/MAMP/WAMP's web folder also runs as Apache serves it (http://localhost/…).
+  const { servedBy, webRoots, withWebServer } = await import("../projects/location");
+  const served = servedBy(useWorkbench.getState().workspace?.root, await webRoots());
   if (gen !== scanGen) return;
   const folders = [root, ...level1, ...level2];
-  set({ projects: detectProjects(folders), folders, scanning: false });
+  set({ projects: withWebServer(detectProjects(folders), served), folders, scanning: false });
 }
 
 async function hasIndex(dir: string) {
@@ -284,12 +287,15 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
     case "livePreview":
       return openPreview(a.root ?? "", a.entry ?? "index.html", a.preview ?? "static");
     case "openBrowser": {
+      // A page served by the computer's own web server (the project lives in htdocs).
+      if (a.url) return openBrowser(a.url, { toSide: true });
       const url = await getPlatform().preview!.publish(a.root ?? "", a.entry ?? "index.html", {}, { internet: useWorkbench.getState().policy.internet_in_preview });
       return openExternalUrl(url);
     }
     case "devServer":
       // Project scripts (npm run dev, manage.py…) run the folder author's code: ask once in a cloned folder.
       if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
+      a = await withFreePort(a);
       return startDevServer(a);
     case "task":
       if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
@@ -377,6 +383,8 @@ export async function startDevServer(a: RunAction) {
   terminal = null;
   set({ session: { id, action: a, status: "starting", url: null, startedAt: Date.now(), endedAt: null, exitCode: null } });
   let tail = "";
+  // PHP's built-in server: open the page being edited (shop/cart.php), not only the site's front page.
+  const page = phpPageFor(a);
   const owner: TerminalOwner = {
     onReady: (h) => {
       if (get().session?.id === id) terminal = h;
@@ -395,7 +403,7 @@ export async function startDevServer(a: RunAction) {
       const pretty = url.replace(/\/\/(0\.0\.0\.0|\[::\]|127\.0\.0\.1)/, "//localhost");
       patchSession(id, { status: "running", url: pretty });
       if (slowTimer) clearTimeout(slowTimer);
-      if (useWorkbench.getState().settings["run.openBrowserOnStart"]) revealBrowser(pretty);
+      if (useWorkbench.getState().settings["run.openBrowserOnStart"]) revealBrowser(page ? `${pretty.replace(/\/$/, "")}/${page}` : pretty);
       log("Run", `${a.label} is listening on ${pretty}`);
     },
     onExit: (code) => {
@@ -477,6 +485,15 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
   const detected = await p.runner.detect(false).catch(() => null);
   if (!detected) return true;
   const missing = missingFor(a, detected.map((t) => t.tool));
+  // A single .cs file runs with `dotnet run file.cs` from .NET 10 on; older SDKs need a project.
+  const dotnet = detected.find((t) => t.tool === "dotnet");
+  const major = Number(/(\d+)\./.exec(dotnet?.version ?? "")?.[1] ?? 0);
+  if (!missing && dotnet && major > 0 && major < 10 && /^dotnet run "/.test(a.command ?? "")) {
+    notify("info", `Running a single C# file needs .NET 10 (this computer has .NET ${major}). Install .NET 10, or keep your code in a project (a .csproj, from "dotnet new console" in an empty folder): Run then runs the project.`, [
+      { label: "How to Install", run: () => showInstallGuide("csharp") },
+    ], { owner: "preflight", kind: "failure" });
+    return false;
+  }
   if (!missing) {
     dismissNotificationByKey("preflight");
     return true;
@@ -493,6 +510,29 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
     },
   ], { owner: "preflight", kind: "failure" });
   return false;
+}
+
+/** PHP's built-in server on a free port: 8000, else the next free one (XAMPP or another project may hold it). */
+async function withFreePort(a: RunAction): Promise<RunAction> {
+  const m = /^(php\s+-S\s+localhost:)(\d+)/.exec(a.command ?? "");
+  const free = getPlatform().portFree;
+  if (!m || !free) return a;
+  for (let port = Number(m[2]); port < Number(m[2]) + 20; port++) {
+    if (await free(port).catch(() => true)) return port === Number(m[2]) ? a : { ...a, command: a.command!.replace(`${m[1]}${m[2]}`, `${m[1]}${port}`), port };
+  }
+  return a;
+}
+
+/** `php -S … -t <docroot>` started while a page of that site is open: the page's address under the server. */
+function phpPageFor(a: RunAction): string | null {
+  if (a.kind !== "devServer" || !/^php\s+-S\b/.test(a.command ?? "")) return null;
+  const path = activeFilePath();
+  if (!path || !/\.(php|html?)$/i.test(path)) return null;
+  const docroot = /\s-t\s+("?)([^"\s]+)\1/.exec(a.command ?? "")?.[2] ?? ".";
+  const base = [a.cwd ?? "", docroot === "." ? "" : docroot].filter(Boolean).join("/");
+  if (base && !path.startsWith(`${base}/`)) return null;
+  const rel = base ? path.slice(base.length + 1) : path;
+  return /^index\.(php|html?)$/i.test(rel) ? null : rel.split("/").map(encodeURIComponent).join("/");
 }
 
 // ───────────── stop across every runner ─────────────
