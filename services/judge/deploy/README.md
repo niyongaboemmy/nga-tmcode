@@ -32,6 +32,22 @@ Paths the catalog doesn't know can be overridden in `.judge.env`, e.g. `JUDGE_TO
 
 **Memory:** Maven, Gradle and cargo builds get up to 1 GB each. With `JUDGE_CONCURRENCY=2` raise `SLICE_MEMORY` (e.g. `SLICE_MEMORY=2400M bash install.sh`) if the host has room, or run project grading at concurrency 1.
 
+## Languages (install-languages.sh)
+
+One script installs every language the playgrounds offer, where the Runtime Catalog expects it:
+Go, Rust, PHP, Ruby, Bash (+ bats), C# (.NET SDK, built with `csc` through
+`/usr/local/lib/nga/csharp-build`, kind `csharp/script`), Kotlin (kotlinc, on JDK 21) and Swift
+(swift.org build, signature checked). `install.sh` runs it; on its own:
+
+    bash services/judge/deploy/install-languages.sh                  # all of them
+    bash services/judge/deploy/install-languages.sh php ruby csharp  # only these
+    pm2 restart tm-judge                                             # so the judge sees them
+
+Each language installs independently (a failure is reported and skipped). `GET /v1/catalog`
+then lists the new kinds; `unavailable` says what is still missing. Disk: Go ~0.3 GB, Rust ~0.6 GB,
+.NET ~0.8 GB, Kotlin ~0.1 GB, Swift ~3 GB. CI installs the same set on Ubuntu 24.04 (inside
+isolate) and on Ubuntu 26.04 (the production release).
+
 ## Tier 3 (containers) and the dedicated runner host
 On this shared host tm-judge runs the isolate tiers only: Docker isn't installed and `JUDGE_CONTAINERS` is unset, so `/v1/health` lists no `containers`, `pty`, `previews` or `databases` features and container kinds (C#/.NET, Kotlin Gradle, Spring Boot, Flutter, web servers, PostgreSQL/MySQL) are listed as unavailable. The dedicated runner host (Oracle Cloud Always Free, arm64, linked by WireGuard) is set up by `deploy/runner-host/bootstrap.sh`; see `deploy/runner-host/README.md`, which also lists conservative settings should tier 3 ever be turned on here. Runner images: `services/judge/images/` (`build-images.sh`).
 

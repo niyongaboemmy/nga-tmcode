@@ -92,7 +92,8 @@ export const JVM_KINDS = [
     detect: { anyOf: ["*.kt"], none: BUILD_FILES, priority: 10 },
     entry: { default: "Main.kt", find: "main-decl" },
     steps: {
-      build: { tool: "kotlinc", args: [sources("kt"), "-include-runtime", "-d", out("main.jar")] },
+      // kotlinc is a JVM: without a cap it sizes its heap from the host, not the box.
+      build: { tool: "kotlinc", args: [sources("kt"), "-include-runtime", "-d", out("main.jar")], env: { JAVA_OPTS: "-Xmx512m -Xss4m -XX:+UseSerialGC -XX:TieredStopAtLevel=1" } },
       run: { tool: "java", args: [...JVM_RUN, "-jar", out("main.jar")] },
     },
     tier: "isolate-build",

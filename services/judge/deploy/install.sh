@@ -6,9 +6,10 @@
 #
 # What it does:
 #   1. language runtimes + isolate build deps (apt)
-#   2. wave-A project toolchains (Runtime Catalog, CODE_RUNNER_PLAN §13, §18.2):
-#      Go, Rust (rustup, minimal), Maven, Gradle, Node.js 22 (+ esbuild, tsc),
-#      uv, the JUnit console launcher; pinned versions, checksums verified
+#   2. project toolchains (Runtime Catalog, CODE_RUNNER_PLAN §13, §18.2): Maven, Gradle,
+#      Node.js 22 (+ esbuild, tsc), uv, the JUnit console launcher, and the languages of
+#      install-languages.sh (Go, Rust, PHP, Ruby, Bash, C#, Kotlin, Swift); pinned versions,
+#      checksums/signatures verified
 #   3. builds ioi/isolate (setuid sandbox) and starts isolate.service (cgroup keeper)
 #   4. caps ALL judge boxes together (isolate.slice) so student code can never
 #      starve MIS, Task Mentor or Tupo on this shared box
@@ -105,27 +106,10 @@ check_sum() {
 
 if [ "${SKIP_TOOLCHAINS:-}" != "1" ]; then
   # Go (official tarball; checksum from go.dev's release list).
-  if ! /opt/go/bin/go version 2>/dev/null | grep -q "go${GO_VERSION} "; then
-    f="go${GO_VERSION}.linux-${GOARCH}.tar.gz"
-    fetch "https://go.dev/dl/${f}" "$dl/$f"
-    want="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | python3 -c "import json,sys; print(next(x['sha256'] for r in json.load(sys.stdin) for x in r['files'] if x['filename']=='$f'))")"
-    check_sum sha256 "$dl/$f" "$want"
-    sudo rm -rf "/opt/go-${GO_VERSION}" && sudo mkdir -p "/opt/go-${GO_VERSION}"
-    sudo tar -xzf "$dl/$f" -C "/opt/go-${GO_VERSION}" --strip-components=1
-    sudo ln -sfn "/opt/go-${GO_VERSION}" /opt/go
-  fi
-
-  # Rust: rustup with the minimal profile, one pinned toolchain; /opt/rust = the
-  # toolchain itself (real cargo/rustc binaries, no rustup proxies inside boxes).
-  if [ ! -x "/opt/rustup/toolchains/${RUST_VERSION}-${RUSTARCH}-unknown-linux-gnu/bin/cargo" ]; then
-    fetch "https://static.rust-lang.org/rustup/dist/${RUSTARCH}-unknown-linux-gnu/rustup-init" "$dl/rustup-init"
-    fetch "https://static.rust-lang.org/rustup/dist/${RUSTARCH}-unknown-linux-gnu/rustup-init.sha256" "$dl/rustup-init.sha256"
-    check_sum sha256 "$dl/rustup-init" "$(cut -d' ' -f1 "$dl/rustup-init.sha256")"
-    chmod +x "$dl/rustup-init"
-    sudo mkdir -p /opt/rustup /opt/cargo
-    sudo RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo "$dl/rustup-init" -y -q --no-modify-path --profile minimal --default-toolchain "$RUST_VERSION"
-  fi
-  sudo ln -sfn "/opt/rustup/toolchains/${RUST_VERSION}-${RUSTARCH}-unknown-linux-gnu" /opt/rust
+  # Languages (Go, Rust, PHP, Ruby, Bash, C#, Kotlin, Swift): one script, also runnable on its
+  # own; each language installs independently. LANGUAGES="php ruby" limits it to those.
+  # shellcheck disable=SC2086
+  GO_VERSION="$GO_VERSION" RUST_VERSION="$RUST_VERSION" bash "$(dirname "${BASH_SOURCE[0]}")/install-languages.sh" ${LANGUAGES:-} || true
 
   # Maven (Apache archive, sha512).
   if ! /opt/maven/bin/mvn -v 2>/dev/null | grep -q "Apache Maven ${MAVEN_VERSION}"; then

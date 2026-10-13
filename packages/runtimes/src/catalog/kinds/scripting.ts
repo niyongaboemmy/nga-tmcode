@@ -300,7 +300,9 @@ export const SCRIPTING_KINDS = [
     wave: "B",
     detect: { anyOf: ["*.rb"], none: ["Gemfile"], priority: 10 },
     entry: { default: "main.rb" },
-    steps: { run: { tool: "ruby", args: ["-e", "STDOUT.sync=true; load ARGV[0]", entry] } },
+    // ARGV.shift: `gets` reads the files left in ARGV before stdin, so with the entry still
+    // there every `gets` returned the program's own first line instead of the input.
+    steps: { run: { tool: "ruby", args: ["-e", "STDOUT.sync=true; load ARGV.shift", entry] } },
     tier: "isolate",
   }),
   kind({
