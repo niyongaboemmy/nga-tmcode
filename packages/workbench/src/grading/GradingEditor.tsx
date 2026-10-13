@@ -4,7 +4,7 @@ import { getPlatform, openContextMenu, openFile, showDialog, useWorkbench, type 
 import { openExternalUrl } from "../terminal/browser";
 import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import { SkeletonLines } from "../widgets/Skeleton";
-import { taskMentorWeb } from "../projects/taskMentorLinks";
+import { openInTaskMentor } from "../projects/taskMentorLinks";
 import { useProjects } from "../projects/service";
 import { showAssignment } from "../projects/assignments";
 import { revealComment } from "./comments";
@@ -178,14 +178,10 @@ interface PanelApi {
   returnForChanges(): boolean;
 }
 
-/** Task Mentor's grading page for this practical (and student). */
+/** Task Mentor's Grading page for this activity (and student). */
 function openGradingInTaskMentor(key: string, studentId: number | null) {
-  const api = useProjects.getState().account?.tm_api ?? "https://taskmentor-api.amashuri.com";
   const { type, id, question_id } = parseKey(key);
-  const q = new URLSearchParams();
-  if (question_id) q.set("question", String(question_id));
-  if (studentId != null) q.set("student", String(studentId));
-  void openExternalUrl(`${taskMentorWeb(api)}/grading/practical/${type}/${id}${q.toString() ? `?${q}` : ""}`);
+  openInTaskMentor({ kind: "grading", type, id, question: question_id, student: studentId });
 }
 
 /** Save & Next's note for the next panel ("Saved Chloe Coder: 20/20."). */

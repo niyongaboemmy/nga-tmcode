@@ -1,4 +1,5 @@
 import { chainHmac, filesHash, journalKey, type ExamPackage, type Profile } from "@tmcode/protocol";
+import { taskMentorWeb } from "../projects/taskMentorWeb";
 import { onDocumentChanged, saveAll } from "../monaco/documents";
 import { onRunStarted } from "../run/runService";
 import { loadTests, setServerRunner, setVisibleTests, useServerRun } from "../run/testService";
@@ -269,11 +270,6 @@ export async function checkExamInProgress() {
   ]);
 }
 
-/** Task Mentor's web app for an API base (as projects/commands taskMentorWeb). */
-function taskMentorWeb(api: string) {
-  if (/^https:\/\/taskmentor-api\./.test(api)) return api.replace("://taskmentor-api.", "://taskmentor.");
-  return "http://localhost:5173/taskmentor";
-}
 
 /** Opens a Task Mentor web page for an API base (the exam's server). */
 export function openTaskMentorFor(apiBase: string | null, path = "/quizzes") {
