@@ -30,13 +30,13 @@ export const CATALOG = {
   "signin.prompt": "Sign in to continue",
   "signin.promptDetail": "Task Mentor projects need your NGA account. One sign-in does Central MIS and Task Mentor.",
   "signin.toOpenAssignment": "Sign in to open this assignment.",
-  "signin.toGrade": "Sign in to grade this practical.",
+  "signin.toGrade": "Sign in to grade this activity.",
   "signin.resume": (p) => `Signed in. Opening ${p.what}…`,
 
   // ── Start / Continue ──
   "start.examFirst": "Finish your exam first.",
   "start.completed": "This assignment is completed, so it can't be started.",
-  "start.ready": (p) => `Your workspace for "${p.title}" is ready${p.files ? ` with ${s(Number(p.files), "starter file")}` : ""}. Save to Task Mentor as you go, then Submit.`,
+  "start.ready": (p) => `Your project for "${p.title}" is ready${p.files ? ` with ${s(Number(p.files), "starter file")}` : ""}. Save to Task Mentor as you go, then Submit.`,
   "start.firstThis": "Start this assignment first.",
 
   // ── Save to Task Mentor ──
@@ -56,7 +56,7 @@ export const CATALOG = {
   // ── Submit / Withdraw ──
   "submit.done": (p) => `Submitted ${p.what}${p.late ? " (late)" : ""}. Your teacher sees exactly this version.`,
   "submit.openFirst": "Continue this assignment first, so the newest work is what you submit.",
-  "submit.openPracticalFirst": "Continue this practical first, so the newest work is what you submit.",
+  "submit.openPracticalFirst": "Continue this question first, so the newest work is what you submit.",
   "submit.already": "This is already submitted. Withdraw to Edit to change it.",
   "submit.alreadyGraded": "This is already graded.",
   "submit.completed": "This assignment is completed: it can no longer be submitted.",

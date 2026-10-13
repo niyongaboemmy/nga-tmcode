@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getPlatform, loadDir, moveEntry, notify, select, targetFolder, useWorkbench } from "../../state/store";
+import { getPlatform, loadDir, moveEntry, notify, select, targetFolder, toggleDir, useWorkbench } from "../../state/store";
 import { basename, dirname, join } from "../../util/paths";
 
 /**
@@ -21,12 +21,20 @@ export function copyName(name: string, taken: (n: string) => boolean, isDir = fa
   return `${stem} copy ${Date.now()}${ext}`;
 }
 
+// What the OS clipboard held when TMCode's own clipboard was set: a newer OS copy (Finder) wins on Paste.
+let osAtCopy = "";
+const osFiles = async () => (await getPlatform().fs.clipboardFiles?.().catch(() => [] as string[])) ?? [];
+
 export function copyEntries(paths: string[]) {
-  if (paths.length) useFileClipboard.setState({ mode: "copy", paths }, true);
+  if (!paths.length) return;
+  useFileClipboard.setState({ mode: "copy", paths }, true);
+  void osFiles().then((f) => (osAtCopy = f.join("\n")));
 }
 
 export function cutEntries(paths: string[]) {
-  if (paths.length) useFileClipboard.setState({ mode: "cut", paths }, true);
+  if (!paths.length) return;
+  useFileClipboard.setState({ mode: "cut", paths }, true);
+  void osFiles().then((f) => (osAtCopy = f.join("\n")));
 }
 
 async function namesIn(dir: string) {
@@ -48,6 +56,12 @@ async function copyInto(path: string, dest: string) {
 }
 
 export async function pasteEntries(dest = targetFolder()) {
+  // Files copied in Finder / Windows Explorer since TMCode's last Copy: import them into this folder.
+  const os = await osFiles();
+  if (os.length && os.join("\n") !== osAtCopy) {
+    const { importPaths } = await import("./importFiles");
+    return importPaths(dest, os);
+  }
   const clip = useFileClipboard.getState();
   if (!clip) return;
   let last: string | null = null;
@@ -66,14 +80,21 @@ export async function pasteEntries(dest = targetFolder()) {
   } catch (e) {
     notify("error", String((e as Error)?.message ?? e));
   } finally {
+    // The result is shown: the folder opens, the last pasted item is selected and said.
+    if (dest) await toggleDir(dest, true);
     await loadDir(dest);
-    if (last) select(last);
+    if (last) {
+      select(last);
+      const n = clip.paths.length;
+      notify("info", `${clip.mode === "cut" ? "Moved" : "Copied"} ${n === 1 ? `"${basename(last)}"` : `${n} items`} to ${dest || "the project folder"}.`, undefined, { kind: "result" });
+    }
   }
 }
 
 export async function duplicateEntry(path: string) {
   try {
     const to = await copyInto(path, dirname(path));
+    if (dirname(path)) await toggleDir(dirname(path), true);
     await loadDir(dirname(path));
     select(to);
   } catch (e) {

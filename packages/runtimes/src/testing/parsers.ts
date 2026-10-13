@@ -1,4 +1,3 @@
-// Copied from packages/workbench/src/testing/parsers.ts (TMCode keeps its own copy for now; keep the two in step until the workbench imports @nga/runtimes).
 /**
  * Test results from the reports and output of real test frameworks, into one
  * shape for the Testing view: JUnit XML (pytest, Vitest, node:test, Maven

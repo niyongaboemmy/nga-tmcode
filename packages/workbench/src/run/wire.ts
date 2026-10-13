@@ -1,7 +1,9 @@
 import { onDocumentChanged } from "../monaco/documents";
 import { onExternalChanges } from "../monaco/external";
-import { useWorkbench } from "../state/store";
-import { TESTS_FILE, loadTests } from "./testService";
+import { getPlatform, useWorkbench } from "../state/store";
+import { setAccountCodeTransport } from "./codeRunner";
+import { accountCodeTransport } from "./codeTransports";
+import { TESTS_FILES, loadTests } from "./testService";
 import { wireTestEditor } from "../testing/editor";
 import { wireRunHub } from "./runHub";
 
@@ -13,6 +15,12 @@ export function wireRunServices() {
   wired = true;
   wireRunHub();
   wireTestEditor();
+  // Task Mentor's code runner when signed in (the exam session sets its own while an exam runs).
+  const account = getPlatform().account;
+  if (account) {
+    const transport = accountCodeTransport(account);
+    setAccountCodeTransport(() => transport);
+  }
   let root = useWorkbench.getState().workspace?.root ?? null;
   if (root) void loadTests();
   useWorkbench.subscribe((s) => {
@@ -23,9 +31,9 @@ export function wireRunServices() {
     }
   });
   onExternalChanges((paths) => {
-    if (paths.includes(TESTS_FILE) && !useWorkbench.getState().dirty[TESTS_FILE]) void loadTests();
+    if (paths.some((p) => TESTS_FILES.includes(p) && !useWorkbench.getState().dirty[p])) void loadTests();
   });
   onDocumentChanged((path) => {
-    if (path === TESTS_FILE && !useWorkbench.getState().dirty[path]) void loadTests();
+    if (TESTS_FILES.includes(path) && !useWorkbench.getState().dirty[path]) void loadTests();
   });
 }

@@ -1,4 +1,5 @@
 import type { AccountHost, AccountStatus, FileSystem, ScannedFile, SkippedFile, TmRequest, TmResponse } from "./types";
+import { createFakeCodeRunner } from "./memoryCodeRunner";
 
 /**
  * Dev server / e2e only: an NGA account and a Task Mentor projects API in
@@ -42,6 +43,7 @@ interface Rev {
 }
 
 export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string): Promise<string> }): AccountHost {
+  const code = createFakeCodeRunner();
   const user = { id: 7, mis_user_id: 1007, name: "Ada Student", email: "ada@nga.test", role: "student", avatar_url: null, permissions: ["PROJECTS_USE"] };
   let signedIn = localStorage.getItem("tmcode:mock-account") === "signed-in";
   let phase: AccountStatus["phase"] = "idle";
@@ -158,7 +160,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     };
     // Ben saved once before submitting: version 2 (an earlier try), version 3 (submitted).
     await work(21, { "index.html": "<h1>Ben's list</h1>\n<script src=\"app.js\"></script>\n", "app.js": "const items = [];\n" }, { type: "assignment", id: 51 }, true, [{ "index.html": "<h1>Ben's list</h1>\n", "app.js": "// TODO: add items\nlet x;\n" }]);
-    await work(22, { "index.html": "<h1>Chloe's list</h1>\n", "app.js": "// todo\n", "README.md": "# Chloe\n" }, { type: "assignment", id: 51 }, true);
+    await work(22, { "index.html": "<h1>Chloe's list</h1>\n", "app.js": "// todo\n", "README.md": "# Chloe\n", "app.test.js": 'const test = require("node:test");\ntest("adds an item", () => {});\ntest("removes an item", () => {\n  fail("not done yet");\n});\n' }, { type: "assignment", id: 51 }, true);
     await work(23, { "index.html": "<h1>Dan</h1>\n" }, { type: "assignment", id: 51 }, false);
     await work(21, { "index.html": "<nav>Ben's navbar</nav>\n" }, { type: "quiz", id: 78, question_id: 501 }, true);
   }
@@ -292,6 +294,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     if (!signedIn) return err(401, "UNAUTHENTICATED", "Sign in");
     const url = new URL(req.path, API);
     const p = url.pathname.replace(/^\/api\/tmcode/, "");
+    if (p.startsWith("/code/")) return code.route(req.method, p.slice("/code".length), (req.json ?? {}) as Record<string, unknown>);
     const body = (req.json ?? {}) as Record<string, unknown>;
     let m: RegExpMatchArray | null;
     if (p === "/auth/me") return { status: 200, body: { user, token_kind: "tmcode-user" } };
@@ -802,6 +805,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     request: async (req) => {
       if (latency) await new Promise((r) => setTimeout(r, latency));
       return route(req) as Promise<TmResponse<never>>;
+    },
+    async stream(path, onEvent) {
+      if (!signedIn) throw new Error("Sign in to use Task Mentor projects.");
+      return code.stream(path.replace(/^\/api\/tmcode\/code/, ""), onEvent);
     },
     async scan() {
       const res = await scan();

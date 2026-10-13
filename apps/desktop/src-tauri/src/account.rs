@@ -623,6 +623,99 @@ pub async fn tm_api(app: AppHandle, request: TmRequest) -> Result<TmResponse, St
     Ok(TmResponse { status, body })
 }
 
+/// One piece of a streamed Task Mentor answer (`tm_stream`): the status first, then the body as it
+/// arrives, then the end (or why it stopped).
+#[derive(Serialize, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum StreamEvent {
+    Status { status: u16 },
+    Data { data: String },
+    End,
+    Error { message: String },
+}
+
+/// Open streams (`tm_stream`), by the caller's id, so `tm_stream_cancel` can stop one.
+#[derive(Default)]
+pub struct Streams(Mutex<std::collections::HashMap<u32, tauri::async_runtime::JoinHandle<()>>>);
+
+/// A Task Mentor GET whose body keeps coming (a live run's events, `text/event-stream`). Same rules
+/// as `tm_api` (TMCode paths only, signed in, not during an exam); no overall time limit, only for
+/// the connection. The body goes to `on_event` piece by piece until it ends or `tm_stream_cancel`.
+#[tauri::command]
+pub async fn tm_stream(app: AppHandle, streams: State<'_, Streams>, id: u32, path: String, on_event: tauri::ipc::Channel<StreamEvent>) -> Result<(), String> {
+    if !valid_tm_path(&path) {
+        return Err("Not a Task Mentor TMCode API path.".into());
+    }
+    if exam_active(&app) {
+        return Err("Task Mentor projects are not available during an exam.".into());
+    }
+    let (token, mis) = {
+        let account = app.state::<Account>();
+        let mut inner = account.inner.lock().unwrap();
+        load(&mut inner);
+        (inner.tm.clone().ok_or("Sign in to use Task Mentor projects.")?, inner.mis.clone())
+    };
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("TMCode/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.get(format!("{}{}", origins().tm_api, path)).bearer_auth(token).header("Accept", "text/event-stream");
+    if let Some(mis) = mis {
+        req = req.header("X-MIS-Token", mis);
+    }
+    let task = tauri::async_runtime::spawn(async move {
+        let mut res = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = on_event.send(StreamEvent::Error { message: format!("Could not reach Task Mentor: {}", e.without_url()) });
+                return;
+            }
+        };
+        let _ = on_event.send(StreamEvent::Status { status: res.status().as_u16() });
+        // Bytes can split a character: keep the unfinished end for the next piece.
+        let mut rest: Vec<u8> = Vec::new();
+        loop {
+            match res.chunk().await {
+                Ok(Some(bytes)) => {
+                    rest.extend_from_slice(&bytes);
+                    let cut = match std::str::from_utf8(&rest) {
+                        Ok(_) => rest.len(),
+                        Err(e) if e.error_len().is_none() => e.valid_up_to(),
+                        Err(_) => rest.len(),
+                    };
+                    if cut > 0 {
+                        let data = String::from_utf8_lossy(&rest[..cut]).into_owned();
+                        rest.drain(..cut);
+                        if on_event.send(StreamEvent::Data { data }).is_err() {
+                            return;
+                        }
+                    }
+                }
+                Ok(None) => {
+                    let _ = on_event.send(StreamEvent::End);
+                    return;
+                }
+                Err(e) => {
+                    let _ = on_event.send(StreamEvent::Error { message: e.without_url().to_string() });
+                    return;
+                }
+            }
+        }
+    });
+    if let Some(old) = streams.0.lock().unwrap().insert(id, task) {
+        old.abort();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn tm_stream_cancel(streams: State<'_, Streams>, id: u32) {
+    if let Some(task) = streams.0.lock().unwrap().remove(&id) {
+        task.abort();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

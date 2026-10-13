@@ -18,7 +18,7 @@ export function submitConfirmDetail(opts: { late?: boolean; quizPractical?: bool
   return (
     `TMCode saves your work to Task Mentor, then submits that exact version.${opts.late ? " The due date has passed, so it will be marked late." : ""}` +
     `\n\nSubmitted work is locked until your teacher grades it or you withdraw it. You can withdraw and submit again until the ${what} closes.` +
-    (opts.quizPractical ? "\n\nThis is a quiz practical: keep the quiz open in Task Mentor while you submit, so your project is recorded as your answer." : "")
+    (opts.quizPractical ? "\n\nThis is a coding question: keep the quiz open in Task Mentor while you submit, so your project is recorded as your answer." : "")
   );
 }
 

@@ -159,3 +159,9 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "42");
     }
 }
+
+/// Is a local port free for a dev server (PHP's built-in server on 8000, …)?
+#[tauri::command]
+pub fn proc_port_free(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}

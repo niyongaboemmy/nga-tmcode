@@ -213,7 +213,8 @@ test("relaunch after a crash keeps newer local work that never reached Task Ment
   await page.request.post(`${TM}/__test/set`, { data: { offline: true } });
   await typeCode(page, "console.log('newer offline work');\n");
   await page.keyboard.press("F5");
-  await expect(page.getByTestId("exam-sync")).toContainText("Offline", { timeout: 15000 });
+  // Not just "Offline" (a missed heartbeat says that too): the newer run is in this computer's journal.
+  await expect(page.getByTestId("exam-sync")).toContainText("Offline: 1 change saved on this computer", { timeout: 15000 });
 
   // "Crash" and relaunch from Task Mentor on the same computer: the journal survives, the session is new.
   const { deeplink } = await (await page.request.post(`${TM}/__test/launch`)).json();

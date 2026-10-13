@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { onConsole, sendRunInput, setConsoleSize, type ConsoleEvent } from "../../run/runService";
+import { onConsole, sendRunInput, setConsoleSize, stopRun, type ConsoleEvent } from "../../run/runService";
+import { endRemoteInput, interruptRemoteRun, sendRemoteLine } from "../../run/serverRun";
 import { defaultFontFamily } from "../../state/settings";
 import { useThemes } from "../../themes/themeService";
 import { getPlatform, useWorkbench } from "../../state/store";
@@ -126,6 +127,37 @@ export function RunConsole({ visible }: { visible: boolean }) {
   return (
     <div className="tm-terminal" hidden={!visible}>
       <div ref={host} className="tm-terminal-host" data-testid="run-console" />
+      <RemoteRunBar />
     </div>
+  );
+}
+
+/** A run on Task Mentor: the program reads what is typed here, line by line. */
+function RemoteRunBar() {
+  const run = useWorkbench((s) => s.run);
+  const [text, setText] = useState("");
+  if (!run.remote || run.status === "idle") return null;
+  return (
+    <form
+      className="tm-remote-run"
+      data-testid="remote-run-bar"
+      onSubmit={(e) => {
+        e.preventDefault();
+        sendRemoteLine(text);
+        setText("");
+      }}
+    >
+      <span className="tm-remote-run-where">On Task Mentor</span>
+      <input className="tm-input" aria-label="Input for the program" placeholder="Type input, then press Enter" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+      <button type="button" className="tm-button tm-button--secondary" onClick={interruptRemoteRun} title="Send Ctrl+C to the program">
+        Ctrl+C
+      </button>
+      <button type="button" className="tm-button tm-button--secondary" onClick={endRemoteInput} title="Tell the program there is no more input (Ctrl+D)">
+        End of Input
+      </button>
+      <button type="button" className="tm-button tm-button--secondary" onClick={stopRun}>
+        Stop
+      </button>
+    </form>
   );
 }

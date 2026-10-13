@@ -135,7 +135,7 @@ test("#10 Home: nothing to do, and the exam and practice links do something", as
 
   const practice = page.getByTestId("home-practise");
   await expect(practice.getByRole("button", { name: "Open Folder..." })).toBeVisible();
-  await practice.getByRole("button", { name: "New Project from Template..." }).click();
+  await practice.getByRole("button", { name: "New Project from Starter..." }).click();
   await expect(page.locator(".tm-quick-pick")).toBeVisible();
 });
 
@@ -185,7 +185,7 @@ test("S8 quiz practical rows: opening time, attempt, state and grade", async ({ 
   await refresh(page);
   await expect(practical.getByTestId("quiz-practical-attempt")).toHaveText("Quiz open in Task Mentor");
   await practical.getByRole("button", { name: "Start" }).click();
-  await expect(page.locator(".tm-toast", { hasText: 'Your workspace for "Build a navbar" is ready' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".tm-toast", { hasText: 'Your project for "Build a navbar" is ready' })).toBeVisible({ timeout: 15_000 });
   await command(page, "View: Show Assignments");
   await expect(practical.getByTestId("quiz-practical-state")).toHaveText("In progress", { timeout: 10_000 });
   await expect(practical).toContainText("Open here");

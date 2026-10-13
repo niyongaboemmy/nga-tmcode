@@ -83,7 +83,7 @@ export function showQuizPractical(quizId: number, questionId: number, opts: { to
     if (opts.toSide && focused !== holder.id) focusGroup(focused);
     return;
   }
-  const title = findPractical(quizId, questionId)?.q.title ?? "Quiz practical";
+  const title = findPractical(quizId, questionId)?.q.title ?? "Coding question";
   openEditorInput({ kind: "assignment", id: editorId, assignmentId: -questionId, title, preview: false, source: "quiz", quizId, questionId }, opts);
 }
 

@@ -28,7 +28,7 @@ describe("score checks", () => {
   });
   it("warns when the rubric total is not the activity's points", () => {
     expect(rubricMismatch([{ max_score: 12 }, { max_score: 8 }], 20)).toBeNull();
-    expect(rubricMismatch([{ max_score: 12 }, { max_score: 6 }], 20)).toBe("The criteria add up to 18, but the practical is worth 20 points.");
+    expect(rubricMismatch([{ max_score: 12 }, { max_score: 6 }], 20)).toBe("The criteria add up to 18, but the activity is worth 20 points.");
     expect(rubricMismatch([], 20)).toBeNull();
   });
 });

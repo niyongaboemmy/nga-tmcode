@@ -28,6 +28,7 @@ import type {
   StoredExtension,
   TerminalSession,
   TerminalProfile,
+  TmStreamEvent,
   Toolchain,
   UpdateInfo,
   UpdateProgress,
@@ -154,6 +155,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
     openExternal: (url) => invoke("open_external", { url }),
+    portFree: (port) => invoke<boolean>("proc_port_free", { port }),
     clipboard: {
       readText: async () => (await import("@tauri-apps/plugin-clipboard-manager")).readText().then((t) => t ?? ""),
       writeText: async (text) => (await import("@tauri-apps/plugin-clipboard-manager")).writeText(text),
@@ -193,6 +195,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       createDir: (path) => invoke("ws_create_dir", { path }),
       rename: (from, to) => invoke("ws_rename", { from, to }),
       copy: (from, to) => invoke("ws_copy", { from, to }),
+      clipboardFiles: () => invoke<string[]>("ws_clipboard_files").catch(() => []),
       remove: (path) => invoke("ws_remove", { path }),
       trash: (path) => invoke("ws_trash", { path }),
       encodingOf: (path) => invoke<FileEncoding>("ws_file_encoding", { path }),
@@ -293,9 +296,11 @@ export async function createTauriPlatform(): Promise<Platform> {
       let un: (() => void) | null = null;
       let stopped = false;
       let paths: string[] = [];
-      // Positions come in physical pixels: back to CSS pixels (screen scale, then window zoom).
+      // Back to CSS pixels. Windows and Linux report physical pixels (screen scale, then window zoom);
+      // macOS (WKWebView) already reports points, so only the window zoom applies there (halving them
+      // on a Retina screen dropped every file on the wrong row, or outside the Explorer).
       const toCss = async (p: { x: number; y: number }) => {
-        const scale = await win.scaleFactor().catch(() => window.devicePixelRatio || 1);
+        const scale = info.os === "mac" ? 1 : await win.scaleFactor().catch(() => window.devicePixelRatio || 1);
         return { x: p.x / scale / zoom, y: p.y / scale / zoom };
       };
       void getCurrentWebview()
@@ -409,6 +414,7 @@ function createTauriGit(): GitHost {
 }
 
 // ───────────── NGA account + projects (account.rs, projects.rs) ─────────────
+let streamIds = 0;
 function createTauriAccount(): AccountHost {
   return {
     status: (refresh = false) => invoke("auth_status", { refresh }),
@@ -426,10 +432,21 @@ function createTauriAccount(): AccountHost {
       };
     },
     request: (request) => invoke("tm_api", { request }),
+    async stream(path, onEvent) {
+      const id = ++streamIds;
+      const channel = new Channel<TmStreamEvent>();
+      channel.onmessage = onEvent;
+      await invoke("tm_stream", { id, path, onEvent: channel });
+      return { cancel: () => void invoke("tm_stream_cancel", { id }).catch(() => {}) };
+    },
     scan: (l = {}) => invoke("proj_scan", { maxFiles: l.maxFiles ?? null, maxFileMb: l.maxFileMb ?? null, maxTotalMb: l.maxTotalMb ?? null }),
     readBlob: (path) => invoke("proj_read_blob", { path }),
     writeBlob: (path, sha256, gzBase64) => invoke("proj_write_blob", { path, sha256, gzBase64 }),
     newFolder: (slug, base) => invoke("proj_new_folder", { slug, base: base ?? null }),
-    useProjectsFolderForClone: () => invoke("proj_use_projects_folder"),
+    useProjectsFolderForClone: (base) => invoke("proj_use_projects_folder", { base: base ?? null }),
+    webRoots: () => invoke("proj_web_roots"),
+    pickBase: (title) => invoke("proj_pick_base", { title }),
+    defaultBase: () => invoke("proj_default_base"),
+    moveFolder: (from, base) => invoke("proj_move_folder", { from, base }),
   };
 }

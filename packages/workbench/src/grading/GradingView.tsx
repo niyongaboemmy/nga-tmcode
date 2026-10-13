@@ -104,8 +104,8 @@ export function GradingView() {
     return (
       <div className="tm-view-empty tm-projects-signin">
         <Codicon name="tasklist" className="tm-projects-hero" />
-        <h3>Grade TMCode practicals</h3>
-        <p>Sign in with your NGA account to grade the assignments and quiz practicals of your subjects.</p>
+        <h3>Grading</h3>
+        <p>Sign in with your NGA account to grade the code assignments and coding questions of your subjects.</p>
         <button type="button" className="tm-button tm-button--block" onClick={() => void signIn()}>
           <Codicon name="account" /> {msg("signin.button")}
         </button>
@@ -158,18 +158,18 @@ export function GradingView() {
       )}
       <div className="tm-assignments-toolbar">
         <div className="tm-input-box tm-assignments-filter">
-          <input className="tm-input" placeholder="Filter practicals" aria-label="Filter practicals" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <input className="tm-input" placeholder="Filter what to grade" aria-label="Filter what to grade" value={filter} onChange={(e) => setFilter(e.target.value)} />
         </div>
-        <ActionButton icon={show === "all" ? "filter" : "filter-filled"} label={show === "all" ? "Show only those with work to grade" : "Show all practicals"} onClick={() => setShow(show === "all" ? "to-grade" : "all")} data-testid="grading-only-pending" />
+        <ActionButton icon={show === "all" ? "filter" : "filter-filled"} label={show === "all" ? "Show only those with work to grade" : "Show everything"} onClick={() => setShow(show === "all" ? "to-grade" : "all")} data-testid="grading-only-pending" />
         <ActionButton icon="refresh" label="Refresh (syncs with Task Mentor)" onClick={() => void refreshGrading()} className={loading ? "is-busy" : ""} />
       </div>
       {error && <p className="tm-error-text">{error}</p>}
       {activities === null ? (
-        <SkeletonRows rows={4} label="Loading practicals" />
+        <SkeletonRows rows={4} label="Loading what to grade" />
       ) : activities.length === 0 ? (
         <div className="tm-view-empty">
           <Codicon name="tasklist" className="tm-projects-hero" />
-          <p>No TMCode practicals to grade yet. Turn on "TMCode practical" for an assignment, or add a practical question to a quiz, in Task Mentor.</p>
+          <p>Nothing to grade yet. In Task Mentor, make an assignment a code assignment, or add a coding question to a quiz.</p>
           {/* W6: every empty state has one action. */}
           <button type="button" className="tm-button" onClick={() => openInTaskMentor({ kind: "page", path: "/assignments/create" })} data-testid="grading-create">
             <Codicon name="add" /> Create in Task Mentor
@@ -177,7 +177,7 @@ export function GradingView() {
         </div>
       ) : list.length === 0 ? (
         <div className="tm-projects-hint">
-          <p className="tm-muted">{show === "to-grade" ? "Nothing waiting to be graded." : "No matching practicals."}</p>
+          <p className="tm-muted">{show === "to-grade" ? "Nothing waiting to be graded." : "Nothing matches."}</p>
           {show === "to-grade" ? (
             <button type="button" className="tm-button tm-button--secondary" onClick={() => setShow("all")} data-testid="grading-show-all">
               Show All Practicals

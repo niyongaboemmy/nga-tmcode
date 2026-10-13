@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * More technologies: New Project from Template (grouped catalog), the built-in
+ * More technologies: New Project from Starter (the Runtime Catalog), the built-in
  * SQL runner, truth tables for .logic files, and the API Tester (against the
  * memory platform's to-do API on http://localhost:4000).
  */
@@ -22,8 +22,11 @@ async function command(page: Page, name: string) {
   await page.keyboard.press("Enter");
 }
 
-async function fromTemplate(page: Page, label: string, folder: string) {
-  await command(page, "File: New Project from Template");
+/** New Project from Starter: a language, then one of its starters, then the folder's name. */
+async function fromStarter(page: Page, language: string, label: string, folder: string) {
+  await command(page, "File: New Project from Starter");
+  await page.locator(".tm-quick-pick input").fill(language);
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: new RegExp(`^${language.replace(/[()]/g, "\\$&")}`) }).first().click();
   await page.locator(".tm-quick-pick input").fill(label);
   await page.locator(".tm-quick-pick .tm-qi-item", { hasText: label }).first().click();
   await page.locator(".tm-quick-pick input").fill(folder);
@@ -31,23 +34,22 @@ async function fromTemplate(page: Page, label: string, folder: string) {
   await expect(page.locator(".tm-toast", { hasText: `Created ${folder}` })).toBeVisible({ timeout: 15_000 });
 }
 
-test("the template catalog is grouped by category and covers many technologies", async ({ page }) => {
+test("starters come from the Runtime Catalog: a language first, then its starters, for many technologies", async ({ page }) => {
   await fresh(page);
-  await command(page, "File: New Project from Template");
+  await command(page, "File: New Project from Starter");
   const pick = page.locator(".tm-quick-pick");
-  for (const group of ["Websites", "Frontend frameworks", "Backend & APIs", "Mobile & desktop", "Languages", "Data & SQL", "Learning"]) {
-    await expect(pick).toContainText(group);
-  }
-  for (const label of ["Website with jQuery", "Angular", "Java API (Spring Boot)", "Flutter App"]) {
-    await page.locator(".tm-quick-pick input").fill(label);
-    await expect(pick.locator(".tm-qi-item", { hasText: label }).first()).toBeVisible();
-  }
+  for (const language of ["Website (HTML, CSS, JavaScript)", "Python", "Java", "SQL", "Dart"]) await expect(pick).toContainText(language);
+  await expect(pick).toContainText("more languages");
+  await page.locator(".tm-quick-pick input").fill("Java");
+  await page.locator(".tm-quick-pick .tm-qi-item", { hasText: /^Java(?!Script)/ }).first().click();
+  await page.locator(".tm-quick-pick input").fill("Spring");
+  await expect(pick.locator(".tm-qi-item", { hasText: "Spring Boot" }).first()).toBeVisible();
   await page.keyboard.press("Escape");
 });
 
 test("SQL: run a file in the built-in SQLite, see tables and the schema, explain, then an error at its line", async ({ page }) => {
   await fresh(page);
-  await fromTemplate(page, "SQL (SQLite)", "school-db");
+  await fromStarter(page, "SQL", "SQL (SQLite)", "school-db");
   await expect(page.locator(".tm-tab").filter({ hasText: "queries.sql" }).first()).toBeVisible();
   await command(page, "SQL: Run SQL File");
   const results = page.getByTestId("sql-results");
@@ -71,7 +73,7 @@ test("SQL: run a file in the built-in SQLite, see tables and the schema, explain
 
 test("SQL: Keep data mode keeps tables between runs; Fresh starts over", async ({ page }) => {
   await fresh(page);
-  await fromTemplate(page, "SQL (SQLite)", "keep-db");
+  await fromStarter(page, "SQL", "SQL (SQLite)", "keep-db");
   await command(page, "SQL: Run SQL File");
   const results = page.getByTestId("sql-results");
   await expect(results.getByTestId("sql-statement")).toHaveCount(4, { timeout: 20_000 });
@@ -92,7 +94,7 @@ test("SQL: Keep data mode keeps tables between runs; Fresh starts over", async (
 
 test("Logic: truth tables, steps, tautology and equivalent expressions", async ({ page }) => {
   await fresh(page);
-  await fromTemplate(page, "Logic & Truth Tables", "logic-lab");
+  await fromStarter(page, "Logic (truth tables)", "Logic & Truth Tables", "logic-lab");
   await expect(page.locator(".tm-tab", { hasText: "laws.logic" })).toBeVisible();
   await command(page, "Logic: Show Truth Tables");
   const logic = page.getByTestId("logic-page");
@@ -108,7 +110,7 @@ test("Logic: truth tables, steps, tautology and equivalent expressions", async (
 
 test("API Tester: routes from the code, send requests, see status, JSON and validation errors", async ({ page }) => {
   await fresh(page);
-  await fromTemplate(page, "Node.js API (Express)", "todo-api");
+  await fromStarter(page, "JavaScript", "Node.js API (Express)", "todo-api");
   await command(page, "Run: Open API Tester");
   const api = page.getByTestId("api-tester");
   await expect(api.getByTestId("api-route").filter({ hasText: "/api/todos/:id" }).first()).toBeVisible({ timeout: 10_000 });

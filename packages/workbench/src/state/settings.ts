@@ -45,6 +45,14 @@ export interface Settings {
   "projects.autoSave": "off" | "assignments" | "onSave" | "interval";
   /** Share live status (open file, unsaved files, sync) with Task Mentor while a project is open. */
   "projects.presence": boolean;
+  /** Where new projects are created ("" = ~/TMCode Projects). */
+  "projects.folder": string;
+  /**
+   * PHP websites: "ask" (default) offers the computer's web server folder (XAMPP/MAMP/WAMP htdocs) when
+   * there is one; "webServer" always uses it; "projectsFolder" keeps them with the other projects
+   * (run with PHP's built-in server).
+   */
+  "projects.phpLocation": "ask" | "webServer" | "projectsFolder";
   // ── Run hub ──
   /** Live preview refresh: while typing, or only when a file is saved. */
   "livePreview.updateOn": "onType" | "onSave";
@@ -146,6 +154,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "update.mode": "default",
   "projects.autoSave": "assignments",
   "projects.presence": true,
+  "projects.folder": "",
+  "projects.phpLocation": "ask",
   "livePreview.updateOn": "onType",
   "livePreview.followActiveFile": false,
   "run.openBrowserOnStart": true,
@@ -452,6 +462,24 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Let Task Mentor show that the project is open, which file you are editing and whether it is synced.",
         type: "boolean",
       },
+      {
+        key: "projects.folder",
+        label: "Projects: Projects Folder",
+        description: "Where new projects are created, assignments' included. Empty: the TMCode Projects folder in your home folder. Projects: Move This Project… moves one that already exists.",
+        type: "string",
+        placeholder: "~/TMCode Projects",
+      },
+      {
+        key: "projects.phpLocation",
+        label: "Projects: PHP Websites",
+        description: "Where PHP websites go when this computer has a web server (XAMPP, MAMP, WAMP, Laragon): ask each time, always in its web folder (htdocs, served at http://localhost/…), or with the other projects (run with PHP's own server).",
+        type: "enum",
+        options: [
+          { value: "ask", label: "ask" },
+          { value: "webServer", label: "webServer (htdocs)" },
+          { value: "projectsFolder", label: "projectsFolder (php -S)" },
+        ],
+      },
     ],
   },
   {
@@ -460,7 +488,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       {
         key: "scm.showInAssignments",
         label: "Source Control in Assignments",
-        description: "Show Source Control (git) in assignment workspaces. Off: the view and its change count are hidden there, since your work is saved to Task Mentor.",
+        description: "Show Source Control (git) in assignment projects. Off: the view and its change count are hidden there, since your work is saved to Task Mentor.",
         type: "boolean",
       },
       {

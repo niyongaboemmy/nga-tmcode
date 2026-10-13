@@ -44,7 +44,7 @@ describe("assessmentItems (one list to pick from)", () => {
     const items = assessmentItems(list);
     expect(items.map((i) => i.label)).toEqual(["Lab", "Soon", "Navbar", "Quiz 3", "Later", "Closed"]);
     expect(items.filter((i) => i.separator).map((i) => i.separator)).toEqual(["Algebra", "Web"]);
-    expect(items.find((i) => i.label === "Navbar")).toMatchObject({ id: "quiz:78:501", description: "Quiz practical · Quiz 3 · 10 points · Web" });
+    expect(items.find((i) => i.label === "Navbar")).toMatchObject({ id: "quiz:78:501", description: "Coding question · Quiz 3 · 10 points · Web" });
     expect(items.find((i) => i.label === "Quiz 3")?.description).toBe("Whole quiz · Web");
     expect(items.find((i) => i.label === "Closed")?.detail).toBe("closed");
     expect(items.find((i) => i.label === "Soon")?.detail).toMatch(/· (tomorrow|2 days left)$/);

@@ -4,7 +4,7 @@ import { executeCommand } from "../commands/registry";
 import { ensureDocument, saveAll } from "../monaco/documents";
 import { monaco } from "../monaco/setup";
 import type { RunEvent, RunHandle, RunRequest } from "../platform/types";
-import { getPlatform, log, notify, openEditorInput, setRunState, showPanel, useWorkbench } from "../state/store";
+import { getPlatform, log, notify, openEditorInput, setRunState, showPanel, useWorkbench, type RunState } from "../state/store";
 import { basename, dirname, extname, join } from "../util/paths";
 import { parseDiagnostics, toWorkspacePath } from "./diagnostics";
 
@@ -34,7 +34,11 @@ async function webRootFor(dir: string): Promise<string | null> {
 export async function targetFor(path: string): Promise<RunTarget | null> {
   const ext = extname(path);
   const web = profileById("web")!;
-  if (ext === "html" || ext === "htm") return { kind: "preview", profile: web, root: dirname(path), entry: basename(path) };
+  if (ext === "html" || ext === "htm") {
+    // The site's folder (nearest index.html above), so ../style.css from a page in pages/ is served.
+    const root = (await webRootFor(dirname(path))) ?? dirname(path);
+    return { kind: "preview", profile: web, root, entry: root ? path.slice(root.length + 1) : path };
+  }
   if (ext === "jsx" || ext === "tsx") {
     const root = await webRootFor(dirname(path));
     return root === null ? null : { kind: "preview", profile: profileById("react")!, root, entry: "index.html" };
@@ -170,6 +174,15 @@ export async function runFile(path: string, opts: RunOptions = {}) {
   await saveAll();
   const target = await targetFor(path);
   if (!target) {
+    // A language TMCode knows only from the catalog (Haskell, Zig…): Task Mentor can run it live.
+    const { canRunOnTaskMentor, languageOf, runOnTaskMentor } = await import("./serverRun");
+    if (languageOf(path) && (await canRunOnTaskMentor())) {
+      notify("info", `TMCode can't run '${basename(path)}' in the Run panel. Task Mentor can.`, [
+        { label: "Run on Task Mentor", run: () => void runOnTaskMentor(path) },
+        { label: "Choose What to Run", run: () => void executeCommand("workbench.action.tasks.runTask") },
+      ]);
+      return;
+    }
     notify("info", `TMCode can't run '${basename(path)}' in the Run panel. Use Run ▾ in the status bar to choose what to run.`);
     return;
   }
@@ -179,6 +192,11 @@ export async function runFile(path: string, opts: RunOptions = {}) {
   }
   const runner = getPlatform().runner;
   if (!runner) {
+    const { canRunOnTaskMentor, runOnTaskMentor } = await import("./serverRun");
+    if (await canRunOnTaskMentor()) {
+      await runOnTaskMentor(target.entry, `${basename(target.entry)} runs on Task Mentor (programs run on this computer only in the TMCode desktop app).`);
+      return;
+    }
     notify("warning", `${target.profile.label} programs run in the TMCode desktop app.`);
     return;
   }
@@ -258,6 +276,15 @@ export async function runFile(path: string, opts: RunOptions = {}) {
     emit({ type: "error", message });
     setRunState({ status: "idle" });
     const missing = message.includes("could not find");
+    // The tool is missing: Task Mentor can run the program live when its code runner allows it.
+    const { canRunOnTaskMentor, runOnTaskMentor } = await import("./serverRun");
+    if (missing && (await canRunOnTaskMentor())) {
+      notify("error", message, [
+        { label: "Run on Task Mentor", run: () => void runOnTaskMentor(target.entry, `This computer doesn't have ${target.profile.label}, so ${basename(target.entry)} runs on Task Mentor.`) },
+        { label: "Check My Computer", run: () => void executeCommand("tmcode.checkMyComputer") },
+      ]);
+      return;
+    }
     // In an exam the example tests still run on Task Mentor; outside one, Check My Computer has the install links.
     const exam = useWorkbench.getState().tests.source === "exam";
     notify("error", message, missing
@@ -275,25 +302,42 @@ export async function runFile(path: string, opts: RunOptions = {}) {
  * A debuggee started by a debug adapter (`runInTerminal`) runs in the Run
  * console like a normal run: output, keyboard input, Stop.
  */
-export async function attachDebuggeeRun(label: string, entry: string | null, start: (onEvent: (e: RunEvent) => void) => Promise<RunHandle>): Promise<RunHandle> {
+export async function attachDebuggeeRun(
+  label: string,
+  entry: string | null,
+  start: (onEvent: (e: RunEvent) => void) => Promise<RunHandle>,
+  /** A run elsewhere (Task Mentor's code runner): its own state, and the console isn't cleared again. */
+  opts: { state?: Partial<RunState>; keepConsole?: boolean } = {},
+): Promise<RunHandle> {
   if (current) {
     current.kill();
     current = null;
   }
-  emit({ type: "clear" });
+  if (!opts.keepConsole) emit({ type: "clear" });
   showPanel("run");
-  setRunState({ status: "running", entry: null, label, lastExit: null, args: [], inputFile: null, startedAt: Date.now() });
+  setRunState({ status: "running", entry: null, label, lastExit: null, args: [], inputFile: null, startedAt: Date.now(), remote: false, ...opts.state });
   void entry;
-  const handle = await start((e) => {
+  let handle: RunHandle | null = null;
+  let early: Extract<RunEvent, { type: "exit" }> | null = null;
+  const onExit = (e: Extract<RunEvent, { type: "exit" }>) => {
+    if (current === handle) current = null;
+    setRunState({ status: "idle", remote: false, lastExit: { code: e.code, timed_out: e.timed_out, killed: e.killed, duration_ms: e.duration_ms } });
+  };
+  handle = await start((e) => {
     emit(e);
-    if (e.type === "exit") {
-      if (current === handle) current = null;
-      setRunState({ status: "idle", lastExit: { code: e.code, timed_out: e.timed_out, killed: e.killed, duration_ms: e.duration_ms } });
+    if (e.type === "exit" && e.phase === "run") {
+      if (handle) onExit(e);
+      else early = e;
     }
   }).catch((e) => {
-    setRunState({ status: "idle" });
+    setRunState({ status: "idle", remote: false });
     throw e;
   });
+  // It ended before start() returned: nothing to keep.
+  if (early) {
+    onExit(early);
+    return handle;
+  }
   current = handle;
   return handle;
 }

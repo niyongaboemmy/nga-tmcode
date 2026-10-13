@@ -23,7 +23,6 @@ npm run build -w @nga/runtimes            # validate everything, write dist/
 npx vitest run packages/runtimes           # unit tests (from the repo root)
 node packages/runtimes/scripts/verify-starters.mjs              # run hello + io tests with local toolchains
 node packages/runtimes/scripts/verify-starters.mjs --projects   # … and the new starters' unit tests
-node packages/runtimes/scripts/migrate-templates.mjs            # one-off: TMCode templates → starters/*/tmcode-*
 ```
 
 `verify-starters` skips languages whose toolchain isn't installed (waves B–D use the local recipes in its `LOCAL` table); set `PYTHON=/path/to/venv/bin/python3` for a Python with pytest, pandas, Flask and FastAPI.
@@ -57,10 +56,10 @@ Detection rules: every `files` marker must exist at the project root, at least o
 ## Using the build output
 
 - **`dist/catalog.json`**: `{version, languages[], runtimes[], kinds[]}`, each kind with the `starters` that use it. Validate it with `CatalogSchema` if you import the TS API.
-- **`dist/starters.json`**: `{version, starters: [manifest + files: [{path, content}]]}`. Text files only (binary files are skipped by the build). Migrated TMCode templates have ids `tmcode-<template id>` and keep the template id in `aliases`.
+- **`dist/starters.json`**: `{version, starters: [manifest + files: [{path, content}]]}`. Text files only (binary files are skipped by the build). Starters that came from TMCode's old New Project templates have ids `tmcode-<old id>` and keep the old id in `aliases`. TMCode reads the starters straight from `starters/` (its picker, an empty assignment's first files).
 - **Task Mentor** vendors these two files with a sync script (copy `dist/catalog.json` and `dist/starters.json` from a tagged build into its server), then seeds `code_languages`, `code_kinds` and `code_starters` from them (§14.4).
 - **tm-judge and TMCode** import the TypeScript API (`@nga/runtimes`, or the bundled `@nga/runtimes/dist`).
 
-## Known duplication
+## Test frameworks
 
-`src/testing/{frameworks,parsers,report}.ts` and their fixtures are **copies** of `packages/workbench/src/testing/*` (the only change: `FolderSnapshot` comes from `src/testing/folder.ts`). The workbench still uses its own copy; switching it to import `@nga/runtimes` is a follow-up. Until then, change both.
+`src/testing/{frameworks,parsers,report}.ts` are the one copy: TMCode's workbench imports them (`@nga/runtimes/testing`), as tm-judge does. Change them here only.

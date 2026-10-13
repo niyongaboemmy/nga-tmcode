@@ -29,6 +29,11 @@ export const ExamTaskSchema = z.object({
   files: z.array(WorkspaceFileSchema),
   visible_tests: z.array(VisibleTestSchema),
   hidden_test_count: z.number().int().nonnegative(),
+  /**
+   * How Task Mentor checks the answer: "io" (input/output tests, the default) or "unit" (the
+   * teacher's unit tests, run when the student submits; never sent to TMCode).
+   */
+  check_with: z.enum(["io", "unit"]).optional(),
   resume: z
     .object({ snapshot_seq: z.number().int(), files: z.array(WorkspaceFileSchema) })
     .nullable()

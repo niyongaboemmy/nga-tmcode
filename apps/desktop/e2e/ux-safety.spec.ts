@@ -71,5 +71,5 @@ test("clicking a quiz practical row opens its brief; double-click opens its work
   await page.getByTestId("quiz-practical-row").locator(".tm-project-name").click();
   await expect(page.getByTestId("assignment-page")).toHaveAttribute("data-source", "quiz");
   await page.getByTestId("quiz-practical-row").locator(".tm-project-name").dblclick();
-  await expect(page.locator(".tm-toast", { hasText: 'Your workspace for "Build a navbar" is ready' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".tm-toast", { hasText: 'Your project for "Build a navbar" is ready' })).toBeVisible({ timeout: 15_000 });
 });

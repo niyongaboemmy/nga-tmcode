@@ -1,9 +1,13 @@
 import { chainHmac, filesHash, journalKey, type ExamPackage, type Profile } from "@tmcode/protocol";
+import { taskMentorWeb } from "../projects/taskMentorWeb";
 import { onDocumentChanged, saveAll } from "../monaco/documents";
 import { onRunStarted } from "../run/runService";
+import { setExamCodeTransport } from "../run/codeRunner";
+import { setExamUnitTarget } from "../testing/serverUnit";
+import { examCodeTransport } from "../run/codeTransports";
 import { loadTests, setServerRunner, setVisibleTests, useServerRun } from "../run/testService";
 import type { ExamHost, JournalEntry, Toolchain } from "../platform/types";
-import { dismissNotificationByKey, getPlatform, log, notify, onWorkspaceChanged, openFile, refreshExplorer, revealView, saveDirtyFiles, setPolicy, setTests, setWorkspace, showDialog, updateTest, useWorkbench } from "../state/store";
+import { activeFilePath, dismissNotificationByKey, getPlatform, log, notify, onWorkspaceChanged, openFile, refreshExplorer, revealView, saveDirtyFiles, setPolicy, setTests, setWorkspace, showDialog, updateTest, useWorkbench } from "../state/store";
 import { PRACTICE_POLICY } from "@tmcode/protocol";
 import { ALLOWED_APIS, ApiError, TmApi, isAllowedApi, verdictLabel, type SessionGrant } from "./api";
 import { clockCheck, diskCheck, problemCount, reachabilityCheck, toolchainChecks, type CheckItem } from "./readiness";
@@ -110,6 +114,8 @@ async function launch(apiBase: string, ticket: string, reuse: SessionGrant | nul
   if (!host) return;
   set({ ...initialExamState, phase: "starting" });
   api = new TmApi(apiBase, (u, i) => host!.fetch(u, i));
+  const transport = examCodeTransport(api);
+  setExamCodeTransport(() => (api?.sid && get().phase === "active" ? transport : null));
   try {
     const device = await host.device();
     let grant = reuse;
@@ -269,11 +275,6 @@ export async function checkExamInProgress() {
   ]);
 }
 
-/** Task Mentor's web app for an API base (as projects/commands taskMentorWeb). */
-function taskMentorWeb(api: string) {
-  if (/^https:\/\/taskmentor-api\./.test(api)) return api.replace("://taskmentor-api.", "://taskmentor.");
-  return "http://localhost:5173/taskmentor";
-}
 
 /** Opens a Task Mentor web page for an API base (the exam's server). */
 export function openTaskMentorFor(apiBase: string | null, path = "/quizzes") {
@@ -401,6 +402,7 @@ async function prepareWorkspace(pkg: ExamPackage, sessionId: string, earlier: Jo
       entry: `${folder}/${t.files.find((f) => f.path === profile?.entry_point)?.path ?? t.files[0]?.path ?? profile?.entry_point ?? "main"}`,
       visible_tests: t.visible_tests,
       hidden_test_count: t.hidden_test_count,
+      check_with: t.check_with ?? "io",
       last_seq: current.at(-1)?.seq ?? (server || before.some((j) => j.synced) ? 1 : 0),
     });
   }
@@ -768,7 +770,7 @@ async function runVisibleTestsOnServer(ids?: string[]): Promise<boolean> {
     return true;
   }
   const selected = tests.items.filter((x) => !ids || ids.includes(x.id));
-  for (const x of selected) updateTest(x.id, { status: "queued", message: "Running on Task Mentor… (queued)", actual: undefined, stderr: undefined, duration_ms: undefined });
+  for (const x of selected) updateTest(x.id, { status: "queued", message: "Running on Task Mentor… (queued)", actual: undefined, stderr: undefined, duration_ms: undefined, verdict: undefined });
   setTests({ running: true });
   useServerRun.setState({ status: "queued", retryAt: null, error: null });
   try {
@@ -788,9 +790,10 @@ async function runVisibleTestsOnServer(ids?: string[]): Promise<boolean> {
       }
       const ok = r.passed === true || (r.passed === null && (r.verdict === "accepted" || r.verdict === "ok"));
       if (ok) passed++;
-      const error = ["runtime-error", "compile-error", "internal-error"].includes(r.verdict);
+      const error = ["runtime-error", "compile-error", "internal-error", "time-limit", "memory-limit", "output-limit", "package-not-available"].includes(r.verdict);
       updateTest(x.id, {
         status: ok ? "passed" : error ? "error" : "failed",
+        verdict: r.verdict,
         actual: r.stdout,
         stderr: r.stderr,
         duration_ms: typeof r.time_ms === "number" ? r.time_ms : undefined,
@@ -819,6 +822,17 @@ async function runVisibleTestsOnServer(ids?: string[]): Promise<boolean> {
 }
 
 setServerRunner(runVisibleTestsOnServer);
+
+/** Unit tests on Task Mentor (a unit-test question): the active task's own files, for its question. */
+setExamUnitTarget(async () => {
+  const { activeTask, tasks } = get();
+  const editing = activeFilePath();
+  const t = (editing ? taskOfPath(editing) : undefined) ?? tasks.find((x) => x.question_id === activeTask) ?? tasks[0];
+  if (!t || get().phase !== "active") return null;
+  void snapshot(t.question_id, "run");
+  const files = await readTaskFiles(t);
+  return { question_id: t.question_id, files };
+});
 
 // ───────────────────────── wiring ─────────────────────────
 

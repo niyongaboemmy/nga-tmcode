@@ -1,4 +1,3 @@
-// Copied from packages/workbench/src/testing/frameworks.ts (TMCode keeps its own copy for now; keep the two in step until the workbench imports @nga/runtimes).
 /**
  * Which test frameworks a workspace uses (from the same folder scan as the Run
  * hub), and the command that runs all of them, one file or one test with
@@ -48,6 +47,11 @@ export interface TestSuite {
   install?: string;
   /** The command line for a scope (runs in `dir`). */
   command(scope?: Scope): string;
+  /**
+   * Another runner when `probe` fails (exit code ≠ 0): plain `unittest` when pytest isn't installed,
+   * so a missing pytest never blocks unittest-style tests.
+   */
+  fallback?: { probe: string; label: string; report: TestSuite["report"]; command(scope?: Scope): string };
 }
 
 /** Reports land in .tmcode/test-results (never uploaded with a Task Mentor project). */
@@ -57,6 +61,12 @@ let windows = false;
 /** Commands run in `cmd /C` on Windows and `$SHELL -lc` elsewhere: quote for that shell. */
 export function setShellOs(os: string) {
   windows = os === "windows";
+}
+
+let pythonPath: string | null = null;
+/** The Python TMCode runs files with (the one chosen in Check My Computer / detected): tests use the same one. */
+export function setPythonCommand(path: string | null) {
+  pythonPath = path;
 }
 const q = (s: string) => (/^[\w./:@#=,+-]+$/.test(s) ? s : windows ? `"${s.replace(/"/g, '""')}"` : `'${s.replace(/'/g, `'\\''`)}'`);
 const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
@@ -132,10 +142,24 @@ function suitesIn(f: FolderSnapshot): TestSuite[] {
     }
   }
 
+  // node:test files with no package.json (plain Node exercises).
+  if (!has("package.json") && f.files.some((n) => /\.test\.[cm]?js$/.test(n))) {
+    out.push({
+      id: id("node"),
+      framework: "node",
+      label: `node:test${where(f.dir)}`,
+      icon: "beaker",
+      dir: f.dir,
+      report: { kind: "junit", path: resultPath("node.xml") },
+      command: (s) =>
+        ["node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit", `--test-reporter-destination=${out_("node.xml")}`, s?.test ? `--test-name-pattern=${q(s.test.name)}` : null, scopedFile(s)].filter(Boolean).join(" "),
+    });
+  }
+
   // Python
   // The project's own virtual environment first (like VS Code's interpreter pick); macOS has no bare `python`.
   const venv = [".venv", "venv"].find((d) => f.dirs.includes(d));
-  const py = () => (venv ? (windows ? `${venv}\\Scripts\\python` : `${venv}/bin/python`) : windows ? "python" : "python3");
+  const py = () => (venv ? (windows ? `${venv}\\Scripts\\python` : `${venv}/bin/python`) : pythonPath ? q(pythonPath) : windows ? "python" : "python3");
   const pyText = ["requirements.txt", "pyproject.toml", "Pipfile"].map((n) => f.read[n] ?? "").join("\n");
   // A tests/ folder alone isn't Python (PHPUnit and Laravel use one too).
   const pyTests = f.files.some((n) => /^test_.*\.py$|_test\.py$/.test(n)) || (f.dirs.includes("tests") && (!!pyText.trim() || f.files.some((n) => n.endsWith(".py"))));
@@ -164,6 +188,18 @@ function suitesIn(f: FolderSnapshot): TestSuite[] {
         const node = s?.test && s.file ? `${scopedFile(s)}::${/^[A-Z]/.test(cls) ? `${cls}::` : ""}${s.test.name}` : null;
         return [`${py()} -m pytest -p no:cacheprovider -q`, `--junitxml=${out_("pytest.xml")}`, node ? q(node) : scopedFile(s), s?.test && !node ? `-k ${q(s.test.name)}` : null].filter(Boolean).join(" ");
       },
+      // Not asked for by the project: unittest when pytest isn't installed.
+      fallback: /\bpytest\b/i.test(pyText)
+        ? undefined
+        : {
+            probe: `${py()} -c "import pytest"`,
+            label: `unittest${where(f.dir)}`,
+            report: { kind: "unittest" },
+            command: (s) => {
+              const file = scopedFile(s);
+              return [`${py()} -m unittest`, file ? `-v ${file}` : `discover -v ${f.files.some((n) => /^test_.*\.py$|_test\.py$/.test(n)) || !f.dirs.includes("tests") ? "-s ." : "-s tests -t ."} -p "*test*.py"`, s?.test ? `-k ${q(s.test.name)}` : null].filter(Boolean).join(" ");
+            },
+          },
     });
   }
 
@@ -254,9 +290,11 @@ function suitesIn(f: FolderSnapshot): TestSuite[] {
   return out;
 }
 
-/** Every test suite of the workspace (root first, then sub-folders). */
+/** Every test suite of the workspace (root first, then sub-folders); a tests/ folder inside a suite of the same framework is that suite, not a second one. */
 export function detectSuites(folders: FolderSnapshot[]): TestSuite[] {
-  return folders.flatMap(suitesIn).sort((a, b) => a.dir.split("/").length - b.dir.split("/").length || a.dir.localeCompare(b.dir));
+  const all = folders.flatMap(suitesIn).sort((a, b) => a.dir.split("/").length - b.dir.split("/").length || a.dir.localeCompare(b.dir));
+  const isTestsDir = (dir: string) => /(^|\/)(tests?|spec|__tests__)$/.test(dir);
+  return all.filter((s) => !(isTestsDir(s.dir) && all.some((o) => o !== s && o.framework === s.framework && (o.dir === "" || s.dir.startsWith(`${o.dir}/`)))));
 }
 
 /** Which suite owns a file (the deepest folder containing it). */
