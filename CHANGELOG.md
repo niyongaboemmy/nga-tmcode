@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.17.2 — 2026-10-13
+
+**TMCode 0.17.2: release notes that fit.** The update window keeps its buttons on screen and shows the notes properly formatted.
+
+### Update window
+
+- **Install and Restart and Later are always on screen.** Long release notes scroll inside the window instead of pushing the buttons out of view, on any screen size.
+- **Release notes read properly:** headings, bold text and lists are shown formatted, not as raw `**` and `###` marks.
+
+### All changes
+
+- Update window: long notes scroll, buttons stay on screen; notes shown as Markdown
+
 ## 0.17.1 — 2026-10-13
 
 **TMCode 0.17.1: every view in reach.** The activity bar shows all its views while they fit, and the More menu lists each one once.
