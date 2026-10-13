@@ -63,11 +63,11 @@ describe.skipIf(!up)("tier 3 on a real Docker (runtime: " + cfg.runtime + ")", (
           "open('/box/out.txt', 'w').write('ok'); print(os.getuid() != 0)",
         ].join("\n"),
       );
-      const r = await box.exec(["/usr/bin/python3.12", "main.py"], { stdin: "ada\n", limits });
+      const r = await box.exec(["/usr/bin/python3", "main.py"], { stdin: "ada\n", limits });
       expect(r.status).toBe("ok");
       expect(r.stdout.split("\n").slice(0, 4)).toEqual(["ADA", "no-net", "ro-root", "True"]);
       expect((await box.read("out.txt"))?.toString()).toBe("ok");
-      const slow = await box.exec(["/usr/bin/python3.12", "-c", "while True: pass"], { stdin: "", limits: { ...limits, wallS: 1 } });
+      const slow = await box.exec(["/usr/bin/python3", "-c", "while True: pass"], { stdin: "", limits: { ...limits, wallS: 1 } });
       expect(slow.status).toBe("timeout");
     } finally {
       await box.dispose();
@@ -77,7 +77,7 @@ describe.skipIf(!up)("tier 3 on a real Docker (runtime: " + cfg.runtime + ")", (
   it.skipIf(!has("python-3.12"))("gives a PTY session raw terminal output", async () => {
     const box = await sandbox.acquire({ image: cfg.images["python-3.12"] });
     try {
-      const p = box.spawn(["/usr/bin/python3.12", "-c", "import sys; print(sys.stdout.isatty()); input()"], { limits, tty: { cols: 80, rows: 24 } });
+      const p = box.spawn(["/usr/bin/python3", "-c", "import sys; print(sys.stdout.isatty()); input()"], { limits, tty: { cols: 80, rows: 24 } });
       const out: Buffer[] = [];
       p.onStdout((b) => out.push(b));
       await new Promise((r) => setTimeout(r, 1500));

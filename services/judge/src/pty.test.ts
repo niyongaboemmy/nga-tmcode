@@ -79,7 +79,7 @@ describe("PTY sessions", () => {
     expect(s.events.at(-1)).toMatchObject({ event: "exit", data: { code: 130, signal: "SIGINT", verdict: "runtime-error" } });
     const created = fake.callsTo(/POST \/containers\/create/)[0].body;
     expect(created.Tty).toBe(true);
-    expect(created.Cmd).toEqual(["/usr/bin/python3.12", "-u", "main.py"]);
+    expect(created.Cmd).toEqual(["/usr/bin/python3", "-u", "main.py"]);
     expect(created.Env).toEqual(expect.arrayContaining(["TERM=xterm-256color", "COLUMNS=120", "LINES=30"]));
     expect(fake.callsTo(/resize\?h=30&w=120/).length).toBe(1);
     expect(fake.callsTo(/resize\?h=40&w=100/).length).toBe(1);

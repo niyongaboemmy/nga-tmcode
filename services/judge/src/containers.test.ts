@@ -228,7 +228,7 @@ describe("container boxes (fake Engine API)", () => {
     };
     const box = await sandbox.acquire({ image: cfg.images["python-3.12"] });
     await box.write("main.py", "print(input())");
-    const r = await box.exec(["/usr/bin/python3.12", "main.py"], { stdin: "Ada", limits });
+    const r = await box.exec(["/usr/bin/python3", "main.py"], { stdin: "Ada", limits });
     expect(r).toMatchObject({ status: "ok", exitCode: 0, stdout: "got Ada", stderr: "warn" });
     expect(fake.containers.size).toBe(0);
     const created = fake.callsTo(/POST \/containers\/create/)[0].body;
@@ -241,15 +241,15 @@ describe("container boxes (fake Engine API)", () => {
     const { sandbox, fake, cfg } = await setup(["python-3.12"]);
     fake.program = (c) => c.stdout("x".repeat(80 * 1024));
     const box = await sandbox.acquire({ image: cfg.images["python-3.12"] });
-    const over = await box.exec(["/usr/bin/python3.12", "-c", "spam"], { stdin: "", limits });
+    const over = await box.exec(["/usr/bin/python3", "-c", "spam"], { stdin: "", limits });
     expect(over.status).toBe("output-limit");
     expect(over.stdout.length).toBe(64 * 1024);
     fake.program = () => {};
-    const slow = await box.exec(["/usr/bin/python3.12", "-c", "loop"], { stdin: "", limits: { ...limits, wallS: 0.05 } });
+    const slow = await box.exec(["/usr/bin/python3", "-c", "loop"], { stdin: "", limits: { ...limits, wallS: 0.05 } });
     expect(slow.status).toBe("timeout");
     expect(fake.callsTo(/kill\?signal=SIGKILL/).length).toBeGreaterThanOrEqual(2);
     fake.program = (c) => c.exit(137, { oom: true });
-    expect((await box.exec(["/usr/bin/python3.12", "-c", "big"], { stdin: "", limits })).status).toBe("memory");
+    expect((await box.exec(["/usr/bin/python3", "-c", "big"], { stdin: "", limits })).status).toBe("memory");
     await box.dispose();
   });
 
