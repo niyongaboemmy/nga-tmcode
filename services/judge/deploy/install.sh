@@ -319,7 +319,7 @@ if [ "${SKIP_TOOLCHAINS:-}" != "1" ]; then
   fi
 
   # Everything under /opt is read by the sandbox user: world-readable, root-owned.
-  sudo chmod -R a+rX /opt/go/ /opt/rustup/toolchains /opt/maven/ /opt/gradle/ /opt/node-22/ /opt/uv /opt/junit
+  sudo chmod -R a+rX /opt/go/ /opt/rustup/toolchains /opt/maven/ /opt/gradle/ /opt/node-22/ /opt/uv
   for t in /opt/go/bin/go /opt/rust/bin/cargo /opt/maven/bin/mvn /opt/gradle/bin/gradle /opt/node-22/bin/node /opt/uv/uv; do
     printf '   %-28s %s\n' "$t" "$("$t" --version 2>&1 | head -1 || echo MISSING)"
   done
