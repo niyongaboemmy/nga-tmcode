@@ -90,6 +90,8 @@ export const SYSTEMS_KINDS = [
       run: { tool: "stdbuf", args: ["-oL", out("main")] },
     },
     tier: "isolate",
+    // go build locks its build cache ("Lock /tmp/go-build/trim.txt: function not implemented" without).
+    fileLocks: true,
     limits: { build: { cpu_s: 30, wall_s: 60, memory_mb: 1024, processes: 64 }, run: MANAGED_RUN },
   }),
   kind({

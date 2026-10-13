@@ -28,6 +28,8 @@ const STARTERS = join(ROOT, "packages/runtimes/starters");
 
 /** Homebrew's cargo is often broken on macOS: prefer rustup's real toolchain binaries. */
 function rustOverrides(): Record<string, string> {
+  // A real install (deploy/install-languages.sh) wins: the box can't read the user's home.
+  if (existsSync("/opt/rust/bin/rustc")) return {};
   const dir = join(homedir(), ".rustup/toolchains");
   if (!existsSync(dir)) return {};
   const tc = readdirSync(dir).find((d) => d.startsWith("stable"));
@@ -720,6 +722,8 @@ describe("C# on the isolate tier (csharp/script)", () => {
     expect(resolveProject(t, { language: "csharp", files: program, tests: [{ id: "a", input: "" }] }).kind.id).toBe("csharp/script");
   });
   it("needs the csharp-build wrapper, not only dotnet", () => {
+    // Where the wrapper is installed, the catalog's own path finds it.
+    if (existsSync("/usr/local/lib/nga/csharp-build")) return;
     const t = resolveToolchains({ lookup: false, overrides: { "dotnet-10": { dotnet: tools.dotnet } } });
     expect(availability(t, kindById("csharp/script")!)).toMatchObject({ available: false, missing: ["csharp-build"] });
     expect(() => resolveProject(t, { files: program, tests: [{ id: "a", input: "" }] })).toThrow(/C#/);
@@ -742,7 +746,7 @@ describe("C# on the isolate tier (csharp/script)", () => {
 const GREETERS: Array<{ kind: string; files: { path: string; content: string }[]; broken: { path: string; content: string } }> = [
   { kind: "php/single", files: [{ path: "main.php", content: '<?php\n$name = trim(fgets(STDIN));\necho "Hello, $name!\\n";\n' }], broken: { path: "main.php", content: "<?php\necho $x->y();\n" } },
   { kind: "ruby/single", files: [{ path: "main.rb", content: 'name = gets.to_s.strip\nputs "Hello, #{name}!"\n' }], broken: { path: "main.rb", content: "nope_undefined_method\n" } },
-  { kind: "bash/single", files: [{ path: "main.sh", content: 'read -r name\necho "Hello, $name!"\n' }], broken: { path: "main.sh", content: "exit 3\n" } },
+  { kind: "bash/single", files: [{ path: "main.sh", content: 'read -r name\necho "Hello, $name!"\n' }], broken: { path: "main.sh", content: "no_such_command_here\n" } },
   {
     kind: "csharp/script",
     files: [{ path: "Program.cs", content: 'var name = Console.ReadLine()?.Trim();\nConsole.WriteLine($"Hello, {name}!");\n' }],

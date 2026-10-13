@@ -56,7 +56,7 @@ describe("runtime catalog", () => {
   });
 
   it("allows file locks in isolate only where a tool can't work without them", () => {
-    expect(KINDS.filter((k) => k.fileLocks).map((k) => k.id)).toEqual(["go/module"]);
+    expect(KINDS.filter((k) => k.fileLocks).map((k) => k.id)).toEqual(["go/single", "go/module"]); // go build locks its cache
   });
 
   it("never runs container kinds on a shared runner", () => {
