@@ -191,7 +191,10 @@ export async function refreshFileActions() {
   }
   const ext = extname(path);
   const webRoot = ["html", "htm", "css", "js", "jsx", "tsx"].includes(ext) ? await webRootFor(dirname(path)) : null;
-  const source = ["js", "mjs", "cjs", "ts", "mts", "cts"].includes(ext) ? (getDocument(path)?.getValue() ?? (await getPlatform().fs.readFile(path).catch(() => ""))) : undefined;
+  // The file's text: JavaScript's console-or-Node choice, and the catalog's languages that share an extension (.pl, .m, .v).
+  const source = getDocument(path)?.getValue() ?? (await getPlatform().fs.readFile(path).catch(() => ""));
+  // Its folder's files: a compiled language builds them together.
+  const folderFiles = (await getPlatform().fs.readDir(dirname(path)).catch(() => [])).filter((e) => e.kind === "file").map((e) => e.name);
   const kind = debugKindForPath(path);
   const debuggable = !!kind && !!getPlatform().debug?.kinds.includes(kind);
   // A script previews its page only when that page loads it (one index.html at the top must not turn every exercise into a preview).
@@ -202,7 +205,7 @@ export async function refreshFileActions() {
     pageLoadsFile = page.includes(rel) || page.includes(basename(path));
   }
   if (gen !== fileGen) return;
-  set({ fileActions: fileActionsFor(path, { webRoot, source, debuggable, pageLoadsFile }) });
+  set({ fileActions: fileActionsFor(path, { webRoot, source, debuggable, pageLoadsFile, folderFiles, os: getPlatform().os }) });
 }
 
 /** Run File: the active file's own first runnable action (PHP, Ruby, SQL… included), not the project. */
@@ -255,6 +258,13 @@ function runInNamedTerminal(command: string, cwd: string, name: string, owner?: 
   window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { command, cwd, name, owner } }));
 }
 
+/** Creates a folder and its parents (no error when it exists). */
+async function ensureFolder(path: string) {
+  const fs = getPlatform().fs;
+  const parts = path.split("/").filter(Boolean);
+  for (let i = 1; i <= parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
+}
+
 /** Opens a preview-like tab beside the code, or shows it where it already is. */
 function openBeside(input: Parameters<typeof openEditorInput>[0]) {
   const where = useWorkbench.getState().groups.find((g) => g.editors.some((e) => e.id === input.id));
@@ -299,6 +309,8 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
       return startDevServer(a);
     case "task":
       if (!(await import("../trust/trust").then((m) => m.ensureTrusted("Project scripts")))) return;
+      // A compiled language's output goes to TMCode's own build folder: make it first.
+      if (a.makeDir) await ensureFolder([a.cwd, a.makeDir].filter(Boolean).join("/"));
       return runInNamedTerminal(shellLine(a.command!, { prelude: a.prelude, os }), a.cwd ?? "", a.label);
     case "repl":
       return runInNamedTerminal(shellLine(a.command!, { os }), a.cwd ?? "", a.label);

@@ -25,7 +25,7 @@ import {
   useProjects,
   notifyError,
 } from "./service";
-import { CATEGORY_ORDER, TEMPLATES, templateById, type Template } from "./templates";
+import { firstOpenFile, PURPOSE_LABEL, starterById, starterFiles, starterLanguages, type Starter } from "./starters";
 import { publishAsStarter, refreshAssignments, startAssignment, submitAssignment, useAssignments } from "./assignments";
 import { closeReview, refreshGrading, useGrading } from "../grading/service";
 import { changeAssessment, linkProject, pickAssessment, startQuizPractical, submitProject } from "./matching";
@@ -64,24 +64,47 @@ const slugify = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60) || "project";
 
-/** Template items grouped by category, with the tools each needs. */
-function templateItems() {
-  return CATEGORY_ORDER.flatMap((cat) =>
-    TEMPLATES.filter((t) => t.category === cat).map((t, i) => ({
-      id: `tpl:${t.id}`,
-      label: t.label,
-      description: t.description,
-      detail: t.tools?.length ? `Needs ${t.tools.join(", ")}${t.setup ? ` · setup: ${t.setup.command}` : ""}` : undefined,
-      icon: t.icon,
-      separator: i === 0 ? cat : undefined,
+/**
+ * The starter picker: a language, then one of its starters (first program, exercise, project…),
+ * in the Runtime Catalog's order. Null: cancelled.
+ */
+export async function pickStarter(title = "New project from a starter"): Promise<Starter | null> {
+  const langs = starterLanguages();
+  const firstMore = langs.find((l) => !l.common)?.key;
+  const lang = await showQuickPick({
+    title,
+    placeholder: "Choose a language",
+    matchOnDescription: true,
+    items: langs.map((l) => ({
+      id: l.key,
+      label: l.label,
+      description: `${l.starters.length} starter${l.starters.length === 1 ? "" : "s"}`,
+      icon: l.starters.find((s) => s.icon)?.icon ?? "code",
+      separator: l.key === langs[0]?.key ? "most used" : l.key === firstMore ? "more languages" : undefined,
     })),
-  );
+  });
+  if (!lang) return null;
+  const list = langs.find((l) => l.key === lang.id)?.starters ?? [];
+  const pick = await showQuickPick({
+    title: `${langs.find((l) => l.key === lang.id)?.label ?? lang.id}: choose a starter`,
+    placeholder: "Choose what your project starts with (you can change everything)",
+    matchOnDescription: true,
+    items: list.map((s) => ({
+      id: s.id,
+      label: s.title,
+      description: PURPOSE_LABEL[s.purpose],
+      detail: [s.description, s.tools?.length ? `needs ${s.tools.join(", ")}` : null, s.setup ? `then: ${s.setup.command}` : null].filter(Boolean).join(" · "),
+      icon: s.icon ?? (s.purpose === "web" ? "globe" : s.purpose === "project" ? "beaker" : "file-code"),
+    })),
+  });
+  return pick ? starterById(pick.id) : null;
 }
 
-/** Writes a template's files into the open folder. */
-export async function writeTemplate(tpl: Template) {
+/** Writes a starter's files into the open folder and opens its first file. */
+export async function writeStarter(starter: Starter) {
   const fs = getPlatform().fs;
-  for (const [path, content] of Object.entries(tpl.files)) {
+  const files = await starterFiles(starter);
+  for (const [path, content] of Object.entries(files)) {
     const parts = path.split("/");
     for (let i = 1; i < parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
     await fs.writeFile(path, content).catch(async () => {
@@ -91,25 +114,22 @@ export async function writeTemplate(tpl: Template) {
   }
   // The explorer lists the new files at once (the watcher would, a moment later, on the desktop only).
   const { applyExternalChanges } = await import("../monaco/external");
-  await applyExternalChanges(Object.keys(tpl.files));
-  const readme = Object.keys(tpl.files).find((p) => /^readme\.md$/i.test(p));
-  const main = Object.keys(tpl.files).find((p) => !p.startsWith(".") && !/readme\.md$/i.test(p) && !/^(package|tsconfig|angular|nest-cli)\.json$|\.(toml|xml|yaml|csproj|mod)$|^Makefile$|^Gemfile$|^Package\.swift$|^requirements\.txt$/.test(p.split("/").pop()!));
-  if (tpl.main && tpl.files[tpl.main] !== undefined) openFile(tpl.main, { pinned: true });
-  else if (main) openFile(main, { pinned: true });
-  else if (readme) openFile(readme, { pinned: true });
+  await applyExternalChanges(Object.keys(files));
+  const first = firstOpenFile(starter, files) ?? Object.keys(files).find((p) => /^readme\.md$/i.test(p));
+  if (first) openFile(first, { pinned: true });
 }
 
-/** Runs the template's setup (npm install, flutter create …) in a terminal, when the user agrees. */
-export async function offerSetup(tpl: Template) {
-  if (!tpl.setup) return;
+/** Runs the starter's setup (npm install, flutter create …) in a terminal, when the user agrees. */
+export async function offerSetup(starter: Starter) {
+  if (!starter.setup) return;
   if (!getPlatform().terminal) {
-    notify("info", `Next: run \`${tpl.setup.command}\` in a terminal (${tpl.setup.note.toLowerCase()}).`);
+    notify("info", `Next: run \`${starter.setup.command}\` in a terminal (${starter.setup.note.toLowerCase()}).`);
     return;
   }
   const go = await showDialog({
     severity: "info",
-    message: `Set up ${tpl.label} now?`,
-    detail: `${tpl.setup.note}. TMCode runs this in a terminal:\n\n${tpl.setup.command}${tpl.tools?.length ? `\n\nNeeds ${tpl.tools.join(", ")} on this computer (Run and Debug › How to Install… if missing).` : ""}`,
+    message: `Set up ${starter.title} now?`,
+    detail: `${starter.setup.note}. TMCode runs this in a terminal:\n\n${starter.setup.command}${starter.tools?.length ? `\n\nNeeds ${starter.tools.join(", ")} on this computer (Run and Debug › How to Install… if missing).` : ""}`,
     buttons: [
       { id: "run", label: "Run Setup", primary: true },
       { id: "later", label: "Later" },
@@ -118,35 +138,34 @@ export async function offerSetup(tpl: Template) {
   });
   if (go !== "run") return;
   showPanel("terminal");
-  window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { command: tpl.setup.command, cwd: "", name: `Setup: ${tpl.label}` } }));
+  window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { command: starter.setup.command, cwd: "", name: `Setup: ${starter.title}` } }));
 }
 
-/** New Project from Template (no Task Mentor needed): a new folder with the files, opened. */
-export async function newProjectFromTemplate() {
-  const pick = await showQuickPick({ placeholder: "Create a project from a template", matchOnDescription: true, items: templateItems() });
-  if (!pick) return;
-  const tpl = templateById(pick.id.slice(4))!;
-  const name = await showInputBox({ title: `New ${tpl.label} project`, prompt: "Folder name", value: tpl.id, validate: (v) => (v.trim().length < 2 ? "Enter a name (2 characters or more)." : /[\\/:*?"<>|]/.test(v) ? "Use letters, numbers, - and _." : null) });
+/** New Project from Starter (no Task Mentor needed): a new folder with the starter's files, opened. */
+export async function newProjectFromStarter() {
+  const starter = await pickStarter();
+  if (!starter) return;
+  const name = await showInputBox({ title: `New ${starter.title} project`, prompt: "Folder name", value: starter.id.replace(/^tmcode-/, ""), validate: (v) => (v.trim().length < 2 ? "Enter a name (2 characters or more)." : /[\\/:*?"<>|]/.test(v) ? "Use letters, numbers, - and _." : null) });
   if (!name) return;
   const host = getPlatform().account;
-  if (!host) return notify("info", "New projects from templates need the TMCode desktop app.");
+  if (!host) return notify("info", "New projects from starters need the TMCode desktop app.");
   // Where it goes: the Projects Folder, a folder of the student's choice, or (PHP) the web server's folder.
-  const base = await chooseBase({ name, templateId: tpl.id, language: tpl.language, ask: true });
+  const base = await chooseBase({ name, templateId: starter.aliases?.[0] ?? starter.id, language: starter.language, ask: true });
   if (base === null) return;
   if (!(await confirmLeaveWorkspace())) return;
   try {
     const folder = await host.newFolder(slugify(name), base);
-    // Kept the current folder (Cancel on unsaved files): never write the template into it.
+    // Kept the current folder (Cancel on unsaved files): never write the starter into it.
     if (!(await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder)))) return;
-    await writeTemplate(tpl);
-    notify("info", `Created ${name} from the ${tpl.label} template. Run Project: ⌘/Ctrl+Shift+F10.`);
-    await offerSetup(tpl);
+    await writeStarter(starter);
+    notify("info", `Created ${name} from the ${starter.title} starter. Run: ⌘/Ctrl+Shift+F10.`);
+    await offerSetup(starter);
   } catch (e) {
     notifyError(e);
   }
 }
 
-/** New Project: the open folder, a GitHub repository, or a template in a new folder. `from: "folder"` skips the choice. */
+/** New Project: the open folder, a GitHub repository, or a starter in a new folder. `from: "folder"` skips the choice. */
 async function newProject(opts: { from?: "folder" } = {}) {
   if (!signedIn()) {
     // W5: carries on once signed in.
@@ -163,10 +182,12 @@ async function newProject(opts: { from?: "folder" } = {}) {
           items: [
             ...(ws ? [{ id: "folder", label: `This folder (${ws.name})`, description: "Save the open folder to Task Mentor", icon: "folder-opened", separator: "from your work" }] : []),
             { id: "github", label: "A GitHub repository", description: "Task Mentor follows your git pushes", icon: "github", separator: ws ? undefined : "from your work" },
-            ...templateItems(),
+            { id: "starter", label: "From a starter…", description: "A first program, an exercise or a project, in any language", icon: "rocket", separator: "new" },
           ],
         });
   if (!choice) return;
+  const tpl = choice.id === "starter" ? await pickStarter("New Task Mentor project from a starter") : null;
+  if (choice.id === "starter" && !tpl) return;
   const name = await showInputBox({ title: choice.id === "folder" ? `Connect "${ws?.name}" to Task Mentor` : "New Project", prompt: "Project name (as your teacher will see it)", value: choice.id === "folder" ? ws?.name : "", validate: (v) => (v.trim().length < 2 ? "Enter a name (2 characters or more)." : v.length > 120 ? "The name is too long." : null) });
   if (!name) return;
   let kind: ProjectKind = "tm";
@@ -213,23 +234,22 @@ async function newProject(opts: { from?: "folder" } = {}) {
       return;
     }
   }
-  const tpl = choice.id.startsWith("tpl:") ? templateById(choice.id.slice(4)) : null;
   try {
     const project = await createProject({ name: name.trim(), kind, repo_url: repo_url?.trim(), language: tpl?.language });
     if (!project) return;
     const matched = assessment !== "none" ? await linkProject(project.id, assessment).catch((e) => (notify("warning", `Created, but not matched: ${(e as Error).message}`), null)) : null;
     if (tpl) {
       const host = getPlatform().account!;
-      const base = await chooseBase({ name, templateId: tpl.id, language: tpl.language });
+      const base = await chooseBase({ name, templateId: tpl.aliases?.[0] ?? tpl.id, language: tpl.language });
       const folder = await host.newFolder(slugify(name), base ?? undefined);
       if (!(await (getPlatform().openPath ? openPathFromOs(folder) : openRecent(folder)))) {
         notify("info", `Created ${project.name} in Task Mentor. Open it from Projects to start.`);
         return;
       }
-      await writeTemplate(tpl);
+      await writeStarter(tpl);
       await connectFolder(project);
-      await saveToTaskMentor({ message: `Created from the ${tpl.label} template`, quiet: true });
-      notify("info", `Created ${project.name} from the ${tpl.label} template and saved it to Task Mentor.`);
+      await saveToTaskMentor({ message: `Created from the ${tpl.title} starter`, quiet: true });
+      notify("info", `Created ${project.name} from the ${tpl.title} starter and saved it to Task Mentor.`);
       await offerSetup(tpl);
     } else if (choice.id === "folder" || kind === "github") {
       if (useWorkbench.getState().workspace) await connectFolder(project);
@@ -350,7 +370,7 @@ export function registerProjectCommands() {
     enabled: () => bound() && useProjects.getState().current?.status === "submitted",
     run: () => withdrawSubmission(useProjects.getState().current!.id),
   });
-  registerCommand({ id: "workbench.action.newProjectFromTemplate", title: "New Project from Template…", category: "File", enabled: () => !!getPlatform().account && !inExam(), run: newProjectFromTemplate });
+  registerCommand({ id: "workbench.action.newProjectFromTemplate", title: "New Project from Starter…", category: "File", aliases: ["template", "new project"], enabled: () => !!getPlatform().account && !inExam(), run: newProjectFromStarter });
   registerCommand({ id: "workbench.view.grading", title: "Show Grading", category: "View", enabled: () => usable() && useGrading.getState().grader, run: () => revealView("grading") });
   registerCommand({ id: "grading.refresh", title: "Refresh Grading", category: "Grading", enabled: () => usable() && signedIn(), run: () => refreshGrading() });
   registerCommand({ id: "grading.closeReview", title: "Close Review", aliases: ["back to my folder"], category: "Grading", enabled: () => !!useGrading.getState().review, run: closeReview });

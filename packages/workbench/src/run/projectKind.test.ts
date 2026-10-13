@@ -302,13 +302,20 @@ describe("more technologies", () => {
     const run = (p: string) => all(p).find((a) => a.kind !== "runFile")!;
     // PHP, Ruby, Kotlin, Dart, Swift run in the Run panel first (keyboard input, example tests).
     for (const f of ["src/hello.php", "a.rb", "a.kt", "a.dart", "a.swift"]) expect(all(f)[0]).toMatchObject({ kind: "runFile", entry: f, needs: "runner" });
-    expect(run("src/hello.php")).toMatchObject({ kind: "task", command: 'php "hello.php"', cwd: "src" });
-    expect(run("a.rb").command).toBe('ruby "a.rb"');
-    expect(run("a.dart").command).toBe('dart run "a.dart"');
-    expect(run("a.kt").prelude).toContain("kotlinc");
-    expect(run("a.kt").command).toBe(`java -jar ".tmcode/build/a.jar"`);
-    expect(run("a.lua").command).toBe('lua "a.lua"');
-    expect(run("a.R").command).toBe('Rscript "a.R"');
+    // The commands come from the Runtime Catalog's run steps (its tool names, TMCode's build folder).
+    expect(run("src/hello.php")).toMatchObject({ kind: "task", command: "php -d display_errors=stderr hello.php", cwd: "src", catalogKind: "php/single" });
+    expect(run("a.rb").command).toBe(`ruby -e 'STDOUT.sync=true; load ARGV[0]' a.rb`);
+    expect(run("a.dart").command).toBe("dart run a.dart");
+    expect(run("a.kt").prelude).toBe("kotlinc a.kt -include-runtime -d .tmcode/build/main.jar");
+    expect(run("a.kt")).toMatchObject({ command: expect.stringMatching(/^java .*-jar \.tmcode\/build\/main\.jar$/), makeDir: ".tmcode/build" });
+    expect(run("a.lua").command).toBe("lua a.lua");
+    expect(run("a.R").command).toBe("Rscript --vanilla a.R");
+    // Languages TMCode had no runner for: built, then run, as the code runner does.
+    expect(run("Main.hs")).toMatchObject({ prelude: expect.stringMatching(/^ghc .*Main\.hs -o \.tmcode\/build\/main$/), command: expect.stringMatching(/^\.tmcode\/build\/main/) });
+    expect(run("hello.zig").command).toBe(".tmcode/build/main");
+    expect(fileActions("main.adb", { webRoot: null }).find((a) => a.kind === "task")?.prelude).toContain("gnatmake");
+    // PowerShell keeps a quoted script literal too.
+    expect(fileActions("a.rb", { webRoot: null, os: "windows" }).find((a) => a.kind === "task")?.command).toBe(`ruby -e 'STDOUT.sync=true; load ARGV[0]' a.rb`);
     expect(run("q.sql")).toMatchObject({ kind: "sqlRun", entry: "q.sql", needs: "none" });
     expect(run("x.logic")).toMatchObject({ kind: "logicPreview" });
     // Built-in kinds work in exams too; terminal ones don't.

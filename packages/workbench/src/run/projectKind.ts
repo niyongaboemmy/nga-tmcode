@@ -8,6 +8,9 @@
  * built-in browser on it, run a one-shot task, open a REPL…
  */
 import { packageManagerFor, type PackageManager } from "../tasks/detect";
+import { detect as detectKinds, entryFor, kindById, KINDS, languageByKey, type KindDef } from "@nga/runtimes";
+import { profileForPath } from "@tmcode/profiles";
+import { BUILD_DIR, fileKind, localRun, type Os } from "./catalogRun";
 
 export type ProjectKindId =
   | "static-site"
@@ -42,7 +45,9 @@ export type ProjectKindId =
   | "swift"
   | "sql"
   | "logic"
-  | "markdown";
+  | "markdown"
+  /** A catalog kind TMCode has no layer for: its own steps (catalogProject). */
+  | "other";
 
 export type RunActionKind =
   /** Build and run a file in the Run panel (runService.runFile). */
@@ -92,6 +97,10 @@ export interface RunAction {
   preview?: "static" | "bundle-react";
   /** Where a dev server usually listens, used until the terminal prints its real URL. */
   port?: number;
+  /** A folder (in `cwd`) to create before the command runs: TMCode's build output. */
+  makeDir?: string;
+  /** The Runtime Catalog's kind of what this runs (`java/maven`, `python/single`…), for runs on Task Mentor. */
+  catalogKind?: string;
   /** openBrowser: an address served by a local web server (XAMPP, MAMP…), opened as is. */
   url?: string;
   /** What the host must provide. */
@@ -119,6 +128,8 @@ export interface ProjectInfo {
   dir: string;
   /** Best first. */
   actions: RunAction[];
+  /** The Runtime Catalog's kind (`java/maven`, `python/flask`…). */
+  catalogKind?: string;
   /**
    * Loose files, not a real project (no manifest: a folder of Python, PHP, C or Java exercises).
    * Run then runs the file being edited, not the folder's "main" file.
@@ -634,32 +645,19 @@ function logicProject(f: FolderSnapshot): ProjectInfo | null {
   };
 }
 
-/** Single files of languages that run in a terminal (interpreters TMCode doesn't bundle). */
-const TERMINAL_RUNNERS: Record<string, { lang: string; run: (file: string) => string; prelude?: (file: string) => string; repl?: { label: string; command: string } }> = {
-  php: { lang: "PHP", run: (f) => `php "${f}"`, repl: { label: "PHP interactive shell", command: "php -a" } },
-  rb: { lang: "Ruby", run: (f) => `ruby "${f}"`, repl: { label: "Ruby REPL (irb)", command: "irb" } },
-  dart: { lang: "Dart", run: (f) => `dart run "${f}"` },
-  swift: { lang: "Swift", run: (f) => `swift "${f}"`, repl: { label: "Swift REPL", command: "swift repl" } },
-  // The jar goes to TMCode's own folder (never saved to Task Mentor), not next to the student's code.
-  // Compile, then run: two steps joined the shell's way (PowerShell 5.1 has no `&&`). The jar goes to
-  // TMCode's own folder (never saved to Task Mentor), not next to the student's code.
-  kt: {
-    lang: "Kotlin",
-    prelude: (f) => `kotlinc "${f}" -include-runtime -d ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar"`,
-    run: (f) => `java -jar ".tmcode/build/${f.replace(/^.*\//, "").replace(/\.kt$/i, "")}.jar"`,
-  },
-  kts: { lang: "Kotlin script", run: (f) => `kotlinc -script "${f}"` },
-  scala: { lang: "Scala", run: (f) => `scala run "${f}"` },
-  cs: { lang: "C#", run: (f) => `dotnet run "${f}"` },
-  lua: { lang: "Lua", run: (f) => `lua "${f}"`, repl: { label: "Lua REPL", command: "lua" } },
-  r: { lang: "R", run: (f) => `Rscript "${f}"`, repl: { label: "R console", command: "R" } },
-  pl: { lang: "Perl", run: (f) => `perl "${f}"` },
-  sh: { lang: "Shell", run: (f) => `bash "${f}"` },
-  ps1: { lang: "PowerShell", run: (f) => `pwsh -File "${f}"` },
-  jl: { lang: "Julia", run: (f) => `julia "${f}"`, repl: { label: "Julia REPL", command: "julia" } },
-  hs: { lang: "Haskell", run: (f) => `runghc "${f}"`, repl: { label: "GHCi", command: "ghci" } },
-  ex: { lang: "Elixir", run: (f) => `elixir "${f}"`, repl: { label: "Elixir (iex)", command: "iex" } },
-  exs: { lang: "Elixir", run: (f) => `elixir "${f}"`, repl: { label: "Elixir (iex)", command: "iex" } },
+/**
+ * TMCode's own layer over the catalog for single files: the interactive shell of a language (the
+ * catalog only describes how programs run). Keyed by catalog language.
+ */
+const REPLS: Record<string, { label: string; command: string }> = {
+  php: { label: "PHP interactive shell", command: "php -a" },
+  ruby: { label: "Ruby REPL (irb)", command: "irb" },
+  swift: { label: "Swift REPL", command: "swift repl" },
+  lua: { label: "Lua REPL", command: "lua" },
+  r: { label: "R console", command: "R" },
+  julia: { label: "Julia REPL", command: "julia" },
+  haskell: { label: "GHCi", command: "ghci" },
+  elixir: { label: "Elixir (iex)", command: "iex" },
 };
 
 // ───────────── static sites & docs ─────────────
@@ -707,21 +705,77 @@ function markdownDocs(f: FolderSnapshot): ProjectInfo | null {
 }
 
 /** The project a folder holds, or null. Build manifests win over loose files. */
+/**
+ * TMCode's layer over the catalog's kinds: how a family of kinds runs on the student's own computer
+ * (its npm scripts, dev servers with their ports, Maven goals, Flutter devices…). The catalog decides
+ * which kind a folder is; this turns the kind into commands. Keyed by catalog kind prefix.
+ */
+const LOCAL_LAYER: [prefix: string, build: (f: FolderSnapshot) => ProjectInfo | null][] = [
+  ["js/", jsProject],
+  ["ts/", jsProject],
+  ["java/", javaProject],
+  ["kotlin/gradle", javaProject],
+  ["groovy/gradle", javaProject],
+  ["python/", pythonProject],
+  ["dart/", dartProject],
+  ["flutter/", dartProject],
+  ["php/", phpProject],
+  ["ruby/", rubyProject],
+  ["swift/", swiftProject],
+  ["c/", nativeProject],
+  ["cpp/", nativeProject],
+  ["go/", nativeProject],
+  ["rust/", nativeProject],
+  ["csharp/", nativeProject],
+  ["fsharp/console", nativeProject],
+  ["fsharp/test", nativeProject],
+  ["vb/", nativeProject],
+  ["web/", staticSite],
+  ["sql/", sqlProject],
+  ["logic/", logicProject],
+];
+
+/** A project kind TMCode has no layer for (Gleam, Elixir mix, Haskell cabal…): the catalog's own steps, in a terminal. */
+function catalogProject(f: FolderSnapshot, kind: KindDef): ProjectInfo | null {
+  // Single-file kinds are run file by file (fileActions), not as a folder.
+  if (!kind.detect.files?.length) return null;
+  const entry = entryFor(kind, f.files, (p) => f.read[p]) ?? kind.entry?.default ?? "";
+  const local = localRun(kind, entry, f.files);
+  const step = (name: "test" | "build") => {
+    const st = kind.steps[name];
+    return st ? localRun({ ...kind, steps: { run: st } }, entry, f.files)?.run : undefined;
+  };
+  const actions: RunAction[] = [];
+  const serve = kind.steps.serve && localRun({ ...kind, steps: { run: kind.steps.serve } }, entry, f.files);
+  if (serve) actions.push(action({ id: `devServer:${f.dir}:${kind.id}`, kind: "devServer", label: `${kind.label}: serve${where(f.dir)}`, icon: "play-circle", command: serve.run, cwd: f.dir, port: kind.steps.serve!.port }));
+  else if (local) actions.push(action({ id: `task:${f.dir}:${kind.id}:run`, kind: "task", label: `${kind.label}: run${where(f.dir)}`, icon: "play", command: local.run, prelude: local.build, cwd: f.dir }));
+  const test = step("test");
+  if (test) actions.push(action({ id: `task:${f.dir}:${kind.id}:test`, kind: "task", label: `${kind.label}: test${where(f.dir)}`, icon: "beaker", command: test, cwd: f.dir }));
+  const build = step("build");
+  if (build) actions.push(action({ id: `task:${f.dir}:${kind.id}:build`, kind: "task", label: `${kind.label}: build${where(f.dir)}`, icon: "package", command: build, cwd: f.dir }));
+  return actions.length ? { kind: "other", label: kind.label, icon: "project", dir: f.dir, actions } : null;
+}
+
+/**
+ * What a folder is: the Runtime Catalog ranks the kinds it matches (build files beat loose sources,
+ * frameworks beat their build tool); the best one TMCode can run locally wins.
+ */
+/**
+ * The catalog's kinds as the Run hub can check them: it reads a folder's own files, while a
+ * project's sources are often deeper (src/main/java…). A build file (pom.xml, package.json,
+ * CMakeLists.txt…) is enough to know such a kind, so its "some sources exist" rule is dropped.
+ */
+const FOLDER_KINDS: KindDef[] = KINDS.map((k) => (k.detect.files?.length && k.detect.anyOf ? { ...k, detect: { ...k.detect, anyOf: undefined } } : k));
+
 export function detectProject(f: FolderSnapshot): ProjectInfo | null {
-  return (
-    jsProject(f) ??
-    javaProject(f) ??
-    pythonProject(f) ??
-    dartProject(f) ??
-    phpProject(f) ??
-    rubyProject(f) ??
-    swiftProject(f) ??
-    nativeProject(f) ??
-    staticSite(f) ??
-    sqlProject(f) ??
-    logicProject(f) ??
-    markdownDocs(f)
-  );
+  for (const r of detectKinds(f.files, (p) => f.read[p], { kinds: FOLDER_KINDS })) {
+    const kind = kindById(r.kind);
+    if (!kind) continue;
+    const layer = LOCAL_LAYER.find(([prefix]) => r.kind.startsWith(prefix))?.[1];
+    const p = layer ? layer(f) : catalogProject(f, kind);
+    if (p) return { ...p, catalogKind: r.kind, actions: p.actions.map((a) => ({ ...a, catalogKind: a.catalogKind ?? r.kind })) };
+  }
+  return markdownDocs(f);
 }
 
 /**
@@ -754,13 +808,15 @@ export interface FileContext {
   source?: string;
   /** A debugger exists for this file. */
   debuggable?: boolean;
+  /** The other files in its folder (a compiled language builds them together). */
+  folderFiles?: string[];
+  /** The student's shell's quoting (default: macOS/Linux). */
+  os?: Os;
   /** The page at webRoot actually loads this .js/.css file (else the file runs on its own). */
   pageLoadsFile?: boolean;
 }
 
 const JS_EXTS = ["js", "mjs", "cjs", "ts", "mts", "cts"];
-/** Terminal languages that also have a Run-panel profile (packages/profiles). */
-const PANEL_RUNNERS: Record<string, string> = { php: "PHP", rb: "Ruby", kt: "Kotlin", dart: "Dart", swift: "Swift" };
 const COMPILED: Record<string, string> = { c: "C", cpp: "C++", cc: "C++", cxx: "C++", java: "Java", go: "Go", rs: "Rust" };
 
 /** What ▶ can do with the active file, best first. */
@@ -770,6 +826,7 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
   const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
   const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   const out: RunAction[] = [];
+  let catalog: KindDef | null = null;
   const debug = () =>
     ctx.debuggable ? [action({ id: `debug:${path}`, kind: "debug", label: `Debug ${name}`, icon: "debug-alt", description: "Breakpoints and stepping", entry: path, needs: "debugger" })] : [];
 
@@ -804,13 +861,17 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     out.push(action({ id: `sqlRun:${path}`, kind: "sqlRun", label: `Run ${name}`, icon: "database", description: "Built-in SQLite, results as tables", entry: path }));
   } else if (ext === "logic") {
     out.push(action({ id: `logicPreview:${path}`, kind: "logicPreview", label: `${name} (Truth Tables)`, icon: "table", description: "Every expression's truth table", entry: path }));
-  } else if (ext in TERMINAL_RUNNERS) {
-    const r = TERMINAL_RUNNERS[ext];
-    // Languages with a Run-panel profile (PHP, Ruby, Kotlin, Dart, Swift) run there first: keyboard
-    // input and example tests; the terminal stays one choice away.
-    if (ext in PANEL_RUNNERS) out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `${PANEL_RUNNERS[ext]} in the Run panel`, entry: path, needs: "runner" }));
-    out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${r.lang} in a terminal`, command: r.run(name), prelude: r.prelude?.(name), cwd: dir }), ...debug());
-    if (r.repl) out.push(action({ id: `repl::${ext}`, kind: "repl", label: r.repl.label, icon: "terminal", command: r.repl.command, cwd: dir }));
+  } else if (ext !== "md" && ext !== "markdown" && ext !== "svg" && (catalog = fileKind(name, ctx.source))) {
+    // Any other language the Runtime Catalog knows: its run (and build) steps as terminal commands.
+    const local = localRun(catalog, name, ctx.folderFiles ?? [name], ctx.os ?? "mac");
+    const lang = languageByKey(catalog.language)?.label ?? catalog.language;
+    // A Run-panel profile (PHP, Ruby, Kotlin, Dart, Swift) runs there first: keyboard input and example tests.
+    if (profileForPath(path)?.local) out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `${lang} in the Run panel`, entry: path, needs: "runner", catalogKind: catalog.id }));
+    if (local) {
+      out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${lang} in a terminal`, command: local.run, prelude: local.build, cwd: dir, makeDir: local.build || /\.tmcode\/build/.test(local.run) ? BUILD_DIR : undefined, catalogKind: catalog.id }), ...debug());
+    }
+    const repl = REPLS[catalog.language];
+    if (repl) out.push(action({ id: `repl::${ext}`, kind: "repl", label: repl.label, icon: "terminal", command: repl.command, cwd: dir }));
   } else if (ext === "md" || ext === "markdown" || ext === "svg") {
     out.push(action({ id: `markdownPreview:${path}`, kind: "markdownPreview", label: `${name} (Preview)`, icon: "open-preview", entry: path }));
   }
