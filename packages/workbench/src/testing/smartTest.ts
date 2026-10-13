@@ -4,7 +4,7 @@ import { activeFilePath, getPlatform, notify, revealView, useWorkbench } from ".
 import { showInputBox } from "../widgets/QuickPick";
 import { currentRun } from "../run/runHub";
 import { loadTests, runTests, TESTS_FILE } from "../run/testService";
-import { summarize } from "./parsers";
+import { summarize } from "@nga/runtimes/testing";
 import { resolveTest, type TestChoice } from "./resolve";
 import { procAvailable, runFileTests, runSuite, useFrameworkTests } from "./service";
 

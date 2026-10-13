@@ -2,7 +2,7 @@
  * One Test (guided plan F): what the Test button tests, with the reason, by one rule — like Run's
  * resolveRun. Pure and unit-tested.
  */
-import { isTestFile, suiteForFile, type TestSuite } from "./frameworks";
+import { isTestFile, suiteForFile, type TestSuite } from "@nga/runtimes/testing";
 
 export type TestChoice =
   | { kind: "samples"; label: string; reason: string }

@@ -61,6 +61,6 @@ Detection rules: every `files` marker must exist at the project root, at least o
 - **Task Mentor** vendors these two files with a sync script (copy `dist/catalog.json` and `dist/starters.json` from a tagged build into its server), then seeds `code_languages`, `code_kinds` and `code_starters` from them (§14.4).
 - **tm-judge and TMCode** import the TypeScript API (`@nga/runtimes`, or the bundled `@nga/runtimes/dist`).
 
-## Known duplication
+## Test frameworks
 
-`src/testing/{frameworks,parsers,report}.ts` and their fixtures are **copies** of `packages/workbench/src/testing/*` (the only change: `FolderSnapshot` comes from `src/testing/folder.ts`). The workbench still uses its own copy; switching it to import `@nga/runtimes` is a follow-up. Until then, change both.
+`src/testing/{frameworks,parsers,report}.ts` are the one copy: TMCode's workbench imports them (`@nga/runtimes/testing`), as tm-judge does. Change them here only.

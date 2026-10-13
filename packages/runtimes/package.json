@@ -12,6 +12,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./testing": {
+      "types": "./src/testing/index.ts",
+      "import": "./src/testing/index.ts"
+    },
     "./dist": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
@@ -19,7 +23,12 @@
     "./catalog.json": "./dist/catalog.json",
     "./starters.json": "./dist/starters.json"
   },
-  "files": ["src", "dist", "starters", "README.md"],
+  "files": [
+    "src",
+    "dist",
+    "starters",
+    "README.md"
+  ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run --root ../.. packages/runtimes",

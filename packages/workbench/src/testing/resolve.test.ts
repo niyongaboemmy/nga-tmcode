@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSuites } from "./frameworks";
+import { detectSuites } from "@nga/runtimes/testing";
 import { resolveTest, type TestInput } from "./resolve";
 
 const folder = (files: Record<string, string>, opts: { dir?: string; dirs?: string[] } = {}) => ({ dir: opts.dir ?? "", files: Object.keys(files), dirs: opts.dirs ?? [], read: files });
