@@ -143,6 +143,16 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
           <span className="codicon codicon-arrow-both" aria-hidden />
           <span className="tm-compare-side">{sideName(input.path)}</span>
           {input.label && <span className="tm-compare-title">{input.label}</span>}
+          {input.path.startsWith("tmcode-ai:") && (
+            <span className="tm-compare-actions">
+              <button type="button" className="tm-button tm-button--small" onClick={() => void import("../ai/apply").then((m) => m.acceptProposal(input.path))} data-testid="ai-accept">
+                <span className="codicon codicon-check" aria-hidden /> Accept
+              </button>
+              <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void import("../ai/apply").then((m) => m.rejectProposal(input.path))} data-testid="ai-reject">
+                <span className="codicon codicon-close" aria-hidden /> Reject
+              </button>
+            </span>
+          )}
         </div>
       )}
       {(input.source === "saved" || input.source === "file") && (

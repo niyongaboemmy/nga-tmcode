@@ -1,4 +1,5 @@
 import type { AccountHost, AccountStatus, FileSystem, ScannedFile, SkippedFile, TmRequest, TmResponse } from "./types";
+import { memoryAi } from "./memoryAi";
 import { createFakeCodeRunner } from "./memoryCodeRunner";
 
 /**
@@ -44,6 +45,9 @@ interface Rev {
 
 export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string): Promise<string> }): AccountHost {
   const code = createFakeCodeRunner();
+  // TMCode AI and the activity log endpoints (memoryAi.ts).
+  const ai = memoryAi();
+  const activityLog = new Map<number, Record<string, unknown>[]>();
   const user = { id: 7, mis_user_id: 1007, name: "Ada Student", email: "ada@nga.test", role: "student", avatar_url: null, permissions: ["PROJECTS_USE"] };
   let signedIn = localStorage.getItem("tmcode:mock-account") === "signed-in";
   let phase: AccountStatus["phase"] = "idle";
@@ -295,6 +299,19 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     const url = new URL(req.path, API);
     const p = url.pathname.replace(/^\/api\/tmcode/, "");
     if (p.startsWith("/code/")) return code.route(req.method, p.slice("/code".length), (req.json ?? {}) as Record<string, unknown>);
+    if (p.startsWith("/ai/")) return ai.route(req.method, p.slice("/ai".length), (req.json ?? {}) as Record<string, unknown>);
+    if ((p.match(/^\/projects\/(\d+)\/activity$/)) && req.method === "POST") {
+      const pid = Number(p.split("/")[2]);
+      const list = activityLog.get(pid) ?? [];
+      list.push(...(((req.json as { events?: unknown[] })?.events ?? []) as Record<string, unknown>[]));
+      activityLog.set(pid, list);
+      return { status: 201, body: { ok: true } };
+    }
+    if ((p.match(/^\/projects\/(\d+)\/activity$/)) && req.method === "GET") {
+      const events = [...(activityLog.get(Number(p.split("/")[2])) ?? [])].sort((a, b) => Number(b.t) - Number(a.t));
+      const ai = events.filter((e) => e.ai);
+      return { status: 200, body: { events, next_before: null, summary: { total: events.length, ai_events: ai.length, ai_tools: [], ai_chars: 0, pastes_outside: 0, pastes_from_ai: 0, by_kind: {}, first_at: null, last_at: null } } };
+    }
     const body = (req.json ?? {}) as Record<string, unknown>;
     let m: RegExpMatchArray | null;
     if (p === "/auth/me") return { status: 200, body: { user, token_kind: "tmcode-user" } };
@@ -808,6 +825,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     },
     async stream(path, onEvent) {
       if (!signedIn) throw new Error("Sign in to use Task Mentor projects.");
+      if (path.startsWith("/api/tmcode/ai/")) return ai.stream(path.slice("/api/tmcode/ai".length), onEvent);
       return code.stream(path.replace(/^\/api\/tmcode\/code/, ""), onEvent);
     },
     async scan() {

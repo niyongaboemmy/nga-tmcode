@@ -1,6 +1,6 @@
 import type { RpcConnection } from "@tmcode/exthost";
 import { reloadVirtual } from "../monaco/documents";
-import { schemeOf, virtualIO } from "../util/virtual";
+import { localVirtual, schemeOf, virtualIO } from "../util/virtual";
 import type { HostKind } from "./state";
 
 /**
@@ -19,11 +19,17 @@ function owner(path: string) {
 }
 
 virtualIO.read = async (path) => {
+  const local = localVirtual.get(schemeOf(path) ?? "");
+  if (local) return local.read(path);
   const r = await owner(path).rpc.request<{ text: string; readonly: boolean } | null>("$readVirtual", [path]);
   if (!r) throw new Error(`The extension has no document ${path}.`);
   return r;
 };
-virtualIO.write = (path, text) => owner(path).rpc.request<boolean>("$writeVirtual", [path, text]).then((ok) => !!ok);
+virtualIO.write = (path, text) => {
+  const local = localVirtual.get(schemeOf(path) ?? "");
+  return local ? local.write(path, text) : writeExt(path, text);
+};
+const writeExt = (path: string, text: string) => owner(path).rpc.request<boolean>("$writeVirtual", [path, text]).then((ok) => !!ok);
 
 export function virtualScheme(kind: HostKind, rpc: RpcConnection, scheme: string, type: "content" | "fs", ext: string, on: boolean) {
   if (on) {

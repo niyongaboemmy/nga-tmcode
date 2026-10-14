@@ -20,6 +20,18 @@ export const virtualIO: VirtualIO = {
   write: async () => false,
 };
 
+/** TMCode's own virtual documents (TMCode AI's proposed files), served without an extension. */
+export const localVirtual = new Map<string, { read(path: string): Promise<{ text: string; readonly: boolean }>; write(path: string, text: string): Promise<boolean> }>();
+
+export function registerLocalScheme(scheme: string, provider: { read(path: string): Promise<{ text: string; readonly: boolean }>; write(path: string, text: string): Promise<boolean> }) {
+  localVirtual.set(scheme, provider);
+  virtualIO.schemes.add(scheme);
+  return () => {
+    localVirtual.delete(scheme);
+    virtualIO.schemes.delete(scheme);
+  };
+}
+
 /** Read-only virtual documents (content providers, read-only file systems). */
 export const readonlyVirtual = new Set<string>();
 

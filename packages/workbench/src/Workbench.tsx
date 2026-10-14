@@ -1,8 +1,9 @@
 import { useActivity } from "./state/activity";
+import { wireAi } from "./ai/commands";
 import { AuxiliaryBar } from "./parts/AuxiliaryBar";
 import { wireActivity } from "./activity/sources";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Allotment } from "allotment";
+import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
 import "@vscode/codicons/dist/codicon.css";
 import "./styles/theme.css";
@@ -127,6 +128,7 @@ export function Workbench() {
     wireDebugServices();
     registerExtHostCommands();
     wireActivity();
+    wireAi();
     initExtensionHost();
     startAutoUpdates();
     wirePaletteAndMenus();
@@ -266,7 +268,7 @@ export function Workbench() {
 
   const auxiliaryVisible = useWorkbench((s) => s.auxiliaryVisible);
   const auxiliaryPane = (
-    <Allotment.Pane key="aux" minSize={260} preferredSize={viewport === "lg" ? 380 : 320} maxSize={900} visible={auxiliaryVisible && viewport !== "xs"} snap>
+    <Allotment.Pane key="aux" minSize={260} priority={LayoutPriority.Low} preferredSize={viewport === "lg" ? 380 : 320} maxSize={900} visible={auxiliaryVisible && viewport !== "xs"} snap>
       <AuxiliaryBar />
     </Allotment.Pane>
   );
@@ -302,10 +304,10 @@ export function Workbench() {
           {orderPanes(
             sideBarRight,
             auxiliaryPane,
-            <Allotment.Pane key="side" minSize={170} preferredSize={viewport === "sm" ? 220 : 260} maxSize={720} visible={sidebarVisible} snap>
+            <Allotment.Pane key="side" minSize={170} priority={LayoutPriority.Low} preferredSize={viewport === "sm" ? 220 : 260} maxSize={720} visible={sidebarVisible} snap>
               <SideBar />
             </Allotment.Pane>,
-            <Allotment.Pane key="main" minSize={220}>
+            <Allotment.Pane key="main" minSize={220} priority={LayoutPriority.High}>
               <Allotment vertical className="tm-split" proportionalLayout={false}>
                 <Allotment.Pane minSize={120} visible={!panelMaximized}>
                   <main className="tm-editor-area" aria-label="Editor">

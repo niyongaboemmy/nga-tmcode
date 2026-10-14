@@ -2251,7 +2251,9 @@ var enums = {
   ChatResultFeedbackKind: { Unhelpful: 0, Helpful: 1 },
   PortAutoForwardAction: { Notify: 1, OpenBrowser: 2, OpenPreview: 3, Silent: 4, Ignore: 5 },
   NotebookCellExecutionState: { Idle: 1, Pending: 2, Executing: 3 },
-  ExtensionRuntime: { Node: 1, Webworker: 2 }
+  ExtensionRuntime: { Node: 1, Webworker: 2 },
+  FileChangeType: { Changed: 1, Created: 2, Deleted: 3 },
+  InlineCompletionEndOfLifeReasonKind: { Accepted: 0, Rejected: 1, Ignored: 2 }
 };
 
 // packages/exthost/src/host/tabs.ts

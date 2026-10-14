@@ -1,6 +1,7 @@
 import { isExamRoot } from "../exam/roots";
 import { getPlatform, onWorkspaceChanged, useWorkbench, activeFilePath } from "../state/store";
 import { isBookkeepingPath, recentlyWritten } from "./fsRecorder";
+import { wireActivityUpload } from "./upload";
 import { flushActivity, internally, recordActivity, setActivityFolder, setActivityPersistence, sizeText, useActivityLog, type ActivityEvent, type Actor } from "./log";
 
 /**
@@ -216,5 +217,6 @@ export function wireActivity() {
   void open();
   wireClipboard();
   wireOutsideChanges();
+  wireActivityUpload();
   window.addEventListener("beforeunload", () => flushActivity());
 }

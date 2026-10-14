@@ -986,6 +986,8 @@ async function submitLinkNow(projectId: number, linkId: number) {
     if (st && (st.ahead > 0 || st.entries.length > 0)) throw new Error("Commit and push your changes first: Task Mentor records the last pushed commit.");
     await reportGit();
   }
+  // The teacher sees the work's activity log with it: send what is still waiting first.
+  await import("../activity/upload").then((m) => m.flushActivityUpload()).catch(() => undefined);
   const res = await api<{ link: Link; submission: unknown }>("POST", `/projects/${projectId}/links/${linkId}/submit`, {});
   recordActivity({ kind: "project", action: "submit", text: "Submitted the project to Task Mentor", data: { project: projectId, link: linkId } });
   await checkSync();
