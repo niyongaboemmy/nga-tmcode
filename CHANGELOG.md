@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.18.0 — 2026-10-14
+
+**TMCode 0.18: AI the way VS Code has it, and an activity log of your work.** TMCode has its own free AI, AI extensions such as Claude Code and Gemini work in your projects, and everything you do (except typing) is recorded, with AI use named.
+
+### TMCode AI (free)
+
+- **Ask about your code** in the new chat on the right (**⌘I**, or the AI button in the title bar). It sees the open file, your selection and the file's problems.
+- **Answers stream in**, with code you can **Copy**, **Insert** at the cursor, or **Apply**. Apply shows the change as a diff first, and you **Accept** or **Reject** it. Undo takes an accepted change back.
+- **Explain, Fix, Write Tests** are in the editor's right-click menu.
+- **Suggestions while typing** (ghost text, Tab to accept): turn them on with the lightbulb in the chat.
+- **Free by default**: OpenRouter's free models. Choose **Auto** and TMCode picks a free AI that still has requests left today, or choose one model. The chat shows how many questions you have left today.
+- Sign in to NGA to use it. TMCode AI is always off during exams.
+
+### AI extensions work as in VS Code
+
+- **Claude Code, Gemini Code Assist, Blackbox, Windsurf, Continue and Cline** install from the Extensions view and run.
+  - Their chats open, in the new **secondary side bar** on the right where they ask for it.
+  - Their suggestions appear as ghost text.
+  - Their proposed edits open as diffs you can accept.
+- **What extensions can do now**:
+  - inline suggestions;
+  - documents that live in the extension (shown as diffs);
+  - editor tabs (`tabGroups`);
+  - terminals that run commands and read their output;
+  - sign-in links (`tmcode://`);
+  - extension accounts (Accounts: Manage Extension Accounts).
+
+### Activity log
+
+- **Everything except typing is recorded:**
+  - files created, renamed, moved, copied and deleted;
+  - copy, cut and paste, with where pasted text came from (inside TMCode, an AI's answer, or outside);
+  - runs, tests, debugging and terminal commands;
+  - git, extension installs, and saves and submits to Task Mentor;
+  - changes made outside the editor.
+- **Every use of AI is named** on its event: questions, answers, applied code, accepted suggestions, and edits or commands by AI extensions.
+- See it in the **Activity** tab of the panel: today's summary, filters (AI, files, copy & paste, runs…), search, and details per event.
+- For work linked to Task Mentor (assignments, practicals), the log goes to Task Mentor. **Teachers see it in grading** under a new **Activity** tab, with a summary of AI use and pastes.
+
+### All changes
+
+- TMCode AI (free), secondary side bar layout fix, docs and 0.18.0 notes
+- AI extensions work as in VS Code; activity log of every action
+- Multi-file programs: go/single and swift/single compile every source; tests link files in all languages
+
 ## 0.17.3 — 2026-10-13
 
 **TMCode 0.17.3: the JavaScript Console works in the app.** Programs run, typed expressions are answered, and output arrives the way Node shows it.
