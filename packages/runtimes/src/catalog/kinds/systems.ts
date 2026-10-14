@@ -48,6 +48,30 @@ function nativeProjects(lang: "c" | "cpp", runtime: string, srcs: string[], labe
 
 export const SYSTEMS_KINDS = [
   kind({
+    id: "arduino/uno",
+    language: "arduino",
+    label: "Arduino – Uno sketch",
+    runtime: "arduino-avr",
+    wave: "B",
+    enabled: true,
+    detect: { anyOf: ["*.ino"], priority: 10 },
+    entry: { default: "sketch.ino", find: "manifest" },
+    steps: {
+      // Compiled for the Uno (ATmega328P); the run "prints" the firmware (Intel HEX), which the
+      // MIS / Task Mentor simulate in the browser or flash to a board. Nothing runs here.
+      build: { tool: "arduino-build", args: ["compile", "arduino:avr:uno", entry] },
+      run: { tool: "arduino-build", args: ["hex"] },
+    },
+    tier: "isolate",
+    interactive: "none",
+    limits: {
+      // arduino-cli (Go) plus avr-gcc's processes; ~2–8 s for a sketch with its core.
+      build: { cpu_s: 60, wall_s: 90, memory_mb: 1024, processes: 128, disk_mb: 256 },
+      run: { cpu_s: 2, wall_s: 5, memory_mb: 64, processes: 8, output_kb: 256 },
+    },
+    notes: "Output is the firmware, not the program's behaviour: graded by simulating it (Serial output after a set simulated time), not by comparing stdout.",
+  }),
+  kind({
     id: "c/single",
     language: "c",
     label: "C – single file",

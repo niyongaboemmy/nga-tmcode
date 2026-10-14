@@ -66,7 +66,9 @@ if (existsSync(NPM_CACHE)) caches["npm-school"] = NPM_CACHE;
 /** Layers made by deploy/build-caches.sh with CACHE_ROOT=.cache/layers (online, once). */
 const LAYERS = process.env.JUDGE_TEST_LAYERS ?? join(ROOT, ".cache/layers");
 for (const id of ["go-mod-school", "cargo-registry-school", "wheels-school", "gradle-school"]) if (existsSync(join(LAYERS, id))) caches[id] = join(LAYERS, id);
-const tc = resolveToolchains({ overrides: { "rust-stable": rustOverrides() }, caches });
+/** A developer's toolchains installed outside /opt: JUDGE_TEST_TOOLCHAINS='{"arduino-avr":{"arduino-cli":"…"}}'. */
+const testOverrides = JSON.parse(process.env.JUDGE_TEST_TOOLCHAINS || "{}") as Record<string, Record<string, string>>;
+const tc = resolveToolchains({ overrides: { "rust-stable": rustOverrides(), ...testOverrides }, caches });
 const tcNoCaches = resolveToolchains({ overrides: { "rust-stable": rustOverrides() } });
 const env: JudgeEnv = { programs: resolvePrograms(), toolchains: tc };
 /**
@@ -806,6 +808,48 @@ for (const g of GREETERS) {
     }, 120_000);
   });
 }
+
+// ───────────── Arduino: the run prints the firmware (simulated or flashed elsewhere) ─────────────
+
+describe.runIf(can("arduino/uno"))("arduino/uno: compiles a sketch to Uno firmware, in a real box", () => {
+  const firmware = (r: Awaited<ReturnType<typeof project>>) => r.tests[0]?.stdout ?? "";
+  it("prints the firmware as Intel HEX and says how much of the Uno it uses", async () => {
+    const r = await project({
+      files: [{ path: "sketch.ino", content: 'void setup() {\n  Serial.begin(9600);\n  pinMode(13, OUTPUT);\n  Serial.println("Hello, Arduino!");\n}\n\nvoid loop() {\n  digitalWrite(13, !digitalRead(13));\n  delay(500);\n}\n' }],
+      tests: [{ id: "firmware", input: "" }],
+    });
+    expect(r.kind, JSON.stringify(r)).toBe("arduino/uno");
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
+    expect(r.compile?.output).toMatch(/Sketch uses \d+ bytes \(\d+%\) of program storage space/);
+    expect(r.tests[0].verdict, JSON.stringify(r.tests[0])).toBe("ok");
+    const hex = firmware(r);
+    expect(hex).toMatch(/^:10000000/);
+    expect(hex.trim().endsWith(":00000001FF")).toBe(true);
+    expect(hex.split("\n").every((l) => l === "" || /^:[0-9A-F]+$/.test(l.trim()))).toBe(true);
+  }, 180_000);
+
+  it("names the student's file in a compile error (no box paths)", async () => {
+    const r = await project({ files: [{ path: "sketch.ino", content: "void setup() {}\nvoid loop() {\n  undefinedThing();\n}\n" }], tests: [{ id: "1", input: "" }] });
+    expect(r.tests[0].verdict).toBe("compile-error");
+    const text = `${r.compile?.output ?? ""}${r.tests[0].stderr ?? ""}`;
+    expect(text).toMatch(/sketch\.ino:3:3: error: 'undefinedThing' was not declared in this scope/);
+    expect(text).not.toMatch(/\/box\/|\.nga-arduino|\/tmp\//);
+  }, 180_000);
+
+  it("builds a sketch over several files (src/ folder) and the libraries lessons use", async () => {
+    const r = await project({
+      entry: "robot.ino",
+      files: [
+        { path: "robot.ino", content: '#include <Servo.h>\n#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\n#include "src/motor.h"\nServo arm;\nLiquidCrystal_I2C lcd(0x27, 16, 2);\nvoid setup() { arm.attach(9); lcd.init(); lcd.print("Hi"); motorInit(); }\nvoid loop() { arm.write(motorAngle()); }\n' },
+        { path: "src/motor.h", content: "#pragma once\nvoid motorInit();\nint motorAngle();\n" },
+        { path: "src/motor.cpp", content: '#include <Arduino.h>\n#include "motor.h"\nvoid motorInit() { pinMode(3, OUTPUT); }\nint motorAngle() { return map(analogRead(A0), 0, 1023, 0, 180); }\n' },
+      ],
+      tests: [{ id: "firmware", input: "" }],
+    });
+    expect(r.compile?.ok, r.compile?.output).toBe(true);
+    expect(firmware(r)).toMatch(/^:10000000/);
+  }, 180_000);
+});
 
 // ───────────── programs split over several files (playgrounds, projects) ─────────────
 

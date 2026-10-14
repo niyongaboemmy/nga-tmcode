@@ -27,7 +27,7 @@ describe("runtime catalog", () => {
       expect(LANGUAGES.find((l) => l.key === key)).toMatchObject({ wave: "A", enabled: true });
     }
     // Offered since deploy/install-languages.sh installs them (each with an enabled single-file kind).
-    const later = ["php", "ruby", "bash", "kotlin", "csharp", "swift"];
+    const later = ["php", "ruby", "bash", "kotlin", "csharp", "swift", "arduino"];
     for (const key of later) {
       expect(LANGUAGES.find((l) => l.key === key)?.enabled, key).toBe(true);
       expect(KINDS.some((k) => k.language === key && k.enabled && k.tier !== "container" && !!k.steps.run), key).toBe(true);

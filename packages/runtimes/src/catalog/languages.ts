@@ -15,7 +15,7 @@ const L = (key: string, label: string, family: Language["family"], wave: Languag
  * Later-wave languages offered now: the runner installs them (services/judge/deploy/
  * install-languages.sh) and runs their single-file kinds on the isolate tier.
  */
-const OFFERED_LATER = new Set(["php", "ruby", "bash", "kotlin", "csharp", "swift"]);
+const OFFERED_LATER = new Set(["php", "ruby", "bash", "kotlin", "csharp", "swift", "arduino"]);
 
 export const LANGUAGES: Language[] = [
   // wave A
@@ -44,6 +44,8 @@ export const LANGUAGES: Language[] = [
   L("haskell", "Haskell", "functional", "C", ["hs"], "haskell"),
   L("elixir", "Elixir", "functional", "C", ["ex", "exs"], "elixir"),
   L("swift", "Swift", "mobile", "C", ["swift"], "swift"),
+  // Sketches for the Arduino Uno: compiled on the runner, simulated in the browser (avr8js) or flashed to a board.
+  L("arduino", "Arduino", "systems", "B", ["ino"], "cpp"),
   L("dart", "Dart & Flutter", "mobile", "C", ["dart"], "dart"),
   // wave D (phase 7, the long tail; Monaco ids fall back to the language name where Monaco has none, as for Haskell)
   L("zig", "Zig", "systems", "D", ["zig"], "zig"),

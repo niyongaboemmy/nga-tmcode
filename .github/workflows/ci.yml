@@ -81,8 +81,8 @@ jobs:
           echo "$(cut -d' ' -f1 /tmp/junit.jar.sha1)  /tmp/junit.jar" | sha1sum -c -
           sudo install -D -m 0755 /tmp/junit.jar /opt/junit/junit-platform-console-standalone.jar
       # Every language the playgrounds offer, installed by the same script as the servers.
-      - name: Runner languages (Go, Rust, PHP, Ruby, Bash, C#, Kotlin, Swift)
-        run: bash services/judge/deploy/install-languages.sh go rust php ruby bash csharp kotlin swift
+      - name: Runner languages (Go, Rust, PHP, Ruby, Bash, C#, Kotlin, Swift, Arduino)
+        run: bash services/judge/deploy/install-languages.sh go rust php ruby bash csharp kotlin swift arduino
       - name: Build and start isolate v2.7
         run: |
           git clone --depth 1 --branch v2.7 https://github.com/ioi/isolate /tmp/isolate
@@ -103,7 +103,7 @@ jobs:
         env:
           JUDGE_TEST_SANDBOX: isolate
           # Fail (don't skip) when one of these can't run here.
-          JUDGE_TEST_REQUIRE_KINDS: go/single,rust/single,php/single,ruby/single,bash/single,csharp/script,kotlin/single,swift/single
+          JUDGE_TEST_REQUIRE_KINDS: go/single,rust/single,php/single,ruby/single,bash/single,csharp/script,kotlin/single,swift/single,arduino/uno
         # Verbose: the log shows which real-box cases ran and which were skipped (toolchain missing).
         run: npx vitest run --config vitest.config.ts --reporter=verbose
 
@@ -124,10 +124,10 @@ jobs:
         with:
           node-version: 24
       - name: install-languages.sh (every language)
-        run: bash services/judge/deploy/install-languages.sh go rust php ruby bash csharp kotlin swift
+        run: bash services/judge/deploy/install-languages.sh go rust php ruby bash csharp kotlin swift arduino
       - run: npm ci --ignore-scripts
       - name: Programs in every language
         working-directory: services/judge
         env:
-          JUDGE_TEST_REQUIRE_KINDS: go/single,rust/single,php/single,ruby/single,bash/single,csharp/script,kotlin/single,swift/single
+          JUDGE_TEST_REQUIRE_KINDS: go/single,rust/single,php/single,ruby/single,bash/single,csharp/script,kotlin/single,swift/single,arduino/uno
         run: npx vitest run --config vitest.config.ts src/project.test.ts -t "in a real box|required kinds|csharp/script" --reporter=verbose

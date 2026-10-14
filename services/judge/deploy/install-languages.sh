@@ -6,7 +6,7 @@
 #   bash services/judge/deploy/install-languages.sh                 # every language below
 #   bash services/judge/deploy/install-languages.sh php ruby csharp # only these
 #
-# Languages: go rust php ruby bash csharp kotlin swift.
+# Languages: go rust php ruby bash csharp kotlin swift arduino.
 # Each one installs on its own — a failure is reported and skipped, never the whole run — and
 # re-running is cheap (pinned versions are kept when already there). install.sh runs this as
 # part of the toolchains step; run on its own, restart the judge afterwards so it sees them:
@@ -18,7 +18,9 @@ GO_VERSION="${GO_VERSION:-1.25.1}"
 RUST_VERSION="${RUST_VERSION:-1.90.0}"
 KOTLIN_VERSION="${KOTLIN_VERSION:-2.2.20}"
 SWIFT_VERSION="${SWIFT_VERSION:-6.2.1}"
-ALL_LANGUAGES="go rust php ruby bash csharp kotlin swift"
+ARDUINO_CLI_VERSION="${ARDUINO_CLI_VERSION:-1.5.1}"
+ARDUINO_AVR_VERSION="${ARDUINO_AVR_VERSION:-1.8.8}"
+ALL_LANGUAGES="go rust php ruby bash csharp kotlin swift arduino"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ARCH="$(uname -m)"
@@ -142,6 +144,50 @@ lang_swift() {                                                      # [swift-6] 
   $SUDO rm -rf "/opt/swift-${SWIFT_VERSION}" && $SUDO mkdir -p "/opt/swift-${SWIFT_VERSION}"
   $SUDO tar -xzf "$dl/swift.tar.gz" -C "/opt/swift-${SWIFT_VERSION}" --strip-components=1 || return 1
   $SUDO ln -sfn "/opt/swift-${SWIFT_VERSION}" /opt/swift
+}
+
+# [arduino-avr] /opt/arduino: arduino-cli, the arduino:avr core (avr-gcc) and the libraries lessons
+# use (Servo, LiquidCrystal, LiquidCrystal I2C), plus /usr/local/lib/nga/arduino-build (the kind's
+# wrapper). Everything is fetched here, once; compiling in the box reads it and fetches nothing.
+lang_arduino() {
+  local root=/opt/arduino cli=/opt/arduino/bin/arduino-cli asset want
+  case "$ARCH" in
+    x86_64) asset=Linux_64bit; want=28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b ;;
+    aarch64) asset=Linux_ARM64; want=1e69e077479f300614d4551334e0a33f08ee40b04315d83b8e7e0e94f0d0ee62 ;;
+  esac
+  if ! "$cli" version 2>/dev/null | grep -q "Version: ${ARDUINO_CLI_VERSION} "; then
+    local f="arduino-cli_${ARDUINO_CLI_VERSION}_${asset}.tar.gz"
+    fetch "https://downloads.arduino.cc/arduino-cli/$f" "$dl/$f" || return 1
+    # The sums above are for 1.5.1; another version is checked against Arduino's published list.
+    if [ "$ARDUINO_CLI_VERSION" != "1.5.1" ]; then
+      fetch "https://downloads.arduino.cc/arduino-cli/${ARDUINO_CLI_VERSION}-checksums.txt" "$dl/arduino-sums" || return 1
+      want="$(grep " $f\$" "$dl/arduino-sums" | cut -d' ' -f1)"
+    fi
+    check_sum sha256 "$dl/$f" "$want" || return 1
+    $SUDO mkdir -p "$root/bin"
+    $SUDO tar -xzf "$dl/$f" -C "$root/bin" arduino-cli || return 1
+  fi
+  $SUDO tee "$root/arduino-cli.yaml" >/dev/null <<YAML
+directories:
+  data: $root/data
+  downloads: $root/staging
+  user: $root/user
+build_cache:
+  path: /tmp/.cache/arduino
+updater:
+  enable_notification: false
+metrics:
+  enabled: false
+YAML
+  local C=("$SUDO" "$cli" --config-file "$root/arduino-cli.yaml")
+  [ -n "$SUDO" ] || C=("$cli" --config-file "$root/arduino-cli.yaml")
+  "${C[@]}" core update-index >/dev/null || return 1
+  "${C[@]}" core install "arduino:avr@${ARDUINO_AVR_VERSION}" >/dev/null || return 1
+  "${C[@]}" lib update-index >/dev/null || return 1
+  "${C[@]}" lib install "Servo@1.3.0" "LiquidCrystal@1.0.7" "LiquidCrystal I2C@1.1.2" >/dev/null || return 1
+  $SUDO rm -rf "$root/staging"
+  $SUDO chmod -R a+rX "$root"
+  $SUDO install -D -m 0755 "$HERE/bin/arduino-build" /usr/local/lib/nga/arduino-build
 }
 
 wanted="${*:-$ALL_LANGUAGES}"
