@@ -185,7 +185,9 @@ YAML
   "${C[@]}" core install "arduino:avr@${ARDUINO_AVR_VERSION}" >/dev/null || return 1
   "${C[@]}" lib update-index >/dev/null || return 1
   "${C[@]}" lib install "Servo@1.3.0" "LiquidCrystal@1.0.7" "LiquidCrystal I2C@1.1.2" >/dev/null || return 1
-  $SUDO rm -rf "$root/staging"
+  # The downloaded archives go, but the folder stays: arduino-cli creates it on every start, and
+  # /opt/arduino is read-only in the box ("mkdir /opt/arduino/staging: read-only file system").
+  $SUDO rm -rf "$root/staging" && $SUDO mkdir -p "$root/staging"
   $SUDO chmod -R a+rX "$root"
   $SUDO install -D -m 0755 "$HERE/bin/arduino-build" /usr/local/lib/nga/arduino-build
 }
