@@ -42,9 +42,11 @@ test("TMCode AI: ask about the file, apply its fix as a diff, switch to Auto, gh
   await expect(page.getByTestId("ai-mode")).toContainText("Free");
   await expect(page.getByTestId("ai-quota")).toHaveText("40 left today");
 
-  // A starter question about the open file: streamed, with a code block for the file.
-  await chat.getByRole("button", { name: "Find the bug" }).click();
-  await expect(chat.locator(".tm-chat-q")).toContainText("Find bugs in this code");
+  // Chat mode (answers only): a starter question about the open file, streamed, with a code block.
+  await page.getByTestId("ai-agent-mode").click();
+  await page.getByTestId("ai-mode-chat").click();
+  await chat.getByRole("button", { name: "Find and fix bugs" }).click();
+  await expect(chat.locator(".tm-chat-q")).toContainText("Find the bugs in this code");
   await expect(chat.locator(".tm-chat-q .tm-chat-chip")).toContainText("app.js");
   const answer = chat.locator(".tm-chat-answer").last();
   await expect(answer.locator(".tm-chat-code")).toContainText("console.info('hi');", { timeout: 10000 });
@@ -89,7 +91,7 @@ test("TMCode AI: ask about the file, apply its fix as a diff, switch to Auto, gh
   await page.keyboard.press("ControlOrMeta+j");
   await page.locator(".tm-panel-tab", { hasText: "Activity" }).click();
   const log = page.getByTestId("activity-view");
-  await expect(log).toContainText('Asked TMCode AI: "Find bugs in this code');
+  await expect(log).toContainText('Asked TMCode AI: "Find the bugs in this code');
   await expect(log).toContainText("TMCode AI answered");
   await expect(log).toContainText("TMCode AI proposed a change to app.js");
   await expect(log).toContainText("Accepted TMCode AI's change to app.js");

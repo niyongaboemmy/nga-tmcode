@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useInstallLabel } from "./InstallProgress";
 import { executeCommand } from "../../commands/registry";
 import { useExam } from "../../exam/state";
 import { getPlatform, openContextMenu, openEditorInput, useWorkbench } from "../../state/store";
@@ -80,11 +81,12 @@ export function Rating({ value, count }: { value?: number; count?: number }) {
 /** Install / manage button of a row (VS Code: "Install", or a gear for installed ones). */
 function RowAction({ ext, installed }: { ext: GalleryExtension | null; installed?: InstalledExtension }) {
   const busy = useExtensions((s) => s.busy[installed?.id ?? ext?.id ?? ""]);
+  const label = useInstallLabel(installed?.id ?? ext?.id ?? "", busy);
   if (busy) {
     return (
-      <span className="tm-ext-busy" role="status">
+      <span className="tm-ext-busy" role="status" data-testid="ext-install-progress">
         <Codicon name="loading" className="codicon-modifier-spin" />
-        {busy === "installing" ? "Installing" : "Uninstalling"}
+        {label}
       </span>
     );
   }

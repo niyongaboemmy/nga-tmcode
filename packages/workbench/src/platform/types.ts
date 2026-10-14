@@ -247,7 +247,8 @@ export interface ExtensionHost {
   fetch(url: string, as: "text" | "base64"): Promise<string>;
   list(): Promise<StoredExtension[]>;
   /** Downloads a .vsix from Open VSX, unpacks its `extension/` folder and stores it (replacing an older version). */
-  install(id: string, downloadUrl: string): Promise<StoredExtension>;
+  /** `downloads`: per-platform builds (the desktop installs this computer's); `onProgress`: bytes so far. */
+  install(id: string, downloadUrl: string, downloads?: Record<string, string>, onProgress?: (p: { received: number; total: number | null; phase: "download" | "unpack" }) => void): Promise<StoredExtension>;
   /** Desktop: "Install from VSIX…" — a native file dialog, then the package's own id (null when cancelled). */
   installVsix?(): Promise<StoredExtension | null>;
   uninstall(id: string): Promise<void>;

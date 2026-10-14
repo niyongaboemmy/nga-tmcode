@@ -14,9 +14,37 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_http::reqwest;
 
 pub const GALLERY: &str = "https://open-vsx.org/";
-/// Largest .vsix we download, and the most it may unpack to (zip bombs).
-const MAX_DOWNLOAD: usize = 100 * 1024 * 1024;
-const MAX_UNPACKED: u64 = 300 * 1024 * 1024;
+/// Largest .vsix we download, and the most it may unpack to (zip bombs). AI extensions ship their
+/// agent as a native program: Claude Code's macOS build is 109 MB (248 MB unpacked), Gemini Code
+/// Assist's 189 MB.
+const MAX_DOWNLOAD: usize = 512 * 1024 * 1024;
+const MAX_UNPACKED: u64 = 1024 * 1024 * 1024;
+
+/// Open VSX's name for this computer ("darwin-arm64", "win32-x64", "linux-x64", "alpine-arm64"…).
+pub fn target_platform() -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "win32",
+        _ if cfg!(target_env = "musl") => "alpine",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        "arm" => "armhf",
+        other => other,
+    };
+    format!("{os}-{arch}")
+}
+
+/// The .vsix to download: this computer's own build when the extension ships one per platform (an
+/// AI extension's agent is a native program), else the universal one, else what the gallery gave.
+pub fn pick_download(url: &str, downloads: Option<&std::collections::HashMap<String, String>>, target: &str) -> String {
+    downloads
+        .and_then(|d| d.get(target).or_else(|| d.get("universal")))
+        .cloned()
+        .unwrap_or_else(|| url.to_string())
+}
 /// Largest single file the workbench may read (themes, grammars, icons, README).
 const MAX_READ: u64 = 20 * 1024 * 1024;
 
@@ -97,6 +125,14 @@ pub fn unpack(bytes: &[u8], dest: &Path) -> Result<(), String> {
             return Err("Corrupt .vsix (sizes do not match)".into());
         }
         out.flush().map_err(|e| e.to_string())?;
+        // Native programs (Claude Code's `claude`, Gemini's `cloudcode_cli`) must stay executable.
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            if mode & 0o111 != 0 {
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+            }
+        }
     }
     if !dest.join("package.json").is_file() {
         return Err("The .vsix has no extension/package.json".into());
@@ -210,26 +246,60 @@ fn encode(bytes: Vec<u8>, encoding: &str) -> Result<String, String> {
 }
 
 async fn download(url: &str) -> Result<Vec<u8>, String> {
+    download_with(url, |_, _| {}).await
+}
+
+/// Downloads with progress (received, total). A slow connection may take as long as it needs: only
+/// a stalled one (nothing for 60 s) fails, never a large download.
+async fn download_with(url: &str, progress: impl Fn(u64, Option<u64>)) -> Result<Vec<u8>, String> {
     if !allowed_url(url) {
         return Err(format!("Only Open VSX can be reached ({url})"));
     }
     let client = reqwest::Client::builder()
         .user_agent(concat!("TMCode/", env!("CARGO_PKG_VERSION")))
-        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .read_timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-    let mut res = client.get(url).send().await.map_err(|e| format!("Could not reach Open VSX: {e}"))?;
+    let mut res = client.get(url).send().await.map_err(|e| format!("Could not reach Open VSX: {}", e.without_url()))?;
     if !res.status().is_success() {
         return Err(format!("Open VSX answered {}", res.status()));
     }
-    let mut out = Vec::new();
-    while let Some(chunk) = res.chunk().await.map_err(|e| e.to_string())? {
+    let total = res.content_length();
+    if total.is_some_and(|t| t as usize > MAX_DOWNLOAD) {
+        return Err(format!("The extension is too large to install ({} MB)", total.unwrap_or(0) / 1_048_576));
+    }
+    let mut out = Vec::with_capacity(total.unwrap_or(0).min(MAX_DOWNLOAD as u64) as usize);
+    let mut last = 0u64;
+    while let Some(chunk) = res.chunk().await.map_err(|e| format!("The download stopped: {}", e.without_url()))? {
         if out.len() + chunk.len() > MAX_DOWNLOAD {
-            return Err("Download too large".into());
+            return Err("The extension is too large to install".into());
         }
         out.extend_from_slice(&chunk);
+        let got = out.len() as u64;
+        if got - last >= 512 * 1024 || Some(got) == total {
+            last = got;
+            progress(got, total);
+        }
     }
     Ok(out)
+}
+
+/// An extension's per-platform .vsix files from Open VSX (`downloads` of /api/{namespace}/{name}).
+async fn platform_downloads(id: &str) -> Option<std::collections::HashMap<String, String>> {
+    let (ns, name) = id.split_once('.')?;
+    let bytes = download(&format!("{GALLERY}api/{ns}/{name}")).await.ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let map: std::collections::HashMap<String, String> = serde_json::from_value(v.get("downloads")?.clone()).ok()?;
+    (!map.is_empty()).then_some(map)
+}
+
+#[derive(Serialize, Clone)]
+pub struct InstallProgress {
+    received: u64,
+    total: Option<u64>,
+    /// "download", then "unpack".
+    phase: &'static str,
 }
 
 #[tauri::command]
@@ -271,12 +341,29 @@ pub async fn ext_install_vsix(app: AppHandle) -> Result<Option<StoredExtension>,
 }
 
 #[tauri::command]
-pub async fn ext_install(app: AppHandle, id: String, url: String) -> Result<StoredExtension, String> {
+pub async fn ext_install(
+    app: AppHandle,
+    id: String,
+    url: String,
+    downloads: Option<std::collections::HashMap<String, String>>,
+    on_progress: tauri::ipc::Channel<InstallProgress>,
+) -> Result<StoredExtension, String> {
     let id = id.to_lowercase();
     if !valid_id(&id) {
         return Err("Invalid extension id".into());
     }
-    let bytes = download(&url).await?;
+    // Search results don't list the per-platform builds: ask Open VSX for this extension's own.
+    let downloads = match downloads {
+        Some(d) if !d.is_empty() => Some(d),
+        _ => platform_downloads(&id).await,
+    };
+    let url = pick_download(&url, downloads.as_ref(), &target_platform());
+    log::info!("installing extension {id} from {url}");
+    let bytes = download_with(&url, |received, total| {
+        let _ = on_progress.send(InstallProgress { received, total, phase: "download" });
+    })
+    .await?;
+    let _ = on_progress.send(InstallProgress { received: bytes.len() as u64, total: Some(bytes.len() as u64), phase: "unpack" });
     let root = root(&app)?;
     let stored = tauri::async_runtime::spawn_blocking(move || install_into(&root, &id, &bytes)).await.map_err(|e| e.to_string())??;
     log::info!("installed extension {} {}", stored.id, stored.version);
@@ -300,6 +387,82 @@ pub fn ext_uninstall(app: AppHandle, id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn ext_read_file(app: AppHandle, id: String, path: String, encoding: String) -> Result<String, String> {
     encode(read_file_in(&root(&app)?, &id.to_lowercase(), &path)?, &encoding)
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn picks_this_computers_build() {
+        let mut d = std::collections::HashMap::new();
+        for t in ["linux-x64", "darwin-arm64", "alpine-arm64", "win32-x64"] {
+            d.insert(t.to_string(), format!("https://open-vsx.org/{t}.vsix"));
+        }
+        // Open VSX's default file for Claude Code was the alpine-arm64 build.
+        let default = "https://open-vsx.org/alpine-arm64.vsix";
+        assert_eq!(pick_download(default, Some(&d), "darwin-arm64"), "https://open-vsx.org/darwin-arm64.vsix");
+        assert_eq!(pick_download(default, Some(&d), "win32-x64"), "https://open-vsx.org/win32-x64.vsix");
+        d.insert("universal".into(), "https://open-vsx.org/u.vsix".into());
+        assert_eq!(pick_download(default, Some(&d), "linux-armhf"), "https://open-vsx.org/u.vsix");
+        assert_eq!(pick_download(default, None, "darwin-arm64"), default);
+    }
+
+    #[test]
+    fn this_platform_has_an_open_vsx_name() {
+        let t = target_platform();
+        assert!(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64", "win32-arm64", "alpine-x64", "alpine-arm64"].contains(&t.as_str()), "{t}");
+    }
+
+    /// The real thing, against Open VSX (≈110 MB): `cargo test --lib real_claude_code -- --ignored`.
+    #[test]
+    #[ignore]
+    fn real_claude_code_installs_and_its_agent_runs() {
+        let meta: serde_json::Value = tauri::async_runtime::block_on(async { serde_json::from_slice(&download("https://open-vsx.org/api/Anthropic/claude-code").await.unwrap()).unwrap() });
+        // As from a search hit: no per-platform list; the installer looks it up.
+        let downloads = tauri::async_runtime::block_on(platform_downloads("anthropic.claude-code"));
+        assert!(downloads.as_ref().is_some_and(|d| d.contains_key(&target_platform())));
+        let url = pick_download(meta["files"]["download"].as_str().unwrap(), downloads.as_ref(), &target_platform());
+        assert!(url.contains(&target_platform()), "{url}");
+        let bytes = tauri::async_runtime::block_on(download_with(&url, |_, _| {})).unwrap();
+        let root = std::env::temp_dir().join(format!("tmcode-real-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let stored = install_into(&root, "anthropic.claude-code", &bytes).unwrap();
+        eprintln!("installed {} {} from {url} ({} MB)", stored.id, stored.version, bytes.len() / 1_048_576);
+        let dir = root.join("anthropic.claude-code").join("resources");
+        let exe = ["native-binary/claude", "native-binary/claude.exe"].iter().map(|p| dir.join(p)).find(|p| p.exists()).expect("bundled claude");
+        let out = std::process::Command::new(&exe).arg("--version").output().expect("claude runs");
+        eprintln!("claude --version: {}", String::from_utf8_lossy(&out.stdout).trim());
+        assert!(out.status.success());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_programs_stay_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut buf = Vec::new();
+        {
+            let mut z = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let exe = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+            let plain = zip::write::SimpleFileOptions::default().unix_permissions(0o644);
+            z.start_file("extension/package.json", plain).unwrap();
+            z.write_all(br#"{"publisher":"a","name":"b","version":"1.0.0"}"#).unwrap();
+            z.start_file("extension/resources/native-binary/claude", exe).unwrap();
+            z.write_all(b"#!/bin/sh\necho hi\n").unwrap();
+            z.start_file("extension/readme.md", plain).unwrap();
+            z.write_all(b"hi").unwrap();
+            z.finish().unwrap();
+        }
+        let dir = std::env::temp_dir().join(format!("tmcode-unpack-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        unpack(&buf, &dir).unwrap();
+        let mode = |p: &str| fs::metadata(dir.join(p)).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode("resources/native-binary/claude") & 0o111, 0o111);
+        assert_eq!(mode("readme.md") & 0o111, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
