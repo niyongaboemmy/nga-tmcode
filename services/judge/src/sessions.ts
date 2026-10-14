@@ -103,6 +103,31 @@ export function unbufferedForSession(argv: string[]): string[] {
   return [...out, ...argv.slice(i)];
 }
 
+/**
+ * Node over a pipe stays alive after the program stops reading stdin (`rl.close()`,
+ * `process.stdin.pause()`), where in a terminal it exits — the student's program looked stuck.
+ * Live Node runs preload this: a paused stdin no longer keeps the process alive.
+ */
+export const NODE_STDIN_PRELOAD: SubmissionFile = {
+  path: ".nga/session-stdin.cjs",
+  content: [
+    "// Code runner (live runs): stdin is a pipe, not a terminal. When the program stops reading it,",
+    "// let the program end as it would in a terminal.",
+    "const s = process.stdin;",
+    's.on("pause", () => s.unref && s.unref());',
+    's.on("resume", () => s.ref && s.ref());',
+    "",
+  ].join("\n"),
+};
+
+/** `node …` → `node -r ./.nga/session-stdin.cjs …` (other programs unchanged). */
+export function withNodeStdinPreload(argv: string[]): string[] {
+  if (!argv.length || !/(^|\/)node$/.test(argv[0])) return argv;
+  return [argv[0], "-r", `./${NODE_STDIN_PRELOAD.path}`, ...argv.slice(1)];
+}
+
+const runsNode = (argv: string[]) => argv.length > 0 && /(^|\/)node$/.test(argv[0]);
+
 /** Profile requests (python-3, c17…): the batch judge's compile and run commands. */
 function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
   const lang = languageById(req.language!)!;
@@ -143,11 +168,12 @@ function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
       : null;
   // Compiled programs see a pipe, not a terminal: unbuffer them so prompts appear.
   const lineBuffered = !!lang.compile && existsSync(STDBUF);
+  const node = lang.programs.includes("node") && !lang.compile;
   return {
     acquire: {},
-    files: req.files,
+    files: node ? [...req.files, NODE_STDIN_PRELOAD] : req.files,
     build,
-    argv: () => (lineBuffered ? [STDBUF, "-o0", "-e0", ...lang.run(ctx)] : lang.run(ctx)),
+    argv: () => (lineBuffered ? [STDBUF, "-o0", "-e0", ...lang.run(ctx)] : withNodeStdinPreload(lang.run(ctx))),
     env: lang.env ?? {},
     limits,
   };
@@ -172,12 +198,13 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
   const exists = (p: string) => req.files.some((f) => f.path === p);
   const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => stepRuns(tc, kind, s, exists));
   const run = kind.steps.run!;
+  const node = run.tool === "node";
   return {
     acquire: { mounts: setup.mounts, dirs: setup.dirs, fileLocks: setup.fileLocks, image: where.image },
     sandbox: where.image ? where.sandbox : undefined,
     services: resolved.services,
     tty: req.pty ? termSize(req.cols, req.rows) : undefined,
-    files: req.files,
+    files: node ? [...req.files, NODE_STDIN_PRELOAD] : req.files,
     build: steps.length
       ? async (box: Box) => {
           for (const f of cacheFiles(kind, setup.mounts, box, req.files)) await box.write(f.path, f.content);
@@ -195,7 +222,10 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
           return null;
         }
       : null,
-    argv: () => unbufferedForSession(stepArgv(tc, kind, run, ctx)),
+    argv: () => {
+      const argv = unbufferedForSession(stepArgv(tc, kind, run, ctx));
+      return runsNode(argv) ? withNodeStdinPreload(argv) : argv;
+    },
     env: { ...setup.env, ...(run.env ?? {}) },
     limits: runLimits(kind, req.limits),
   };

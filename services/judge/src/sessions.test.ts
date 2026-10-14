@@ -3,7 +3,7 @@ import type { Server, ServerResponse } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resolvePrograms } from "./judge.ts";
 import { IsolateSandbox, LocalSandbox, type Sandbox } from "./sandbox.ts";
-import { SessionManager, unbufferedForSession, type SessionEvent, type SessionOptions } from "./sessions.ts";
+import { SessionManager, unbufferedForSession, withNodeStdinPreload, type SessionEvent, type SessionOptions } from "./sessions.ts";
 import { availability, resolveToolchains } from "./toolchains.ts";
 import { kindById } from "../../../packages/runtimes/src/index.ts";
 
@@ -279,6 +279,29 @@ describe("prompts appear before the answer (no fflush needed)", () => {
       m.stdin(id, { data: "Ada\n" });
       await l.finished;
       expect(out(l.events)).toBe("Name: Hi Ada\n");
+    }, 60_000);
+  }
+});
+
+describe("Node ends like in a terminal once it stops reading", () => {
+  it("preloads the stdin helper for node only", () => {
+    expect(withNodeStdinPreload(["/opt/node-22/bin/node", "main.js"])).toEqual(["/opt/node-22/bin/node", "-r", "./.nga/session-stdin.cjs", "main.js"]);
+    expect(withNodeStdinPreload(["/usr/bin/python3", "-u", "main.py"])).toEqual(["/usr/bin/python3", "-u", "main.py"]);
+  });
+  const RL = 'const rl = require("readline").createInterface({ input: process.stdin, output: process.stdout });\nrl.question("Name? ", (a) => { console.log("Hi " + a); rl.close(); });\n';
+  for (const req of [
+    { label: "node-22 (profile)", runIf: programs.has("node"), body: { language: "node-22", entry: "main.js", files: [{ path: "main.js", content: RL }] } },
+    { label: "js/single (catalog)", runIf: availability(tc, kindById("js/single")!).available, body: { kind: "js/single", entry: "main.js", files: [{ path: "main.js", content: RL }] } },
+  ]) {
+    it.runIf(req.runIf)(`${req.label}: rl.close() ends the program though stdin stays open`, async () => {
+      const m = manager();
+      const { id } = m.create(req.body);
+      const l = listen(m, id);
+      await l.until((es) => out(es).includes("Name? "), 30_000);
+      m.stdin(id, { data: "Ada\n" });
+      await l.finished;
+      expect(out(l.events)).toBe("Name? Hi Ada\n");
+      expect(exitOf(l.events)).toMatchObject({ code: 0, verdict: "ok" });
     }, 60_000);
   }
 });
