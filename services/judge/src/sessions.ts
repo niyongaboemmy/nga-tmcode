@@ -28,6 +28,7 @@ import { StringDecoder } from "node:string_decoder";
 import { capBytes, RequestError, STDERR_CAP, transpileTypeScript, validateFiles, VERDICT, type RunLimits, type SubmissionFile, type Verdict } from "./judge.ts";
 import { javaMainClass, languageById, type Ctx } from "./languages.ts";
 import { missingPackage, missingPackageMessage } from "./packages.ts";
+import { renderToken } from "./tokens.ts";
 import { boxSetup, buildLimits, cacheFiles, isProfileRequest, mainClassOf, placement, PROFILE_KINDS, quiet, resolveProject, runLimits, startServices, stepArgv, stepFailureText, type ProjectRequest } from "./project.ts";
 import { DEFAULT_TTY, type ContainerSandbox } from "./containers.ts";
 import { ServiceError, type ServiceHandle, type ServiceName } from "./services.ts";
@@ -84,6 +85,12 @@ interface Plan {
   sandbox?: Sandbox;
   services?: ServiceName[];
   tty?: { cols: number; rows: number };
+  /**
+   * A file fed to the program as its whole input, then end of input: kinds whose run step
+   * reads the entry on stdin (`sqlite3 < main.sql`), as batch runs do. Without it the
+   * program would sit waiting for typed input and never run the script.
+   */
+  stdinFile?: string;
 }
 
 const STDBUF = "/usr/bin/stdbuf";
@@ -228,6 +235,7 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
     },
     env: { ...setup.env, ...(run.env ?? {}) },
     limits: runLimits(kind, req.limits),
+    stdinFile: run.stdin ? renderToken(run.stdin, ctx)[0] : undefined,
   };
 }
 
@@ -363,7 +371,12 @@ export class SessionManager {
       };
       proc.onStdout(pipe("stdout"));
       proc.onStderr(pipe("stderr"));
-      for (const d of s.pending.splice(0)) (d === null ? proc.end() : proc.write(d));
+      if (plan.stdinFile) {
+        // Its input is the file; anything typed is not read (stdin is already closed).
+        proc.write((await s.box.read(plan.stdinFile))?.toString("utf8") ?? "");
+        proc.end();
+        s.pending.length = 0;
+      } else for (const d of s.pending.splice(0)) (d === null ? proc.end() : proc.write(d));
       if (s.pendingSignal) proc.kill(s.pendingSignal);
       done = await proc.done;
       let verdict = VERDICT[done.status];
