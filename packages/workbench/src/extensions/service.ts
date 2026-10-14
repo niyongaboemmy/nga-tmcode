@@ -102,7 +102,10 @@ export function installedExtension(id: string): InstalledExtension | undefined {
   return useExtensions.getState().installed.find((e) => e.id === id.toLowerCase());
 }
 
-export async function installExtension(ext: Pick<GalleryExtension, "id" | "displayName" | "downloadUrl" | "version">): Promise<boolean> {
+/** How far a long install is (AI extensions download 100 MB and more). */
+export const useInstallProgress = create<Record<string, { received: number; total: number | null; phase: "download" | "unpack" }>>(() => ({}));
+
+export async function installExtension(ext: Pick<GalleryExtension, "id" | "displayName" | "downloadUrl" | "version" | "downloads">): Promise<boolean> {
   const host = extensionHost();
   if (!host) return false;
   if (extensionsBlocked()) {
@@ -115,12 +118,17 @@ export async function installExtension(ext: Pick<GalleryExtension, "id" | "displ
   }
   setBusy(ext.id, "installing");
   try {
-    return await finishInstall(await host.install(ext.id, ext.downloadUrl));
+    return await finishInstall(await host.install(ext.id, ext.downloadUrl, ext.downloads, (p) => useInstallProgress.setState({ [ext.id]: p })));
   } catch (e) {
     notify("error", `Unable to install extension '${ext.displayName}': ${String((e as Error)?.message ?? e)}`);
     return false;
   } finally {
     setBusy(ext.id, null);
+    useInstallProgress.setState((s) => {
+      const next = { ...s };
+      delete next[ext.id];
+      return next;
+    }, true);
   }
 }
 

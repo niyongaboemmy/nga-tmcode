@@ -2,7 +2,7 @@ import { registerCommand } from "../commands/registry";
 import { useExam } from "../exam/state";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { showAuxiliaryView, useWorkbench } from "../state/store";
-import { ask } from "./ChatView";
+import { ask } from "./chat";
 import { wireInlineSuggestions } from "./inline";
 import { loadAiSettings, refreshAiStatus, setAiSuggestions, useAi } from "./service";
 

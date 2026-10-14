@@ -24,7 +24,7 @@ export interface AiStatus {
   default_mode: string;
   modes: { id: string; label: string; detail: string }[];
   models: AiModel[];
-  you: { chat: { used: number; limit: number }; complete: { used: number; limit: number } };
+  you: { chat: { used: number; limit: number }; complete: { used: number; limit: number }; agent?: { used: number; limit: number } };
   pools: Record<string, { label: string; used: number; limit: number; remaining: number }>;
   openrouter: { used: number; limit: number; remaining: number } | null;
 }
@@ -37,18 +37,31 @@ interface AiState {
   mode: string;
   /** Ghost-text suggestions while typing. */
   suggestions: boolean;
+  /** How TMCode AI works: chat only, or an agent mode (ai/chat.ts MODES). */
+  agentMode: "chat" | "manual" | "edit" | "plan" | "auto";
 }
 
 const MODE_KEY = "tmcodeAI.mode";
 const SUGGEST_KEY = "tmcodeAI.suggestions";
 
-export const useAi = create<AiState>(() => ({ status: null, error: null, loading: false, mode: "free", suggestions: false }));
+export const useAi = create<AiState>(() => ({ status: null, error: null, loading: false, mode: "free", suggestions: false, agentMode: "manual" }));
+const AGENT_KEY = "tmcodeAI.agentMode";
+
+export function setAgentMode(agentMode: AiState["agentMode"]) {
+  useAi.setState({ agentMode });
+  void getPlatform().store.set(AGENT_KEY, agentMode);
+}
 
 export async function loadAiSettings() {
   const store = getPlatform().store;
   const mode = await store.get<string>(MODE_KEY).catch(() => undefined);
   const suggestions = await store.get<boolean>(SUGGEST_KEY).catch(() => undefined);
-  useAi.setState({ mode: typeof mode === "string" && mode ? mode : "free", suggestions: suggestions === true });
+  const agent = await store.get<string>(AGENT_KEY).catch(() => undefined);
+  useAi.setState({
+    mode: typeof mode === "string" && mode ? mode : "free",
+    suggestions: suggestions === true,
+    agentMode: agent === "chat" || agent === "manual" || agent === "edit" || agent === "plan" || agent === "auto" ? agent : "manual",
+  });
 }
 
 export function setAiMode(mode: string) {
@@ -126,6 +139,18 @@ export interface ChatTurn {
   content: string;
 }
 
+/** A message of an agent's conversation (tool calls and their results included). */
+export type WireMessage =
+  | ChatTurn
+  | { role: "assistant"; content: string | null; tool_calls: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+export interface AgentRequest {
+  mode: "manual" | "edit" | "plan" | "auto";
+  step: number;
+  tools: { type: "function"; function: { name: string; description?: string; parameters?: Record<string, unknown> } }[];
+}
+
 export interface ChatContext {
   file?: string;
   language?: string;
@@ -138,14 +163,14 @@ export interface ChatContext {
 export interface StreamHandlers {
   meta(m: { provider: string; model: string }): void;
   delta(text: string): void;
-  done(d: { provider: string; model: string; you?: { used: number; limit: number } }): void;
+  done(d: { provider: string; model: string; you?: { used: number; limit: number }; steps?: { used: number; limit: number }; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }): void;
   error(e: AiRequestError): void;
 }
 
 /** Asks, then streams the answer. Returns a cancel function. */
-export async function chat(messages: ChatTurn[], context: ChatContext | undefined, on: StreamHandlers): Promise<() => void> {
+export async function chat(messages: WireMessage[], context: ChatContext | undefined, on: StreamHandlers, agent?: AgentRequest): Promise<() => void> {
   if (useExam.getState().quiz) throw new AiRequestError("EXAM_ACTIVE", "TMCode AI is off while you're taking an exam.");
-  const { id } = await call<{ id: string }>("POST", "/chat", { mode: useAi.getState().mode, messages, context });
+  const { id } = await call<{ id: string }>("POST", "/chat", { mode: useAi.getState().mode, messages, context, ...(agent ? { agent } : {}) });
   const h = host();
   let finished = false;
   let handle: { cancel(): void } | null = null;

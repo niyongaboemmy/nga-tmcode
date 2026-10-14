@@ -10399,3 +10399,435 @@ button.tm-setting-badge {
     animation: none;
   }
 }
+
+/* ───────────── TMCode AI: modes, agent steps, prompt tools (ai/ChatView.tsx) ───────────── */
+.tm-chat-q-text,
+.tm-chat-md,
+.tm-chat-code-body,
+.tm-chat-cmd-out,
+.tm-chat-diff {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.tm-chat-agent-wrap {
+  position: relative;
+}
+.tm-chat-agent-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tm-chat-agent-mode:hover {
+  background: var(--list-hover-bg);
+}
+.tm-chat-modes {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(330px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--widget-border, var(--border));
+  border-radius: 12px;
+  /* Solid in every theme (the widget colour can be unset or translucent). */
+  background: var(--editor-bg);
+  background-image: linear-gradient(var(--widget-bg, transparent), var(--widget-bg, transparent));
+  box-shadow: var(--shadow, 0 8px 28px rgb(0 0 0 / 35%));
+  animation: tm-jsc-in var(--dur-fast) var(--ease-out);
+}
+.tm-chat-modes-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  color: var(--description);
+  font-size: 12px;
+}
+.tm-chat-modes-head .tm-chat-kbd:first-of-type {
+  margin-left: auto;
+}
+.tm-chat-kbd {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--foreground);
+}
+.tm-chat-mode-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-chat-mode-item > .codicon {
+  margin-top: 2px;
+  font-size: 16px;
+  color: var(--description);
+}
+.tm-chat-mode-item:hover,
+.tm-chat-mode-item.is-on {
+  background: var(--list-hover-bg);
+}
+.tm-chat-mode-item.is-on > .codicon:first-child {
+  color: var(--ai);
+}
+.tm-chat-mode-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tm-chat-mode-text strong {
+  font-weight: 600;
+}
+.tm-chat-mode-text span {
+  color: var(--description);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.tm-chat-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tm-chat-step {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  overflow: hidden;
+}
+.tm-chat-step.is-waiting {
+  border-color: color-mix(in srgb, var(--ai) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ai) 12%, transparent);
+}
+.tm-chat-step.is-failed {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+}
+.tm-chat-step.is-rejected,
+.tm-chat-step.is-refused {
+  opacity: 0.7;
+}
+.tm-chat-step-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 9px;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-chat-step-head > .codicon:first-child {
+  color: var(--ai);
+}
+.tm-chat-step.is-failed .tm-chat-step-head > .codicon:first-child {
+  color: var(--error);
+}
+.tm-chat-step-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-chat-step-badge {
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 15%, transparent);
+}
+.tm-chat-step-badge.is-muted {
+  color: var(--description);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.tm-chat-step-chev {
+  color: var(--description);
+}
+.tm-chat-step-body {
+  border-top: 1px solid var(--border);
+}
+.tm-chat-diff,
+.tm-chat-cmd,
+.tm-chat-cmd-out {
+  margin: 0;
+  padding: 6px 0;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.tm-chat-cmd,
+.tm-chat-cmd-out {
+  padding: 6px 10px;
+}
+.tm-chat-cmd {
+  color: var(--ai);
+}
+.tm-chat-diff > div {
+  padding: 0 10px 0 4px;
+}
+.tm-chat-diff .is-add {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+.tm-chat-diff .is-del {
+  background: color-mix(in srgb, var(--error) 14%, transparent);
+}
+.tm-chat-diff .is-same {
+  color: var(--description);
+}
+.tm-chat-diff-sign {
+  display: inline-block;
+  width: 14px;
+  color: var(--description);
+  user-select: none;
+}
+.tm-chat-approve {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 9px 8px;
+}
+.tm-chat-answer > .tm-chat-approve {
+  padding: 0;
+}
+.tm-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tm-chat-btn:hover:not(:disabled) {
+  background: var(--list-hover-bg);
+}
+.tm-chat-btn.is-primary {
+  border-color: transparent;
+  background: var(--ai);
+  color: #fff;
+  font-weight: 600;
+}
+.tm-chat-btn.is-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ai) 85%, #000);
+}
+.tm-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tm-chat-checkpoint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--description);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+.tm-chat-checkpoint span {
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-chat-foot,
+.tm-chat-q-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tm-chat-q-foot {
+  justify-content: flex-end;
+}
+.tm-chat-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.tm-chat-q-foot .tm-chat-actions {
+  margin-left: 0;
+}
+.tm-chat-q:hover .tm-chat-actions,
+.tm-chat-answer:hover .tm-chat-actions,
+.tm-chat-actions:focus-within {
+  opacity: 1;
+}
+.tm-chat-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--description);
+  cursor: pointer;
+}
+.tm-chat-actions button:hover {
+  color: var(--foreground);
+  background: var(--list-hover-bg);
+}
+.tm-chat-chip.is-mode {
+  color: var(--ai);
+  border-color: color-mix(in srgb, var(--ai) 40%, var(--border));
+}
+.tm-chat-reference {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 9px;
+  border-left: 2px solid var(--ai);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ai) 8%, transparent);
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-chat-reference span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-chat-input {
+  position: relative;
+}
+.tm-chat-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--widget-border, var(--border));
+  border-radius: 10px;
+  background: var(--editor-bg);
+  background-image: linear-gradient(var(--widget-bg, transparent), var(--widget-bg, transparent));
+  box-shadow: var(--shadow, 0 8px 28px rgb(0 0 0 / 35%));
+}
+.tm-chat-suggest button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-chat-suggest button.is-on,
+.tm-chat-suggest button:hover {
+  background: var(--list-hover-bg);
+}
+.tm-aihub {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tm-chat-welcome .tm-aihub {
+  width: 100%;
+  max-width: 420px;
+  margin-top: 16px;
+}
+.tm-aihub-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-aihub-head:hover {
+  background: var(--list-hover-bg);
+}
+.tm-aihub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 6px 8px;
+}
+.tm-aihub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+.tm-aihub-text {
+  flex: 1;
+  min-width: 0;
+}
+.tm-aihub-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.tm-aihub-by,
+.tm-aihub-note {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--description);
+}
+.tm-aihub-btn {
+  flex: none;
+  padding: 4px 10px;
+}
+.tm-aihub-busy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--description);
+}

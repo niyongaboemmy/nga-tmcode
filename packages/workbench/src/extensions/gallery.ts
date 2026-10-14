@@ -23,6 +23,8 @@ export interface GalleryExtension {
   reviewCount: number;
   iconUrl?: string;
   downloadUrl?: string;
+  /** Open VSX's per-platform builds ("darwin-arm64" → .vsix); the desktop picks this computer's. */
+  downloads?: Record<string, string>;
   readmeUrl?: string;
   /** The extension's package.json on Open VSX (contributions before installing). */
   manifestUrl?: string;
@@ -69,6 +71,7 @@ export function normalizeGalleryExtension(raw: Record<string, unknown>): Gallery
     iconUrl: opt(files.icon),
     // Declarative extensions are "universal"; platform-specific builds only matter for code.
     downloadUrl: opt(files.download) ?? opt(downloads.universal),
+    downloads: Object.fromEntries(Object.entries(downloads).filter(([, v]) => typeof v === "string" && v)) as Record<string, string>,
     readmeUrl: opt(files.readme),
     manifestUrl: opt(files.manifest),
     changelogUrl: opt(files.changelog),

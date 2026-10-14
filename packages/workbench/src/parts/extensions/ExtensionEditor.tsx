@@ -1,4 +1,5 @@
 import { openExternalUrl } from "../../terminal/browser";
+import { useInstallLabel } from "./InstallProgress";
 import { useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
@@ -181,6 +182,7 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
   const id = extensionId.toLowerCase();
   const installed = useExtensions((s) => s.installed.find((e) => e.id === id));
   const busy = useExtensions((s) => s.busy[id]);
+  const busyLabel = useInstallLabel(id, busy);
   const blocked = useExtensionsBlocked();
   const d = useDetails(id);
   const [tab, setTab] = useState<"details" | "features" | "runtime">("details");
@@ -224,7 +226,7 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
             {busy ? (
               <span className="tm-ext-busy" role="status">
                 <Codicon name="loading" className="codicon-modifier-spin" />
-                {busy === "installing" ? "Installing" : "Uninstalling"}
+                {busyLabel}
               </span>
             ) : installed ? (
               <>

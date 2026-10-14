@@ -323,7 +323,11 @@ export async function createTauriPlatform(): Promise<Platform> {
     extensions: {
       fetch: (url, as) => invoke<string>("ext_fetch", { url, encoding: as }),
       list: () => invoke<StoredExtension[]>("ext_list"),
-      install: (id, downloadUrl) => invoke<StoredExtension>("ext_install", { id, url: downloadUrl }),
+      install: (id, downloadUrl, downloads, onProgress) => {
+        const channel = new Channel<{ received: number; total: number | null; phase: "download" | "unpack" }>();
+        channel.onmessage = (p) => onProgress?.(p);
+        return invoke<StoredExtension>("ext_install", { id, url: downloadUrl, downloads: downloads && Object.keys(downloads).length ? downloads : null, onProgress: channel });
+      },
       installVsix: () => invoke<StoredExtension | null>("ext_install_vsix"),
       uninstall: (id) => invoke("ext_uninstall", { id }),
       readFile: (id, path, as) => invoke<string>("ext_read_file", { id, path, encoding: as }),
