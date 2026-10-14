@@ -202,6 +202,18 @@ describe.runIf(programs.has("gcc"))("sessions (compiled)", () => {
     expect(out(l.events)).toBe("n? 42\n");
     expect(exitOf(l.events)).toMatchObject({ code: 0, verdict: "ok" });
   });
+
+  it.runIf(availability(tc, kindById("sql/sqlite")!).available)("feeds SQL its script on stdin and ends (no typed input needed)", async () => {
+    const m = manager();
+    const { id } = m.create({
+      kind: "sql/sqlite",
+      files: [{ path: "main.sql", content: "CREATE TABLE parts (name TEXT, price INTEGER);\nINSERT INTO parts VALUES ('Oil filter', 5000), ('Brake pad', 12000);\nSELECT name FROM parts ORDER BY price DESC;\n" }],
+    });
+    const l = listen(m, id);
+    await l.finished;
+    expect(out(l.events)).toMatch(/Brake pad[\s\S]*Oil filter/);
+    expect(exitOf(l.events)).toMatchObject({ code: 0, verdict: "ok" });
+  });
 });
 
 describe.runIf(hasPython && !useIsolate)("sessions over HTTP", () => {
