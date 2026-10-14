@@ -236,7 +236,22 @@ export type ProviderKind =
   | "inlayHints"
   | "codeLens"
   | "linkedEditing"
-  | "selectionRange";
+  | "selectionRange"
+  | "inlineCompletion";
+
+/** One ghost-text suggestion (languages.registerInlineCompletionItemProvider). */
+export interface InlineCompletionItemDTO {
+  insertText: string;
+  /** insertText is a snippet (SnippetString). */
+  snippet?: boolean;
+  filterText?: string;
+  range?: RangeDTO;
+  command?: CommandDTO;
+}
+
+export interface InlineCompletionListDTO {
+  items: InlineCompletionItemDTO[];
+}
 
 export interface ProviderMeta {
   triggerCharacters?: string[];

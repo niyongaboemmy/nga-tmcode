@@ -13,6 +13,8 @@ import { useExam } from "../../exam/state";
 // ── end Run and Debug ──
 // ── Run hub: JavaScript Console, run state badges ──
 import { JsConsoleView } from "./JsConsoleView";
+import { ActivityView } from "../../activity/ActivityView";
+import { useActivityLog } from "../../activity/log";
 import { clearJsConsole, rerunJsConsole, stopJsConsole, useJsConsole } from "../../run/jsConsole";
 import { RunStateBadge } from "./RunStateBadge";
 // ── end Run hub ──
@@ -83,6 +85,11 @@ export function Panel() {
   const run = useWorkbench((s) => s.run);
   const js = { status: useJsConsole((s) => s.status), file: useJsConsole((s) => s.file), last: useJsConsole((s) => s.last), startedAt: useJsConsole((s) => s.startedAt) };
   const [filter, setFilter] = useState("");
+  // AI uses today, on the Activity tab (the log names each one).
+  const aiToday = useActivityLog((s) => {
+    const today = new Date().toDateString();
+    return s.events.reduce((n, e) => n + (e.ai && new Date(e.t).toDateString() === today ? 1 : 0), 0);
+  });
   useExam((s) => s.phase);
   useWorkbench((s) => s.policy);
   const debugTab = debugAllowed();
@@ -96,6 +103,7 @@ export function Panel() {
     ...(debugTab ? [{ id: "debugConsole" as const, label: "Debug Console" }] : []),
     { id: "run", label: "Run" },
     { id: "jsConsole", label: "JavaScript Console" },
+    { id: "activity", label: "Activity", badge: aiToday || undefined },
     ...(terminalOn ? [{ id: "terminal" as const, label: "Terminal" }] : []),
     ...extPanels.map((c) => ({ id: c.key as PanelId, label: c.title })),
   ];
@@ -182,6 +190,7 @@ export function Panel() {
         {debugTab && <DebugConsole visible={panelVisible && current === "debugConsole"} filter={filter} />}
         <RunConsole visible={panelVisible && current === "run"} />
         <JsConsoleView visible={panelVisible && current === "jsConsole"} filter={filter} />
+        {current === "activity" && <ActivityView filter={filter} />}
         {terminalOn && <TerminalView visible={panelVisible && current === "terminal"} />}
         {current.startsWith("ext:") && <ExtViewPanes key={current} container={current} fill />}
       </div>

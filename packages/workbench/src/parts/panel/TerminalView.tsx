@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { terminalEnv } from "../../terminal/env";
+import type { TerminalEnvMutation } from "../../platform/types";
+import { recordTerminalCommand } from "../../activity/sources";
 import { create } from "zustand";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -96,6 +99,8 @@ export interface NewTerminalRequest {
   profile?: string;
   /** Split this terminal: the new one shows beside it. */
   splitOf?: number;
+  /** Environment changes for this terminal (an extension's createTerminal env). */
+  env?: TerminalEnvMutation[];
   // ── Run hub: a terminal the Run hub owns (dev servers), so it can follow, reveal and stop it ──
   owner?: TerminalOwner;
 }
@@ -111,6 +116,8 @@ export interface TerminalOwner {
 
 export interface OwnedTerminal {
   id: number;
+  /** The shell's name ("zsh", "bash", "PowerShell"…), for commands extensions run in it. */
+  shell: string;
   write(data: string): void;
   kill(): void;
   /** Shows this terminal in the Panel. */
@@ -217,6 +224,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
         rows: 24,
         cwd: req.cwd ?? parent?.cwd,
         profile: profile?.id,
+        env: terminalEnv(req.env),
         onData: (d) => {
           markStarted(inst.id);
           term.write(d);
@@ -241,13 +249,17 @@ export function TerminalView({ visible }: { visible: boolean }) {
         return;
       }
       inst.session = session;
-      const tracker = new CommandLineTracker((cmd) => recordCommand(cmd));
+      const tracker = new CommandLineTracker((cmd) => {
+        recordCommand(cmd);
+        recordTerminalCommand(cmd, inst.name ?? null);
+      });
       term.onData((d) => {
         tracker.feed(d);
         inst.session?.write(d);
       });
       req.owner?.onReady?.({
         id: inst.id,
+        shell: inst.shell,
         write: (d) => inst.session?.write(d),
         kill: () => inst.session?.kill(),
         reveal: () => {

@@ -26,3 +26,5 @@ export * as projectsForSelfTest from "./projects/service";
 export * as assignmentsForSelfTest from "./projects/assignments";
 // Native self-test (TMCODE_DEV_SELFTEST=exthost).
 export * as exthostForSelfTest from "./exthost/selftestApi";
+
+export { openExtensionUri } from "./exthost/hostService";

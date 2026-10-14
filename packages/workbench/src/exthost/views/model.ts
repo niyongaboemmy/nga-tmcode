@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { ResourceRefDTO, ViewMetaDTO } from "@tmcode/exthost";
 import { registerCommand } from "../../commands/registry";
-import { getPlatform, revealView, showPanel, useWorkbench, type PanelId, type ViewId } from "../../state/store";
+import { getPlatform, revealView, showPanel, useWorkbench, type PanelId, type ViewId, showAuxiliaryView } from "../../state/store";
 import { localize, normalizeExtensionPath, type MenuItemContribution } from "../../extensions/manifest";
 import type { InstalledExtension } from "../../extensions/service";
 import { contributedCommand, groupOf, type ContributedCommand } from "../contributions";
@@ -27,8 +27,10 @@ export interface ViewContainer {
   id: string;
   title: string;
   icon: IconSpec;
-  location: "activitybar" | "panel";
+  location: "activitybar" | "panel" | "secondarySidebar";
   extensionId: string;
+  /** VS Code 1.106+: a container shows only while its `when` holds (Claude Code picks its side this way). */
+  when?: string;
 }
 
 export type BuiltinContainer = "explorer" | "scm" | "debug" | "testing";
@@ -105,11 +107,11 @@ export function applyViewContributions(exts: InstalledExtension[]) {
     const m = ext.manifest;
     const c = (m.raw.contributes ?? {}) as Record<string, unknown>;
     const vc = (c.viewsContainers ?? {}) as Record<string, unknown>;
-    for (const location of ["activitybar", "panel"] as const) {
+    for (const location of ["activitybar", "panel", "secondarySidebar"] as const) {
       for (const x of list(vc[location])) {
         const id = str(x.id);
         if (!id || !/^[\w.-]+$/.test(id)) continue;
-        containers.push({ key: `ext:${id}`, id, title: localize(x.title, m.nls) || id, icon: iconSpec(x.icon, ext.id) ?? { codicon: "extensions" }, location, extensionId: ext.id });
+        containers.push({ key: `ext:${id}`, id, title: localize(x.title, m.nls) || id, icon: iconSpec(x.icon, ext.id) ?? { codicon: "extensions" }, location, extensionId: ext.id, when: str(x.when) || undefined });
       }
     }
     for (const [where, items] of Object.entries((c.views ?? {}) as Record<string, unknown>)) {
@@ -229,6 +231,7 @@ export function showContainer(key: `ext:${string}`) {
   const c = useViews.getState().containers.find((x) => x.key === key);
   if (!c) return;
   if (c.location === "panel") showPanel(key as PanelId);
+  else if (c.location === "secondarySidebar") showAuxiliaryView(key);
   else revealView(key as ViewId);
 }
 

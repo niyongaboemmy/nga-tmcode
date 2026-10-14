@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { recordActivity } from "../activity/log";
 import { executeCommand, formatKeybinding, registerCommand } from "../commands/registry";
 import { debugAllowed, debugKindForPath, isDebugging, showInstallGuide, startDebugging, stopDebugging } from "../debug/debugService";
 import { guideById } from "../debug/installGuide";
@@ -281,6 +282,7 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
   if (opts.remember) rememberFileChoice(a);
   if (!(await preflight(a, opts))) return;
   log("Run", `${a.kind}: ${a.label}${opts.reason ? ` (because ${opts.reason})` : ""}`);
+  recordActivity({ kind: "run", action: "run", text: `Ran ${a.label}`, data: { kind: a.kind, ...(opts.reason ? { reason: opts.reason } : {}) } });
   // One place to look: every run says in the Run panel what it is and why (terminal runs too).
   const note = opts.reason ? `Running ${a.label} because ${opts.reason}.` : `Running ${a.label}.`;
   // Terminal runs: the Run panel still says what started and where its output is (the one place to look first).

@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { recordActivity } from "../activity/log";
+import { expectDiskChanges } from "../activity/sources";
 import { executeCommand } from "../commands/registry";
 import { onDocumentChanged, saveAll } from "../monaco/documents";
 import { applyExternalChanges } from "../monaco/external";
@@ -399,6 +401,7 @@ export async function commit(kind: CommitKind = "commit") {
   const count = all ? fresh.staged.length + fresh.changes.length : fresh.staged.length;
   const ok = await op("Committing", (git) => git.commit({ message, amend: kind === "amend", all }).then(() => true));
   if (!ok) return;
+  recordActivity({ kind: "git", action: "commit", text: `${kind === "amend" ? "Amended the last commit" : "Committed"}: ${message.trim().split("\n")[0].slice(0, 80)}`, data: { files: count } });
   set({ message: "" });
   // N2: a commit changes nothing visible but the list emptying.
   if (kind === "amend") notify("info", "Amended the last commit", undefined, { kind: "hint" });
@@ -455,7 +458,10 @@ export async function runRemote(kind: RemoteOp): Promise<boolean> {
         n.update({ message: `Git: ${step}… ${tracker.phase} ${tracker.overall}%`.trim(), progress: tracker.overall });
       }
     });
+    expectDiskChanges();
     await task.done;
+    expectDiskChanges();
+    recordActivity({ kind: "git", action: opName === "pull" ? "pull" : opName === "push" ? "push" : opName, text: `Git: ${REMOTE_TITLE[kind].replace(/ing\b/, "ed").replace("Synchronized", "Synced")}`, data: { branch: status.branch ?? null } });
     const target = status.upstream ?? (options.remote ? `${options.remote}/${options.branch ?? status.branch}` : "the remote");
     if (kind === "publish") notify("info", `Published branch '${status.branch}' to ${options.remote}.`);
     else if (kind === "push") notify("info", `Pushed to ${target}`, undefined, { kind: "hint" });

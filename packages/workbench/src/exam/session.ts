@@ -1,4 +1,5 @@
 import { chainHmac, filesHash, journalKey, type ExamPackage, type Profile } from "@tmcode/protocol";
+import { internally } from "../activity/log";
 import { taskMentorWeb } from "../projects/taskMentorWeb";
 import { onDocumentChanged, saveAll } from "../monaco/documents";
 import { onRunStarted } from "../run/runService";
@@ -442,6 +443,10 @@ async function readFolder(folder: string) {
 
 /** Writes a copy into a task folder; `replace` first removes files the copy doesn't have. */
 async function writeFolder(folder: string, files: { path: string; content: string }[], replace: boolean) {
+  return internally(() => writeFolderNow(folder, files, replace));
+}
+
+async function writeFolderNow(folder: string, files: { path: string; content: string }[], replace: boolean) {
   const fs = getPlatform().fs;
   if (replace) {
     const keep = new Set(files.map((f) => f.path));
@@ -456,6 +461,10 @@ async function writeFolder(folder: string, files: { path: string; content: strin
 
 /** Keeps the copy that was not chosen under .recovered/ so nothing is ever silently lost. */
 async function setAside(folder: string, from: string, files: { path: string; content: string }[]) {
+  return internally(() => setAsideNow(folder, from, files));
+}
+
+async function setAsideNow(folder: string, from: string, files: { path: string; content: string }[]) {
   const fs = getPlatform().fs;
   const dest = `.recovered/${folder}-${from}-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   for (const f of files) {

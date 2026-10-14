@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isVirtualPath, readonlyVirtual } from "../../util/virtual";
 import { allCommands, dispatchKeybindingFor, executeCommand } from "../../commands/registry";
 import { ensureDocument, languageForPath, saveOnFocusChange } from "../../monaco/documents";
 import { registerCodeEditor } from "../../monaco/editors";
@@ -219,10 +220,12 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
 
   useEffect(() => {
     const ed = editorRef.current;
+    // An extension's read-only document (the original side it shows, a generated view).
+    const extReadOnly = !!path && isVirtualPath(path) && readonlyVirtual.has(path);
     ed?.updateOptions({
       ...codeEditorOptions(settings, intelligence, os),
-      readOnly,
-      readOnlyMessage: { value: readOnlyReason ?? "Time is up. Your code can no longer be changed." },
+      readOnly: readOnly || extReadOnly,
+      readOnlyMessage: { value: extReadOnly ? "This document belongs to an extension and can't be edited." : (readOnlyReason ?? "Time is up. Your code can no longer be changed.") },
     });
     setHelpLevel.current?.(intelligence);
     // Indentation set for this language or by the folder wins over what Monaco guessed from the file.
@@ -242,7 +245,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       if (explicit("editor.insertSpaces")) opts.insertSpaces = settings["editor.insertSpaces"];
       if (Object.keys(opts).length) model.updateOptions(opts);
     }
-  }, [settings, os, readOnly, readOnlyReason, intelligence, language, languageSettings, workspaceSettings]);
+  }, [settings, os, readOnly, readOnlyReason, intelligence, language, languageSettings, workspaceSettings, path, loading]);
 
 
   return (

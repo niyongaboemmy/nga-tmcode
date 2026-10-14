@@ -1,7 +1,10 @@
 import type { ContentChangeDTO, DocumentDTO, EditorDTO, RangeDTO, SelectionDTO } from "@tmcode/exthost";
+import { onActivity } from "../activity/log";
+import { tabsSnapshot } from "./tabsSync";
+import { virtualIO } from "../util/virtual";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { onDocumentSaved, pathOfUri } from "../monaco/documents";
-import { codeEditorFor, onCodeEditor } from "../monaco/editors";
+import { diffEditorFor, codeEditorFor, onCodeEditor } from "../monaco/editors";
 import { activeEditor, useWorkbench } from "../state/store";
 
 /**
@@ -16,7 +19,8 @@ type Broadcast = (method: string, params: unknown[]) => void;
 let broadcast: Broadcast = () => {};
 let wired = false;
 
-const isDoc = (m: monaco.editor.ITextModel) => m.uri.scheme === "tmcode";
+// Workspace files, and extensions' documents (content / file system providers).
+const isDoc = (m: monaco.editor.ITextModel) => m.uri.scheme === "tmcode" || virtualIO.schemes.has(m.uri.scheme);
 
 export function toRange(r: monaco.IRange): RangeDTO {
   return [r.startLineNumber - 1, r.startColumn - 1, r.endLineNumber - 1, r.endColumn - 1];
@@ -46,8 +50,9 @@ function visible(): { id: string; ed: monaco.editor.IStandaloneCodeEditor; viewC
   const out: { id: string; ed: monaco.editor.IStandaloneCodeEditor; viewColumn: number }[] = [];
   s.groups.forEach((g, i) => {
     const active = g.editors.find((e) => e.id === g.activeId);
-    if (active?.kind !== "file") return;
-    const ed = codeEditorFor(g.id);
+    if (active?.kind !== "file" && active?.kind !== "historyDiff") return;
+    // A diff tab: its right side is the visible text editor (Claude Code's proposed edits, Compare).
+    const ed = active.kind === "historyDiff" ? diffEditorFor(g.id) : codeEditorFor(g.id);
     const model = ed?.getModel();
     if (ed && model && isDoc(model) && pathOfUri(model.uri) === active.path) out.push({ id: `g${g.id}`, ed, viewColumn: i + 1 });
   });
@@ -68,7 +73,8 @@ export function editorSnapshot(): { editors: EditorDTO[]; active: string | null 
     };
   });
   const s = useWorkbench.getState();
-  const activeId = activeEditor(s)?.kind === "file" ? `g${s.activeGroup}` : null;
+  const activeKind = activeEditor(s)?.kind;
+  const activeId = activeKind === "file" || activeKind === "historyDiff" ? `g${s.activeGroup}` : null;
   return { editors, active: editors.some((e) => e.id === activeId) ? activeId : null };
 }
 
@@ -78,6 +84,22 @@ export function editorFor(path: string): monaco.editor.IStandaloneCodeEditor | n
   const s = useWorkbench.getState();
   const hit = list.find((v) => v.id === `g${s.activeGroup}` && pathOfUri(v.ed.getModel()!.uri) === path) ?? list.find((v) => pathOfUri(v.ed.getModel()!.uri) === path);
   return hit?.ed ?? null;
+}
+
+let tabsTimer: ReturnType<typeof setTimeout> | null = null;
+/** Sends the tabs now: before answering a request that changed them (tabGroups.close, vscode.diff). */
+export function flushTabs() {
+  if (tabsTimer) clearTimeout(tabsTimer);
+  tabsTimer = null;
+  broadcast("$tabsChanged", [tabsSnapshot()]);
+}
+/** Tabs opened, closed, moved, activated or dirtied: one snapshot per tick (window.tabGroups). */
+function tabsChanged() {
+  if (tabsTimer) return;
+  tabsTimer = setTimeout(() => {
+    tabsTimer = null;
+    broadcast("$tabsChanged", [tabsSnapshot()]);
+  }, 0);
 }
 
 let editorsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -134,13 +156,14 @@ export function wireDocumentSync(send: Broadcast) {
       }
     }
     if (s.activeGroup !== prev.activeGroup || s.groups !== prev.groups) editorsChanged();
+    if (s.activeGroup !== prev.activeGroup || s.groups !== prev.groups || s.dirty !== prev.dirty) tabsChanged();
   });
   const seen = new WeakSet<object>();
   onCodeEditor((ed) => {
     if (seen.has(ed)) return;
     seen.add(ed);
     const idOf = () => {
-      for (const g of useWorkbench.getState().groups) if (codeEditorFor(g.id) === ed) return `g${g.id}`;
+      for (const g of useWorkbench.getState().groups) if (codeEditorFor(g.id) === ed || diffEditorFor(g.id) === ed) return `g${g.id}`;
       return null;
     };
     let scrollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -162,6 +185,14 @@ export function wireDocumentSync(send: Broadcast) {
     });
     ed.onDidDispose(() => editorsChanged());
     editorsChanged();
+  });
+  // File operations, as workspace.onDid{Create,Delete,Rename}Files (an extension's own are reported to it too).
+  onActivity((e) => {
+    if (e.kind !== "file" || !e.path || e.action === "save" || e.action === "outside-change") return;
+    if (e.action === "create" || e.action === "create-folder" || e.action === "import") broadcast("$filesEvent", ["create", [e.path]]);
+    else if (e.action === "delete") broadcast("$filesEvent", ["delete", [e.path]]);
+    else if ((e.action === "rename" || e.action === "move") && e.to) broadcast("$filesEvent", ["rename", [[e.path, e.to]]]);
+    else if (e.action === "copy" && e.to) broadcast("$filesEvent", ["create", [e.to]]);
   });
   window.addEventListener("focus", () => broadcast("$windowFocus", [true]));
   window.addEventListener("blur", () => broadcast("$windowFocus", [false]));

@@ -9649,3 +9649,315 @@ button.tm-setting-badge {
 .tm-test-icon.is-info {
   color: var(--focus-border);
 }
+
+/* ───────────── Activity panel (activity/ActivityView.tsx) ───────────── */
+.tm-actlog {
+  --ai: #a371f7;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.tm-actlog-top {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-actlog-stats,
+.tm-actlog-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tm-actlog-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--description);
+  background: none;
+  border: 0;
+  padding: 0 8px 0 0;
+  font: inherit;
+}
+.tm-actlog-stat strong {
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+.tm-actlog-stat.is-ai {
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ai) 30%, transparent);
+}
+.tm-actlog-stat.is-ai.has-ai {
+  color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 12%, transparent);
+}
+.tm-actlog-stat.is-ai.has-ai strong {
+  color: var(--ai);
+}
+.tm-actlog-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--description);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.tm-actlog-chip .codicon {
+  font-size: 12px;
+}
+.tm-actlog-chip:hover {
+  background: var(--list-hover-bg);
+  color: var(--foreground);
+}
+.tm-actlog-chip.is-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--foreground);
+}
+.tm-actlog-chip:focus-visible,
+.tm-actlog-main:focus-visible {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+.tm-actlog-spacer {
+  flex: 1;
+}
+.tm-actlog-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 0 10px;
+}
+.tm-actlog-day-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 6px 12px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--description);
+  background: var(--editor-bg);
+}
+.tm-actlog-row {
+  border-left: 2px solid transparent;
+}
+.tm-actlog-row.is-ai {
+  border-left-color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 5%, transparent);
+}
+.tm-actlog-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 12px 3px 10px;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-actlog-main:hover {
+  background: var(--list-hover-bg);
+}
+.tm-actlog-time {
+  flex: none;
+  width: 38px;
+  color: var(--description);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tm-actlog-icon {
+  flex: none;
+  color: var(--description);
+}
+.tm-actlog-row.is-ai .tm-actlog-icon {
+  color: var(--ai);
+}
+.tm-actlog-row[data-action="delete"] .tm-actlog-icon {
+  color: var(--error);
+}
+.tm-actlog-row[data-action="paste"][data-kind="clipboard"] .tm-actlog-icon {
+  color: var(--warning);
+}
+.tm-actlog-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-actlog-count {
+  margin-left: 6px;
+  color: var(--description);
+  font-variant-numeric: tabular-nums;
+}
+.tm-actlog-ai,
+.tm-actlog-actor {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+.tm-actlog-ai {
+  color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 15%, transparent);
+}
+.tm-actlog-ai .codicon {
+  font-size: 11px;
+}
+.tm-actlog-actor {
+  color: var(--description);
+  border: 1px solid var(--border);
+}
+.tm-actlog-details {
+  padding: 2px 12px 8px 58px;
+  animation: tm-jsc-in var(--dur-fast) var(--ease-out);
+}
+.tm-actlog-details dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+.tm-actlog-details dt {
+  color: var(--description);
+  text-transform: capitalize;
+}
+.tm-actlog-details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tm-actlog-none,
+.tm-actlog-empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--description);
+}
+.tm-actlog-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tm-actlog-more {
+  margin: 8px 12px;
+}
+:root[data-theme="light"] .tm-actlog,
+.tm-root[data-theme="light"] .tm-actlog {
+  --ai: #8250df;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-actlog-details {
+    animation: none;
+  }
+}
+
+/* ───────────── Secondary side bar (parts/AuxiliaryBar.tsx) ───────────── */
+.tm-auxbar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+  border-left: 1px solid var(--border);
+}
+.tm-root[data-sidebar="right"] .tm-auxbar {
+  border-left: 0;
+  border-right: 1px solid var(--border);
+}
+.tm-auxbar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 35px;
+  padding: 0 4px 0 6px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.tm-auxbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tm-auxbar-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--description);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tm-auxbar-tab:hover {
+  color: var(--foreground);
+  background: var(--list-hover-bg);
+}
+.tm-auxbar-tab.is-active {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.tm-auxbar-tab:focus-visible {
+  outline: 1px solid var(--focus-border);
+  outline-offset: -1px;
+}
+/* Only the active tab keeps its label when space is short. */
+.tm-auxbar-tab:not(.is-active) .tm-auxbar-tab-label {
+  display: none;
+}
+.tm-auxbar-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tm-auxbar-body > * {
+  flex: 1;
+  min-height: 0;
+}
+.tm-auxbar-off,
+.tm-auxbar-loading {
+  padding: 16px;
+  color: var(--description);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

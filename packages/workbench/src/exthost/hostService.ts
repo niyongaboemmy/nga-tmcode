@@ -1,4 +1,6 @@
 import { RpcConnection, activationEventsOf, type ExtensionDescription, type InitData, type RpcMessage, type TextEditDTO } from "@tmcode/exthost";
+import { tabsSnapshot } from "./tabsSync";
+import { clearVirtualSchemes } from "./virtualDocs";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { getPlatform, log, notify, useWorkbench } from "../state/store";
 import { activeExtensions, extensionsBlocked, useExtensions, type InstalledExtension } from "../extensions/service";
@@ -13,7 +15,7 @@ import { builtinDefaults, loadExtensionSettings, onConfigurationChanged, useExtC
 import { applyCodeContributions, contributedCommand } from "./contributions";
 import { clearAllDecorations } from "./decorations";
 import { HOST_CHANNEL } from "./output";
-import { useExtHost, useExtStatusBar, type HostKind, type RuntimeInfo } from "./state";
+import { useExtAccounts, useExtHost, useExtStatusBar, type HostKind, type RuntimeInfo } from "./state";
 import { disposeViewsOf, installViewsMainThread } from "./views/mainThread";
 import { webviewEnv } from "./views/webviews";
 
@@ -176,6 +178,7 @@ function cleanup(kind: HostKind) {
   disposeProviders(kind);
   disposeViewsOf(kind);
   clearDiagnosticsOf(kind);
+  clearVirtualSchemes(kind);
   setHostLink(null, kind);
   useExtStatusBar.setState((s) => ({ items: Object.fromEntries(Object.entries(s.items).filter(([, v]) => v.host !== kind)) }));
   const c = conns.get(kind);
@@ -260,6 +263,7 @@ async function connect(conn: Conn, data: InitData, nodeInfo: string | null) {
   // Changes after this snapshot reach the host in order, after $init.
   conn.live = true;
   await init;
+  conn.rpc.notify("$tabsChanged", [tabsSnapshot()]);
   if (extensionsBlocked()) return;
   if (nodeInfo) useExtHost.setState({ nodeInfo });
   log(HOST_CHANNEL, `Started the ${conn.kind === "node" ? "Node.js" : "Web Worker"} extension host${nodeInfo ? ` (${nodeInfo})` : ""} for ${conn.extensions.map((e) => e.id).join(", ")}`);
@@ -449,4 +453,33 @@ export async function activateByEvent(event: string): Promise<void> {
 
 export function runningHosts(): HostKind[] {
   return [...conns.keys()];
+}
+
+/**
+ * tmcode://<publisher.name>/<path>?<query>: VS Code's vscode://<extension id>/… links (sign-in callbacks,
+ * "open in editor" links). The extension is activated (onUri) and its registerUriHandler gets the URI.
+ * Returns false when the link isn't for an installed extension.
+ */
+export function openExtensionUri(link: string): boolean {
+  let host: string;
+  try {
+    host = new URL(link).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (!host.includes(".") || extensionsBlocked()) return false;
+  const conn = [...conns.values()].find((c) => c.extensions.some((e) => e.id === host));
+  if (!conn) return false;
+  void conn.rpc.request<boolean>("$handleUri", [host, link]).then(
+    (ok) => !ok && notify("warning", `The extension '${host}' doesn't handle links.`),
+    (e) => log(HOST_CHANNEL, `Link for ${host} failed: ${String((e as Error)?.message ?? e)}`, "error"),
+  );
+  return true;
+}
+
+/** Accounts menu: sign out of an extension-provided account. */
+export async function signOutExtensionAccount(provider: string, account: string) {
+  const p = useExtAccounts.getState().providers[provider];
+  const conn = p ? conns.get(p.host) : undefined;
+  if (conn) await conn.rpc.request("$authSignOut", [provider, account]);
 }

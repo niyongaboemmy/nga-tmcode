@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { recordActivity } from "../activity/log";
+import { isAiExtension } from "../activity/aiExtensions";
 import { getPlatform, log, notify, openQuickInput, showDialog, useWorkbench } from "../state/store";
 import { useExam } from "../exam/state";
 import type { ExtensionHost, StoredExtension } from "../platform/types";
@@ -155,6 +157,7 @@ async function finishInstall(stored: StoredExtension): Promise<boolean> {
     }
     setInstalled([...useExtensions.getState().installed.filter((e) => e.id !== item.id), item]);
     log("Extensions", `Installed ${item.id} v${item.version}${item.manifest.hasCode ? (item.enabled ? " (it runs code)" : " (disabled: its code was not trusted)") : ""}`);
+    recordActivity({ kind: "extension", action: "install", text: `Installed the extension ${item.manifest.displayName || item.id}${isAiExtension(item.id, item.manifest) ? " (an AI tool)" : ""}`, data: { id: item.id, version: item.version, ai: isAiExtension(item.id, item.manifest) } });
     announce(item);
     return true;
   }
@@ -204,6 +207,7 @@ export async function uninstallExtension(id: string) {
     await host.uninstall(id);
     setInstalled(useExtensions.getState().installed.filter((e) => e.id !== id));
     log("Extensions", `Uninstalled ${id}`);
+    recordActivity({ kind: "extension", action: "uninstall", text: `Uninstalled the extension ${id}`, data: { id } });
   } catch (e) {
     notify("error", `Unable to uninstall '${id}': ${String((e as Error)?.message ?? e)}`);
   } finally {

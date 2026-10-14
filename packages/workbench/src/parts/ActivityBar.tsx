@@ -1,4 +1,5 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
+import { whenFor } from "../exthost/views/model";
 import { msg } from "../messages/catalog";
 import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
 import { Codicon } from "../widgets/icons";
@@ -90,7 +91,8 @@ export function ActivityBar() {
   const simple = simplePref && practice && !inExam && hasAccount && !!account?.signed_in && !isTeacher && !checking;
   const ordered = simple ? [...allViews.filter((v) => SIMPLE_IDS.includes(v.id)).sort((a, b) => SIMPLE_IDS.indexOf(a.id) - SIMPLE_IDS.indexOf(b.id)), ...allViews.filter((v) => !SIMPLE_IDS.includes(v.id))] : allViews;
   // Extensions never run in exams, so their containers only exist in practice mode.
-  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam);
+  useViews((s) => s.version);
+  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam && whenFor(c.when));
 
   // Every view shows while the bar has room (U10 revisited: a handful of icons is never hidden).
   // Only when the window is too short does the rest go under "More" — each entry once, and

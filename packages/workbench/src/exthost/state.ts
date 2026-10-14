@@ -37,3 +37,6 @@ export function setContextKey(key: string, value: unknown) {
   else extContextKeys.set(key, value);
   useContextVersion.setState((s) => ({ v: s.v + 1 }));
 }
+
+/** Sign-ins extensions provide (authentication.registerAuthenticationProvider): provider → accounts. */
+export const useExtAccounts = create<{ providers: Record<string, { label: string; accounts: string[]; host: HostKind }> }>()(() => ({ providers: {} }));

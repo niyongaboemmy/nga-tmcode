@@ -470,6 +470,8 @@ export const enums = {
   PortAutoForwardAction: { Notify: 1, OpenBrowser: 2, OpenPreview: 3, Silent: 4, Ignore: 5 },
   NotebookCellExecutionState: { Idle: 1, Pending: 2, Executing: 3 },
   ExtensionRuntime: { Node: 1, Webworker: 2 },
+  FileChangeType: { Changed: 1, Created: 2, Deleted: 3 },
+  InlineCompletionEndOfLifeReasonKind: { Accepted: 0, Rejected: 1, Ignored: 2 },
 } as const;
 
 /** Unused in TMCode but referenced by type in libraries: keep TS happy about imports. */

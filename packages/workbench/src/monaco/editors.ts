@@ -23,6 +23,20 @@ export function codeEditorFor(group: number) {
   return editors.get(group) ?? null;
 }
 
+const diffModified = new Map<number, monaco.editor.IStandaloneCodeEditor>();
+/** A diff tab's editable (right) side: extensions see it as a visible text editor, as in VS Code. */
+export function registerDiffEditor(group: number, modified: monaco.editor.IStandaloneCodeEditor) {
+  diffModified.set(group, modified);
+  registered.forEach((l) => l(modified));
+  return () => {
+    if (diffModified.get(group) === modified) diffModified.delete(group);
+  };
+}
+
+export function diffEditorFor(group: number) {
+  return diffModified.get(group) ?? null;
+}
+
 /** Runs a built-in Monaco action (e.g. "editor.action.formatDocument") on a group's editor. */
 export function runEditorAction(group: number, actionId: string) {
   const ed = editors.get(group);
