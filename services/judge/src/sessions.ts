@@ -88,6 +88,46 @@ interface Plan {
 
 const STDBUF = "/usr/bin/stdbuf";
 
+/**
+ * An interactive run shows a prompt the moment the program prints it, as a terminal does:
+ * `printf("Name: "); scanf(…)` (C, Swift…) left the prompt in a line buffer until after the
+ * answer, because the program sees a pipe. So sessions run native programs with stdout and
+ * stderr unbuffered (stdbuf -o0 -e0); batch runs keep -oL (fewer writes on big outputs).
+ * Only stdbuf's own options change, never the program's arguments.
+ */
+export function unbufferedForSession(argv: string[]): string[] {
+  if (!argv.length || !/(^|\/)stdbuf$/.test(argv[0])) return argv;
+  const out = [argv[0]];
+  let i = 1;
+  for (; i < argv.length && argv[i].startsWith("-"); i++) out.push(argv[i] === "-oL" ? "-o0" : argv[i] === "-eL" ? "-e0" : argv[i]);
+  return [...out, ...argv.slice(i)];
+}
+
+/**
+ * Node over a pipe stays alive after the program stops reading stdin (`rl.close()`,
+ * `process.stdin.pause()`), where in a terminal it exits — the student's program looked stuck.
+ * Live Node runs preload this: a paused stdin no longer keeps the process alive.
+ */
+export const NODE_STDIN_PRELOAD: SubmissionFile = {
+  path: ".nga/session-stdin.cjs",
+  content: [
+    "// Code runner (live runs): stdin is a pipe, not a terminal. When the program stops reading it,",
+    "// let the program end as it would in a terminal.",
+    "const s = process.stdin;",
+    's.on("pause", () => s.unref && s.unref());',
+    's.on("resume", () => s.ref && s.ref());',
+    "",
+  ].join("\n"),
+};
+
+/** `node …` → `node -r ./.nga/session-stdin.cjs …` (other programs unchanged). */
+export function withNodeStdinPreload(argv: string[]): string[] {
+  if (!argv.length || !/(^|\/)node$/.test(argv[0])) return argv;
+  return [argv[0], "-r", `./${NODE_STDIN_PRELOAD.path}`, ...argv.slice(1)];
+}
+
+const runsNode = (argv: string[]) => argv.length > 0 && /(^|\/)node$/.test(argv[0]);
+
 /** Profile requests (python-3, c17…): the batch judge's compile and run commands. */
 function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
   const lang = languageById(req.language!)!;
@@ -126,13 +166,14 @@ function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
           return null;
         }
       : null;
-  // Compiled programs see a pipe, not a terminal: line-buffer them so prompts appear.
+  // Compiled programs see a pipe, not a terminal: unbuffer them so prompts appear.
   const lineBuffered = !!lang.compile && existsSync(STDBUF);
+  const node = lang.programs.includes("node") && !lang.compile;
   return {
     acquire: {},
-    files: req.files,
+    files: node ? [...req.files, NODE_STDIN_PRELOAD] : req.files,
     build,
-    argv: () => (lineBuffered ? [STDBUF, "-oL", "-eL", ...lang.run(ctx)] : lang.run(ctx)),
+    argv: () => (lineBuffered ? [STDBUF, "-o0", "-e0", ...lang.run(ctx)] : withNodeStdinPreload(lang.run(ctx))),
     env: lang.env ?? {},
     limits,
   };
@@ -157,12 +198,13 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
   const exists = (p: string) => req.files.some((f) => f.path === p);
   const steps = (["restore", "build"] as const).map((n) => [n, kind.steps[n]] as const).filter(([, s]) => stepRuns(tc, kind, s, exists));
   const run = kind.steps.run!;
+  const node = run.tool === "node";
   return {
     acquire: { mounts: setup.mounts, dirs: setup.dirs, fileLocks: setup.fileLocks, image: where.image },
     sandbox: where.image ? where.sandbox : undefined,
     services: resolved.services,
     tty: req.pty ? termSize(req.cols, req.rows) : undefined,
-    files: req.files,
+    files: node ? [...req.files, NODE_STDIN_PRELOAD] : req.files,
     build: steps.length
       ? async (box: Box) => {
           for (const f of cacheFiles(kind, setup.mounts, box, req.files)) await box.write(f.path, f.content);
@@ -180,7 +222,10 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
           return null;
         }
       : null,
-    argv: () => stepArgv(tc, kind, run, ctx),
+    argv: () => {
+      const argv = unbufferedForSession(stepArgv(tc, kind, run, ctx));
+      return runsNode(argv) ? withNodeStdinPreload(argv) : argv;
+    },
     env: { ...setup.env, ...(run.env ?? {}) },
     limits: runLimits(kind, req.limits),
   };
