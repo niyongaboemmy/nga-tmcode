@@ -15,6 +15,7 @@ import {
   openAssignmentLink,
   parseGradingLink,
   openGradingLink,
+  openExtensionUri,
   selfCheckWorkers,
   startExam,
   checkExamInProgress,
@@ -143,7 +144,9 @@ async function boot() {
       const grading = urls?.map(parseGradingLink).find(Boolean);
       if (grading) return void openGradingLink(grading);
       const link = urls?.map(parseLaunchLink).find(Boolean);
-      if (link) void startExam(link.api, link.ticket);
+      if (link) return void startExam(link.api, link.ticket);
+      // tmcode://<publisher.name>/… : an extension's link (sign-in callbacks), as VS Code's vscode://.
+      urls?.some((u) => openExtensionUri(u));
     };
     open(await getCurrent().catch(() => null));
     void onOpenUrl(open);

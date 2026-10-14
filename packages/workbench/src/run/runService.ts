@@ -1,4 +1,5 @@
 import { profileById, profileForPath } from "@tmcode/profiles";
+import { recordActivity } from "../activity/log";
 import type { Profile } from "@tmcode/protocol";
 import { executeCommand } from "../commands/registry";
 import { ensureDocument, saveAll } from "../monaco/documents";
@@ -230,6 +231,7 @@ export async function runFile(path: string, opts: RunOptions = {}) {
     emit({ type: "info", text: "Running in the browser: the program gets no keyboard input. Use the Testing view to run it with input, or the TMCode desktop app for interactive programs." });
   }
   log("Run", `Run ${target.entry} (${target.profile.id})`);
+  recordActivity({ kind: "run", action: "run", path: target.entry, text: `Ran ${target.entry}`, data: { profile: target.profile.id } });
 
   let buildOut = "";
   let runTail = "";

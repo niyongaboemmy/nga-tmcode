@@ -19,6 +19,7 @@ import { basename, extname, isWithin, rebase } from "../util/paths";
 import { setIconLanguageResolver } from "../themes/iconThemes";
 import { recordSave, snapshotBeforeDelete, undoDeleteFor } from "../history/localHistory";
 import { isUntitled, untitledName, UNTITLED_SCHEME } from "../util/untitled";
+import { isVirtualPath, readonlyVirtual, virtualIO, virtualName } from "../util/virtual";
 
 /**
  * One Monaco text model per open file. The workbench store only knows paths
@@ -47,10 +48,12 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 const SCHEME = "tmcode";
 export function uriFor(path: string) {
   if (isUntitled(path)) return monaco.Uri.from({ scheme: UNTITLED_SCHEME, path: untitledName(path) });
+  if (isVirtualPath(path)) return monaco.Uri.parse(path);
   return monaco.Uri.from({ scheme: SCHEME, path: `/${path}` });
 }
 export function pathOfUri(uri: monaco.Uri) {
   if (uri.scheme === UNTITLED_SCHEME) return `${UNTITLED_SCHEME}:${uri.path.replace(/^\//, "")}`;
+  if (uri.scheme !== SCHEME && virtualIO.schemes.has(uri.scheme)) return uri.toString();
   return uri.path.replace(/^\//, "");
 }
 
@@ -106,7 +109,16 @@ export function ensureDocument(path: string, opts: { background?: boolean } = {}
   const inflight = pending.get(path);
   if (inflight) return inflight;
   const gen = generation;
-  const p = (isUntitled(path) ? Promise.resolve("") : getPlatform().fs.readFile(path))
+  const read = isUntitled(path)
+    ? Promise.resolve("")
+    : isVirtualPath(path)
+      ? virtualIO.read(path).then((r) => {
+          if (r.readonly) readonlyVirtual.add(path);
+          else readonlyVirtual.delete(path);
+          return r.text;
+        })
+      : getPlatform().fs.readFile(path);
+  const p = read
     .then((content): monaco.editor.ITextModel | Promise<monaco.editor.ITextModel> => {
       // Read from the folder that was open before: read it again from the new one.
       if (gen !== generation) return ensureDocument(path, opts);
@@ -154,7 +166,7 @@ function createTrackedModel(path: string, content: string) {
   creatingModel = true;
   let model: monaco.editor.ITextModel;
   try {
-    model = monaco.editor.createModel(content, languageForPath(path), uriFor(path));
+    model = monaco.editor.createModel(content, languageForPath(isVirtualPath(path) ? virtualName(path) : path), uriFor(path));
   } finally {
     creatingModel = false;
   }
@@ -229,6 +241,7 @@ export async function saveDocument(path: string, reason: SaveReason = "explicit"
   if (isUntitled(path)) return untitledSave.run(path);
   const doc = docs.get(path);
   if (!doc) return;
+  if (isVirtualPath(path)) return saveVirtual(path, doc, reason);
   for (const participant of willSaveParticipants) {
     try {
       await participant(path, doc.model, reason);
@@ -257,9 +270,48 @@ export async function saveDocument(path: string, reason: SaveReason = "explicit"
   }
 }
 
+/** An extension's document: its file system provider writes it (Claude Code treats that save as "accept"). */
+async function saveVirtual(path: string, doc: Doc, reason: SaveReason) {
+  if (readonlyVirtual.has(path)) return;
+  for (const participant of willSaveParticipants) {
+    try {
+      await participant(path, doc.model, reason);
+    } catch {
+      /* a participant never blocks saving */
+    }
+  }
+  const value = doc.model.getValue();
+  const version = doc.model.getAlternativeVersionId();
+  try {
+    if (!(await virtualIO.write(path, value))) throw new Error("the extension that owns it can't save it");
+    doc.diskText = value;
+    doc.savedVersion = version;
+    changeListeners.forEach((l) => l(path));
+    setDirty(path, doc.model.getAlternativeVersionId() !== doc.savedVersion);
+    saveListeners.forEach((l) => l(path));
+  } catch (e) {
+    notify("error", `Failed to save '${path}': ${String((e as Error)?.message ?? e)}`);
+    throw e;
+  }
+}
+
+/** An extension changed one of its documents: show the new text unless the user edited it. */
+export async function reloadVirtual(path: string) {
+  const doc = docs.get(path);
+  if (!doc || doc.model.isDisposed()) return;
+  if (doc.model.getAlternativeVersionId() !== doc.savedVersion) return;
+  const r = await virtualIO.read(path).catch(() => null);
+  if (!r || doc.model.getValue() === r.text) return;
+  doc.model.pushEditOperations([], [{ range: doc.model.getFullModelRange(), text: r.text }], () => null);
+  doc.diskText = r.text;
+  doc.savedVersion = doc.model.getAlternativeVersionId();
+  setDirty(path, false);
+}
+
 export async function saveAll(reason: SaveReason = "explicit") {
-  // Untitled buffers wait for an explicit Save (auto save would keep asking for a path).
-  const dirty = Object.keys(useWorkbench.getState().dirty).filter((p) => !isUntitled(p));
+  // Untitled buffers wait for an explicit Save (auto save would keep asking for a path); an
+  // extension's documents (proposed edits) are never saved automatically: saving accepts them.
+  const dirty = Object.keys(useWorkbench.getState().dirty).filter((p) => !isUntitled(p) && !(reason === "auto" && isVirtualPath(p)));
   for (const p of dirty) await saveDocument(p, reason).catch(() => {});
 }
 

@@ -2,11 +2,28 @@ import { registerCommand } from "../commands/registry";
 import { extensionHost, extensionsBlocked, useExtensions } from "../extensions/service";
 import { openEditorInput } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
-import { restartExtensionHosts } from "./hostService";
-import { useExtHost } from "./state";
+import { restartExtensionHosts, signOutExtensionAccount } from "./hostService";
+import { useExtAccounts, useExtHost } from "./state";
 
-/** VS Code's "Developer: Restart Extension Host" and "Developer: Show Running Extensions". */
+/** VS Code's "Developer: Restart Extension Host", "Developer: Show Running Extensions" and "Accounts: Manage Accounts". */
 export function registerExtHostCommands() {
+  registerCommand({
+    id: "workbench.action.manageAccounts",
+    title: "Manage Extension Accounts",
+    category: "Accounts",
+    run: async () => {
+      const providers = useExtAccounts.getState().providers;
+      const items = Object.entries(providers).flatMap(([id, p]) =>
+        p.accounts.length
+          ? p.accounts.map((a) => ({ id: `${id}\u0000${a}`, label: a, description: p.label, detail: "Sign Out", icon: "account" }))
+          : [{ id: `${id}\u0000`, label: `${p.label}: not signed in`, description: id, icon: "circle-slash" }],
+      );
+      const picked = await showQuickPick({ title: "Accounts of your extensions", placeholder: items.length ? "Select an account to sign out" : "No extension provides an account", items });
+      if (!picked) return;
+      const [provider, account] = picked.id.split("\u0000");
+      if (account) await signOutExtensionAccount(provider, account);
+    },
+  });
   const available = () => !!extensionHost() && !extensionsBlocked();
   registerCommand({
     id: "workbench.action.restartExtensionHost",

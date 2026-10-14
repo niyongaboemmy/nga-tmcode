@@ -1,4 +1,5 @@
 import type { IDisposable, Terminal } from "@xterm/xterm";
+import { recordCopy, recordPaste } from "../activity/sources";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -68,6 +69,7 @@ async function copySelection(term: Terminal) {
   const text = term.getSelection();
   if (!text) return;
   rememberCopy(text);
+  recordCopy("copy", text, { where: "the terminal" });
   const clip = getPlatform().clipboard;
   try {
     if (clip) await clip.writeText(text);
@@ -84,7 +86,10 @@ async function pasteInto(term: Terminal) {
     // Exams that only allow pasting what was copied inside the exam keep outside text out of the shell too.
     const why = pasteRefusal(text);
     if (why) return refusePaste(why);
-    if (text) term.paste(text);
+    if (text) {
+      recordPaste(text, { where: "the terminal" });
+      term.paste(text);
+    }
   } catch {
     notify("warning", "Could not read the clipboard.");
   }

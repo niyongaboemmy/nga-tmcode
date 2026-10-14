@@ -1,5 +1,7 @@
-import { codeEditorFor } from "../monaco/editors";
-import { getPlatform, useWorkbench } from "../state/store";
+import { codeEditorFor, diffEditorFor } from "../monaco/editors";
+import { monaco } from "../monaco/setup";
+import { virtualIO } from "../util/virtual";
+import { activeEditor, getPlatform, useWorkbench } from "../state/store";
 import { basename, extname } from "../util/paths";
 import { extContextKeys } from "./state";
 import { configValue } from "./config";
@@ -11,9 +13,11 @@ import { evaluateWhen } from "./when";
  */
 export function contextKey(key: string): unknown {
   const s = useWorkbench.getState();
-  const ed = codeEditorFor(s.activeGroup);
+  // A diff tab's editor is its right side (an extension's proposed edit, a Compare).
+  const ed = activeEditor(s)?.kind === "historyDiff" ? diffEditorFor(s.activeGroup) : codeEditorFor(s.activeGroup);
   const model = ed?.getModel();
-  const path = model?.uri.scheme === "tmcode" ? model.uri.path.replace(/^\//, "") : null;
+  const virtual = !!model && virtualIO.schemes.has(model.uri.scheme);
+  const path = model?.uri.scheme === "tmcode" ? model.uri.path.replace(/^\//, "") : virtual ? model!.uri.path : null;
   switch (key) {
     case "editorLangId":
     case "resourceLangId":
@@ -26,7 +30,13 @@ export function contextKey(key: string): unknown {
     case "resource":
       return path ?? undefined;
     case "resourceScheme":
-      return path ? "file" : undefined;
+      return virtual ? model!.uri.scheme : path ? "file" : undefined;
+    case "isInDiffEditor":
+      return activeEditor(s)?.kind === "historyDiff";
+    case "auxiliaryBarVisible":
+      return s.auxiliaryVisible;
+    case "activeAuxiliary":
+      return s.auxiliaryVisible ? s.auxiliaryView : undefined;
     case "resourceDirname":
       return path ? path.split("/").slice(0, -1).join("/") : undefined;
     case "editorIsOpen":
@@ -42,7 +52,7 @@ export function contextKey(key: string): unknown {
     case "editorHasMultipleSelections":
       return (ed?.getSelections()?.length ?? 0) > 1;
     case "editorReadonly":
-      return s.readOnly;
+      return s.readOnly || (!!ed && !!ed.getOption(monaco.editor.EditorOption.readOnly));
     case "isMac":
       return getPlatform().os === "mac";
     case "isWindows":

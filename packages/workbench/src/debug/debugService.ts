@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { recordActivity } from "../activity/log";
 import { profileForPath } from "@tmcode/profiles";
 import { inExam, useExam } from "../exam/state";
 import { getDocument, onDocumentChanged, saveAll } from "../monaco/documents";
@@ -782,6 +783,7 @@ async function startSelfHosted(kind: "go" | "dart" | "flutter" | "ruby", config:
   clearDebugConsole();
   revealView("debug");
   log("Debug", `Start "${config.name}" (${kind}) for ${program}`);
+  recordActivity({ kind: "run", action: "debug", text: `Started debugging ${program}`, data: { config: config.name, kind } });
   try {
     if (!opts.noConsent) {
       if (!(await ensureAdapter(kind))) return fail();
@@ -897,6 +899,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
   clearDebugConsole();
   revealView("debug");
   log("Debug", `Start "${config.name}" (${kind}) for ${entry}`);
+  recordActivity({ kind: "run", action: "debug", path: entry, text: `Started debugging ${entry}`, data: { config: config.name, kind } });
   try {
     if (!opts.noConsent) {
       if (!(await ensureAdapter(kind))) return fail();

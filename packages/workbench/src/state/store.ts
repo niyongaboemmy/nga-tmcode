@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { isRecordingFs, wrapFileSystem } from "../activity/fsRecorder";
 import { PRACTICE_POLICY, type Policy } from "@tmcode/protocol";
 import type { DirEntry, Platform } from "../platform/types";
 import { basename, dirname, isWithin, join, rebase } from "../util/paths";
@@ -11,7 +12,7 @@ import { resolveSettings, workspaceOverlay, type LanguageOverrides, type Workspa
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
 export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | "grading" | `ext:${string}`;
-export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole" | `ext:${string}`;
+export type PanelId = "problems" | "output" | "run" | "terminal" | "debugConsole" | "jsConsole" | "activity" | `ext:${string}`;
 
 /** Any editor; `sticky` = a pinned tab (kept at the left, never replaced by a preview). */
 export type EditorInput = EditorInputBase & { sticky?: boolean };
@@ -36,7 +37,7 @@ type EditorInputBase =
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
-  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict" | "saved" | "file"; label?: string }
+  | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict" | "saved" | "file" | "extension"; label?: string }
   /** A language's user snippets file (snippets/SnippetsEditor). */
   | { kind: "snippets"; id: string; language: string; preview: false }
   /** A Task Mentor assignment / case study: brief, state, Start / Submit (projects/AssignmentEditor). */
@@ -181,6 +182,10 @@ export interface WorkbenchState {
 
   sidebarVisible: boolean;
   activeView: ViewId;
+  /** The secondary side bar (VS Code's auxiliary bar), on the other side: TMCode AI chat and extensions' secondarySidebar views. */
+  auxiliaryVisible: boolean;
+  /** "chat" (TMCode AI) or an extension view container ("ext:<id>"). */
+  auxiliaryView: string;
   panelVisible: boolean;
   panelMaximized: boolean;
   activePanel: PanelId;
@@ -249,6 +254,8 @@ const initialState: WorkbenchState = {
   dirty: {},
   sidebarVisible: true,
   activeView: "explorer",
+  auxiliaryVisible: false,
+  auxiliaryView: "chat",
   panelVisible: false,
   panelMaximized: false,
   activePanel: "terminal",
@@ -282,7 +289,7 @@ interface PersistedUi {
   languageSettings?: LanguageOverrides;
   otherSettings?: Record<string, unknown>;
   recent?: { name: string; root: string }[];
-  layout?: { sidebarVisible: boolean; panelVisible: boolean; activePanel: PanelId; activeView?: ViewId };
+  layout?: { sidebarVisible: boolean; panelVisible: boolean; activePanel: PanelId; activeView?: ViewId; auxiliaryVisible?: boolean; auxiliaryView?: string };
   /** One-time settings migrations already applied (state/settings.ts SETTINGS_MIGRATIONS). */
   migrations?: string[];
 }
@@ -299,7 +306,7 @@ function persist() {
     ...(Object.keys(s.languageSettings).length ? { languageSettings: s.languageSettings } : {}),
     ...(Object.keys(s.otherSettings).length ? { otherSettings: s.otherSettings } : {}),
     recent: s.recent,
-    layout: { sidebarVisible: s.sidebarVisible, panelVisible: s.panelVisible, activePanel: s.activePanel, ...(RESTORABLE_VIEWS.has(s.activeView) ? { activeView: s.activeView } : {}) },
+    layout: { sidebarVisible: s.sidebarVisible, panelVisible: s.panelVisible, activePanel: s.activePanel, auxiliaryVisible: s.auxiliaryVisible, auxiliaryView: s.auxiliaryView, ...(RESTORABLE_VIEWS.has(s.activeView) ? { activeView: s.activeView } : {}) },
     migrations: appliedMigrations,
   };
   void platform?.store.set("ui", ui);
@@ -315,6 +322,12 @@ let firstRun = false;
 export const isFirstRun = () => firstRun;
 
 export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean } = {}) {
+  // Every file change goes through here, so the activity log sees them all (activity/fsRecorder.ts).
+  if (!isRecordingFs(p.fs))
+    p.fs = wrapFileSystem(p.fs, (path) => {
+      const list = get().dirs[dirname(path)];
+      return list ? list.some((e) => e.path === path) : undefined;
+    });
   platform = p;
   const saved = await p.store.get<PersistedUi>("ui");
   firstRun = !saved;
@@ -331,6 +344,8 @@ export async function initWorkbench(p: Platform, opts: { autoOpenLast?: boolean 
     recent: (ui.recent ?? []).filter((r) => !isExamRoot(r.root)),
     sidebarVisible: ui.layout?.sidebarVisible ?? true,
     panelVisible: ui.layout?.panelVisible ?? false,
+    auxiliaryVisible: ui.layout?.auxiliaryVisible ?? false,
+    auxiliaryView: typeof ui.layout?.auxiliaryView === "string" ? ui.layout.auxiliaryView : "chat",
     activePanel: ui.layout?.activePanel ?? "terminal",
     // W1: the side bar comes back where it was (VS Code restores the last view).
     activeView: ui.layout?.activeView && RESTORABLE_VIEWS.has(ui.layout.activeView) ? ui.layout.activeView : "explorer",
@@ -1256,6 +1271,17 @@ export function setDirty(path: string, dirty: boolean) {
 }
 
 // ───────────────────────────── layout ─────────────────────────────
+
+/** The secondary side bar (View: Toggle Secondary Side Bar, ⌥⌘B), showing `view` when given. */
+export function toggleAuxiliaryBar(force?: boolean, view?: string) {
+  set({ auxiliaryVisible: force ?? !get().auxiliaryVisible, ...(view ? { auxiliaryView: view } : {}) });
+  persist();
+}
+
+export function showAuxiliaryView(view: string) {
+  set({ auxiliaryVisible: true, auxiliaryView: view });
+  persist();
+}
 
 export function toggleSidebar(force?: boolean) {
   set({ sidebarVisible: force ?? !get().sidebarVisible });

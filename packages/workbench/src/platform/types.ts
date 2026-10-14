@@ -73,6 +73,13 @@ export interface TerminalProfile {
   is_default: boolean;
 }
 
+/** VS Code's EnvironmentVariableMutator: "replace", "append" or "prepend" `value` to `name`. */
+export interface TerminalEnvMutation {
+  name: string;
+  value: string;
+  kind: "replace" | "append" | "prepend";
+}
+
 export interface TerminalSpawnOptions {
   cols: number;
   rows: number;
@@ -80,6 +87,8 @@ export interface TerminalSpawnOptions {
   cwd?: string;
   /** A profile id from `profiles()`; absent = the system's shell. */
   profile?: string;
+  /** Environment changes (extensions' environmentVariableCollection, a terminal's own env). */
+  env?: TerminalEnvMutation[];
   onData(data: string): void;
   onExit(code: number | null): void;
 }

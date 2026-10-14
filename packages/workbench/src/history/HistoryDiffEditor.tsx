@@ -4,6 +4,10 @@ import { ensureDocument, languageForPath, lastDiskText, onDocumentSaved } from "
 import { monaco, setupMonaco } from "../monaco/setup";
 import { closeEditors, getPlatform, useWorkbench, type EditorInput } from "../state/store";
 import { readHistory } from "./localHistory";
+import { registerDiffEditor } from "../monaco/editors";
+import { isVirtualPath, virtualName } from "../util/virtual";
+
+const sideName = (p: string) => (isVirtualPath(p) ? virtualName(p) : p);
 
 type Input = Extract<EditorInput, { kind: "historyDiff" }>;
 
@@ -30,7 +34,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
       useInlineViewWhenSpaceIsLimited: true,
       renderSideBySideInlineBreakpoint: 700,
       ignoreTrimWhitespace: false,
-      ariaLabel: input.source === "saved" ? `${input.path} (saved) ↔ unsaved changes` : input.source === "file" ? `${input.entry} ↔ ${input.path}` : input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : grading ? `${input.path}: ${input.label ?? "version"} ↔ submitted` : `${input.path} (Local History) ↔ current`,
+      ariaLabel: input.source === "extension" ? (input.label ?? `${input.entry} ↔ ${input.path}`) : input.source === "saved" ? `${input.path} (saved) ↔ unsaved changes` : input.source === "file" ? `${input.entry} ↔ ${input.path}` : input.source === "taskMentor" ? `${input.path}: Task Mentor's copy ↔ yours` : grading ? `${input.path}: ${input.label ?? "version"} ↔ submitted` : `${input.path} (Local History) ↔ current`,
     });
     void (async () => {
       try {
@@ -53,7 +57,7 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
           if (!disposed) diff.setModel({ original, modified });
           return;
         }
-        if (input.source === "file") {
+        if (input.source === "file" || input.source === "extension") {
           // Compare Active File With…: both files as they are in their editors (left read-only).
           const left = await ensureDocument(input.entry);
           const modified = await ensureDocument(input.path);
@@ -88,8 +92,12 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
         if (!disposed) setError(`This version is not available any more (${String((e as Error)?.message ?? e)}).`);
       }
     })();
+    // The right side is a visible text editor for extensions (they edit it, read its selection).
+    const group = useWorkbench.getState().groups.find((g) => g.editors.some((e) => e.id === input.id));
+    const unregister = group ? registerDiffEditor(group.id, diff.getModifiedEditor()) : null;
     return () => {
       disposed = true;
+      unregister?.();
       unsub?.();
       diff.setModel(null);
       diff.dispose();
@@ -127,6 +135,24 @@ export function HistoryDiffEditor({ input }: { input: Input }) {
           <span className="tm-compare-side">{input.label ?? input.entry}</span>
           <span className="codicon codicon-arrow-both" aria-hidden />
           <span className="tm-compare-side">{input.source === "git" ? "Now" : "Incoming"}</span>
+        </div>
+      )}
+      {input.source === "extension" && (
+        <div className="tm-compare-bar" data-testid="extension-diff">
+          <span className="tm-compare-side">{sideName(input.entry)}</span>
+          <span className="codicon codicon-arrow-both" aria-hidden />
+          <span className="tm-compare-side">{sideName(input.path)}</span>
+          {input.label && <span className="tm-compare-title">{input.label}</span>}
+          {input.path.startsWith("tmcode-ai:") && (
+            <span className="tm-compare-actions">
+              <button type="button" className="tm-button tm-button--small" onClick={() => void import("../ai/apply").then((m) => m.acceptProposal(input.path))} data-testid="ai-accept">
+                <span className="codicon codicon-check" aria-hidden /> Accept
+              </button>
+              <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void import("../ai/apply").then((m) => m.rejectProposal(input.path))} data-testid="ai-reject">
+                <span className="codicon codicon-close" aria-hidden /> Reject
+              </button>
+            </span>
+          )}
         </div>
       )}
       {(input.source === "saved" || input.source === "file") && (

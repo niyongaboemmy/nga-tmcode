@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { recordActivity } from "../activity/log";
 import { getDocument, saveAll } from "../monaco/documents";
 import { getPlatform, log, showPanel } from "../state/store";
 import { useExam } from "../exam/state";
@@ -502,6 +503,7 @@ export async function runInJsConsole(path: string, opts: { reveal?: boolean } = 
   set({ entries: [], status: "running", file: path, startedAt: Date.now(), last: null });
   push({ level: "system", args: [], text: `Running ${path}` });
   log("Run", `JavaScript Console: ${path}`);
+  recordActivity({ kind: "run", action: "run", path, text: `Ran ${path} in the JavaScript Console` });
   if (source === null) {
     push({ level: "error", args: [{ t: "str", v: `Cannot read ${path}` }] });
     finish({ ok: false, ms: 0 });

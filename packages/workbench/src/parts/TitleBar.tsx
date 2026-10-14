@@ -181,7 +181,9 @@ export function TitleBar({ focused }: { focused: boolean }) {
   const workspace = useWorkbench((s) => s.workspace);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
+  const auxiliaryVisible = useWorkbench((s) => s.auxiliaryVisible);
   const inExam = useExam((s) => !!s.quiz);
+  const examMode = useWorkbench((s) => s.policy.mode !== "practice") || inExam;
   const compact = useWorkbench((s) => s.viewport === "xs" || s.viewport === "sm");
   const os = platform.os;
   const nativeMenus = platform.kind === "desktop" && os === "mac";
@@ -226,6 +228,14 @@ export function TitleBar({ focused }: { focused: boolean }) {
           active={panelVisible}
           onClick={() => executeCommand("workbench.action.togglePanel")}
         />
+        {!examMode && (
+          <ActionButton
+            icon={auxiliaryVisible ? "layout-sidebar-right" : "layout-sidebar-right-off"}
+            label={`Toggle Secondary Side Bar: TMCode AI and AI extensions (${kb("workbench.action.toggleAuxiliaryBar")})`}
+            active={auxiliaryVisible}
+            onClick={() => executeCommand("workbench.action.toggleAuxiliaryBar")}
+          />
+        )}
         <WindowControls />
       </div>
     </header>

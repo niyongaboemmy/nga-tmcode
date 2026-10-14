@@ -1,4 +1,5 @@
 import { beginActivity, track } from "../state/activity";
+import { internally, recordActivity } from "../activity/log";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
 import type { AccountStatus, TmRequest } from "../platform/types";
@@ -469,6 +470,7 @@ async function saveToTaskMentorNow(opts: { message?: string; source?: "save" | "
     await writeBinding({ ...get().binding!, base_revision_id: res.revision.id, base: files });
     set({ lastSyncAt: Date.now() });
     log("Projects", `Saved version ${res.revision.number} of ${binding.name} (${missing.length} new file(s) uploaded)`);
+    if (!res.unchanged) recordActivity({ kind: "project", action: "upload", text: `Saved version ${res.revision.number} to Task Mentor`, data: { revision: res.revision.number, uploaded: missing.length } });
     if (!opts.quiet) notify("info", res.unchanged ? "Everything is already saved to Task Mentor." : `Saved to Task Mentor (version ${res.revision.number}).`);
     await checkSync();
     return res.revision;
@@ -573,7 +575,16 @@ async function pullFromTaskMentorNow(opts: { quiet?: boolean; announce?: boolean
       await host.writeBlob(path, f.sha256, res.base64);
       progress?.update({ message: `Downloading ${path}…`, progress: Math.round((++done / Math.max(1, toWrite.length)) * 100) });
     }
-    for (const path of plan.remoteChanges.deleted) await getPlatform().fs.remove(path).catch(() => {});
+    await internally(async () => {
+      for (const path of plan.remoteChanges.deleted) await getPlatform().fs.remove(path).catch(() => {});
+    });
+    if (toWrite.length + plan.remoteChanges.deleted.length)
+      recordActivity({
+        kind: "project",
+        action: "pull",
+        text: `Got Task Mentor's latest files: ${pulledSummary(toWrite, plan.remoteChanges.deleted, 5)}`,
+        data: { written: toWrite.length, deleted: plan.remoteChanges.deleted.length },
+      });
     // Explorer and open editors follow at once (the file watcher would, a moment later).
     await applyExternalChanges([...toWrite, ...plan.remoteChanges.deleted]);
     // The new base: Task Mentor's head, except conflicting files keep their old base so they stay conflicts.
@@ -607,7 +618,8 @@ export async function resolveConflict(path: string, keep: "mine" | "theirs") {
     if (theirs) {
       const res = await api<{ base64: string }>("GET", `/projects/${binding.project_id}/blobs/${theirs.sha256}`, undefined, { response: "base64" });
       await host.writeBlob(path, theirs.sha256, res.base64);
-    } else await getPlatform().fs.remove(path).catch(() => {});
+    } else await internally(() => getPlatform().fs.remove(path).catch(() => {}));
+    recordActivity({ kind: "project", action: "conflict", path, text: `Kept Task Mentor's version of ${path}` });
     await applyExternalChanges([path]);
   }
   // Either way the base for this file becomes Task Mentor's: "mine" then shows as a local change to save.
@@ -974,7 +986,10 @@ async function submitLinkNow(projectId: number, linkId: number) {
     if (st && (st.ahead > 0 || st.entries.length > 0)) throw new Error("Commit and push your changes first: Task Mentor records the last pushed commit.");
     await reportGit();
   }
+  // The teacher sees the work's activity log with it: send what is still waiting first.
+  await import("../activity/upload").then((m) => m.flushActivityUpload()).catch(() => undefined);
   const res = await api<{ link: Link; submission: unknown }>("POST", `/projects/${projectId}/links/${linkId}/submit`, {});
+  recordActivity({ kind: "project", action: "submit", text: "Submitted the project to Task Mentor", data: { project: projectId, link: linkId } });
   await checkSync();
   return res;
 }

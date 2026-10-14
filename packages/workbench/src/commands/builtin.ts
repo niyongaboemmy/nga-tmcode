@@ -23,31 +23,7 @@ import { runWithoutDebugging } from "../debug/debugService";
 // ── end Run and Debug ──
 import { inExam } from "../exam/state";
 import { checkForUpdates, installUpdate, showAbout, updatesSupported, useUpdate } from "../update/updateService";
-import {
-  activeEditor,
-  activeFilePath,
-  beginExplorerEdit,
-  closeActiveEditor,
-  closeAllEditors,
-  collapseAll,
-  deleteEntry,
-  getPlatform,
-  openFileDialog,
-  openFolder,
-  openQuickInput,
-  openSpecialEditor,
-  refreshExplorer,
-  revealView,
-  showPanel,
-  splitEditor,
-  targetFolder,
-  togglePanel,
-  togglePanelMaximized,
-  toggleSidebar,
-  updateSetting,
-  useWorkbench,
-  workbench,
-} from "../state/store";
+import { activeEditor, activeFilePath, beginExplorerEdit, closeActiveEditor, closeAllEditors, collapseAll, deleteEntry, getPlatform, openFileDialog, openFolder, openQuickInput, openSpecialEditor, refreshExplorer, revealView, showPanel, splitEditor, targetFolder, togglePanel, togglePanelMaximized, toggleSidebar, updateSetting, useWorkbench, workbench, toggleAuxiliaryBar, showAuxiliaryView } from "../state/store";
 import { terminalAllowed as allowsTerminal } from "@tmcode/protocol";
 
 const hasWorkspace = () => !!useWorkbench.getState().workspace;
@@ -174,6 +150,8 @@ export function registerBuiltinCommands() {
   registerCommand({ id: "workbench.view.explorer", title: "Show Explorer", category: "View", keybinding: "mod+shift+e", run: () => revealView("explorer") });
   registerCommand({ id: "workbench.view.search", title: "Show Search", category: "View", keybinding: "mod+shift+f", enabled: hasWorkspace, run: () => revealView("search") });
   registerCommand({ id: "workbench.action.togglePanel", title: "Toggle Panel Visibility", category: "View", keybinding: "mod+j", run: () => togglePanel() });
+  registerCommand({ id: "workbench.action.toggleAuxiliaryBar", title: "Toggle Secondary Side Bar Visibility", category: "View", keybinding: "mod+alt+b", run: () => toggleAuxiliaryBar() });
+  registerCommand({ id: "workbench.action.chat.open", title: "Open TMCode AI Chat", category: "TMCode AI", keybinding: "mod+alt+i", run: () => showAuxiliaryView("chat") });
   registerCommand({ id: "workbench.action.toggleMaximizedPanel", title: "Toggle Maximized Panel", category: "View", run: togglePanelMaximized });
   registerCommand({ id: "workbench.actions.view.problems", title: "Show Problems", category: "View", keybinding: "mod+shift+m", run: () => showPanel("problems") });
   registerCommand({ id: "workbench.action.output.toggleOutput", title: "Show Output", category: "View", keybinding: "mod+shift+u", run: () => showPanel("output") });

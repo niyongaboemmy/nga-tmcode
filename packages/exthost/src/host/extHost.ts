@@ -10,6 +10,9 @@
  * Output channel; a throwing extension is marked Failed, the others keep running.
  */
 
+import { Authentication } from "./authentication";
+import { TabsService, type TabGroupDTO } from "./tabs";
+import { VirtualDocs } from "./virtualDocs";
 import * as T from "../api/types";
 import { Uri, setUriPlatform } from "../api/uri";
 import { CancellationTokenSource, EventEmitter, type CancellationToken, type Event } from "../api/events";
@@ -45,7 +48,7 @@ import type {
   TextEditDTO,
 } from "../protocol";
 
-export const API_VERSION = "1.96.0";
+export const API_VERSION = "1.106.0";
 
 export interface HostEnvironment {
   kind: "node" | "worker";
@@ -58,6 +61,14 @@ export interface HostEnvironment {
   onConsole?(write: (level: "info" | "warn" | "error", text: string) => void): void;
   /** Node: writes a built-in extension's files under `root` and returns its folder (null when it can't). */
   installBuiltin?(root: string, name: string, files: Record<string, string>): string | null;
+  /** Node: VS Code's `env.appRoot` stand-in under `storage` (node-pty, product.json); its path, or null. */
+  prepareAppRoot?(storage: string, version: string): string | null;
+  /** Node: runs `fn` as extension `id` (AsyncLocalStorage), so what it causes later is attributed to it. */
+  runAs?<R>(id: string, fn: () => R): R;
+  /** Node: the extension whose code is running now, if known. */
+  currentExtension?(): string | undefined;
+  /** Node: creates a folder and its parents (extension storage folders exist before activation, as in VS Code). */
+  ensureDir?(path: string): void;
 }
 
 interface ExtState {
@@ -272,6 +283,10 @@ type Provider = { kind: ProviderKind; provider: Record<string, (...args: unknown
 
 export class ExtHost {
   readonly rpc: RpcConnection;
+  /** Documents served by extensions' content and file system providers. */
+  readonly virtual: VirtualDocs;
+  /** `window.tabGroups`, fed by the workbench's `$tabsChanged`. */
+  readonly tabs: TabsService;
   readonly env: HostEnvironment;
   data!: InitData;
   fs!: HostFs;
@@ -324,6 +339,10 @@ export class ExtHost {
   readonly onDidChangeWindowState = new EventEmitter<unknown>();
   readonly onDidChangeExtensions = new EventEmitter<void>();
   readonly onDidCreateFiles = new EventEmitter<unknown>();
+  /** window.registerUriHandler, per extension: tmcode://<publisher.name>/… links. */
+  readonly uriHandlers = new Map<string, { handleUri(uri: Uri): unknown }>();
+  /** The authentication API (providers extensions register, sessions they ask for). */
+  readonly authentication = new Authentication(this);
   readonly onDidDeleteFiles = new EventEmitter<unknown>();
   readonly onDidRenameFiles = new EventEmitter<unknown>();
   windowFocused = true;
@@ -334,6 +353,8 @@ export class ExtHost {
     this.env = env;
     setUriPlatform(env.isWindows);
     this.rpc = new RpcConnection(send);
+    this.virtual = new VirtualDocs(this.rpc);
+    this.tabs = new TabsService(this.rpc, this.paths);
     EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText(e)}`);
     env.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();
@@ -355,11 +376,18 @@ export class ExtHost {
   #terminals: TerminalService | null = null;
   /** window.createTerminal and friends (created on first use). */
   get terminals(): TerminalService {
-    return (this.#terminals ??= new TerminalService(this.rpc, this.paths));
+    if (!this.#terminals) {
+      this.#terminals = new TerminalService(this.rpc, this.paths, () => this.folder ?? undefined);
+      // A command an extension runs in a terminal: the extension whose code sent it, else the terminal's creator.
+      this.#terminals.onCommand = (t, command) => this.extActivity(this.currentExtension() ?? t.owner, { kind: "terminal", command, terminal: t.name });
+    }
+    return this.#terminals;
   }
 
   readonly paths: C.PathMapper = {
     toPath: (uri: Uri) => {
+      // An extension's document (content / file system provider): its URI is its path.
+      if (uri && uri.scheme !== "file" && this.virtual?.has(uri.scheme)) return Uri.revive(uri).toString();
       if (!this.folder || !uri || uri.scheme !== "file") return null;
       const base = this.folder.path.replace(/\/+$/, "");
       const p = uri.path;
@@ -368,7 +396,7 @@ export class ExtHost {
       if (p.length > base.length && eq(p.slice(0, base.length + 1), base + "/")) return p.slice(base.length + 1);
       return null;
     },
-    toUri: (path: string) => Uri.joinPath(this.folder ?? Uri.file("/"), path),
+    toUri: (path: string) => (VirtualDocs.isVirtualPath(path) ? Uri.parse(path) : Uri.joinPath(this.folder ?? Uri.file("/"), path)),
   };
 
   readonly #commandCacheApi: C.CommandCache = {
@@ -379,6 +407,17 @@ export class ExtHost {
       return ref;
     },
   };
+
+  /** Tells the workbench what an extension did outside the editor (file writes, terminal commands), for the activity log. */
+  extActivity(ext: ExtState | string | null, data: Record<string, unknown>) {
+    const id = typeof ext === "string" ? ext : (ext?.desc.id ?? this.currentExtension());
+    if (id && (data.path !== null || data.kind !== "fs")) this.rpc.notify("$main.extActivity", [id, data]);
+  }
+
+  /** The extension whose code caused the current call (Node host), for the activity log. */
+  currentExtension(): string | null {
+    return this.env.currentExtension?.() ?? null;
+  }
 
   documentFor(path: string) {
     return this.#docs.get(path) ?? this.#looseDocs.get(path);
@@ -394,6 +433,26 @@ export class ExtHost {
   #registerHandlers() {
     const r = this.rpc;
     r.register("$init", ([data]) => this.#init(data as InitData));
+    // workspace.onDidCreateFiles / onDidDeleteFiles / onDidRenameFiles (Explorer, TMCode's own writes).
+    r.register("$filesEvent", ([op, paths]) => {
+      const list = (Array.isArray(paths) ? paths : []) as (string | [string, string])[];
+      if (op === "rename") this.onDidRenameFiles.fire({ files: list.filter(Array.isArray).map(([a, b]) => ({ oldUri: this.paths.toUri(a), newUri: this.paths.toUri(b) })) });
+      else (op === "create" ? this.onDidCreateFiles : this.onDidDeleteFiles).fire({ files: list.filter((p): p is string => typeof p === "string").map((p) => this.paths.toUri(p)) });
+    });
+    r.register("$handleUri", async ([id, uri]) => {
+      const extId = String(id).toLowerCase();
+      if (!this.uriHandlers.has(extId)) await this.activateByEvent("onUri").catch(() => undefined);
+      if (!this.uriHandlers.has(extId)) await this.activate(extId, "onUri");
+      const h = this.uriHandlers.get(extId);
+      if (!h) return false;
+      const run = () => h.handleUri(Uri.parse(String(uri)));
+      await (this.env.runAs ? this.env.runAs(extId, run) : run());
+      return true;
+    });
+    r.register("$authSignOut", ([provider, account]) => this.authentication.signOut(String(provider), String(account)));
+    r.register("$tabsChanged", ([groups]) => this.tabs.update(groups as TabGroupDTO[]));
+    r.register("$readVirtual", ([uri]) => this.virtual.read(String(uri)));
+    r.register("$writeVirtual", ([uri, text]) => this.virtual.write(String(uri), String(text)));
     r.register("$startup", () => this.#startup());
     r.register("$activateByEvent", ([event]) => this.activateByEvent(String(event)));
     r.register("$activate", ([id, reason]) => this.activate(String(id), String(reason ?? "api")));
@@ -523,6 +582,7 @@ export class ExtHost {
       this.exts.set(desc.id, { desc, events: desc.activationEvents.length ? desc.activationEvents : activationEventsOf(desc.manifest), active: false, unsupported: new Set() });
     }
     const storage = data.env.storagePath;
+    if (storage && this.env.prepareAppRoot) data.env.appRoot = this.env.prepareAppRoot(storage, API_VERSION) ?? data.env.appRoot;
     const basics = storage && this.env.installBuiltin?.(storage, "language-basics", languageBasicsFiles());
     if (basics) this.builtins = [{ id: "tmcode.language-basics", location: basics, manifest: languageBasicsManifest() }];
     for (const d of data.documents) this.#documentOpened(d, false);
@@ -577,7 +637,8 @@ export class ExtHost {
     const ext = this.exts.get(id.toLowerCase());
     if (!ext) return Promise.resolve();
     if (ext.activation) return ext.activation;
-    ext.activation = (async () => {
+    const inContext = <R,>(fn: () => R): R => (this.env.runAs ? this.env.runAs(ext.desc.id, fn) : fn());
+    ext.activation = inContext(async () => {
       const started = Date.now();
       this.#setState(ext, { state: "activating", reason });
       try {
@@ -599,7 +660,7 @@ export class ExtHost {
         this.log("error", `Activating extension '${ext.desc.id}' failed: ${msg}`, ext.desc.id);
         this.#extLog(ext, "error", `Activating ${ext.desc.displayName} failed: ${msg}`);
       }
-    })();
+    });
     return ext.activation;
   }
 
@@ -718,7 +779,7 @@ export class ExtHost {
   async applyEditorEdits(path: string, edits: TextEditDTO[], options: { undoStopBefore?: boolean; undoStopAfter?: boolean }): Promise<boolean> {
     if (!edits.length) return true;
     const d = this.#docs.get(path);
-    return this.rpc.request<boolean>("$main.editorEdit", [path, edits, { undoStopBefore: options.undoStopBefore !== false, undoStopAfter: options.undoStopAfter !== false }, d?.version ?? null]);
+    return this.rpc.request<boolean>("$main.editorEdit", [path, edits, { undoStopBefore: options.undoStopBefore !== false, undoStopAfter: options.undoStopAfter !== false }, d?.version ?? null, this.currentExtension()]);
   }
 
   #fileEvents(events: { path: string; type: "create" | "change" | "delete" }[]) {
@@ -749,7 +810,8 @@ export class ExtHost {
     const local = this.#commands.get(id);
     if (local) {
       try {
-        return await local.fn.apply(local.thisArg, args);
+        const run = () => local.fn.apply(local.thisArg, args);
+        return await (local.ext && this.env.runAs ? this.env.runAs(local.ext.desc.id, run) : run());
       } catch (e) {
         if (local.ext) this.#extLog(local.ext, "error", `Command '${id}' failed: ${errorText(e)}`);
         throw e;
@@ -791,7 +853,8 @@ export class ExtHost {
       const fn = p.provider[name];
       if (typeof fn !== "function") return undefined;
       try {
-        return await fn.apply(p.provider, [...a, token]);
+        const run = () => fn.apply(p.provider, [...a, token]);
+        return await (this.env.runAs ? this.env.runAs(p.ext.desc.id, run) : run());
       } catch (e) {
         if ((e as Error)?.name === "Canceled") return undefined;
         this.#extLog(p.ext, "error", `${name} failed: ${errorText(e)}`);
@@ -823,6 +886,34 @@ export class ExtHost {
         if (!item || typeof p.provider.resolveCompletionItem !== "function") return null;
         const resolved = ((await call("resolveCompletionItem", item)) as T.CompletionItem | undefined) ?? item;
         return C.completionItem(resolved, Number(args[1]), this.#commandCacheApi) ?? null;
+      }
+      case "provideInlineCompletionItems": {
+        // Monaco's trigger kinds are reversed: its Automatic(0)/Explicit(1) are vscode's Automatic(1)/Invoke(0).
+        const ctx = (args[2] ?? {}) as { explicit?: boolean };
+        const res = (await call("provideInlineCompletionItems", doc(args[0]), pos(args[1]), {
+          triggerKind: ctx.explicit ? 0 : 1,
+          selectedCompletionInfo: undefined,
+          requestUuid: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          requestIssuedDateTime: Date.now(),
+          earliestShownDateTime: Date.now(),
+        })) as unknown;
+        const list = Array.isArray(res) ? res : res && typeof res === "object" && Array.isArray((res as { items?: unknown[] }).items) ? (res as { items: unknown[] }).items : [];
+        const items = list
+          .map((raw) => {
+            const it = raw as { insertText?: unknown; filterText?: string; range?: T.Range; command?: T.Command };
+            const snippet = it.insertText instanceof T.SnippetString;
+            const text = snippet ? (it.insertText as T.SnippetString).value : typeof it.insertText === "string" ? it.insertText : null;
+            if (text === null) return null;
+            return {
+              insertText: text,
+              ...(snippet ? { snippet: true } : {}),
+              ...(typeof it.filterText === "string" ? { filterText: it.filterText } : {}),
+              ...(it.range && T.Range.isRange(it.range) ? { range: C.range.from(it.range) } : {}),
+              ...(it.command ? { command: C.command(it.command, this.#commandCacheApi) } : {}),
+            };
+          })
+          .filter((x): x is NonNullable<typeof x> => !!x);
+        return { items };
       }
       case "provideHover":
         return C.hover((await call("provideHover", doc(args[0]), pos(args[1]))) as T.Hover) ?? null;
@@ -1178,27 +1269,54 @@ export class ExtHost {
     const globalStorageUri = Uri.joinPath(storageBase, "globalStorage", ext.desc.id);
     const storageUri = this.folder ? Uri.joinPath(storageBase, "workspaceStorage", env.workspaceKey ?? "default", ext.desc.id) : undefined;
     const logUri = Uri.joinPath(storageBase, "logs", ext.desc.id);
+    // VS Code creates these parents; extensions mkdir their own folder without `recursive` (Continue does).
+    if (env.storagePath && this.env.ensureDir) {
+      for (const u of [Uri.joinPath(storageBase, "globalStorage"), storageUri && Uri.joinPath(storageBase, "workspaceStorage", env.workspaceKey ?? "default"), Uri.joinPath(storageBase, "logs")]) {
+        if (u) this.env.ensureDir(u.fsPath);
+      }
+    }
     const gs = (this.data.state.global[ext.desc.id] ??= {});
     const ws = (this.data.state.workspace[ext.desc.id] ??= {});
     const persist = (scope: "global" | "workspace") => (key: string, value: unknown) => this.rpc.notify("$main.state", [scope, ext.desc.id, key, value === undefined ? null : value]);
     const secretsChanged = new EventEmitter<{ key: string }>();
     const rpc = this.rpc;
+    // environmentVariableCollection: applied to every new terminal, as in VS Code (Claude Code's
+    // CLAUDE_CODE_SSE_PORT). Kind numbers are VS Code's EnvironmentVariableMutatorType.
+    const mutators = new Map<string, { value: string; type: number; options: unknown }>();
+    const KINDS: Record<number, string> = { 1: "replace", 2: "append", 3: "prepend" };
+    const publish = () =>
+      rpc.notify("$main.envCollection", [ext.desc.id, [...mutators].map(([name, m]) => ({ name, value: m.value, kind: KINDS[m.type] ?? "replace" }))]);
+    const set = (type: number) => (variable: string, value: string, options?: unknown) => {
+      mutators.set(String(variable), { value: String(value), type, options: options ?? { applyAtProcessCreation: true, applyAtShellIntegration: false } });
+      publish();
+    };
     const envCollection = {
       persistent: true,
-      description: undefined,
-      replace() {},
-      append() {},
-      prepend() {},
-      get() {
-        return undefined;
+      description: undefined as unknown,
+      replace: set(1),
+      append: set(2),
+      prepend: set(3),
+      get(variable: string) {
+        const m = mutators.get(variable);
+        return m ? { value: m.value, type: m.type, options: m.options } : undefined;
       },
-      forEach() {},
-      delete() {},
-      clear() {},
+      forEach(cb: (variable: string, mutator: unknown, collection: unknown) => void, thisArg?: unknown) {
+        for (const [k, m] of mutators) cb.call(thisArg, k, { value: m.value, type: m.type, options: m.options }, envCollection);
+      },
+      delete(variable: string) {
+        if (mutators.delete(variable)) publish();
+      },
+      clear() {
+        if (!mutators.size) return;
+        mutators.clear();
+        publish();
+      },
       getScoped() {
         return envCollection;
       },
-      [Symbol.iterator]: function* () {},
+      *[Symbol.iterator]() {
+        for (const [k, m] of mutators) yield [k, { value: m.value, type: m.type, options: m.options }] as const;
+      },
     };
     return {
       subscriptions: [] as { dispose(): unknown }[],

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { internally } from "../activity/log";
 import { PROFILES } from "@tmcode/profiles";
 import type { Profile } from "@tmcode/protocol";
 import type { OsKind, Toolchain } from "../platform/types";
@@ -199,9 +200,12 @@ export async function diskCheck(where: "workspace" | "store"): Promise<CheckItem
   const stamp = `tmcode-check-${Date.now()}`;
   try {
     if (where === "workspace") {
-      await p.fs.writeFile(".tmcode-check", stamp);
-      const back = await p.fs.readFile(".tmcode-check");
-      await p.fs.remove(".tmcode-check").catch(() => {});
+      const back = await internally(async () => {
+        await p.fs.writeFile(".tmcode-check", stamp);
+        const text = await p.fs.readFile(".tmcode-check");
+        await p.fs.remove(".tmcode-check").catch(() => {});
+        return text;
+      });
       if (back !== stamp) throw new Error("read back a different file");
     } else {
       await p.store.set("readiness.check", stamp);

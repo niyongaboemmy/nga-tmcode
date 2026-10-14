@@ -9,6 +9,8 @@ export type Event<T> = (listener: (e: T) => unknown, thisArgs?: unknown, disposa
  */
 export class EventEmitter<T> {
   static onListenerError: (e: unknown) => void = (e) => console.error(e);
+  /** Set by the Node host: a listener runs in the context of the extension that subscribed (activity attribution). */
+  static wrapListener: <F extends (...a: never[]) => unknown>(fn: F) => F = (fn) => fn;
   #listeners: { fn: (e: T) => unknown; thisArg: unknown }[] = [];
   #disposed = false;
   #event?: Event<T>;
@@ -17,7 +19,7 @@ export class EventEmitter<T> {
     if (!this.#event) {
       this.#event = (fn, thisArgs, disposables) => {
         if (this.#disposed) return new Disposable(() => {});
-        const entry = { fn, thisArg: thisArgs };
+        const entry = { fn: EventEmitter.wrapListener(fn), thisArg: thisArgs };
         this.#listeners.push(entry);
         const d = new Disposable(() => {
           const i = this.#listeners.indexOf(entry);

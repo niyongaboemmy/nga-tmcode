@@ -3,6 +3,7 @@ import type {
   CommandDTO,
   CompletionItemDTO,
   CompletionListDTO,
+  InlineCompletionListDTO,
   DocumentSymbolDTO,
   HoverDTO,
   LocationDTO,
@@ -19,6 +20,7 @@ import { monaco, setupMonaco } from "../monaco/setup";
 import { ensureDocument, pathOfUri, uriFor } from "../monaco/documents";
 import { installNavigation } from "../monaco/navigation";
 import { log } from "../state/store";
+import { inlineAccepted } from "../activity/aiEvents";
 import { fromRange, toRange } from "./documentSync";
 import { withFormatterId } from "../monaco/formatters";
 import type { HostKind } from "./state";
@@ -178,6 +180,34 @@ function createProvider(host: HostKind, handle: number, kind: ProviderKind, sele
   const fmt = (o: monaco.languages.FormattingOptions) => ({ tabSize: o.tabSize, insertSpaces: o.insertSpaces });
   const L = monaco.languages;
   switch (kind) {
+    case "inlineCompletion": {
+      // Ghost text, as VS Code: Tab accepts, Esc dismisses, ⌘→ accepts a word, ⌥] / ⌥[ cycle.
+      type Item = monaco.languages.InlineCompletion & { _tm: { text: string } };
+      const ext = meta.extensionId ?? "";
+      return L.registerInlineCompletionsProvider(selector, {
+        displayName: meta.displayName,
+        async provideInlineCompletions(model, position, context, token) {
+          const res = await call<InlineCompletionListDTO | null>("provideInlineCompletionItems", [path(model), pos(position), { explicit: context.triggerKind === L.InlineCompletionTriggerKind.Explicit }], token).catch(() => null);
+          if (!res?.items?.length) return { items: [] };
+          const items: Item[] = res.items.map((it) => ({
+            insertText: it.snippet ? { snippet: it.insertText } : it.insertText,
+            filterText: it.filterText,
+            range: it.range ? fromRange(it.range) : undefined,
+            command: command(host, it.command),
+            _tm: { text: it.insertText },
+          }));
+          return { items };
+        },
+        handlePartialAccept(_completions, item, acceptedCharacters) {
+          const text = (item as Item)._tm?.text ?? "";
+          inlineAccepted(ext, text.slice(0, acceptedCharacters), true);
+        },
+        handleEndOfLifetime(_completions, item, reason) {
+          if (reason.kind === L.InlineCompletionEndOfLifeReasonKind.Accepted) inlineAccepted(ext, (item as Item)._tm?.text ?? "", false);
+        },
+        disposeInlineCompletions() {},
+      });
+    }
     case "completion":
       return L.registerCompletionItemProvider(selector, {
         triggerCharacters: meta.triggerCharacters,

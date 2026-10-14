@@ -221,6 +221,31 @@ pub(crate) fn take_utf8(pending: &mut Vec<u8>) -> String {
     text
 }
 
+/// One change to a terminal's environment: "replace", "append" or "prepend" (VS Code's mutator types).
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct EnvMutation {
+    pub name: String,
+    pub value: String,
+    #[serde(default = "replace_kind")]
+    pub kind: String,
+}
+
+fn replace_kind() -> String {
+    "replace".into()
+}
+
+/// The value a mutation gives a variable, or None for an invalid name.
+fn apply_env_mutation(m: &EnvMutation, current: Option<String>) -> Option<String> {
+    if m.name.is_empty() || m.name.contains('=') || m.name.contains('\0') {
+        return None;
+    }
+    Some(match m.kind.as_str() {
+        "append" => format!("{}{}", current.unwrap_or_default(), m.value),
+        "prepend" => format!("{}{}", m.value, current.unwrap_or_default()),
+        _ => m.value.clone(),
+    })
+}
+
 #[tauri::command]
 pub fn pty_spawn(
     ws: State<'_, Workspace>,
@@ -229,6 +254,7 @@ pub fn pty_spawn(
     rows: u16,
     cwd: Option<String>,
     profile: Option<String>,
+    env: Option<Vec<EnvMutation>>,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
     let pty = native_pty_system()
@@ -249,6 +275,12 @@ pub fn pty_spawn(
     // Colour output by default (ls, grep, git) — like VS Code's integrated terminal.
     cmd.env("CLICOLOR", "1");
     cmd.env("LANG", std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into()));
+    // Extensions' environmentVariableCollection (and a terminal's own env), as VS Code applies them.
+    for m in env.unwrap_or_default() {
+        if let Some(v) = apply_env_mutation(&m, std::env::var(&m.name).ok()) {
+            cmd.env(&m.name, v);
+        }
+    }
     let child = pty.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pty.slave);
     let mut reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
@@ -405,5 +437,28 @@ mod tests {
         pending.extend_from_slice(&"é".as_bytes()[1..]);
         assert_eq!(take_utf8(&mut pending), "é");
         assert!(pending.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod env_tests {
+    use super::*;
+
+    fn m(name: &str, value: &str, kind: &str) -> EnvMutation {
+        EnvMutation { name: name.into(), value: value.into(), kind: kind.into() }
+    }
+
+    #[test]
+    fn mutations_replace_append_and_prepend() {
+        assert_eq!(apply_env_mutation(&m("PORT", "5000", "replace"), Some("1".into())).as_deref(), Some("5000"));
+        assert_eq!(apply_env_mutation(&m("PATH", ":/x", "append"), Some("/bin".into())).as_deref(), Some("/bin:/x"));
+        assert_eq!(apply_env_mutation(&m("PATH", "/x:", "prepend"), Some("/bin".into())).as_deref(), Some("/x:/bin"));
+        assert_eq!(apply_env_mutation(&m("NEW", "v", "append"), None).as_deref(), Some("v"));
+    }
+
+    #[test]
+    fn invalid_names_are_ignored() {
+        assert!(apply_env_mutation(&m("", "v", "replace"), None).is_none());
+        assert!(apply_env_mutation(&m("A=B", "v", "replace"), None).is_none());
     }
 }

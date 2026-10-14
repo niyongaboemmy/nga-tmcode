@@ -145,7 +145,7 @@ export function dropZone(x: number, y: number, width: number, height: number): S
   return dist < 0.33 ? dir : "center";
 }
 
-function titleOf(e: EditorInput): string {
+export function titleOf(e: EditorInput): string {
   if (e.kind === "file") return basename(e.path);
   if (e.kind === "preview") return `Preview ${basename(e.entry)}`;
   if (e.kind === "testDiff") return `Test: ${useWorkbench.getState().tests.items.find((t) => t.id === e.testId)?.name ?? e.testId}`;
@@ -156,6 +156,7 @@ function titleOf(e: EditorInput): string {
   if (e.kind === "historyDiff" && e.source === "git") return `${basename(e.path)} (${e.entry.slice(0, 7)}) ↔ Now`;
   if (e.kind === "historyDiff" && e.source === "saved") return `${basename(e.path)} (Saved) ↔ Current`;
   if (e.kind === "historyDiff" && e.source === "file") return `${basename(e.entry)} ↔ ${basename(e.path)}`;
+  if (e.kind === "historyDiff" && e.source === "extension") return e.label ?? `${basename(e.entry)} ↔ ${basename(e.path)}`;
   if (e.kind === "snippets") return `${e.language}.json`;
   if (e.kind === "historyDiff" && e.source === "conflict") return `${basename(e.path)}: Current ↔ Incoming`;
   if (e.kind === "historyDiff") return `${basename(e.path)} (${new Date(e.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) ↔ Current`;

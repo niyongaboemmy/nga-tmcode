@@ -1,16 +1,23 @@
 import { terminalOp } from "./terminals";
+import { virtualChanged, virtualScheme } from "./virtualDocs";
+import { setExtensionEnv } from "../terminal/env";
+import type { TerminalEnvMutation } from "../platform/types";
+import { runAs } from "../activity/log";
+import { extensionActivity, extensionActor, extensionEdited, workspaceEditTexts } from "../activity/aiEvents";
+import { closeTabs } from "./tabsSync";
 import type { DecorationOptionsDTO, DecorationRangeDTO, DiagnosticDTO, ExtensionStateDTO, ProviderKind, ProviderMeta, QuickPickItemDTO, RangeDTO, RpcConnection, SelectionDTO, SelectorDTO, StatusBarEntryDTO, TextEditDTO, WorkspaceEditDTO } from "@tmcode/exthost";
 import { allCommands, executeCommand, getCommand, registerCommand } from "../commands/registry";
 import { monaco } from "../monaco/setup";
-import { ensureDocument, extraProblems, getDocument, pathOfUri, recomputeProblems, saveDocument, uriFor } from "../monaco/documents";
+import { ensureDocument, extraProblems, getDocument, pathOfUri, recomputeProblems, saveAll, saveDocument, uriFor } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
-import { dismissNotification, getPlatform, log, moveEntry, notify, notifyProgress, openFile, openSpecialEditor, refreshExplorer, showDialog, useWorkbench, type Problem } from "../state/store";
+import { closeActiveEditor, dismissNotification, getPlatform, log, moveEntry, notify, notifyProgress, openEditorInput, openFile, openSpecialEditor, refreshExplorer, showDialog, toggleAuxiliaryBar, useWorkbench, type Problem } from "../state/store";
+import { isVirtualPath, virtualName } from "../util/virtual";
 import { showInputBox, showQuickPick, type PickItem } from "../widgets/QuickPick";
-import { editorFor, flushEditors, fromRange } from "./documentSync";
+import { editorFor, flushEditors, flushTabs, fromRange } from "./documentSync";
 import { registerProvider, unregisterProvider } from "./languageBridge";
 import { createDecorationType, disposeDecorationType, setDecorations } from "./decorations";
 import { HOST_CHANNEL, outputOp } from "./output";
-import { setContextKey, useExtHost, useExtStatusBar, type HostKind } from "./state";
+import { setContextKey, useExtAccounts, useExtHost, useExtStatusBar, type HostKind } from "./state";
 import { updateExtensionSetting } from "./config";
 import { contributedCommand } from "./contributions";
 
@@ -249,6 +256,14 @@ async function showDocument(path: string, opts: { preserveFocus?: boolean; previ
 
 // ───────────── built-in commands extensions call ─────────────
 
+/** A diff tab of two documents (files of the folder or extensions' documents), left read-only. */
+export function openDiffEditor(left: string, right: string, title: string | undefined, opts: { preserveFocus?: boolean } = {}) {
+  const id = `diff:${left}\u0000${right}`;
+  openEditorInput({ kind: "historyDiff", id, path: right, entry: left, time: Date.now(), preview: false, source: "extension", label: title ?? `${virtualOrBase(left)} ↔ ${virtualOrBase(right)}` });
+  if (!opts.preserveFocus) setTimeout(() => codeEditorFor(useWorkbench.getState().activeGroup)?.focus(), 0);
+}
+const virtualOrBase = (p: string) => (isVirtualPath(p) ? virtualName(p) : p.slice(p.lastIndexOf("/") + 1));
+
 async function runBuiltin(id: string, args: unknown[]): Promise<unknown> {
   const pathArg = (a: unknown) => (a && typeof a === "object" && typeof (a as { $path?: unknown }).$path === "string" ? (a as { $path: string }).$path : null);
   switch (id) {
@@ -261,6 +276,60 @@ async function runBuiltin(id: string, args: unknown[]): Promise<unknown> {
       const uri = (args[0] as { $uri?: string })?.$uri;
       if (uri && /^https?:/.test(uri)) return getPlatform().openExternal?.(uri);
       throw new Error("vscode.open: TMCode can only open files of the open folder and web links.");
+    }
+    case "vscode.diff": {
+      // (left, right, title?, options?): a diff tab, as VS Code's (TabInputTextDiff for tabGroups).
+      const left = pathArg(args[0]);
+      const right = pathArg(args[1]);
+      if (left === null || right === null) throw new Error("vscode.diff: TMCode compares files of the open folder and extensions' documents.");
+      const o = (args[3] ?? {}) as { preview?: boolean; preserveFocus?: boolean; selection?: { $range?: RangeDTO } };
+      openDiffEditor(left, right, typeof args[2] === "string" ? args[2] : undefined, { preserveFocus: !!o.preserveFocus });
+      flushTabs();
+      return;
+    }
+    case "vscode.changes": {
+      // (title, [resource, original, modified][]): one diff per changed resource.
+      const list = Array.isArray(args[1]) ? (args[1] as unknown[][]) : [];
+      for (const [, original, modified] of list) {
+        const l = pathArg(original);
+        const r = pathArg(modified);
+        if (l !== null && r !== null) openDiffEditor(l, r, typeof args[0] === "string" ? args[0] : undefined, { preserveFocus: true });
+      }
+      return;
+    }
+    case "default:type":
+    case "type": {
+      const text = String((args[0] as { text?: string })?.text ?? "");
+      codeEditorFor(useWorkbench.getState().activeGroup)?.trigger("keyboard", "type", { text });
+      return;
+    }
+    case "workbench.action.closeActiveEditor":
+    case "workbench.action.revertAndCloseActiveEditor":
+      await closeActiveEditor();
+      return;
+    case "workbench.action.files.saveAll":
+      await saveAll();
+      return;
+    case "workbench.action.focusAuxiliaryBar":
+    case "workbench.action.toggleAuxiliaryBar":
+    case "workbench.action.openAuxiliaryBar":
+      toggleAuxiliaryBar(id === "workbench.action.toggleAuxiliaryBar" ? undefined : true);
+      return;
+    case "workbench.action.closeAuxiliaryBar":
+      toggleAuxiliaryBar(false);
+      return;
+    case "workbench.action.focusFirstEditorGroup":
+      codeEditorFor(useWorkbench.getState().groups[0]?.id ?? 1)?.focus();
+      return;
+    case "revealInExplorer": {
+      const p = pathArg(args[0]);
+      if (p !== null && !isVirtualPath(p)) await import("../commands/vscodeCommands").then((m) => m.revealInExplorer(p));
+      return;
+    }
+    case "revealFileInOS": {
+      const p = pathArg(args[0]);
+      if (p !== null && !isVirtualPath(p)) await getPlatform().reveal?.(p);
+      return;
     }
     case "workbench.action.openSettings":
     case "workbench.action.openGlobalSettings":
@@ -335,6 +404,24 @@ export function installMainThread(ctx: MainContext) {
   const kind = ctx.kind;
   hookModels();
   r.register("$main.ready", () => null);
+  r.register("$main.virtualScheme", ([scheme, type, ext, on]) => virtualScheme(kind, r, String(scheme), type === "fs" ? "fs" : "content", String(ext), !!on));
+  r.register("$main.virtualChanged", ([uri]) => virtualChanged(String(uri)));
+  r.register("$main.envCollection", ([ext, list]) => setExtensionEnv(String(ext), (Array.isArray(list) ? list : []) as TerminalEnvMutation[]));
+  r.register("$main.extActivity", ([ext, data]) => extensionActivity(String(ext), (data ?? {}) as Record<string, unknown>));
+  r.register("$main.authProvider", ([id, label, accounts]) =>
+    useExtAccounts.setState((s) => {
+      const providers = { ...s.providers };
+      if (label === null) delete providers[String(id)];
+      else providers[String(id)] = { label: String(label), accounts: (Array.isArray(accounts) ? accounts : []).map(String), host: kind };
+      return { providers };
+    }),
+  );
+  r.register("$main.closeTabs", async ([list]) => {
+    const ok = await closeTabs((Array.isArray(list) ? list : []) as [number, string | null][]);
+    // The host's tabGroups are current when close() resolves, as in VS Code.
+    flushTabs();
+    return ok;
+  });
   // window.createTerminal (exthost/terminals.ts)
   r.register("$main.terminal", ([op, id, arg]) => terminalOp(kind, (m, p) => r.notify(m, p), String(op), Number(id), arg));
   r.register("$main.log", ([level, extId, text]) => log(HOST_CHANNEL, `${extId ? `[${extId}] ` : ""}${text}`, level === "error" ? "error" : level === "warn" ? "warn" : "info"));
@@ -454,12 +541,21 @@ export function installMainThread(ctx: MainContext) {
     return true;
   });
   r.register("$main.showTextDocument", ([path, opts]) => showDocument(String(path), (opts ?? {}) as { preserveFocus?: boolean }));
-  r.register("$main.editorEdit", ([path, edits, opts]) => {
+  r.register("$main.editorEdit", ([path, edits, opts, , ext]) => {
     const model = getDocument(String(path));
     if (!model || useWorkbench.getState().readOnly) return false;
-    return applyTextEdits(String(path), model, edits as TextEditDTO[], (opts ?? {}) as { undoStopBefore?: boolean });
+    const ok = applyTextEdits(String(path), model, edits as TextEditDTO[], (opts ?? {}) as { undoStopBefore?: boolean });
+    if (ok && typeof ext === "string") extensionEdited(ext, [{ path: String(path), edits: edits as TextEditDTO[] }]);
+    return ok;
   });
-  r.register("$main.applyEdit", ([dto]) => (useWorkbench.getState().readOnly ? false : applyWorkspaceEdit(dto as WorkspaceEditDTO)));
+  r.register("$main.applyEdit", async ([dto, ext]) => {
+    if (useWorkbench.getState().readOnly) return false;
+    const d = dto as WorkspaceEditDTO;
+    // File creates, renames and deletes go through the file system wrapper: attributed to the extension there.
+    const ok = typeof ext === "string" ? await runAs(extensionActor(ext), () => applyWorkspaceEdit(d)) : await applyWorkspaceEdit(d);
+    if (ok && typeof ext === "string") extensionEdited(ext, workspaceEditTexts(d));
+    return ok;
+  });
   r.register("$main.insertSnippet", ([path, snippet, ranges]) => {
     const ed = editorFor(String(path));
     if (!ed) return false;

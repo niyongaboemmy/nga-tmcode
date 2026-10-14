@@ -133,13 +133,7 @@ export function createApi(host: ExtHost, ext: ExtState) {
   // ───────────── window ─────────────
   const windowState = { get focused() { return host.windowFocused; }, get active() { return host.windowFocused; } };
   const colorThemeKind = 2;
-  const tabGroups = {
-    all: [] as unknown[],
-    activeTabGroup: { tabs: [] as unknown[], isActive: true, viewColumn: 1, activeTab: undefined },
-    onDidChangeTabGroups: new EventEmitter<unknown>().event,
-    onDidChangeTabs: new EventEmitter<unknown>().event,
-    close: async () => false,
-  };
+  const tabGroups = host.tabs.api();
   const createInputLike = (kind: "pick" | "input") => {
     // createQuickPick / createInputBox: the object API over the same widget.
     const onDidAccept = new EventEmitter<void>();
@@ -227,11 +221,14 @@ export function createApi(host: ExtHost, ext: ExtState) {
     get activeTerminal() {
       return host.terminals.activeTerminal;
     },
-    createTerminal: (nameOrOptions?: unknown, shellPath?: string, shellArgs?: string[] | string) => host.terminals.create(nameOrOptions as never, shellPath, shellArgs),
+    createTerminal: (nameOrOptions?: unknown, shellPath?: string, shellArgs?: string[] | string) => host.terminals.create(ext.desc.id, nameOrOptions as never, shellPath, shellArgs),
     onDidOpenTerminal: host.terminals.onDidOpenTerminal.event,
     onDidCloseTerminal: host.terminals.onDidCloseTerminal.event,
     onDidChangeActiveTerminal: host.terminals.onDidChangeActiveTerminal.event,
-    onDidChangeTerminalState: new EventEmitter<unknown>().event,
+    onDidChangeTerminalState: host.terminals.onDidChangeTerminalState.event,
+    onDidChangeTerminalShellIntegration: host.terminals.onDidChangeTerminalShellIntegration.event,
+    onDidStartTerminalShellExecution: host.terminals.onDidStartTerminalShellExecution.event,
+    onDidEndTerminalShellExecution: host.terminals.onDidEndTerminalShellExecution.event,
     activeNotebookEditor: undefined,
     visibleNotebookEditors: [],
     onDidChangeActiveNotebookEditor: new EventEmitter<unknown>().event,
@@ -274,7 +271,12 @@ export function createApi(host: ExtHost, ext: ExtState) {
     registerTreeDataProvider: (viewId: string, provider: unknown) => host.views.registerTreeDataProvider(ext, viewId, provider),
     registerWebviewViewProvider: (viewId: string, provider: unknown, options?: { webviewOptions?: { retainContextWhenHidden?: boolean } }) => host.views.registerWebviewViewProvider(ext, viewId, provider, options),
     createWebviewPanel: (viewType: string, title: string, showOptions: unknown, options?: Record<string, unknown>) => host.views.createWebviewPanel(ext, viewType, title, showOptions, options),
-    registerUriHandler: () => noopDisposable(),
+    registerUriHandler: (handler: { handleUri(uri: Uri): unknown }) => {
+      host.uriHandlers.set(ext.desc.id, handler);
+      return new T.Disposable(() => {
+        if (host.uriHandlers.get(ext.desc.id) === handler) host.uriHandlers.delete(ext.desc.id);
+      });
+    },
     registerFileDecorationProvider: () => noopDisposable(),
     registerTerminalLinkProvider: () => noopDisposable(),
     registerTerminalProfileProvider: () => noopDisposable(),
@@ -286,16 +288,39 @@ export function createApi(host: ExtHost, ext: ExtState) {
   });
 
   // ───────────── workspace ─────────────
+  // An extension's own scheme goes to its file system provider, as in VS Code.
+  const vfs = (uri: Uri) => (uri && uri.scheme !== "file" ? host.virtual.fsFor(uri.scheme) : undefined);
   const fs = {
-    stat: (uri: Uri) => host.fs.stat(uri),
-    readDirectory: (uri: Uri) => host.fs.readDirectory(uri),
-    createDirectory: (uri: Uri) => host.fs.createDirectory(uri),
-    readFile: (uri: Uri) => host.fs.readFile(uri),
-    writeFile: (uri: Uri, content: Uint8Array) => host.fs.writeFile(uri, content),
-    delete: (uri: Uri, options?: { recursive?: boolean; useTrash?: boolean }) => host.fs.delete(uri, options),
-    rename: (source: Uri, target: Uri, options?: { overwrite?: boolean }) => host.fs.rename(source, target, options),
-    copy: (source: Uri, target: Uri, options?: { overwrite?: boolean }) => host.fs.copy(source, target, options),
-    isWritableFileSystem: (scheme: string) => (scheme === "file" ? true : undefined),
+    stat: async (uri: Uri) => (vfs(uri) ? vfs(uri)!.stat(uri) : host.fs.stat(uri)),
+    readDirectory: async (uri: Uri) => (vfs(uri)?.readDirectory ? vfs(uri)!.readDirectory!(uri) : host.fs.readDirectory(uri)),
+    createDirectory: async (uri: Uri) => (vfs(uri)?.createDirectory ? vfs(uri)!.createDirectory!(uri) : host.fs.createDirectory(uri)),
+    readFile: async (uri: Uri) => {
+      if (vfs(uri)) return vfs(uri)!.readFile(uri);
+      const c = uri && uri.scheme !== "file" ? host.virtual.contentFor(uri.scheme) : undefined;
+      if (c) return new TextEncoder().encode(String((await c.provideTextDocumentContent(uri, new CancellationTokenSource().token)) ?? ""));
+      return host.fs.readFile(uri);
+    },
+    writeFile: async (uri: Uri, content: Uint8Array) => {
+      if (vfs(uri)) return vfs(uri)!.writeFile(uri, content, { create: true, overwrite: true });
+      const isNew = await host.fs.stat(uri).then(() => false, () => true);
+      await host.fs.writeFile(uri, content);
+      host.extActivity(ext, { kind: "fs", op: isNew ? "create" : "write", path: host.paths.toPath(uri), chars: content.length });
+    },
+    delete: async (uri: Uri, options?: { recursive?: boolean; useTrash?: boolean }) => {
+      if (vfs(uri)?.delete) return vfs(uri)!.delete!(uri, { recursive: !!options?.recursive });
+      await host.fs.delete(uri, options);
+      host.extActivity(ext, { kind: "fs", op: "delete", path: host.paths.toPath(uri) });
+    },
+    rename: async (source: Uri, target: Uri, options?: { overwrite?: boolean }) => {
+      if (vfs(source)?.rename) return vfs(source)!.rename!(source, target, { overwrite: !!options?.overwrite });
+      await host.fs.rename(source, target, options);
+      host.extActivity(ext, { kind: "fs", op: "rename", path: host.paths.toPath(source), to: host.paths.toPath(target) });
+    },
+    copy: async (source: Uri, target: Uri, options?: { overwrite?: boolean }) => {
+      await host.fs.copy(source, target, options);
+      host.extActivity(ext, { kind: "fs", op: "copy", path: host.paths.toPath(source), to: host.paths.toPath(target) });
+    },
+    isWritableFileSystem: (scheme: string) => (scheme === "file" ? true : host.virtual.fsFor(scheme) ? true : host.virtual.contentFor(scheme) ? false : undefined),
   };
   const folderObj = () => (host.folder ? { uri: host.folder, name: host.data.workspace?.name ?? "", index: 0 } : undefined);
   const getConfiguration = (section?: string, scope?: unknown) => {
@@ -385,7 +410,7 @@ export function createApi(host: ExtHost, ext: ExtState) {
       const dto = C.workspaceEdit(edit, host.paths);
       const total = edit._allEntries?.().length ?? 0;
       if (dto.entries.length < total) host.log("warn", `applyEdit: ${total - dto.entries.length} change(s) outside the open folder were skipped`, ext.desc.id);
-      return rpc.request<boolean>("$main.applyEdit", [dto]);
+      return rpc.request<boolean>("$main.applyEdit", [dto, ext.desc.id]);
     },
     findFiles: (include: string | T.RelativePattern, exclude?: string | T.RelativePattern | null, maxResults?: number, token?: CancellationToken) => host.findFiles(include, exclude, maxResults, token),
     saveAll: (includeUntitled?: boolean) => rpc.request<boolean>("$main.executeCommand", ["workbench.action.files.saveAll", [includeUntitled]]).then(() => true),
@@ -425,13 +450,15 @@ export function createApi(host: ExtHost, ext: ExtState) {
         dispose: () => un(),
       };
     },
-    registerTextDocumentContentProvider: (scheme: string) => {
-      host.notSupported(ext, `workspace.registerTextDocumentContentProvider (${scheme})`, "warn");
-      return noopDisposable();
+    registerTextDocumentContentProvider: (scheme: string, provider: Parameters<typeof host.virtual.registerContent>[2]) => {
+      const d = host.virtual.registerContent(ext.desc.id, String(scheme), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
     },
-    registerFileSystemProvider: (scheme: string) => {
-      host.notSupported(ext, `workspace.registerFileSystemProvider (${scheme})`, "warn");
-      return noopDisposable();
+    registerFileSystemProvider: (scheme: string, provider: Parameters<typeof host.virtual.registerFs>[2], options?: { isReadonly?: boolean }) => {
+      const d = host.virtual.registerFs(ext.desc.id, String(scheme), provider, options);
+      ext.context?.subscriptions.push(d);
+      return d;
     },
     registerTaskProvider: () => noopDisposable(),
     updateWorkspaceFolders: () => false,
@@ -509,7 +536,8 @@ export function createApi(host: ExtHost, ext: ExtState) {
     registerWorkspaceSymbolProvider: () => noopDisposable(),
     registerDocumentDropEditProvider: () => noopDisposable(),
     registerDocumentPasteEditProvider: () => noopDisposable(),
-    registerInlineCompletionItemProvider: () => noopDisposable(),
+    registerInlineCompletionItemProvider: (selector: unknown, provider: unknown, metadata?: { displayName?: string; debounceDelayMs?: number }) =>
+      reg("inlineCompletion", selector, provider, { displayName: metadata?.displayName ?? ext.desc.displayName }),
   });
 
   // ───────────── env ─────────────
@@ -591,8 +619,29 @@ export function createApi(host: ExtHost, ext: ExtState) {
     scm: empty("scm"),
     tests: empty("tests"),
     notebooks: empty("notebooks"),
-    authentication: g("authentication", { onDidChangeSessions: new EventEmitter<unknown>().event }),
-    comments: empty("comments"),
+    authentication: g("authentication", host.authentication.api(ext)),
+    comments: g("comments", {
+      // Comment threads aren't shown in TMCode yet; the controller works so extensions that add
+      // threads (Claude Code's per-hunk Accept/Reject bars) keep working without them.
+      createCommentController: (id: string, label: string) => {
+        const threads = new Set<{ dispose(): void }>();
+        return {
+          id,
+          label,
+          options: undefined as unknown,
+          commentingRangeProvider: undefined as unknown,
+          reactionHandler: undefined as unknown,
+          createCommentThread(uri: Uri, range: T.Range | undefined, comments: unknown[]) {
+            const thread = { uri, range, comments, collapsibleState: 0, canReply: true, contextValue: undefined as unknown, label: undefined as unknown, state: undefined as unknown, dispose: () => threads.delete(thread) };
+            threads.add(thread);
+            return thread;
+          },
+          dispose() {
+            threads.clear();
+          },
+        };
+      },
+    }),
     chat: empty("chat"),
     lm: empty("lm"),
     // classes & enums

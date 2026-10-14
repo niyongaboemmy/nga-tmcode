@@ -1,4 +1,5 @@
 import { registerCommand } from "../commands/registry";
+import { internally, recordActivity } from "../activity/log";
 import { msg } from "../messages/catalog";
 import { inExam } from "../exam/state";
 import { openInTaskMentor } from "./taskMentorLinks";
@@ -104,14 +105,18 @@ export async function pickStarter(title = "New project from a starter"): Promise
 export async function writeStarter(starter: Starter) {
   const fs = getPlatform().fs;
   const files = await starterFiles(starter);
-  for (const [path, content] of Object.entries(files)) {
-    const parts = path.split("/");
-    for (let i = 1; i < parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
-    await fs.writeFile(path, content).catch(async () => {
-      await fs.createFile(path);
-      await fs.writeFile(path, content);
-    });
-  }
+  await internally(async () => {
+    for (const [path, content] of Object.entries(files)) {
+      const parts = path.split("/");
+      for (let i = 1; i < parts.length; i++) await fs.createDir(parts.slice(0, i).join("/")).catch(() => {});
+      await fs.writeFile(path, content).catch(async () => {
+        await fs.createFile(path);
+        await fs.writeFile(path, content);
+      });
+    }
+  });
+  const count = Object.keys(files).length;
+  recordActivity({ kind: "project", action: "starter", text: `Added the starter "${starter.title}" (${count} file${count === 1 ? "" : "s"})`, data: { starter: starter.id, files: count } });
   // The explorer lists the new files at once (the watcher would, a moment later, on the desktop only).
   const { applyExternalChanges } = await import("../monaco/external");
   await applyExternalChanges(Object.keys(files));

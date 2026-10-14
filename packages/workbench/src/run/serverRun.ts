@@ -3,6 +3,7 @@
  * typed input, Ctrl+C, End of Input, Stop), the example tests of `.nga/tests.json`, and unit tests.
  * Everything here asks the code runner's capabilities first and does nothing when they are missing.
  */
+import { recordActivity } from "../activity/log";
 import { saveAll } from "../monaco/documents";
 import type { RunEvent, RunHandle } from "../platform/types";
 import { getPlatform, log, notify, setTests, updateTest, useWorkbench } from "../state/store";
@@ -170,6 +171,7 @@ export async function runOnTaskMentor(entry: string, why?: string): Promise<bool
   writeConsole({ type: "info", text: "Type your input below and press Enter. Ctrl+C stops the program; End of Input closes its input." });
   if (pack.skipped) writeConsole({ type: "info", text: `${pack.skipped} file(s) were too many or too large to send.` });
   log("Run", `Run ${entry} on Task Mentor (${pack.files.length} files, ${language ?? pack.kind ?? "detected"})`);
+  recordActivity({ kind: "run", action: "run", path: entry, text: `Ran ${entry} on Task Mentor`, data: { files: pack.files.length, language: language ?? pack.kind ?? "detected" } });
   const started = Date.now();
   let phase: "build" | "run" = "run";
   try {

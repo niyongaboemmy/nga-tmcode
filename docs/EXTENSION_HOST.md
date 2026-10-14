@@ -182,7 +182,10 @@ Anything not in this list behaves in one of three ways.
 - **Decorations:** `createTextEditorDecorationType` supports colours, borders, font style, whole line, the overview ruler, before/after text and light/dark variants.
 - **Tree views:** `createTreeView` and `registerTreeDataProvider`. See "Views and webviews".
 - **Webviews:** `createWebviewPanel` and `registerWebviewViewProvider`. See "Views and webviews".
-- **Stubs:** `registerUriHandler`, `registerFileDecorationProvider`, `registerWebviewPanelSerializer`, `tabGroups` (empty), `terminals` (empty) and `activeColorTheme`.
+- **`tabGroups`:** the editor groups and their tabs, with `TabInputText`, `TabInputTextDiff` (diffs, including extensions' `vscode.diff`) and `TabInputWebview`. Groups and tabs keep their identity; `close()` resolves once the tabs are gone (`host/tabs.ts`, workbench `exthost/tabsSync.ts`).
+- **`registerUriHandler`:** `tmcode://<publisher.name>/<path>?<query>` links reach the extension (activated by `onUri` if needed), as VS Code's `vscode://` links. `env.uriScheme` is `tmcode`. Links to `vscode://` itself can't be received: TMCode doesn't take over VS Code's scheme.
+- **Terminals:** `createTerminal` with `env`, `environmentVariableCollection` (applied to every new terminal, as Claude Code's `CLAUDE_CODE_SSE_PORT`), and shell integration: `terminal.shellIntegration.executeCommand()` runs a command between OSC 633 C/D markers the shell prints, so `execution.read()` and `onDidEndTerminalShellExecution` (exit code) work (zsh, bash, fish, PowerShell).
+- **Stubs:** `registerFileDecorationProvider`, `registerWebviewPanelSerializer` and `activeColorTheme`.
 
 ### `workspace`
 
@@ -223,7 +226,8 @@ Anything not in this list behaves in one of three ways.
 - `createDiagnosticCollection` feeds the Problems panel, including for files that are not open. `getDiagnostics` and `onDidChangeDiagnostics` work too.
 - `getLanguages`, `setTextDocumentLanguage`, `match` and `createLanguageStatusItem` (shown as a status bar item).
 - `setLanguageConfiguration` applies to extension languages only. Monaco would replace, not merge, a built-in language's configuration.
-- Semantic tokens, call hierarchy and type hierarchy, workspace symbols, inline completions and inline values register as no-ops.
+- Inline completions (ghost text) work; see "AI extensions".
+- Semantic tokens, call hierarchy and type hierarchy, workspace symbols and inline values register as no-ops.
 
 ### `env`
 
@@ -260,7 +264,29 @@ The classes include:
 
 The enums include `StatusBarAlignment`, `ProgressLocation`, `EndOfLine`, `ViewColumn`, `TextEditorRevealType`, `ConfigurationTarget`, `FileType`, `ExtensionMode`, `UIKind`, `LogLevel` and `QuickPickItemKind`.
 
-`vscode.version` is `1.96.0`.
+`vscode.version` is `1.106.0`: the secondary side bar (`viewsContainers.secondarySidebar`) is supported, which Claude Code checks for.
+
+## AI extensions
+
+Verified with the probe in `packages/exthost/test` (activation, views resolved, unsupported APIs listed) and the e2e fixture `e2e/ai-extensions.spec.ts`:
+
+| Extension | Result |
+|---|---|
+| **Anthropic.claude-code** | ✅ Activates; its chat (secondary side bar) renders; proposed edits open as diffs (`_claude_fs_left/right` file system providers + `vscode.diff`), found and closed through `tabGroups`. The agent is its bundled `claude` binary; sign-in is the CLI's own browser flow. |
+| **Google.geminicodeassist** | ✅ Activates (it needs `node-pty` from `env.appRoot`: TMCode's stand-in, `node/ptyShim.ts`); chat renders; inline completions; Google sign-in by loopback redirect (`env.appHost` is `desktop`). |
+| **Blackboxapp.blackboxagent** | ✅ Activates; chat renders; `blackbox-diff:` diffs; terminal commands through shell integration. Its paid sign-in and GitHub connect return through `vscode://` links, which TMCode can't receive. |
+| **Codeium.codeium** (Windsurf) | ✅ Activates (authentication provider). |
+| **Continue.continue** | ✅ Activates (storage folders exist before activation). |
+| **saoudrizwan.claude-dev** (Cline) | ✅ Activates. |
+
+What makes them work:
+
+- **Inline completions** (ghost text): `languages.registerInlineCompletionItemProvider` → Monaco's inline suggestions (Tab, Esc, ⌘→, ⌥]/⌥[); accepted ones are recorded as AI use.
+- **Virtual documents:** `registerTextDocumentContentProvider` and `registerFileSystemProvider` (`host/virtualDocs.ts`). Their documents open in editors and diff editors by URI ("virtual paths", `util/virtual.ts`); saving a writable one writes through its provider (never automatically: Claude Code treats a save as Accept).
+- **Commands** extensions call: `vscode.diff`, `vscode.changes`, `default:type`, `workbench.action.closeActiveEditor`, `workbench.action.focusAuxiliaryBar`/`toggleAuxiliaryBar`, `revealInExplorer`, `revealFileInOS`.
+- **`authentication`:** providers extensions register, `getSession` (with consent), `getAccounts`, and "Accounts: Manage Extension Accounts".
+- **`comments.createCommentController`** works (threads aren't drawn yet).
+- **Attribution:** in the Node host, an extension's activation, commands, providers and event listeners run in an `AsyncLocalStorage` context, so its edits, file writes and terminal commands are recorded under its name in TMCode's activity log (AI extensions as AI use).
 
 ## Contribution points
 
@@ -423,7 +449,7 @@ Language-server-based extensions work when they use `vscode-languageclient` over
   - **The browser build** has no webview origin: pages use `srcdoc` and their `asWebviewUri` resources are inlined as data URLs (fine for the fixture and small pages; resources a page loads at run time are not served).
   - **Live Preview's live reload** was not verified (its WebSocket handshake failed in the test rig).
   - The native self-test does not cover views yet; they were verified with the Node harness, `webview-rig.mjs` and the Playwright fixture (`e2e/ext-views.spec.ts`).
-- **No terminals** (`window.createTerminal` throws). No tasks, no debuggers from extensions, no SCM providers, no authentication providers, no comments.
+- **Terminals** work (with env and shell integration); pseudoterminals (`pty`) don't. No tasks, no debuggers from extensions, no SCM providers; comment threads aren't drawn.
 - **Extensions with only a `browser` entry** run in a Web Worker. On the desktop that Worker evaluates code with `new Function`. If the webview's CSP refuses it, the extension shows as *Failed*.
 - **ES-module extensions** need Node.js 22.15 or 23.5 or newer, for `module.registerHooks`. On older Node they fail to activate with "Cannot find package 'vscode'".
 - **Multi-select quick picks** are supported. The extension-driven `QuickPick` object API is basic (show, accept, hide); buttons and dynamic items are not supported.
@@ -432,7 +458,6 @@ Language-server-based extensions work when they use `vscode-languageclient` over
 - **Unopened files:** `workspace.applyEdit` saves files that no editor shows instead of keeping them dirty in the background.
 - **One workspace folder.** Multi-root workspaces are not supported.
 - **Next:**
-  - `createTerminal` over TMCode's terminal;
-  - `onWillSaveTextDocument`;
+  - pseudoterminals and comment threads;
   - custom editors and webview panel serializers;
   - verified ESLint support.

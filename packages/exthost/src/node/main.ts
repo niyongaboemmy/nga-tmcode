@@ -9,10 +9,13 @@
 import * as path from "node:path";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import Module from "node:module";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { EventEmitter } from "../api/events";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { encodeFrame, FrameDecoder, type RpcMessage } from "../rpc";
 import { ExtHost, type HostEnvironment } from "../host/extHost";
 import { NodeFs } from "./nodeFs";
+import { PTY_SHIM_PACKAGE, PTY_SHIM_SOURCE } from "./ptyShim";
 import type { ModuleLoader } from "../host/fs";
 
 const realWrite = process.stdout.write.bind(process.stdout);
@@ -154,8 +157,19 @@ function createNodeLoader(apiFor: (id: string) => unknown, locations: () => { id
   };
 }
 
+// Which extension's code is running (activation, commands, providers, event listeners and all that
+// they start): edits, file writes and terminal commands are attributed to it in TMCode's activity log.
+const context = new AsyncLocalStorage<string>();
+EventEmitter.wrapListener = (fn) => {
+  const id = context.getStore();
+  if (!id) return fn;
+  return ((...a: never[]) => context.run(id, () => fn(...a))) as typeof fn;
+};
+
 const env: HostEnvironment = {
   kind: "node",
+  runAs: (id, fn) => context.run(id, fn),
+  currentExtension: () => context.getStore(),
   isWindows: process.platform === "win32",
   createFs: (host) => new NodeFs(host),
   realPath,
@@ -163,6 +177,32 @@ const env: HostEnvironment = {
   createLoader: (apiFor) => createNodeLoader(apiFor, () => [...host.exts.values()].flatMap((e) => [{ id: e.desc.id, location: path.resolve(e.desc.location) }, { id: e.desc.id, location: realPath(e.desc.location) }])),
   onConsole(write) {
     consoleSink = write;
+  },
+  prepareAppRoot(storage, version) {
+    try {
+      const appRoot = path.join(storage, "app-root");
+      const files: Record<string, string> = {
+        "package.json": JSON.stringify({ name: "tmcode", version }, null, 2),
+        "product.json": JSON.stringify({ nameShort: "TMCode", nameLong: "TMCode", applicationName: "tmcode", urlProtocol: "tmcode", version }, null, 2),
+        "node_modules/node-pty/package.json": PTY_SHIM_PACKAGE,
+        "node_modules/node-pty/lib/index.js": PTY_SHIM_SOURCE,
+      };
+      for (const [rel, text] of Object.entries(files)) {
+        const file = path.join(appRoot, rel);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, text);
+      }
+      return appRoot;
+    } catch {
+      return null;
+    }
+  },
+  ensureDir(dir) {
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      /* the extension reports what it couldn't do */
+    }
   },
   installBuiltin(root, name, files) {
     try {

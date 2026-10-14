@@ -204,10 +204,10 @@ export async function createTauriPlatform(): Promise<Platform> {
       importPaths: (sources, dest, overwrite) => invoke<{ imported: string[]; conflicts: string[] }>("ws_import", { sources, dest, overwrite }),
     },
     terminal: {
-      async spawn({ cols, rows, cwd, profile, onData, onExit }): Promise<TerminalSession> {
+      async spawn({ cols, rows, cwd, profile, env, onData, onExit }): Promise<TerminalSession> {
         const channel = new Channel<PtyEvent>();
         channel.onmessage = (e) => (e.type === "data" ? onData(e.data) : onExit(e.code));
-        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, onEvent: channel });
+        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, env: env?.length ? env : null, onEvent: channel });
         return {
           write: (data) => void invoke("pty_write", { id, data }).catch(() => {}),
           resize: (c, r) => void invoke("pty_resize", { id, cols: c, rows: r }).catch(() => {}),
