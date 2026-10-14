@@ -1,0 +1,61 @@
+#!/bin/bash
+# arduino-build compile <fqbn> <entry.ino>   build step: compiles the project's sketch
+# arduino-build hex                          run step: prints the firmware (Intel HEX)
+#
+# The arduino/uno kind. arduino-cli wants a sketch folder named after its main .ino, so the
+# project's sources are copied into .nga-arduino/<name>/ first (folders kept: src/ works as in the
+# Arduino IDE). The compiler's messages name files as the student wrote them (sketch.ino:3:5:),
+# not the box's paths. Nothing is fetched: the AVR core and libraries are installed under
+# /opt/arduino by deploy/install-languages.sh (arduino) and seen read-only in the box.
+# The firmware is what the run step prints: Task Mentor and the MIS get it as the run's output and
+# simulate it in the browser (or flash it to a board).
+set -uo pipefail
+CLI="${ARDUINO_CLI:-$(command -v arduino-cli || echo /opt/arduino/bin/arduino-cli)}"
+CONF="${ARDUINO_CONFIG:-/opt/arduino/arduino-cli.yaml}"
+# Installed elsewhere (a developer's machine): the config sits next to arduino-cli's bin/.
+[ -f "$CONF" ] || CONF="$(dirname "$(dirname "$CLI")")/arduino-cli.yaml"
+WORK=".nga-arduino"
+
+case "${1:-}" in
+  compile)
+    [ $# -ge 3 ] || { echo "usage: arduino-build compile <fqbn> <entry.ino>" >&2; exit 2; }
+    fqbn="$2"
+    entry="${3#./}"
+    case "$entry" in *.ino) ;; *) echo "arduino-build: the main file must be a .ino sketch (got $entry)" >&2; exit 2 ;; esac
+    [ -f "$entry" ] || { echo "arduino-build: $entry is not among the files" >&2; exit 2; }
+    name="$(basename "$entry" .ino)"
+    sketch="$WORK/$name"
+    rm -rf "$WORK"
+    mkdir -p "$sketch" "$WORK/out"
+    # The project's sources, folders kept; the main sketch at the top, named after the folder.
+    find . -path "./$WORK" -prune -o -path "./.*" -prune -o -type f \
+      \( -name '*.ino' -o -name '*.pde' -o -name '*.h' -o -name '*.hpp' -o -name '*.c' -o -name '*.cpp' -o -name '*.S' \) -print |
+      while IFS= read -r f; do
+        f="${f#./}"
+        mkdir -p "$sketch/$(dirname "$f")" && cp "$f" "$sketch/$f"
+      done
+    if [ "$entry" != "$name.ino" ]; then
+      mv "$sketch/$entry" "$sketch/$name.ino.tmp" && mv "$sketch/$name.ino.tmp" "$sketch/$name.ino"
+    fi
+    build="${TMPDIR:-/tmp}/nga-arduino-build"
+    here="$(pwd -P)"
+    # Messages as the student's files name them; not the "Used platform/library" table (box paths).
+    "$CLI" --config-file "$CONF" --no-color compile --fqbn "$fqbn" --warnings default \
+      --build-path "$build" --output-dir "$WORK/out" "$sketch" 2>&1 |
+      sed -e "s#$here/$sketch/##g" -e "s#$sketch/##g" -e "s#$build/sketch/##g" -e "s#\.ino\.cpp:#.ino:#g" \
+        -e '/^Used platform/,/^$/d' -e '/^Used library/,/^$/d' -e 's/^Error during build: exit status 1$/The sketch did not compile./'
+    exit "${PIPESTATUS[0]}"
+    ;;
+  hex)
+    for f in "$WORK"/out/*.hex; do
+      case "$f" in *with_bootloader*) continue ;; esac
+      [ -f "$f" ] && { cat "$f"; exit 0; }
+    done
+    echo "arduino-build: no firmware (the build step didn't run or failed)" >&2
+    exit 1
+    ;;
+  *)
+    echo "usage: arduino-build compile <fqbn> <entry.ino> | arduino-build hex" >&2
+    exit 2
+    ;;
+esac

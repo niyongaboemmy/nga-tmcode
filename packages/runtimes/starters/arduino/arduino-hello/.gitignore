@@ -1,0 +1,4 @@
+.nga-arduino/
+build/
+*.hex
+*.elf

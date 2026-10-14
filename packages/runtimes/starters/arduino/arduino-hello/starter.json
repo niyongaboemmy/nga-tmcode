@@ -1,0 +1,18 @@
+{
+  "id": "arduino-hello",
+  "language": "arduino",
+  "kind": "arduino/uno",
+  "title": "Arduino – Blink and hello",
+  "description": "The built-in LED blinks and the Serial Monitor says hello",
+  "level": "beginner",
+  "purpose": "hello",
+  "entry": "sketch.ino",
+  "open": [
+    "sketch.ino"
+  ],
+  "tags": [
+    "basics",
+    "embedded"
+  ],
+  "since": "2026.10.6"
+}

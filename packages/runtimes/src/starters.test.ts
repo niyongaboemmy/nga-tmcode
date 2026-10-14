@@ -62,6 +62,12 @@ describe("starters", () => {
   it("give every wave B, C and D language a hello and a two-number io-exercise", () => {
     for (const lang of LANGUAGES.filter((l) => l.wave === "B" || l.wave === "C" || l.wave === "D")) {
       const hello = STARTERS.find((s) => s.manifest.id === `${lang.key}-hello`);
+      // Arduino's run prints firmware, not the program's output: its exercises check the simulated
+      // Serial output (MIS / Task Mentor), so no stdin "Sum" exercise.
+      if (lang.key === "arduino") {
+        expect(hello?.manifest.purpose, "arduino-hello").toBe("hello");
+        continue;
+      }
       const io = STARTERS.find((s) => s.manifest.id === `${lang.key}-io`);
       expect(hello?.manifest.purpose, `${lang.key}-hello`).toBe("hello");
       expect(io?.manifest.purpose, `${lang.key}-io`).toBe("io-exercise");

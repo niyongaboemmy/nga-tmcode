@@ -66,8 +66,9 @@ describe("starters (from the Runtime Catalog)", () => {
     const fileRuns = Object.keys(files)
       .flatMap((p) => fileActions(p, { webRoot: /\.html?$/.test(p) ? "" : null, source: files[p], folderFiles: Object.keys(files).filter((q) => folderOf(q) === folderOf(p)).map((q) => q.split("/").pop()!) }))
       .filter((a) => a.kind !== "markdownPreview");
-    // A few kinds need the code runner's own setup (NASM's link script, GNUstep headers): they run on Task Mentor only.
-    if (s.kind === "asm/nasm" || s.kind === "objc/single") return expect(kindById(s.kind)?.steps.run).toBeTruthy();
+    // A few kinds need the code runner's own setup (NASM's link script, GNUstep headers) or a simulator
+    // (Arduino: compiled on the runner, simulated in the browser): they run through Task Mentor / the MIS only.
+    if (s.kind === "asm/nasm" || s.kind === "objc/single" || s.kind === "arduino/uno") return expect(kindById(s.kind)?.steps.run).toBeTruthy();
     expect(projects.length + fileRuns.length, `${s.id} has nothing to run`).toBeGreaterThan(0);
   });
 });
