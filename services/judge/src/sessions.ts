@@ -95,6 +95,51 @@ interface Plan {
 
 const STDBUF = "/usr/bin/stdbuf";
 
+const JVM_NOTICE = /^Picked up (?:JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS): .*$/;
+const NOTICE_PREFIX = "Picked up ";
+
+/**
+ * Live runs only: drops the JVM's "Picked up JAVA_TOOL_OPTIONS: …" lines (our options, not the
+ * program's output) from the start of stderr, as batch runs do. Holds back only what could
+ * still be such a line; anything else passes at once.
+ */
+export function leadingNoticeFilter() {
+  let buf = "";
+  let done = false;
+  return {
+    push(chunk: string): string {
+      if (done) return chunk;
+      buf += chunk;
+      for (;;) {
+        const nl = buf.indexOf("\n");
+        if (nl < 0) {
+          // An unfinished line: wait only while it may still be a notice.
+          if (NOTICE_PREFIX.startsWith(buf) || buf.startsWith(NOTICE_PREFIX)) return "";
+          done = true;
+          const out = buf;
+          buf = "";
+          return out;
+        }
+        const line = buf.slice(0, nl).replace(/\r$/, "");
+        if (!JVM_NOTICE.test(line)) {
+          done = true;
+          const out = buf;
+          buf = "";
+          return out;
+        }
+        buf = buf.slice(nl + 1);
+      }
+    },
+    /** What was held back when the program ends. */
+    flush(): string {
+      done = true;
+      const out = JVM_NOTICE.test(buf) ? "" : buf;
+      buf = "";
+      return out;
+    },
+  };
+}
+
 /**
  * An interactive run shows a prompt the moment the program prints it, as a terminal does:
  * `printf("Name: "); scanf(…)` (C, Swift…) left the prompt in a line buffer until after the
@@ -356,15 +401,17 @@ export class SessionManager {
       const proc = s.box.spawn(plan.argv(s.box), { limits: { ...plan.limits, wallS: Math.ceil(this.wallMs / 1000) }, env: { ...plan.env, ...(s.db?.env ?? {}), ...(s.tty ? { TERM: "xterm-256color", COLUMNS: String(s.tty.cols), LINES: String(s.tty.rows) } : {}) }, tty: s.tty ?? undefined });
       s.proc = proc;
       this.touch(s);
+      const notices = leadingNoticeFilter();
       const pipe = (event: "stdout" | "stderr") => {
         const decoder = new StringDecoder("utf8");
+        const clean = event === "stderr" ? notices.push : (t: string) => t;
         return (chunk: Buffer) => {
           if (s.stopped || s.ended) return;
           this.touch(s);
           const left = this.outputCap - s.outputBytes;
           const part = chunk.length > left ? chunk.subarray(0, Math.max(left, 0)) : chunk;
           s.outputBytes += part.length;
-          const text = decoder.write(part);
+          const text = clean(decoder.write(part));
           if (text) s.emit({ event, data: { data: text } });
           if (chunk.length > left) this.stop(s, "output-limit", `The program printed more than ${Math.round(this.outputCap / 1024 / 1024)} MB; it was stopped.`);
         };
@@ -379,6 +426,8 @@ export class SessionManager {
       } else for (const d of s.pending.splice(0)) (d === null ? proc.end() : proc.write(d));
       if (s.pendingSignal) proc.kill(s.pendingSignal);
       done = await proc.done;
+      const held = notices.flush();
+      if (held && !s.ended) s.emit({ event: "stderr", data: { data: held } });
       let verdict = VERDICT[done.status];
       if (verdict === "ok" && done.exitCode !== 0) verdict = "runtime-error";
       if (s.stopped) verdict = s.stopped.verdict;

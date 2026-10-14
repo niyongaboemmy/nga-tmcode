@@ -371,6 +371,9 @@ export class IsolateSandbox implements Sandbox {
       const vars = { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/box", LANG: "C.UTF-8", ...env };
       return [
           "--cg",
+          // No status line ("OK (0.1 sec real, …)") on isolate's stderr: a live run's stderr is
+          // the program's own (batch runs redirect it to a file, so it never showed there).
+          "--silent",
           `--box-id=${id}`,
           `--meta=${meta}`,
           `--time=${limits.cpuS}`,
