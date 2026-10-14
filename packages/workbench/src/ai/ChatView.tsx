@@ -13,7 +13,7 @@ import { showQuickPick } from "../widgets/QuickPick";
 import { Codicon } from "../widgets/icons";
 import { renderMarkdown } from "../widgets/markdown";
 import { insertAtCursor, proposeEdit } from "./apply";
-import { chat, loadAiSettings, modeLabel, refreshAiStatus, setAiMode, setAiSuggestions, useAi, type AiRequestError, type ChatContext, type ChatTurn } from "./service";
+import { asAiError, chat, loadAiSettings, modeLabel, refreshAiStatus, setAiMode, setAiSuggestions, useAi, type AiRequestError, type ChatContext, type ChatTurn } from "./service";
 
 /**
  * TMCode AI's chat (secondary side bar), as VS Code's Chat view: ask about the open file or the
@@ -118,10 +118,11 @@ export async function ask(text: string, opts: { file: boolean; problems: boolean
       error: (e) => fail(e),
     });
   } catch (e) {
-    fail(e as AiRequestError);
+    fail(asAiError(e));
   }
-  function fail(e: AiRequestError) {
-    patch({ streaming: false, error: { code: e.code ?? "FAILED", message: e.message } });
+  function fail(err: AiRequestError) {
+    const e = asAiError(err);
+    patch({ streaming: false, error: { code: e.code, message: e.message } });
     useChat.setState({ busy: false });
     cancelCurrent = null;
   }

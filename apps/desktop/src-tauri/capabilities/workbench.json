@@ -118,6 +118,8 @@
     "allow-auth-status",
     "allow-auth-sign-out",
     "allow-tm-api",
+    "allow-tm-stream",
+    "allow-tm-stream-cancel",
     "allow-proj-scan",
     "allow-proj-read-blob",
     "allow-proj-write-blob",

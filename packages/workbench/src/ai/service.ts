@@ -77,6 +77,19 @@ export class AiRequestError extends Error {
   }
 }
 
+/**
+ * Any failure as an AiRequestError with words to show: the desktop app's invoke() rejects with a
+ * plain string, other failures may have no message at all (an empty error box helps nobody).
+ */
+export function asAiError(e: unknown): AiRequestError {
+  if (e instanceof AiRequestError && e.message) return e;
+  const raw = typeof e === "string" ? e : e instanceof Error ? e.message : e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message ?? "") : "";
+  const code = e instanceof AiRequestError ? e.code : "FAILED";
+  if (/sign in/i.test(raw)) return new AiRequestError("SIGNED_OUT", "Sign in to NGA to use TMCode AI.");
+  if (/not allowed|not found|unknown command/i.test(raw)) return new AiRequestError("OLD_APP", "This version of TMCode can't receive AI answers. Update TMCode (Help › Check for Updates).");
+  return new AiRequestError(code, raw.trim() ? `TMCode AI couldn't answer: ${raw.trim()}` : "TMCode AI couldn't answer. Try again.");
+}
+
 function host() {
   const h = getPlatform().account;
   if (!h) throw new AiRequestError("NO_ACCOUNT", "TMCode AI needs the TMCode app signed in to NGA.");
@@ -149,12 +162,16 @@ export async function chat(messages: ChatTurn[], context: ChatContext | undefine
     else if (name === "error") finish(() => on.error(new AiRequestError(String((data as { code?: string }).code ?? "FAILED"), String((data as { message?: string }).message ?? "The AI didn't answer."))));
   });
   if (!h.stream) throw new AiRequestError("OLD_APP", "Update TMCode to use TMCode AI.");
-  handle = await h.stream(`/api/tmcode/ai/chat/${id}/stream`, (e) => {
+  handle = await h
+    .stream(`/api/tmcode/ai/chat/${id}/stream`, (e) => {
     if (cancelled) return;
     if (e.type === "data") parse(e.data);
     else if (e.type === "end") finish(() => on.error(new AiRequestError("INTERRUPTED", "The answer stopped. Try again.")));
-    else if (e.type === "error") finish(() => on.error(new AiRequestError("OFFLINE", e.message)));
-  });
+      else if (e.type === "error") finish(() => on.error(new AiRequestError("OFFLINE", e.message || "TMCode AI lost its connection to Task Mentor. Try again.")));
+    })
+    .catch((err) => {
+      throw asAiError(err);
+    });
   return () => {
     cancelled = true;
     finished = true;

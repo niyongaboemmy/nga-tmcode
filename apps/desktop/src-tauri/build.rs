@@ -88,6 +88,8 @@ fn main() {
             "auth_status",
             "auth_sign_out",
             "tm_api",
+            "tm_stream",
+            "tm_stream_cancel",
             "proj_scan",
             "proj_read_blob",
             "proj_write_blob",
