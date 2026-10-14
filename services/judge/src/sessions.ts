@@ -88,6 +88,21 @@ interface Plan {
 
 const STDBUF = "/usr/bin/stdbuf";
 
+/**
+ * An interactive run shows a prompt the moment the program prints it, as a terminal does:
+ * `printf("Name: "); scanf(…)` (C, Swift…) left the prompt in a line buffer until after the
+ * answer, because the program sees a pipe. So sessions run native programs with stdout and
+ * stderr unbuffered (stdbuf -o0 -e0); batch runs keep -oL (fewer writes on big outputs).
+ * Only stdbuf's own options change, never the program's arguments.
+ */
+export function unbufferedForSession(argv: string[]): string[] {
+  if (!argv.length || !/(^|\/)stdbuf$/.test(argv[0])) return argv;
+  const out = [argv[0]];
+  let i = 1;
+  for (; i < argv.length && argv[i].startsWith("-"); i++) out.push(argv[i] === "-oL" ? "-o0" : argv[i] === "-eL" ? "-e0" : argv[i]);
+  return [...out, ...argv.slice(i)];
+}
+
 /** Profile requests (python-3, c17…): the batch judge's compile and run commands. */
 function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
   const lang = languageById(req.language!)!;
@@ -126,13 +141,13 @@ function profilePlan(req: SessionRequest, programs: Map<string, string>): Plan {
           return null;
         }
       : null;
-  // Compiled programs see a pipe, not a terminal: line-buffer them so prompts appear.
+  // Compiled programs see a pipe, not a terminal: unbuffer them so prompts appear.
   const lineBuffered = !!lang.compile && existsSync(STDBUF);
   return {
     acquire: {},
     files: req.files,
     build,
-    argv: () => (lineBuffered ? [STDBUF, "-oL", "-eL", ...lang.run(ctx)] : lang.run(ctx)),
+    argv: () => (lineBuffered ? [STDBUF, "-o0", "-e0", ...lang.run(ctx)] : lang.run(ctx)),
     env: lang.env ?? {},
     limits,
   };
@@ -180,7 +195,7 @@ function kindPlan(req: SessionRequest, toolchains: Toolchains, containers?: Cont
           return null;
         }
       : null,
-    argv: () => stepArgv(tc, kind, run, ctx),
+    argv: () => unbufferedForSession(stepArgv(tc, kind, run, ctx)),
     env: { ...setup.env, ...(run.env ?? {}) },
     limits: runLimits(kind, req.limits),
   };

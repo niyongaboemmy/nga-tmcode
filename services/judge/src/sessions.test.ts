@@ -3,7 +3,7 @@ import type { Server, ServerResponse } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resolvePrograms } from "./judge.ts";
 import { IsolateSandbox, LocalSandbox, type Sandbox } from "./sandbox.ts";
-import { SessionManager, type SessionEvent, type SessionOptions } from "./sessions.ts";
+import { SessionManager, unbufferedForSession, type SessionEvent, type SessionOptions } from "./sessions.ts";
 import { availability, resolveToolchains } from "./toolchains.ts";
 import { kindById } from "../../../packages/runtimes/src/index.ts";
 
@@ -256,4 +256,29 @@ describe.runIf(hasPython && !useIsolate)("sessions over HTTP", () => {
     expect((await call("DELETE", `/v1/sessions/${a.id}`)).status).toBe(204);
     expect((await call("DELETE", `/v1/sessions/${b.id}`)).status).toBe(204);
   });
+});
+
+describe("prompts appear before the answer (no fflush needed)", () => {
+  it("unbuffers stdbuf's options only", () => {
+    expect(unbufferedForSession(["/usr/bin/stdbuf", "-oL", "-eL", "/box/main", "-oL"])).toEqual(["/usr/bin/stdbuf", "-o0", "-e0", "/box/main", "-oL"]);
+    expect(unbufferedForSession(["/usr/bin/python3", "-u", "main.py"])).toEqual(["/usr/bin/python3", "-u", "main.py"]);
+    expect(unbufferedForSession([])).toEqual([]);
+  });
+
+  const C_PROMPT = '#include <stdio.h>\nint main(void) { char n[64]; printf("Name: "); if (scanf("%63s", n) != 1) return 1; printf("Hi %s\\n", n); return 0; }\n';
+  for (const req of [
+    { label: "c/single (catalog)", runIf: availability(tc, kindById("c/single")!).available, body: { kind: "c/single", files: [{ path: "main.c", content: C_PROMPT }] } },
+    { label: "c17 (profile)", runIf: programs.has("gcc"), body: { language: "c17", entry: "main.c", files: [{ path: "main.c", content: C_PROMPT }] } },
+  ]) {
+    it.runIf(req.runIf)(`${req.label}: printf without a newline shows before scanf waits`, async () => {
+      const m = manager();
+      const { id } = m.create(req.body);
+      const l = listen(m, id);
+      await l.until((es) => out(es).includes("Name: "), 30_000);
+      expect(out(l.events)).toBe("Name: ");
+      m.stdin(id, { data: "Ada\n" });
+      await l.finished;
+      expect(out(l.events)).toBe("Name: Hi Ada\n");
+    }, 60_000);
+  }
 });
