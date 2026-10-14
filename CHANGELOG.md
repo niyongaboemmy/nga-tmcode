@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.18.1 — 2026-10-14
+
+**TMCode 0.18.1: TMCode AI answers.** In 0.18.0 the AI chat showed an empty warning instead of an answer. It answers now.
+
+### TMCode AI
+
+- **Answers arrive.** TMCode wasn't allowed to receive Task Mentor's streamed answers, so every question failed. They now stream in as they're written.
+- **Errors say what happened** ("sign in", "update TMCode", "try again") instead of showing an empty box.
+
+### Code runner
+
+- **Live runs on Task Mentor** work in the desktop app too. They had the same problem.
+
+### All changes
+
+- Allow streamed Task Mentor answers (tm_stream): TMCode AI and live runs (0.18.1)
+- judge: live Node runs end when the program stops reading stdin
+- Interactive runs show prompts as soon as they are printed (stdbuf -o0 in sessions)
+
 ## 0.18.0 — 2026-10-14
 
 **TMCode 0.18: AI the way VS Code has it, and an activity log of your work.** TMCode has its own free AI, AI extensions such as Claude Code and Gemini work in your projects, and everything you do (except typing) is recorded, with AI use named.
