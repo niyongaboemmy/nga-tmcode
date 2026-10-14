@@ -3,7 +3,7 @@ import type { Server, ServerResponse } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resolvePrograms } from "./judge.ts";
 import { IsolateSandbox, LocalSandbox, type Sandbox } from "./sandbox.ts";
-import { SessionManager, unbufferedForSession, withNodeStdinPreload, type SessionEvent, type SessionOptions } from "./sessions.ts";
+import { SessionManager, unbufferedForSession, withNodeStdinPreload, type SessionEvent, type SessionOptions, leadingNoticeFilter } from "./sessions.ts";
 import { availability, resolveToolchains } from "./toolchains.ts";
 import { kindById } from "../../../packages/runtimes/src/index.ts";
 
@@ -97,6 +97,15 @@ describe.runIf(hasPython)("sessions (python-3 profile)", () => {
     expect(exitOf(l.events)?.verdict).toBe("ok");
   });
 
+  it("stderr is the program's own (no sandbox status line such as \"OK (… sec real)\")", async () => {
+    const m = manager();
+    const { id } = m.create({ language: "python-3", entry: "main.py", files: [{ path: "main.py", content: "import sys\nprint('out')\nsys.stderr.write('only this\\n')\n" }] });
+    const l = listen(m, id);
+    await l.finished;
+    expect(out(l.events)).toBe("out\n");
+    expect(out(l.events, "stderr")).toBe("only this\n");
+  });
+
   it("reports runtime errors on stderr", async () => {
     const m = manager();
     const { id } = m.create({ language: "python-3", entry: "main.py", files: [{ path: "main.py", content: "raise SystemExit(3)\n" }] });
@@ -187,6 +196,21 @@ describe.runIf(programs.has("gcc"))("sessions (compiled)", () => {
     expect(out(l.events, "stderr")).toMatch(/x/);
     expect(exitOf(l.events)?.verdict).toBe("compile-error");
   });
+
+  it.runIf(availability(tc, kindById("java/single")!).available)("Java: no \"Picked up JAVA_TOOL_OPTIONS\" line, and the prompt shows before input", async () => {
+    const m = manager();
+    const { id } = m.create({
+      kind: "java/single",
+      files: [{ path: "Main.java", content: 'import java.util.Scanner;\npublic class Main { public static void main(String[] a) { Scanner in = new Scanner(System.in); System.out.print("Name? "); String n = in.nextLine(); System.err.println("note"); System.out.println("Hi " + n); } }\n' }],
+    });
+    const l = listen(m, id);
+    await l.until((es) => out(es).includes("Name?"));
+    m.stdin(id, { data: "Ana\n" });
+    await l.finished;
+    expect(out(l.events)).toBe("Name? Hi Ana\n");
+    expect(out(l.events, "stderr")).toBe("note\n");
+    expect(exitOf(l.events)).toMatchObject({ code: 0, verdict: "ok" });
+  }, 120_000);
 
   it.runIf(availability(tc, kindById("c/single")!).available)("runs a catalog kind interactively", async () => {
     const m = manager();
@@ -317,3 +341,27 @@ describe("Node ends like in a terminal once it stops reading", () => {
     }, 60_000);
   }
 });
+
+describe("leadingNoticeFilter (JVM notice on a live run's stderr)", () => {
+  const run = (chunks: string[]) => {
+    const f = leadingNoticeFilter();
+    return chunks.map((c) => f.push(c)).join("") + f.flush();
+  };
+  it("drops the JVM's notices at the start, even split across chunks", () => {
+    expect(run(["Picked up JAVA_TOOL_OPTIONS: -XX:+UseSerialGC -Xss16m\n", "Exception in thread"])).toBe("Exception in thread");
+    expect(run(["Pick", "ed up JAVA_TOOL_", "OPTIONS: -Xss16m\nPicked up JDK_JAVA_OPTIONS: x\r\n", "boom\n"])).toBe("boom\n");
+  });
+  it("passes anything else at once and never filters later lines", () => {
+    const f = leadingNoticeFilter();
+    expect(f.push("warning: x\n")).toBe("warning: x\n");
+    expect(f.push("Picked up JAVA_TOOL_OPTIONS: y\n")).toBe("Picked up JAVA_TOOL_OPTIONS: y\n");
+    expect(leadingNoticeFilter().push("Oops")).toBe("Oops");
+  });
+  it("holds back only what may still be a notice, and gives it back at the end", () => {
+    const f = leadingNoticeFilter();
+    expect(f.push("Pick")).toBe("");
+    expect(f.flush()).toBe("Pick");
+    expect(run(["Picked up JAVA_TOOL_OPTIONS: z"])).toBe("");
+  });
+});
+
