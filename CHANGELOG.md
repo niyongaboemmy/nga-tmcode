@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.19.0 — 2026-10-14
+
+**TMCode 0.19: TMCode AI works on your project, and Claude Code installs.** Choose how TMCode AI works, the way Claude Code does, and install Claude Code, Codex (ChatGPT) or Gemini from the AI panel.
+
+### TMCode AI works on your project
+
+- **Modes**, as in Claude Code (switch with **⇧Tab** in the prompt box):
+  - **Chat:** answers and explains; nothing in your project changes.
+  - **Manual:** works on your project and asks before each change, showing you the change first.
+  - **Edit automatically:** makes the file changes directly; commands still ask.
+  - **Plan:** explores your code and presents a plan. Then **Start building**.
+  - **Auto:** changes and safe commands (tests, builds, running your program) go ahead; anything risky waits for your OK.
+- **See every step:** reading, searching, editing and running, each as a card you can open to see the change or the output.
+- **Approve, Approve all or Reject.** A rejected change is never made.
+- **Undo all** puts back every file a request changed.
+- Everything the AI does is in your **Activity log**.
+
+### Prompts
+
+- **Copy** any question or answer: answers can now be selected too.
+- **Edit and send again**, **Send again**, and **Ask about this answer** (it goes along with your next question).
+- **↑ / ↓** bring back earlier prompts.
+- **@** adds a file to your question (type `@` and pick one).
+
+### AI extensions install
+
+- **Claude Code installs and runs.** TMCode now downloads the build made for your computer (it used to pick another system's), allows the size AI extensions need (Claude Code is over 100 MB), shows the download's progress, and keeps their bundled program runnable.
+- **Use other AI assistants** in the TMCode AI panel: Claude Code, Codex (ChatGPT), Gemini Code Assist, Cline and Continue, each with **Install** and then **Open**.
+
+### All changes
+
+- TMCode AI works on the project (Claude Code's modes); AI extensions install (0.19.0)
+- judge: live sessions feed SQL its script on stdin
+
 ## 0.18.1 — 2026-10-14
 
 **TMCode 0.18.1: TMCode AI answers.** In 0.18.0 the AI chat showed an empty warning instead of an answer. It answers now.
