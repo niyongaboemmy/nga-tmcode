@@ -1,53 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { onConsole, sendRunInput, setConsoleSize, stopRun, type ConsoleEvent } from "../../run/runService";
+import { onConsole, sendRunInput, setConsoleSize, stopRun } from "../../run/runService";
+import { renderConsoleEvent } from "../../run/consoleText";
 import { endRemoteInput, interruptRemoteRun, sendRemoteLine } from "../../run/serverRun";
 import { defaultFontFamily } from "../../state/settings";
 import { useThemes } from "../../themes/themeService";
 import { getPlatform, useWorkbench } from "../../state/store";
 import { terminalTheme } from "./TerminalView";
 import { enhanceTerminal } from "../../terminal/enhance";
-
-const DIM = "\x1b[90m";
-const RED = "\x1b[31m";
-const GREEN = "\x1b[32m";
-const RESET = "\x1b[0m";
-
-function seconds(ms: number) {
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
-}
-
-/** Turns runner events into console text (pipe output needs \r\n for xterm). */
-export function renderConsoleEvent(e: ConsoleEvent, interactive: boolean): string | "clear" | null {
-  const nl = (s: string) => (interactive ? s : s.replace(/\r?\n/g, "\r\n"));
-  switch (e.type) {
-    case "clear":
-      return "clear";
-    case "step":
-      return `${DIM}> ${e.phase === "build" ? "Building: " : ""}${e.command}${RESET}\r\n`;
-    case "stdout":
-      return nl(e.data);
-    case "stderr":
-      return `${RED}${nl(e.data)}${RESET}`;
-    case "error":
-      return `\r\n${RED}${e.message}${RESET}\r\n`;
-    case "info":
-      return `${DIM}${e.text}${RESET}\r\n`;
-    case "exit": {
-      if (e.phase === "build") return e.code === 0 ? "" : `\r\n${RED}Build failed (exit code ${e.code}). See Problems for the errors.${RESET}\r\n`;
-      const why = e.killed
-        ? "stopped"
-        : e.timed_out
-          ? "timed out"
-          : e.truncated
-            ? "stopped: too much output"
-            : `exited with code ${e.code ?? "?"}`;
-      const colour = !e.killed && !e.timed_out && e.code === 0 ? GREEN : e.killed ? DIM : RED;
-      return `\r\n${colour}[${why} in ${seconds(e.duration_ms)}]${RESET}\r\n`;
-    }
-  }
-}
 
 export function RunConsole({ visible }: { visible: boolean }) {
   const host = useRef<HTMLDivElement>(null);
@@ -75,11 +36,16 @@ export function RunConsole({ visible }: { visible: boolean }) {
     term.open(host.current!);
     termRef.current = term;
     fitRef.current = fit;
+    // Whether the program's output ended its line (the status line then needs one break less).
+    let atLineStart = true;
     const off = onConsole((e) => {
-      const out = renderConsoleEvent(e, interactive);
-      if (out === "clear") term.reset();
-      else if (out) {
+      const out = renderConsoleEvent(e, interactive, atLineStart);
+      if (out === "clear") {
+        term.reset();
+        atLineStart = true;
+      } else if (out) {
         term.write(out);
+        atLineStart = /\n$/.test(out.replace(/\x1b\[[0-9;]*m/g, ""));
         if (e.type === "stdout" || e.type === "stderr") extras.observe(out);
       }
     });
