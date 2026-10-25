@@ -3,7 +3,7 @@ import { tabsSnapshot } from "./tabsSync";
 import { clearVirtualSchemes } from "./virtualDocs";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { getPlatform, log, notify, useWorkbench } from "../state/store";
-import { activeExtensions, extensionsBlocked, useExtensions, type InstalledExtension } from "../extensions/service";
+import { activeExtensions, extensionsBlocked, installedExtension, refuseAiExtension, useExtensions, type InstalledExtension } from "../extensions/service";
 import { useExam } from "../exam/state";
 import type { ExtensionManifest } from "../extensions/manifest";
 import { documentSnapshot, editorSnapshot, wireDocumentSync } from "./documentSync";
@@ -193,6 +193,9 @@ export async function executeExtensionCommand(id: string, args: unknown[] = []):
     return;
   }
   const owner = contributedCommand(id)?.extensionId;
+  // An AI extension's command while AI tools are off (its host isn't running it): say why, log it.
+  const ownerExt = owner ? installedExtension(owner) : undefined;
+  if (ownerExt && refuseAiExtension(ownerExt.id, ownerExt.manifest, "use")) return;
   const find = () => (owner ? [...conns.values()].find((c) => c.extensions.some((e) => e.id === owner)) : [...conns.values()].find((c) => c.ctx.commands.has(id)));
   let conn = find();
   if (!conn && owner) {

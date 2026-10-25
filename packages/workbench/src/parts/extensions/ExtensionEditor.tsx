@@ -10,7 +10,8 @@ import { cachedGalleryName, formatCount, getGalleryExtension, OPEN_VSX, type Gal
 import { parseManifest, type ExtensionManifest } from "../../extensions/manifest";
 import { extensionHost, installedExtension, installExtension, setExtensionEnabled, uninstallExtension, useExtensions } from "../../extensions/service";
 import { resolveRelative } from "../../textmate/themeData";
-import { ExtensionIcon, Rating, useExtensionsBlocked } from "./ExtensionsView";
+import { ExtensionIcon, Rating, useAiExtensionsBlockedReason, useExtensionsBlocked } from "./ExtensionsView";
+import { isAiExtension } from "../../activity/aiExtensions";
 import { CodeNotice, RuntimeStatus } from "../../exthost/ui";
 
 /**
@@ -183,7 +184,8 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
   const installed = useExtensions((s) => s.installed.find((e) => e.id === id));
   const busy = useExtensions((s) => s.busy[id]);
   const busyLabel = useInstallLabel(id, busy);
-  const blocked = useExtensionsBlocked();
+  const examBlocked = useExtensionsBlocked();
+  const aiReason = useAiExtensionsBlockedReason();
   const d = useDetails(id);
   const [tab, setTab] = useState<"details" | "features" | "runtime">("details");
   const readmeRef = useRef<HTMLDivElement>(null);
@@ -195,6 +197,10 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
   const name = installed?.manifest.displayName ?? g?.displayName ?? id;
   const description = installed?.manifest.description || g?.description || "";
   const publisher = g?.publisher ?? installed?.manifest.publisher ?? id.split(".")[0];
+  const isAi = isAiExtension(id, installed?.manifest ?? (g ? { displayName: g.displayName, description: g.description } : null));
+  // AI extensions (Claude Code, Copilot…) follow Task Mentor's AI status; uninstalling stays possible.
+  const aiBlocked = !examBlocked && isAi && !!aiReason;
+  const blocked = examBlocked || aiBlocked;
   const updateAvailable = !!(installed && g && g.version && g.version !== installed.version);
 
   if (!extensionHost()) return <div className="tm-ext-editor"><p className="tm-ext-message">Extensions are available in the TMCode desktop app.</p></div>;
@@ -244,7 +250,7 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
                     Enable
                   </button>
                 )}
-                <button type="button" className="tm-button tm-button--secondary" disabled={blocked} onClick={() => void uninstallExtension(id)}>
+                <button type="button" className="tm-button tm-button--secondary" disabled={examBlocked} onClick={() => void uninstallExtension(id)}>
                   Uninstall
                 </button>
                 {installed.enabled && installed.manifest.themes.length > 0 && (
@@ -259,9 +265,14 @@ export function ExtensionEditor({ extensionId }: { extensionId: string }) {
               </button>
             )}
           </div>
-          {blocked && (
+          {examBlocked && (
             <p className="tm-ext-notice" role="note">
               <Codicon name="lock" /> Extensions are disabled during exams.
+            </p>
+          )}
+          {aiBlocked && (
+            <p className="tm-ext-notice" role="note" data-testid="ext-ai-blocked">
+              <Codicon name="lock" /> {aiReason}
             </p>
           )}
           {manifest && <CodeNotice manifest={manifest} installed={installed} />}

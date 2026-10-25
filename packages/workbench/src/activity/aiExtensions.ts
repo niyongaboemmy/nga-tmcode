@@ -23,6 +23,7 @@ const KNOWN: Record<string, string> = {
   "qodo.qodo-gen": "Qodo",
   "codium.codium": "Qodo",
   "robertpiosik.gemini-coder": "Code Web Chat",
+  "openai.chatgpt": "Codex (ChatGPT)",
 };
 
 const WORDS = /\b(ai|a\.i\.|copilot|gpt|llm|chatgpt|openai|claude|gemini|anthropic|code assist(ant)?|coding agent|ai agent|autocomplete with ai|deepseek|ollama|mistral|codex)\b/i;
