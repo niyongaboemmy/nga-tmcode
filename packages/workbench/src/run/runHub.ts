@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { recordActivity } from "../activity/log";
+import { runSubject } from "../activity/format";
+import { finishRun, recordRun, runEndOf, withRunActivity } from "./runActivity";
 import { executeCommand, formatKeybinding, registerCommand } from "../commands/registry";
 import { debugAllowed, debugKindForPath, isDebugging, showInstallGuide, startDebugging, stopDebugging } from "../debug/debugService";
 import { guideById } from "../debug/installGuide";
@@ -281,10 +282,17 @@ export async function executeAction(a: RunAction, opts: { remember?: boolean; re
   }
   if (opts.remember) rememberFileChoice(a);
   if (!(await preflight(a, opts))) return;
-  log("Run", `${a.kind}: ${a.label}${opts.reason ? ` (because ${opts.reason})` : ""}`);
-  recordActivity({ kind: "run", action: "run", text: `Ran ${a.label}`, data: { kind: a.kind, ...(opts.reason ? { reason: opts.reason } : {}) } });
+  log("Run", `${a.label}${opts.reason ? ` (because ${opts.reason})` : ""}`);
+  // "Run main.cpp" is the button; what happened is "Ran main.cpp" (never "Ran Run…").
+  const subject = runSubject(a.label);
+  // One entry per run: the runner that starts takes it over and adds its exit code and duration.
+  const entry = { kind: "run" as const, action: "run", ...(a.entry ? { path: a.entry } : {}), text: `Ran ${subject}`, data: { kind: a.kind, ...(a.command ? { command: a.command } : {}), ...(opts.reason ? { reason: opts.reason } : {}) } };
+  return withRunActivity(entry, () => dispatchAction(a, subject, opts));
+}
+
+async function dispatchAction(a: RunAction, subject: string, opts: { reason?: string }) {
   // One place to look: every run says in the Run panel what it is and why (terminal runs too).
-  const note = opts.reason ? `Running ${a.label} because ${opts.reason}.` : `Running ${a.label}.`;
+  const note = opts.reason ? `Running ${subject} because ${opts.reason}.` : `Running ${subject}.`;
   // Terminal runs: the Run panel still says what started and where its output is (the one place to look first).
   if (a.kind === "task" || a.kind === "devServer" || a.kind === "repl") {
     writeConsole({ type: "clear" });
@@ -395,7 +403,10 @@ export async function startDevServer(a: RunAction) {
   }
   const id = ++sessionSeq;
   terminal = null;
-  set({ session: { id, action: a, status: "starting", url: null, startedAt: Date.now(), endedAt: null, exitCode: null } });
+  const startedAt = Date.now();
+  set({ session: { id, action: a, status: "starting", url: null, startedAt, endedAt: null, exitCode: null } });
+  const activity = recordRun({ kind: "run", action: "run", text: `Ran ${runSubject(a.label)}`, data: { kind: a.kind, ...(a.command ? { command: a.command } : {}) } });
+  finishRun(activity, { status: "running" });
   let tail = "";
   // PHP's built-in server: open the page being edited (shop/cart.php), not only the site's front page.
   const page = phpPageFor(a);
@@ -429,6 +440,7 @@ export async function startDevServer(a: RunAction) {
       const asked = s.status === "stopping";
       const failed = !asked && (s.status === "starting" || (code !== 0 && code !== 130 && code !== null));
       patchSession(id, { status: failed ? "failed" : "stopped", endedAt: Date.now(), exitCode: code });
+      finishRun(activity, asked || code === 130 ? { status: "stopped", exit: code, duration_ms: Date.now() - startedAt } : runEndOf({ code, duration_ms: Date.now() - startedAt }));
       const next = restartAfterStop;
       restartAfterStop = null;
       if (next) {
