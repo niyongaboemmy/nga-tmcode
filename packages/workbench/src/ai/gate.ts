@@ -8,8 +8,10 @@ import { useAi, type AiStatus } from "./service";
  * and AI CLIs in the terminal) may run right now: the one place every AI entry point asks
  * (AI usage control plan §6).
  *
- * - In an exam (or any locked-down policy) the exam package's `policy.ai` decides: only "full"
- *   turns TMCode AI on; third-party AI tools never run in exams.
+ * - In an exam (or any locked-down policy) a status Task Mentor gave during the exam decides (it
+ *   follows the quiz's AI setting and the school's policy as they are now, ai/live.ts); until there
+ *   is one, the exam package's `policy.ai` does: only "full" turns TMCode AI on. Third-party AI
+ *   tools never run in exams.
  * - Outside exams Task Mentor's AI status for the open project decides (school switch, the
  *   teacher's setting for an assignment, the role). An older Task Mentor that sends no `allowed`
  *   is decided as before: on outside exams.
@@ -42,6 +44,8 @@ export interface AiGateInput {
   denied?: { reason: string; message?: string | null } | null;
   /** An exam session is running, or the policy is locked down. */
   exam: boolean;
+  /** `status` was asked for during this exam (a status from before it can't speak for it). */
+  statusInExam?: boolean;
   /** The exam policy's `ai` (exams only). */
   examAi?: AiMode | null;
   /** The open project is linked to an assignment or quiz. */
@@ -70,10 +74,17 @@ const deny = (reason: string, message?: string | null, known = true): AiGate => 
 export function decideAiGate(i: AiGateInput): AiGate {
   const s = i.status;
   if (i.exam) {
+    if (i.denied) return deny(i.denied.reason, i.denied.message);
+    if (s && i.statusInExam && typeof s.allowed === "boolean") {
+      if (!s.allowed) return deny(s.reason ?? "EXAM_ACTIVE", s.message);
+      const chat = s.features?.assist ?? true;
+      const complete = s.features?.complete ?? true;
+      if (!chat && !complete) return deny("HINTS_ONLY", s.mode === "hints" ? "Hints only in this exam: TMCode AI chat and suggestions are off." : s.message);
+      return { chat, complete, thirdParty: false, reason: null, message: null, known: true };
+    }
     const mode = normalizeAiMode(i.examAi);
     if (mode === "hints") return deny("HINTS_ONLY", "Hints only in this exam: TMCode AI chat and suggestions are off.");
     if (mode !== "full") return deny("EXAM_ACTIVE");
-    if (i.denied) return deny(i.denied.reason, i.denied.message);
     if (s && s.allowed === false) return deny(s.reason ?? "EXAM_ACTIVE", s.message);
     // The teacher chose full: TMCode AI only. Extensions and AI CLIs never run in exams.
     return { chat: s?.features?.assist ?? true, complete: s?.features?.complete ?? true, thirdParty: false, reason: null, message: null, known: true };
@@ -106,17 +117,18 @@ export function aiExamActive(): boolean {
 /** The gate now, from the stores. */
 export function aiGate(): AiGate {
   const a = useAi.getState();
-  return decideAiGate({ status: a.status, denied: a.denied, exam: aiExamActive(), examAi: useWorkbench.getState().policy.ai, assessmentProject: a.project.assessment });
+  return decideAiGate({ status: a.status, statusInExam: a.statusInExam, denied: a.denied, exam: aiExamActive(), examAi: useWorkbench.getState().policy.ai, assessmentProject: a.project.assessment });
 }
 
 /** The gate as a React hook (re-renders when the status, exam or policy changes). */
 export function useAiGate(): AiGate {
   const status = useAi((s) => s.status);
   const denied = useAi((s) => s.denied);
+  const statusInExam = useAi((s) => s.statusInExam);
   const assessment = useAi((s) => s.project.assessment);
   const quiz = useExam((s) => !!s.quiz);
   const policy = useWorkbench((s) => s.policy);
-  return decideAiGate({ status, denied, exam: quiz || policy.mode !== "practice", examAi: policy.ai, assessmentProject: assessment });
+  return decideAiGate({ status, statusInExam, denied, exam: quiz || policy.mode !== "practice", examAi: policy.ai, assessmentProject: assessment });
 }
 
 /** Why third-party AI tools (extensions, AI CLIs) are off, or null when they may run. */

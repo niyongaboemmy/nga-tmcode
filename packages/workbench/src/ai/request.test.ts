@@ -96,18 +96,26 @@ describe("TMCode AI requests carry the open project", () => {
     expect(await completeAt({ prefix: "abc", suffix: "", language: "python", path: "main.py" })).toBeNull();
   });
 
-  it("in an exam the policy's ai decides; status is asked only when the exam allows AI", async () => {
-    const { p, seen } = platform(() => ({ status: 200, body: okStatus() }));
+  it("in an exam a status asked during it decides, both ways; the exam policy's ai only until then", async () => {
+    let answer = okStatus({ allowed: false, reason: "EXAM_ACTIVE", message: "AI is off during this exam.", mode: "off" });
+    const { p, seen } = platform(() => ({ status: 200, body: answer }));
     await initWorkbench(p);
     useExam.setState({ quiz: { id: 1 } as never });
-    setPolicy({ ...EXAM_POLICY_DEFAULTS });
-    await refreshAiStatus();
-    expect(seen.length).toBe(0);
-    expect(aiGate()).toMatchObject({ chat: false, reason: "EXAM_ACTIVE" });
     setPolicy({ ...EXAM_POLICY_DEFAULTS, ai: "full" });
+    // No status yet: the exam package's "full" decides.
+    expect(aiGate()).toMatchObject({ chat: true, thirdParty: false });
+    // The teacher turned AI off mid-exam: the live status wins over the package.
     await refreshAiStatus();
     expect(seen.length).toBe(1);
-    expect(aiGate()).toMatchObject({ chat: true, thirdParty: false });
+    expect(useAi.getState().statusInExam).toBe(true);
+    expect(aiGate()).toMatchObject({ chat: false, reason: "EXAM_ACTIVE", message: "AI is off during this exam." });
+    // ...and on again, though the package said off. Third-party AI tools never run in exams.
+    answer = okStatus({ allowed: true, reason: "ALLOWED_BY_TEACHER", mode: "full", features: { assist: true, complete: true }, thirdPartyExtensions: true });
+    setPolicy({ ...EXAM_POLICY_DEFAULTS });
+    await refreshAiStatus();
+    expect(seen.length).toBe(2);
+    expect(aiGate()).toMatchObject({ chat: true, complete: true, thirdParty: false });
+    useExam.setState({ quiz: null as never });
     setPolicy(PRACTICE_POLICY);
   });
 });

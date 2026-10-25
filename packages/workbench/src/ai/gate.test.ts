@@ -83,6 +83,26 @@ describe("AI gate in exams", () => {
   });
 });
 
+describe("AI gate in exams, with a status asked during the exam", () => {
+  const off = status({ allowed: false, reason: "TEACHER_OFF", message: "Your teacher turned AI off for this activity." });
+  const full = status({ allowed: true, reason: "ALLOWED_BY_TEACHER", mode: "full", features: { assist: true, complete: true }, thirdPartyExtensions: true });
+  const hints = status({ allowed: true, reason: "HINTS_ONLY", mode: "hints", features: { assist: false, complete: false } });
+
+  it("the live status wins over the exam package, both ways", () => {
+    expect(gate({ exam: true, examAi: "full", status: off, statusInExam: true })).toMatchObject({ chat: false, reason: "TEACHER_OFF" });
+    expect(gate({ exam: true, examAi: "off", status: full, statusInExam: true })).toMatchObject({ chat: true, complete: true, thirdParty: false, reason: null });
+    expect(gate({ exam: true, examAi: "full", status: hints, statusInExam: true })).toMatchObject({ chat: false, complete: false, reason: "HINTS_ONLY" });
+  });
+
+  it("a status from before the exam can't open it", () => {
+    expect(gate({ exam: true, examAi: "off", status: full, statusInExam: false })).toMatchObject({ chat: false, reason: "EXAM_ACTIVE" });
+  });
+
+  it("a refusal just given still locks", () => {
+    expect(gate({ exam: true, examAi: "full", status: full, statusInExam: true, denied: { reason: "GLOBAL_OFF" } })).toMatchObject({ chat: false, reason: "GLOBAL_OFF" });
+  });
+});
+
 describe("aiReasonText", () => {
   it("has local words for every reason and a fallback", () => {
     for (const r of ["GLOBAL_OFF", "TEACHER_OFF", "HINTS_ONLY", "EXAM_ACTIVE", "ROLE_OFF", "ASSESSMENT_LOCKED", "APP_OFF"]) expect(aiReasonText(r)).toBe(AI_REASON_TEXT[r]);
