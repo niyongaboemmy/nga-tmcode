@@ -179,6 +179,8 @@ export interface Platform {
   setZoom?(factor: number): void;
   /** Files dragged in from Finder / File Explorer (desktop). Returns an unsubscribe. */
   onFileDrop?(cb: (e: FileDropEvent) => void): () => void;
+  /** The app window gained or lost focus (desktop: the native window, so clicks into preview panes don't count). */
+  onWindowFocus?(cb: (focused: boolean) => void): () => void;
   /** macOS menu bar (commands/menus.json): label, enabled state and accelerator of each "cmd:<id>" item. */
   setMenuState?(items: NativeMenuItemState[]): void;
   /** Window commands (VS Code's Reload Window, Toggle Full Screen, Close Window, Toggle Developer Tools). */

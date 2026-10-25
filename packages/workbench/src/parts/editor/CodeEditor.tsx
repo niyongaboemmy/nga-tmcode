@@ -11,6 +11,7 @@ import { editorMemento } from "../../state/viewStates";
 import type { OsKind } from "../../platform/types";
 import { attachDebugEditor } from "../../debug/editorContrib";
 import { guardEditorHelp, guardEditorPaste, intelligenceOptions } from "../../exam/editorPolicy";
+import { recordEditorPastes } from "../../activity/sources";
 import { smartEditorOptions } from "../../monaco/smartOptions";
 import type { Intelligence } from "@tmcode/protocol";
 
@@ -156,6 +157,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       ed.onDidBlurEditorText(() => saveOnFocusChange()),
       attachDebugEditor(ed),
       { dispose: guardEditorPaste(ed) },
+      { dispose: recordEditorPastes(ed) },
     ];
     setHelpLevel.current = guardEditorHelp(ed);
     setHelpLevel.current(useWorkbench.getState().policy.intelligence);

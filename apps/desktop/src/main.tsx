@@ -71,11 +71,13 @@ async function boot() {
   const noHome = platform.kind === "web" && localStorage.getItem("tmcode:e2e-no-home") === "1";
   if (!params.get("launch") && !dev?.launch && !noHome) showStartupEditor();
   if (import.meta.env.DEV) {
-    const { simulateExternalWrite, runUiProbe } = await import("@tmcode/workbench");
+    const { simulateExternalWrite, runUiProbe, codeEditorFor, useWorkbench } = await import("@tmcode/workbench");
     if (!inTauri) watchCspViolations();
     (window as unknown as { __TMCODE_DEBUG__: unknown }).__TMCODE_DEBUG__ = {
       startedWorkers,
       externalWrite: (path: string, content: string) => simulateExternalWrite(platform, path, content),
+      // e2e: what Monaco does after reading the clipboard API (Edit › Paste, its menu): no DOM paste event.
+      pasteViaApi: (text: string) => codeEditorFor(useWorkbench.getState().activeGroup)?.trigger("keyboard", "paste", { text }),
       uiProbe: runUiProbe,
       // e2e: the close / quit guard the desktop window runs (Tauri close events don't exist in a browser).
       beforeQuit,
