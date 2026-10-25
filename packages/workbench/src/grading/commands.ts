@@ -3,7 +3,10 @@ import { notify, openEditorInput, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { addCommentAtCursor, canAddCommentHere, reviewTarget, typingComment } from "./comments";
 import { changesAgainst, entryOf, starterOf, versionLabel, versionsOf, type Version } from "./diff";
-import { draftFrom, inputFromDraft } from "./drafts";
+import { aiGate } from "../ai/gate";
+import { copyGradingPrompt, gradeWithCli, GRADING_CLIS } from "./aiCli";
+import { discardAiDraft, extensionGetContext, useAiGrading } from "./aiGrading";
+import { draftFrom, draftKey, inputFromDraft } from "./drafts";
 import { isDraftGrade, releaseDrafts, startGrading, useGrading } from "./service";
 
 /**
@@ -21,6 +24,8 @@ export interface GradingController {
   focusPanel(): void;
   /** Opens the panel's "Return for Changes" form (false: not possible for this student). */
   returnForChanges(): boolean;
+  /** Opens the panel's "Draft with AI" box (false: no student to grade on screen). */
+  aiDraft?(): boolean;
 }
 const controllers = new Map<string, GradingController>();
 
@@ -169,6 +174,45 @@ export function registerGradingCommands() {
       if (t) await (await import("./unitTests")).runStudentUnitTests(t.gkey, t.row);
     },
   });
+  // AI-assisted grading: an AI drafts, the teacher reviews and saves (grading/aiGrading.ts).
+  const reviewOpen = () => !!useGrading.getState().review;
+  registerCommand({
+    id: "grading.aiDraft",
+    title: "Draft Grade with AI",
+    category: "Grading",
+    aliases: ["ai grade", "grade with ai", "ai draft"],
+    enabled: () => !!controller() && aiGate().chat,
+    run: () => {
+      if (!controller()?.aiDraft?.()) notify("info", "Pick a student who handed in, then Draft with AI.");
+    },
+  });
+  for (const tool of ["claude", "gemini", "codex"] as const) {
+    registerCommand({
+      id: `grading.gradeWith.${tool}`,
+      title: `Grade with ${GRADING_CLIS[tool].label}`,
+      category: "Grading",
+      aliases: ["ai grade", GRADING_CLIS[tool].bin],
+      enabled: () => reviewOpen() && aiGate().thirdParty,
+      run: () => gradeWithCli(tool),
+    });
+  }
+  registerCommand({ id: "grading.copyPrompt", title: "Copy Grading Prompt (for an AI extension)", category: "Grading", enabled: () => reviewOpen() && aiGate().thirdParty, run: () => copyGradingPrompt() });
+  registerCommand({
+    id: "grading.discardAiDraft",
+    title: "Discard AI Draft",
+    category: "Grading",
+    enabled: () => {
+      const r = useGrading.getState().review;
+      return !!r && !!useAiGrading.getState().meta[draftKey(r.key, r.student_id)];
+    },
+    run: () => {
+      const r = useGrading.getState().review;
+      if (r) discardAiDraft(draftKey(r.key, r.student_id));
+    },
+  });
+  // For extensions (exthost/mainThread.ts runBuiltin passes their arguments and returns the result).
+  registerCommand({ id: "tmcode.grading.getContext", title: "Grading Context (for extensions)", category: "Grading", hidden: true, run: () => extensionGetContext() });
+  registerCommand({ id: "tmcode.grading.proposeDraft", title: "Propose a Grading Draft (for extensions)", category: "Grading", hidden: true, run: () => undefined });
   registerCommand({ id: "grading.compareVersion", title: "Compare with Version…", category: "Grading", enabled: () => !!reviewTarget()?.row.project, run: () => compareWithVersion() });
   registerCommand({
     id: "grading.releaseDrafts",

@@ -15,6 +15,7 @@ mod lsp;
 mod netcoredbg;
 mod phpdebug;
 mod account;
+mod ai_keys;
 mod ai_tools;
 mod api;
 mod proc;
@@ -396,6 +397,9 @@ pub fn run() {
             exthost::exthost_stop,
             exthost::exthost_policy,
             exthost::exthost_secret,
+            ai_keys::ai_key_set,
+            ai_keys::ai_key_get,
+            ai_keys::ai_key_delete,
             webview::webview_publish,
             webview::webview_dispose,
             account::auth_sign_in,

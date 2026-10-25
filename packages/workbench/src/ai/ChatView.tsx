@@ -5,15 +5,16 @@ import { rememberAiCopy } from "../activity/sources";
 import { monaco } from "../monaco/setup";
 import { listFiles } from "../parts/search/search";
 import { signIn, useProjects } from "../projects/service";
-import { activeFilePath, getPlatform, notify, useWorkbench } from "../state/store";
-import { showQuickPick } from "../widgets/QuickPick";
+import { activeFilePath, getPlatform, notify, openSpecialEditor, useWorkbench } from "../state/store";
+import { showInputBox, showQuickPick, type PickItem } from "../widgets/QuickPick";
+import { loadAiKeys, providerLabel, setCustomModels, useAiKeys } from "./keys";
 import { Codicon } from "../widgets/icons";
 import { renderMarkdown } from "../widgets/markdown";
 import { AiExtensions } from "./AiExtensions";
 import { useAiGate } from "./gate";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { approveStep, ask, MODES, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
-import { loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
+import { effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
 
 /**
  * TMCode AI's panel (secondary side bar), modelled on Claude Code's: pick a mode (Chat, Manual,
@@ -288,6 +289,16 @@ function Answer({ m }: { m: Message }) {
               Switch to Auto
             </button>
           )}
+          {["PREMIUM_REQUIRED", "BYOK_REJECTED", "BYOK_MISSING"].includes(m.error.code) && (
+            <button type="button" className="tm-link-button" onClick={() => setAiMode("free")}>
+              Switch to Free
+            </button>
+          )}
+          {(m.error.code === "BYOK_REJECTED" || m.error.code === "BYOK_MISSING") && (
+            <button type="button" className="tm-link-button" onClick={openAiKeysSettings}>
+              Your API Keys
+            </button>
+          )}
           {m.error.code === "SIGNED_OUT" && (
             <button type="button" className="tm-link-button" onClick={() => void signIn()}>
               Sign in
@@ -310,16 +321,52 @@ function Answer({ m }: { m: Message }) {
 }
 
 export async function pickMode() {
+  if (!useAiKeys.getState().loaded) await loadAiKeys().catch(() => {});
   const { status, mode } = useAi.getState();
-  const items = [
+  const keys = useAiKeys.getState();
+  const icon = (id: string, fallback: string) => (id === mode ? "check" : fallback);
+  const free: PickItem[] = [
     ...(status?.modes ?? [
       { id: "free", label: "Free (OpenRouter)", detail: "" },
       { id: "auto", label: "Auto", detail: "" },
-    ]).map((m) => ({ id: m.id, label: m.label, detail: m.detail, icon: m.id === mode ? "check" : m.id === "auto" ? "sparkle" : "gift" })),
-    ...(status?.models ?? []).map((m) => ({ id: m.id, label: m.label, description: m.providerLabel, icon: m.id === mode ? "check" : "circuit-board" })),
+    ]).map((m) => ({ id: m.id, label: m.label, detail: m.detail, icon: icon(m.id, m.id === "auto" ? "sparkle" : "gift") })),
+    ...(status?.models ?? []).map((m) => ({ id: m.id, label: m.label, description: m.providerLabel, icon: icon(m.id, "circuit-board") })),
   ];
-  const picked = await showQuickPick({ title: "Which AI answers", placeholder: "Free AI only. Auto picks one that still has requests left today (best for agent modes).", items, matchOnDescription: true });
-  if (picked) setAiMode(picked.id);
+  // Premium (Task Mentor ≥ 2026-10-25): the school's paid models, for the users it entitled.
+  const pu = status?.premium_you;
+  const premium: PickItem[] = status?.tiers?.premium
+    ? (status.premium_models ?? []).map((m) => ({ id: m.id, label: m.label, description: m.providerLabel, icon: icon(m.id, "star-full") }))
+    : [];
+  // Your keys: one entry per model of each provider the user saved a key for.
+  const byok: PickItem[] = [];
+  if (status?.tiers?.byok) {
+    for (const p of status.byok_providers ?? []) {
+      if (!keys.saved.includes(p.id)) continue;
+      const models = [...new Set([...(p.suggested_models ?? []), ...(keys.models[p.id] ?? [])])];
+      for (const m of models) byok.push({ id: `byok:${p.id}/${m}`, label: m, description: `${p.label} · your key`, icon: icon(`byok:${p.id}/${m}`, "key") });
+      byok.push({ id: `__custom:${p.id}`, label: `Another ${p.label} model…`, description: "type its id", icon: "add" });
+    }
+    byok.push({ id: "__keys", label: keys.saved.length ? "Manage Your API Keys…" : "Add Your Own API Key…", description: "Settings › TMCode AI", icon: "gear", alwaysShow: true });
+  }
+  const section = (list: PickItem[], label: string) => list.map((x, i) => (i === 0 ? { ...x, separator: label } : x));
+  const items = [...section(free, "Free"), ...section(premium, `Premium${pu ? ` · ${Math.max(0, pu.limit - pu.used)} of ${pu.limit} left today` : ""}`), ...section(byok, "Your keys")];
+  const picked = await showQuickPick({ title: "Which AI answers", placeholder: premium.length || byok.length ? "Free AI, your school's premium models, or your own keys." : "Free AI only. Auto picks one that still has requests left today (best for agent modes).", items, matchOnDescription: true });
+  if (!picked) return;
+  if (picked.id === "__keys") return openAiKeysSettings();
+  if (picked.id.startsWith("__custom:")) {
+    const provider = picked.id.slice("__custom:".length);
+    const model = await showInputBox({ title: `A ${providerLabel(provider)} model`, prompt: "The model id, as the provider names it", placeholder: "e.g. gpt-4.1-mini", validate: (v) => (!v.trim() || /\s/.test(v.trim()) ? "One model id, without spaces." : null) });
+    if (!model) return;
+    setCustomModels(provider, [...(useAiKeys.getState().models[provider] ?? []), model.trim()]);
+    return setAiMode(`byok:${provider}/${model.trim()}`);
+  }
+  setAiMode(picked.id);
+}
+
+/** Settings › TMCode AI › Your API keys. */
+export function openAiKeysSettings() {
+  openSpecialEditor("settings");
+  setTimeout(() => document.getElementById("settings-TMCode AI")?.scrollIntoView({ block: "start" }), 80);
 }
 
 /** The modes menu, as Claude Code's ("Modes · ⇧Tab to switch"). */
@@ -508,8 +555,8 @@ export function ChatView() {
           {modesOpen && <ModeMenu onClose={() => setModesOpen(false)} />}
         </div>
         <button type="button" className="tm-chat-mode" onClick={() => void pickMode()} title="Which AI answers" data-testid="ai-mode">
-          <Codicon name={mode === "auto" ? "sparkle" : mode === "free" ? "gift" : "circuit-board"} />
-          <span>{modeLabel(mode, status)}</span>
+          <Codicon name={mode === "auto" ? "sparkle" : mode === "free" ? "gift" : mode.startsWith("premium:") ? "star-full" : mode.startsWith("byok:") ? "key" : "circuit-board"} />
+          <span>{modeLabel(effectiveMode(mode, status), status)}</span>
           <Codicon name="chevron-down" />
         </button>
         <span

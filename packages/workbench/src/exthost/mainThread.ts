@@ -338,6 +338,11 @@ async function runBuiltin(id: string, args: unknown[]): Promise<unknown> {
     case "workbench.action.focusActiveEditorGroup":
       codeEditorFor(useWorkbench.getState().activeGroup)?.focus();
       return;
+    // AI-assisted grading for AI extensions (Claude Code…): the only TMCode commands that take
+    // arguments and return a value. A proposed draft only fills the form; the teacher saves.
+    case "tmcode.grading.getContext":
+    case "tmcode.grading.proposeDraft":
+      return runGradingCommand(id, args);
   }
   if (id.startsWith("editor.action.") || id === "actions.find") {
     runEditorAction(useWorkbench.getState().activeGroup, id);
@@ -348,6 +353,17 @@ async function runBuiltin(id: string, args: unknown[]): Promise<unknown> {
     return;
   }
   throw new Error(`command '${id}' not found`);
+}
+
+/** `tmcode.grading.getContext()` → the review's grading context (null: none open); `tmcode.grading.proposeDraft(draft)` → `{ ok, errors }`. */
+export async function runGradingCommand(id: string, args: unknown[]): Promise<unknown> {
+  const { aiGate, thirdPartyMessage } = await import("../ai/gate");
+  const blocked = thirdPartyMessage(aiGate());
+  if (blocked) throw new Error(blocked);
+  const g = await import("../grading/aiGrading");
+  if (id === "tmcode.grading.getContext") return g.extensionGetContext();
+  const by = args[1] && typeof args[1] === "object" && typeof (args[1] as { by?: unknown }).by === "string" ? String((args[1] as { by: string }).by) : "An AI extension";
+  return g.extensionProposeDraft(args[0], by);
 }
 
 // ───────────── Web Worker host: workspace.fs ─────────────

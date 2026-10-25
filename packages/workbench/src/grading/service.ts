@@ -8,6 +8,7 @@ import { api, notifyError, projectsSupported, signedIn, TmError, useProjects } f
 import { linkableActivities } from "../projects/matching";
 import type { Manifest } from "../projects/plan";
 import { markJourney } from "../util/journey";
+import type { ActivityBrief } from "./aiDraft";
 
 /**
  * Grading TMCode practicals in TMCode (teachers): the assignments and quiz
@@ -104,6 +105,8 @@ export interface Roster {
     can_grade: boolean;
     /** Task Mentor 0.12: whether "Return for changes" works here (false for quiz practicals). */
     can_return?: boolean;
+    /** The brief (description HTML, instructions…), for AI-assisted grading (Task Mentor main 2026-10; older ones omit it). */
+    brief?: ActivityBrief | null;
   };
   counts: { total: number; to_grade: number; graded: number; drafts?: number };
   rows: RosterRow[];
@@ -611,6 +614,8 @@ async function openSubmissionNow(key: string, row: RosterRow): Promise<boolean> 
 
 async function afterOpen(key: string) {
   markJourney("first-student-open");
+  // The AI grading files (.tmcode/grading/README.md, context.json…), for any AI the teacher asks to draft.
+  await import("./aiGrading").then((m) => m.writeGradingFiles()).catch(() => {});
   await revealEntry();
   openGrading(key, { toSide: true });
 }
@@ -650,6 +655,7 @@ export function wireGrading() {
   wired = true;
   void import("./commands").then((m) => m.registerGradingCommands());
   void import("./comments").then((m) => m.wireReviewComments());
+  void import("./aiGrading").then((m) => m.wireAiGrading());
   let was = false;
   const follow = (signed: boolean) => {
     if (signed && !was) void refreshGrading({ rosters: true });
