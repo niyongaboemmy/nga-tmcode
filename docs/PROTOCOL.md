@@ -53,7 +53,7 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
   "quiz": { "id": 77, "title": "Python Practical 2", "type": "Exam" },
   "deadline": "2026-11-10T09:40:00Z", "server_time": "2026-11-10T08:00:03Z",
   "policy": { "mode": "monitored", "intelligence": "basic", "paste": "internal_only", "terminal": "off",
-              "internet_in_preview": false, "require_seb": false, "allow_offline_grace_minutes": 10, "locked_settings": [] },
+              "internet_in_preview": false, "require_seb": false, "allow_offline_grace_minutes": 10, "locked_settings": [], "ai": "off" },
   "journal_nonce": "base64 of 32 random bytes (stored on the session)",
   "profiles": [ { "...": "full Profile objects for the profiles the tasks use" } ],
   "toolchains": ["python"],
@@ -68,6 +68,7 @@ Returns `ExamPackageSchema` (`packages/protocol/src/exam.ts`):
 - **`min_app_version`** (optional, e.g. `"0.12.0"`): the oldest TMCode that can take this exam. An older TMCode stops with "This exam needs TMCode 0.12.0 or newer" and an Update TMCode button (the in-app updater is allowed then: the exam has not started). A package an older TMCode can't parse shows "TMCode is out of date for this exam", never a schema dump.
 - **System check:** before the task view opens, TMCode checks the language tools each task needs, the package round trip (reachable), `server_time` against the local clock, and that the exam folder is writable. Problems hold the student in a lobby (Start the Exam / Check Again). The attempt's time is already running on Task Mentor then; a server-side "start the timer after the check" would need a new endpoint. "Check My Computer" runs the same checks outside an exam and uses `GET /profiles` (no auth) for reachability and its `Date` header for the clock.
 - **`policy.debugger`** (optional, default `false`): `true` lets students use Run and Debug (breakpoints, stepping, the Debug Console) during this exam. Debugger downloads (js-debug, debugpy) are still never made during an exam.
+- **`policy.ai`** (optional, default `"off"`): TMCode AI during this exam: `"off"`, `"hints"` or `"full"`. Task Mentor fills it from the quiz's `ai_mode`, or `"off"` when the school's AI policy denies (master switch off, Task Mentor/TMCode off, assessments always off). Only `"full"` turns TMCode AI chat and suggestions on in an exam (TMCode has no hint feature); third-party AI extensions never run in exams. Unknown values read as `"off"`.
 - **Never sent:** hidden tests, reference solutions and web-check specs.
 - **`resume`:** present when the server already holds synced snapshots for that question; it is the latest one.
 - **Profile mapping** (Task Mentor language → profile): python→`python-3`, javascript→`node-22`, typescript→`typescript`, c→`c17`, cpp/c++→`cpp17`, java→`java-21`, html/css/web→`web`, react→`react`.

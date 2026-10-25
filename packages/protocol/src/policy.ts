@@ -4,9 +4,22 @@ import { z } from "zod";
 export const ModeSchema = z.enum(["practice", "monitored", "secure"]);
 export type Mode = z.infer<typeof ModeSchema>;
 
-/** How much help the editor gives (plan §6.2). AI completion is never an option. */
+/** How much help the editor gives (plan §6.2): language intelligence, not AI (that is `ai`). */
 export const IntelligenceSchema = z.enum(["none", "basic", "diagnostics", "full"]);
 export type Intelligence = z.infer<typeof IntelligenceSchema>;
+
+/**
+ * TMCode AI in an exam (AI usage control plan §6.3): Task Mentor fills it from the quiz's
+ * `ai_mode`, or "off" when the school's AI policy denies. "hints" has no TMCode feature yet, so
+ * only "full" turns TMCode AI on in an exam. Outside exams Task Mentor's AI status decides.
+ */
+export const AiModeSchema = z.enum(["off", "hints", "full"]);
+export type AiMode = z.infer<typeof AiModeSchema>;
+
+/** Any value as an AiMode: unknown or missing (older Task Mentor) is "off". */
+export function normalizeAiMode(m: unknown): AiMode {
+  return m === "hints" || m === "full" ? m : "off";
+}
 
 export const PastePolicySchema = z.enum(["allow", "internal_only", "block"]);
 export type PastePolicy = z.infer<typeof PastePolicySchema>;
@@ -26,6 +39,8 @@ export const PolicySchema = z.object({
   locked_settings: z.array(z.string()).default([]),
   /** Run and Debug (breakpoints, stepping) in an exam. Off unless the teacher turns it on. */
   debugger: z.boolean().optional(),
+  /** TMCode AI during the session. Older Task Mentor servers don't send it: off. */
+  ai: z.preprocess(normalizeAiMode, AiModeSchema).default("off"),
 });
 export type Policy = z.infer<typeof PolicySchema>;
 
@@ -39,6 +54,8 @@ export const PRACTICE_POLICY: Policy = {
   require_seb: false,
   allow_offline_grace_minutes: 0,
   locked_settings: [],
+  // Not forced on: outside exams Task Mentor's AI status (role, teacher, school) decides.
+  ai: "off",
 };
 
 /** Defaults a teacher starts from when creating an exam (plan §10.1). */
@@ -51,6 +68,7 @@ export const EXAM_POLICY_DEFAULTS: Policy = {
   require_seb: false,
   allow_offline_grace_minutes: 10,
   locked_settings: [],
+  ai: "off",
 };
 
 /**
@@ -60,4 +78,9 @@ export const EXAM_POLICY_DEFAULTS: Policy = {
  */
 export function terminalAllowed(p: Pick<Policy, "terminal">): boolean {
   return p.terminal === "full";
+}
+
+/** Whether TMCode AI may run in a session with this policy (exams: only when the teacher chose "full"). */
+export function examAiAllowed(p: Pick<Policy, "ai">): boolean {
+  return normalizeAiMode(p.ai) === "full";
 }
