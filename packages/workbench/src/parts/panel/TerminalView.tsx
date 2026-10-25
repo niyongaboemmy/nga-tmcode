@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { terminalEnv } from "../../terminal/env";
 import type { TerminalEnvMutation } from "../../platform/types";
 import { recordTerminalCommand } from "../../activity/sources";
@@ -8,6 +8,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { defaultFontFamily } from "../../state/settings";
 import { useThemes } from "../../themes/themeService";
+import { terminalFindDecorations } from "../../themes/workbenchColors";
 import { getPlatform, log, notify, showPanel, useWorkbench } from "../../state/store";
 import type { TerminalSession } from "../../platform/types";
 import { ActionButton, Codicon } from "../../widgets/icons";
@@ -554,12 +555,12 @@ function TerminalFind({ inst, onClose }: { inst: Instance; onClose: () => void }
     };
   }, [search]);
 
-  const decorations = {
-    matchOverviewRuler: "#d18616",
-    activeMatchColorOverviewRuler: "#a0a0a0",
-    matchBackground: "#623315",
-    activeMatchBackground: "#515c6a",
-  };
+  // The theme's find colours (xterm needs them opaque), not Dark Modern's in every theme.
+  const themeId = useThemes((s) => s.active?.id ?? "dark-modern");
+  const decorations = useMemo(() => {
+    const active = useThemes.getState().active;
+    return terminalFindDecorations(active?.resolved, String(terminalTheme(themeId).background ?? ""));
+  }, [themeId]);
   const find = (dir: 1 | -1, incremental = false) => {
     if (!query) return search.clearDecorations();
     const o = { ...opts, incremental, decorations };

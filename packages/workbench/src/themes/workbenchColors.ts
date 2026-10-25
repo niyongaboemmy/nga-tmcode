@@ -147,3 +147,37 @@ export function terminalThemeFor(theme: ResolvedTheme, panelBg?: string): ITheme
   });
   return out;
 }
+
+/** "#RRGGBBAA" over `bg` as "#RRGGBB" (xterm's search decorations take opaque colours only). */
+function flatten(color: string, bg: string): string {
+  const c = normalizeHex(color) ?? "#000000";
+  const b = normalizeHex(bg) ?? "#000000";
+  if (c.length === 7) return c;
+  const a = parseInt(c.slice(7, 9), 16) / 255;
+  const ch = (h: string, i: number) => parseInt(h.slice(i, i + 2), 16);
+  const mix = [1, 3, 5].map((i) => Math.round(ch(c, i) * a + ch(b, i) * (1 - a)));
+  return `#${mix.map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+
+/** The terminal find widget's match colours from the theme (VS Code's terminal/editor find keys and defaults). */
+export function terminalFindDecorations(theme: ResolvedTheme | null | undefined, background: string) {
+  const ui: UiTheme = theme?.uiTheme ?? "vs-dark";
+  const hc = ui === "hc-black" || ui === "hc-light";
+  const dark = isDarkUi(ui);
+  const c = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = normalizeHex(theme?.colors[k]);
+      if (v) return v;
+    }
+    return null;
+  };
+  const bg = normalizeHex(background) ?? (dark ? "#1E1E1E" : "#FFFFFF");
+  const border = c("terminal.findMatchBorder", "editor.findMatchBorder") ?? (hc ? (ui === "hc-light" ? "#0F4A85" : "#F38518") : null);
+  return {
+    matchBackground: flatten(c("terminal.findMatchHighlightBackground", "editor.findMatchHighlightBackground") ?? (hc ? bg : dark ? "#EA5C0055" : "#EA5C0055"), bg),
+    activeMatchBackground: flatten(c("terminal.findMatchBackground", "editor.findMatchBackground") ?? (hc ? bg : dark ? "#515C6A" : "#A8AC94"), bg),
+    matchOverviewRuler: flatten(c("editorOverviewRuler.findMatchForeground") ?? "#D18616", bg),
+    activeMatchColorOverviewRuler: flatten(c("editorOverviewRuler.findMatchForeground") ?? (dark ? "#A0A0A0" : "#646464"), bg),
+    ...(border ? { matchBorder: flatten(border, bg), activeMatchBorder: flatten(c("terminal.findMatchBorder", "editor.findMatchBorder", "contrastActiveBorder") ?? border, bg) } : {}),
+  };
+}
