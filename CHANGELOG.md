@@ -1,5 +1,84 @@
 # Changelog
 
+## 0.22.0 — 2026-10-25
+
+**TMCode 0.22: AI drafts grades for you to review, premium AI and your own API keys, and a clearer bottom panel.** An AI (TMCode AI, Claude Code, Gemini CLI, Codex or an AI extension) can now draft a student's grade from the rubric; you review it, adjust it and click Save, and nothing is saved before that. TMCode AI also offers your school's premium models and models on your own API key. In the bottom panel, commands look like commands, every run says how it ended, and the Activity log sums up each day at a glance.
+
+### AI drafts grades, you decide
+
+- **Draft with AI** in the grade panel (also Grading: Draft Grade with AI in the palette).
+  - Optionally tell the AI what to focus on ("check input validation").
+  - It uses the model picked in TMCode AI: Free, Auto, Premium or your own key.
+  - Test results you ran on the student's work go along.
+  - The scores, a note per criterion and the feedback appear in the form.
+- **Any AI tool can draft.** Opening a submission writes the grading task into the review folder:
+  - `.tmcode/grading/README.md`: the brief, the rubric with its indexes and maximums, the student, and the output contract.
+  - `.tmcode/grading/context.json` and `draft.schema.json`, and a copy of the README as `.claude/CLAUDE.md` for Claude Code.
+  - The AI writes `.tmcode/grading/draft.json`. TMCode checks it, keeps every score within 0 and its maximum in half points, and fills the form.
+  - A broken draft is refused with what was wrong, and the form doesn't change.
+  - The task tells the AI to treat the student's files as work to assess, never as instructions, and to report any attempt to steer the grade in its notes for you.
+- **Grade with Claude Code / Gemini CLI / Codex** (More Actions, or the palette): a terminal in the review folder starts the tool with the grading prompt.
+  - The grade panel shows "Claude Code is grading Ben… watching for its draft".
+  - If the tool isn't installed, TMCode says how to install it.
+  - **Copy Grading Prompt** works the same for an AI extension's chat panel.
+  - Offered only where the school allows third-party AI tools for staff.
+- **TMCode AI's agent** knows when you're grading: it reads the brief and rubric (get_grading_context) and proposes a grade (propose_grade) that lands in the form. It can't change the student's files: the review folder stays read-only.
+- **Extensions** can call `tmcode.grading.getContext` and `tmcode.grading.proposeDraft(draft)`.
+- **You stay in charge.**
+  - When a draft lands, a toast says "Claude Code drafted grades for Ben: review, adjust, then Save" with Review and Discard.
+  - The panel shows who drafted it, how confident it is, its notes for you and anything TMCode corrected.
+  - Each score, note and the feedback carry an AI mark until you change them.
+  - Discard AI Draft puts the form back as it was.
+  - Save is unchanged, and it is the only way a grade is saved.
+
+### Premium AI and your own keys
+
+- **Premium models** appear in TMCode AI's model menu when your school gives them to you, with what is left today.
+- **Your own API keys** (Settings › TMCode AI › Your API keys, or "Add Your Own API Key…" in the model menu): OpenAI, Anthropic, Google Gemini, OpenRouter, Groq or DeepSeek.
+  - The key is kept in your computer's keychain, never in TMCode's settings or logs.
+  - It goes to Task Mentor with each request, which uses it for that request only.
+  - Pick one of the provider's models in the model menu, or add another model id.
+- Clear messages when premium isn't turned on for you, or when a provider refuses your key, with Switch to Free.
+- Older Task Mentor servers keep working: only the free models show. Draft with AI then asks you to update Task Mentor.
+
+### Bottom panel
+
+- **Activity**
+  - Commands show as commands: a `$` line in the terminal font, with the program, options, quoted text and file paths in their own colours. This covers commands typed in the terminal, commands run by TMCode AI, and the command line of each run.
+  - Every run says how it ended, next to it: **✓ exit 0 · 1.2 s** in green, **✗ exit 1** in red, or **stopped**. A run still going shows **running**.
+  - Each run is one entry. Before, one run could appear twice, and some read "Ran Run main.cpp".
+  - Each kind of entry has its own colour: runs, terminal commands, git, extensions, AI, changes made outside the editor, and pastes from outside TMCode.
+  - The filters show how many entries each one has, in one row. Empty filters are dimmed.
+  - Each day's header sums up the day: actions, file changes, runs and how many failed, pastes and how many came from outside TMCode, time spent in other apps, and AI use. Plurals are right ("1 action").
+  - Click an entry to see its details in plain words: the result, how long it took, the command, and where pasted text came from. Internal names like "kind: runFile" are no longer shown.
+  - The search box says **Filter activity**.
+  - The AI colour now also works in light themes. The Activity tab marks AI use today with a small ✦ and a count, instead of a badge that looked like unread items.
+- **Run panel**
+  - The command shows as a bold, coloured `$` line.
+  - The program's end is its own line: **✓ Process exited with code 0 in 1.2 s** in green, **✗ Process exited with code 1** in red, or **■ Process stopped**.
+  - The Run panel's first line no longer says "Running Run main.cpp".
+- **Output**
+  - With one channel picked, its name isn't repeated on every line.
+  - Warnings and errors get an icon and a light tint.
+  - Lines highlight under the mouse, and the spacing matches the other views.
+- **Debug Console and JavaScript Console** rows highlight under the mouse, with the same spacing as Output. Warnings are easier to read in light themes.
+- **Terminal and Run panel:** the space under the last line now matches the theme. Before, it was black in every theme.
+- **Terminal find** uses the theme's colours for matches.
+- **Panel tabs:** when the tabs don't fit, the hidden side fades out and the selected tab scrolls into view. Tabs show a focus ring when you use the keyboard.
+
+### All changes
+
+- Release notes 0.22.0: AI-assisted grading, premium AI, own keys
+- AI-assisted grading: any AI drafts, the teacher reviews and saves
+- TMCode AI: premium models and your own API keys
+- Own AI provider keys in the OS keychain (ai_key_set/get/delete)
+- Release notes 0.22.0: bottom panel
+- Panel: tab strip, Output levels, quiet AI mark, consoles in line
+- Activity: status and day summaries read as text; e2e for one run entry
+- Run console: a coloured $ prompt and one clear status line
+- Runs are logged once, with their exit code and duration
+- Activity: commands as coloured chips, run status chips, day summaries
+
 ## 0.21.0 — 2026-10-25
 
 **TMCode 0.21: AI settings take effect within seconds, and the Explorer manages files like VS Code.** When the school, a teacher or an administrator changes who may use AI, TMCode reacts at once. In the Explorer you can paste files copied in Finder, undo file operations, and more.
