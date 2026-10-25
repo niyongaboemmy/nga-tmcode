@@ -5,7 +5,18 @@ import type { TmResponse, TmStreamEvent } from "./types";
  * from the question (deterministic), streamed in pieces as Server-Sent Events, with the same
  * allowance counting and error codes as the server. localStorage "tmcode:mock-ai-fail" =
  * "PROVIDER_QUOTA" makes Free answers fail as an exhausted OpenRouter pool would.
+ * localStorage "tmcode:mock-ai-policy" = a JSON AI decision ({"allowed":false,"reason":"TEACHER_OFF",
+ * "message":"…"}) makes the status carry it (AI usage control) and chat/complete answer 403 AI_DISABLED.
  */
+
+function mockPolicy(): { allowed: boolean; reason: string; message: string; thirdPartyExtensions?: boolean } | null {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem("tmcode:mock-ai-policy") : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 const CHAT_LIMIT = 40;
 
@@ -54,6 +65,10 @@ export function memoryAi() {
         you: { chat: { used, limit: CHAT_LIMIT }, complete: { used: completes, limit: 200 } },
         pools: { openrouter: { label: "OpenRouter (free models)", used: 4, limit: 50, remaining: 46 }, groq: { label: "Groq (free tier)", used: 0, limit: 1000, remaining: 1000 } },
         openrouter: { used: 4, limit: 50, remaining: 46 },
+        ...(() => {
+          const p = mockPolicy();
+          return p ? { allowed: p.allowed, reason: p.reason, message: p.message, mode: null, features: { assist: p.allowed, complete: p.allowed }, thirdPartyExtensions: p.thirdPartyExtensions ?? p.allowed } : {};
+        })(),
       },
     };
   }
@@ -73,6 +88,8 @@ export function memoryAi() {
   return {
     route(method: string, path: string, body: Record<string, unknown>): TmResponse {
       if (path === "/status" && method === "GET") return status();
+      const policy = mockPolicy();
+      if (policy && !policy.allowed && (path === "/chat" || path === "/complete")) return { status: 403, body: { code: "AI_DISABLED", reason: policy.reason, message: policy.message } };
       if (path === "/chat" && method === "POST") {
         const messages = (body.messages as { role: string; content: string }[]) ?? [];
         const id = `job-${++seq}`;

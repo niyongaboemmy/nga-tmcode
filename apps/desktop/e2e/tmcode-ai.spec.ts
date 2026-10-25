@@ -113,3 +113,24 @@ test("TMCode AI asks for an NGA sign-in first", async ({ page }) => {
   await page.keyboard.press("ControlOrMeta+Alt+b");
   await expect(page.getByTestId("tmcode-ai-chat")).toContainText("Sign in to use TMCode AI");
 });
+
+test("TMCode AI shows why when Task Mentor says AI is off (AI usage control)", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem("tmcode:mock-account", "signed-in");
+    localStorage.setItem("tmcode:mock-ai-policy", JSON.stringify({ allowed: false, reason: "TEACHER_OFF", message: "Your teacher turned AI off for this assignment." }));
+  });
+  await page.reload();
+  await expect(page.locator(".tm-statusbar")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  const chat = page.getByTestId("tmcode-ai-chat");
+  await expect(chat).toHaveAttribute("data-reason", "TEACHER_OFF");
+  await expect(page.getByTestId("ai-lock-message")).toHaveText("Your teacher turned AI off for this assignment.");
+  // The school turns it back on: the next status (project change, minute poll, reload) lifts the lock.
+  await page.evaluate(() => localStorage.removeItem("tmcode:mock-ai-policy"));
+  await page.reload();
+  await expect(page.locator(".tm-statusbar")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+i");
+  await expect(page.getByTestId("ai-input")).toBeVisible();
+});
