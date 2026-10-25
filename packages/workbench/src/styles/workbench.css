@@ -9667,7 +9667,6 @@ button.tm-setting-badge {
 
 /* ───────────── Activity panel (activity/ActivityView.tsx) ───────────── */
 .tm-actlog {
-  --ai: #a371f7;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -9675,112 +9674,200 @@ button.tm-setting-badge {
   font-family: var(--font-ui);
   font-size: 12px;
 }
-.tm-actlog-top {
+/* One toolbar: the filters, each with how many entries it shows, and Clear. */
+.tm-actlog-bar {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px 6px;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 3px 8px 3px 12px;
   border-bottom: 1px solid var(--border);
 }
-.tm-actlog-stats,
 .tm-actlog-filters {
   display: flex;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
 }
-.tm-actlog-stat {
+.tm-actlog-seg {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--description);
-  background: none;
-  border: 0;
-  padding: 0 8px 0 0;
-  font: inherit;
-}
-.tm-actlog-stat strong {
-  color: var(--foreground);
-  font-variant-numeric: tabular-nums;
-}
-.tm-actlog-stat.is-ai {
-  cursor: pointer;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--ai) 30%, transparent);
-}
-.tm-actlog-stat.is-ai.has-ai {
-  color: var(--ai);
-  background: color-mix(in srgb, var(--ai) 12%, transparent);
-}
-.tm-actlog-stat.is-ai.has-ai strong {
-  color: var(--ai);
-}
-.tm-actlog-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--description);
   font: inherit;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.tm-actlog-chip .codicon {
-  font-size: 12px;
+.tm-actlog-seg .codicon {
+  font-size: 13px;
 }
-.tm-actlog-chip:hover {
+.tm-actlog-seg:hover {
   background: var(--list-hover-bg);
   color: var(--foreground);
 }
-.tm-actlog-chip.is-active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+.tm-actlog-seg.is-active {
   color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--focus-border) 45%, transparent);
 }
-.tm-actlog-chip:focus-visible,
-.tm-actlog-main:focus-visible {
+.tm-actlog-seg-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  color: var(--foreground);
+  font-size: 10.5px;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tm-actlog-seg.is-empty .tm-actlog-seg-count {
+  background: transparent;
+  color: var(--description);
+  opacity: 0.75;
+}
+.tm-actlog-seg[data-filter="ai"]:not(.is-empty) .codicon,
+.tm-actlog-seg[data-filter="ai"]:not(.is-empty) .tm-actlog-seg-count {
+  color: var(--ai);
+}
+.tm-actlog-seg[data-filter="ai"]:not(.is-empty) .tm-actlog-seg-count {
+  background: color-mix(in srgb, var(--ai) 15%, transparent);
+}
+.tm-actlog-seg:focus-visible,
+.tm-actlog-main:focus-visible,
+.tm-actlog-aistat:focus-visible {
   outline: 1px solid var(--focus-border);
   outline-offset: -1px;
-}
-.tm-actlog-spacer {
-  flex: 1;
 }
 .tm-actlog-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px 0 10px;
+  padding: 0 0 10px;
 }
+/* The day, and what it adds up to. */
 .tm-actlog-day-title {
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
   margin: 0;
-  padding: 6px 12px 3px;
+  padding: 2px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--description);
+  background: var(--panel-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.tm-actlog-day-name {
+  flex: none;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--description);
-  background: var(--editor-bg);
+  color: var(--foreground);
 }
+.tm-actlog-daystats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+.tm-actlog-daystat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.tm-actlog-daystat + .tm-actlog-daystat::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  margin: 0 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+.tm-actlog-daystat .codicon {
+  font-size: 12px;
+}
+.tm-actlog-daystat .is-fail {
+  color: color-mix(in srgb, var(--error) 85%, var(--foreground));
+}
+.tm-actlog-daystat .is-warn {
+  color: color-mix(in srgb, var(--warning) 70%, var(--foreground));
+}
+.tm-actlog-aistat {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tm-actlog-aistat:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+.tm-actlog-aistat.has-ai {
+  color: var(--ai);
+  font-weight: 600;
+}
+/* Rows */
 .tm-actlog-row {
+  --kind: var(--description);
   border-left: 2px solid transparent;
+}
+.tm-actlog-row[data-kind="run"] {
+  --kind: var(--success);
+}
+.tm-actlog-row[data-kind="terminal"] {
+  --kind: var(--info);
+}
+.tm-actlog-row[data-kind="git"],
+.tm-actlog-row[data-kind="project"] {
+  --kind: var(--git-modified);
+}
+.tm-actlog-row[data-kind="extension"] {
+  --kind: var(--debug-value-boolean);
+}
+.tm-actlog-row[data-action="outside-change"],
+.tm-actlog-row[data-kind="clipboard"][data-origin="outside"] {
+  --kind: var(--warning);
+}
+.tm-actlog-row[data-action="delete"] {
+  --kind: var(--error);
+}
+.tm-actlog-row[data-kind="ai"],
+.tm-actlog-row.is-ai {
+  --kind: var(--ai);
 }
 .tm-actlog-row.is-ai {
   border-left-color: var(--ai);
   background: color-mix(in srgb, var(--ai) 5%, transparent);
+}
+.tm-actlog-row.is-open {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 .tm-actlog-main {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 3px 12px 3px 10px;
+  min-height: 24px;
+  padding: 2px 12px 2px 10px;
   border: 0;
   background: none;
   color: var(--foreground);
@@ -9793,7 +9880,7 @@ button.tm-setting-badge {
 }
 .tm-actlog-time {
   flex: none;
-  width: 38px;
+  width: 36px;
   color: var(--description);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -9801,28 +9888,123 @@ button.tm-setting-badge {
 }
 .tm-actlog-icon {
   flex: none;
+  color: var(--kind);
+}
+.tm-actlog-row[data-action="away"] .tm-actlog-main {
   color: var(--description);
-}
-.tm-actlog-row.is-ai .tm-actlog-icon {
-  color: var(--ai);
-}
-.tm-actlog-row[data-action="delete"] .tm-actlog-icon {
-  color: var(--error);
-}
-.tm-actlog-row[data-action="paste"][data-kind="clipboard"] .tm-actlog-icon {
-  color: var(--warning);
+  font-style: italic;
 }
 .tm-actlog-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tm-actlog-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-actlog-verb {
+  flex: none;
+  color: var(--description);
+}
 .tm-actlog-count {
-  margin-left: 6px;
+  flex: none;
   color: var(--description);
   font-variant-numeric: tabular-nums;
+}
+/* A command, as a terminal line: $ program --flags "strings" paths. */
+.tm-cmd {
+  display: inline-block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--panel-bg));
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+.tm-cmd.is-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tm-cmd-prompt {
+  color: var(--success);
+  font-weight: 700;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tm-cmd-program {
+  color: var(--debug-value-boolean);
+  font-weight: 600;
+}
+.tm-cmd-flag {
+  color: var(--debug-name);
+}
+.tm-cmd-string {
+  color: var(--debug-value-string);
+}
+.tm-cmd-number {
+  color: var(--debug-value-number);
+}
+.tm-cmd-variable,
+.tm-cmd-env {
+  color: var(--debug-continue);
+}
+.tm-cmd-operator {
+  color: var(--description);
+}
+.tm-cmd-path {
+  text-decoration: underline dotted color-mix(in srgb, var(--foreground) 45%, transparent);
+  text-underline-offset: 2px;
+}
+/* How a run ended: ✓ exit 0 · 1.2 s, ✗ exit 1, ■ stopped. */
+.tm-actlog-status {
+  --tone: var(--description);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px 0 5px;
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--tone) 78%, var(--foreground));
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tm-actlog-status .codicon {
+  font-size: 12px;
+  color: var(--tone);
+}
+.tm-actlog-status[data-tone="ok"] {
+  --tone: var(--success);
+}
+.tm-actlog-status[data-tone="fail"] {
+  --tone: var(--error);
+}
+.tm-actlog-status[data-tone="running"] {
+  --tone: var(--info);
+}
+.tm-actlog-status-time {
+  opacity: 0.85;
+}
+.tm-actlog-status-time::before {
+  content: "·";
+  margin-right: 4px;
 }
 .tm-actlog-ai,
 .tm-actlog-actor {
@@ -9830,17 +10012,18 @@ button.tm-setting-badge {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  max-width: 40%;
+  max-width: 34%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  height: 18px;
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: 9px;
   font-size: 11px;
 }
 .tm-actlog-ai {
   color: var(--ai);
-  background: color-mix(in srgb, var(--ai) 15%, transparent);
+  background: color-mix(in srgb, var(--ai) 14%, transparent);
 }
 .tm-actlog-ai .codicon {
   font-size: 11px;
@@ -9850,41 +10033,61 @@ button.tm-setting-badge {
   border: 1px solid var(--border);
 }
 .tm-actlog-details {
-  padding: 2px 12px 8px 58px;
+  padding: 2px 12px 8px 66px;
   animation: tm-jsc-in var(--dur-fast) var(--ease-out);
 }
 .tm-actlog-details dl {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 2px 12px;
+  gap: 3px 14px;
   margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--kind) 55%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 .tm-actlog-details dt {
   color: var(--description);
-  text-transform: capitalize;
 }
 .tm-actlog-details dd {
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.tm-actlog-none,
-.tm-actlog-empty {
-  margin: 0;
-  padding: 18px 14px;
-  color: var(--description);
+.tm-actlog-dd-ai {
+  color: var(--ai);
 }
+.tm-actlog-file {
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.tm-actlog-none,
 .tm-actlog-empty {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--description);
 }
 .tm-actlog-more {
   margin: 8px 12px;
 }
-:root[data-theme="light"] .tm-actlog,
-.tm-root[data-theme="light"] .tm-actlog {
-  --ai: #8250df;
+/* High contrast: outlines instead of tints. */
+.tm-root[data-theme="dark-hc"] .tm-actlog-seg.is-active,
+.tm-root[data-theme="dark-hc"] .tm-actlog-status,
+.tm-root[data-theme="dark-hc"] .tm-actlog-ai {
+  outline: 1px solid var(--tone, var(--focus-border));
+  outline-offset: -1px;
+}
+.tm-root[data-theme="dark-hc"] .tm-cmd {
+  border-color: var(--border);
+  background: transparent;
+}
+.tm-root[data-theme="dark-hc"] .tm-actlog-main:hover {
+  outline: 1px dashed var(--focus-border);
+  outline-offset: -1px;
 }
 @media (prefers-reduced-motion: reduce) {
   .tm-actlog-details {
@@ -9979,7 +10182,6 @@ button.tm-setting-badge {
 
 /* ───────────── TMCode AI chat (ai/ChatView.tsx) ───────────── */
 .tm-chat {
-  --ai: #a371f7;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -9987,9 +10189,6 @@ button.tm-setting-badge {
   font-family: var(--font-ui);
   font-size: 13px;
   color: var(--foreground);
-}
-.tm-root[data-theme="light"] .tm-chat {
-  --ai: #8250df;
 }
 .tm-chat-off,
 .tm-chat-welcome {

@@ -101,6 +101,8 @@
   --warning: #cca700;
   --info: #3794ff;
   --success: #2ea043;
+  /* AI use (Activity, TMCode AI chat): one colour per theme. */
+  --ai: #a371f7;
   --modified: #e2c08d;
   /* git decorations (gitDecoration.*) and quick diff gutter (editorGutter.*) */
   --git-modified: #e2c08d;
@@ -223,6 +225,8 @@
   --warning: #bf8803;
   --info: #1a85ff;
   --success: #388a34;
+  /* AI use (Activity, TMCode AI chat): one colour per theme. */
+  --ai: #8250df;
   --modified: #895503;
   /* git decorations (gitDecoration.*) and quick diff gutter (editorGutter.*) */
   --git-modified: #895503;
@@ -345,6 +349,8 @@
   --warning: #ffd370;
   --info: #3794ff;
   --success: #89d185;
+  /* AI use (Activity, TMCode AI chat): one colour per theme. */
+  --ai: #d2a8ff;
   --modified: #ffd370;
   /* git decorations (gitDecoration.*) and quick diff gutter (editorGutter.*) */
   --git-modified: #e2c08d;
