@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.21.0 — 2026-10-25
+
+**TMCode 0.21: AI settings take effect within seconds, and the Explorer manages files like VS Code.** When the school, a teacher or an administrator changes who may use AI, TMCode reacts at once. In the Explorer you can paste files copied in Finder, undo file operations, and more.
+
+### Live AI settings
+
+- TMCode keeps a line open to Task Mentor and hears when the AI settings change:
+  - the school's AI policy, within about 5 seconds;
+  - a teacher's AI setting for the quiz or assignment you're working on;
+  - roles and permissions.
+  - The AI panel, suggestions, AI extensions and AI terminal tools then follow the new decision straight away.
+- TMCode also checks again every 15 seconds, and whenever it comes back to the front, in case the line drops.
+- **During exams too:**
+  - If the teacher turns AI on or off for the quiz while the exam runs, or the school turns AI off, TMCode follows it.
+  - The exam package's setting applies only until Task Mentor's first answer during the exam.
+  - AI extensions and AI terminal tools still never run in exams.
+  - Only TMCode AI's own requests are allowed through during an exam; projects and assignments stay closed until it ends.
+- Older Task Mentor servers without live updates keep working: TMCode falls back to checking every 15 seconds.
+
+### Explorer: copy, paste and manage files like VS Code
+
+- **Files copied in Finder now paste.**
+  - Copy files or folders in Finder, then right-click the Explorer (or a folder) and choose **Paste**, or press ⌘V.
+  - Before, Finder's clipboard was read wrongly on macOS and nothing happened.
+  - Files copied in File Explorer on Windows paste the same way.
+- **Paste in the empty space.** Right-clicking below your files now offers:
+  - Paste;
+  - Reveal in Finder / File Explorer;
+  - Open in Integrated Terminal;
+  - Find in Folder.
+  - When there's nothing to paste, TMCode says so.
+- **Undo file operations.** With the Explorer focused, ⌘Z (Ctrl+Z on Windows and Linux) undoes the last rename, move, paste, duplicate, new file or folder, or import from Finder. Edit › Undo does the same.
+  - Deleted files are still restored from the toast's **Undo**, or from the Trash.
+- **Cut files are dimmed** until you paste them.
+- **Drag with Option** (Ctrl on Windows and Linux) to copy instead of move.
+- New in the right-click menu:
+  - **Open in Integrated Terminal**: a terminal in that folder.
+  - **Find in Folder...**: Search limited to that folder.
+  - **Select for Compare** / **Compare with Selected**: a diff of two files.
+- On macOS, **⌘↓** opens the selected file.
+
+### Activity: every copy and paste, for your teacher
+
+- Every paste is now recorded, including pastes from the editor's right-click menu and Edit › Paste on macOS, which were missed before.
+  - Each paste says where the text came from: copied inside TMCode, an AI's answer, or another app.
+- Text you drag in from a browser or document is recorded too.
+- Copying and cutting files in the Explorer are recorded.
+- Time spent in other apps (30 seconds or more) is recorded as "Away from TMCode for 3 min". Clicking into TMCode's own preview panes doesn't count.
+- In Task Mentor, a submission's **Activity** tab now counts the whole history:
+  - copies, cuts and pastes, with how much was pasted from outside;
+  - files brought in;
+  - AI use by tool, and blocked attempts;
+  - time in other apps.
+  - Older entries load on demand.
+
+### Terminal fits the panel again
+
+- Long output no longer runs past the bottom of the panel and hides the prompt. The terminal fits the panel, scrolls, and keeps the newest line and the cursor in view, as in VS Code.
+- Resizing the panel re-fits it.
+
+### All changes
+
+- Release notes 0.21.0: activity and terminal
+- Activity: every paste, text dragged in, Explorer copy/cut and time in other apps
+- Terminal fills the panel and scrolls: the prompt no longer hides below it
+- Release notes 0.21.0: Explorer file management
+- Explorer: VS Code file management -- Finder paste fixed, Paste in the empty space, undo, cut dimming, Option/Ctrl-drag copy, terminal, Find in Folder, compare
+- TMCode AI reacts to changed AI settings within seconds
+
 ## 0.20.0 — 2026-10-25
 
 **TMCode 0.20: your school and your teacher decide when AI can be used.** TMCode AI, AI extensions and AI command-line tools now follow Task Mentor's AI setting. That setting combines the school's AI switch, the teacher's choice for an assignment or quiz, and your role.
