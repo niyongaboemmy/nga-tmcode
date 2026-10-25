@@ -305,6 +305,18 @@ export async function createTauriPlatform(): Promise<Platform> {
       zoom = factor;
       void invoke("set_zoom", { factor }).catch(() => {});
     },
+    onWindowFocus(cb) {
+      let un: (() => void) | null = null;
+      let stopped = false;
+      void win
+        .onFocusChanged(({ payload }) => cb(payload))
+        .then((u) => (stopped ? u() : (un = u)))
+        .catch(() => {});
+      return () => {
+        stopped = true;
+        un?.();
+      };
+    },
     onFileDrop(cb) {
       let un: (() => void) | null = null;
       let stopped = false;

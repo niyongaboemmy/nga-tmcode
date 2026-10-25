@@ -1531,6 +1531,8 @@ kbd,
 .tm-terminal-host {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   padding: 4px 0 0 20px;
 }
 .tm-terminal-host .xterm {
@@ -3123,9 +3125,9 @@ kbd,
 }
 
 /* ───────────────────────── terminal find ───────────────────────── */
-.tm-terminal {
-  position: relative;
-}
+/* .tm-terminal is already positioned (absolute, filling the panel): the find box anchors to it.
+   A "position: relative" here once overrode that, so the terminal grew with its output past the
+   panel's bottom, hiding the prompt with nothing to scroll (and fit() kept 24 rows). */
 .tm-terminal-find {
   position: absolute;
   top: 0;

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getPlatform, loadDir, moveEntry, notify, select, targetFolder, toggleDir, useWorkbench } from "../../state/store";
 import { basename, dirname, join } from "../../util/paths";
 import { recordCreated, recordMove } from "./fileUndo";
+import { recordFileClipboard } from "../../activity/sources";
 
 /**
  * VS Code's Explorer clipboard: Copy / Cut (⌘C / ⌘X) remember paths, Paste
@@ -29,12 +30,14 @@ const osFiles = async () => (await getPlatform().fs.clipboardFiles?.().catch(() 
 
 export function copyEntries(paths: string[]) {
   if (!paths.length) return;
+  recordFileClipboard("copy", paths);
   useFileClipboard.setState({ mode: "copy", paths }, true);
   void osFiles().then((f) => (osAtCopy = f.join("\n")));
 }
 
 export function cutEntries(paths: string[]) {
   if (!paths.length) return;
+  recordFileClipboard("cut", paths);
   useFileClipboard.setState({ mode: "cut", paths }, true);
   void osFiles().then((f) => (osAtCopy = f.join("\n")));
 }

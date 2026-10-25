@@ -6,8 +6,10 @@ import { flushActivity, internally, recordActivity, setActivityFolder, setActivi
 
 /**
  * Feeds the activity log: per-folder persistence, copy/cut/paste anywhere in
- * the workbench, and file changes made outside TMCode (a terminal command, a
- * CLI agent, another app), which the file watcher reports.
+ * the workbench (and pastes that reach the editor through the clipboard API,
+ * text dragged in from other apps), time spent in other apps, and file changes
+ * made outside TMCode (a terminal command, a CLI agent, another app), which the
+ * file watcher reports.
  */
 
 const DIR = ".tmcode/activity";
@@ -115,8 +117,11 @@ export function recordCopy(kind: "copy" | "cut", text: string, at: Where, actor?
   });
 }
 
-/** Records a paste, saying whether the text came from inside TMCode, from an AI's answer, or from outside. */
-export function recordPaste(text: string, at: Where) {
+/**
+ * Records a paste (or text dragged in: `how` "drop"), saying whether the text came from inside
+ * TMCode, from an AI's answer, or from outside.
+ */
+export function recordPaste(text: string, at: Where, how: "paste" | "drop" = "paste") {
   if (!text) return;
   const t = norm(text);
   const fromAi = aiCopies.find((c) => c.text.includes(t) || t.includes(c.text));
@@ -124,11 +129,36 @@ export function recordPaste(text: string, at: Where) {
   const origin = fromAi ? `from ${fromAi.by}'s answer` : inside ? "copied inside TMCode" : "from outside TMCode";
   recordActivity({
     kind: "clipboard",
-    action: "paste",
+    action: how,
     path: at.path,
-    text: `Pasted ${sizeText(text)} into ${at.where} (${origin})`,
+    text: `${how === "drop" ? "Dragged" : "Pasted"} ${sizeText(text)} into ${at.where} (${origin})`,
     data: { chars: text.length, lines: t.split("\n").length, where: at.where, origin: fromAi ? "ai" : inside ? "inside" : "outside" },
-    ...(fromAi ? { ai: { by: fromAi.by, how: "pasted text copied from the AI's answer" } } : {}),
+    ...(fromAi ? { ai: { by: fromAi.by, how: how === "drop" ? "dragged in text copied from the AI's answer" : "pasted text copied from the AI's answer" } } : {}),
+  });
+}
+
+/** The code editor's own pastes: what reached the model without a DOM paste event (Edit › Paste or the editor's menu on macOS use the clipboard API). */
+export function recordEditorPastes(ed: { onDidPaste(cb: (e: { range: unknown; clipboardEvent?: unknown }) => void): { dispose(): void }; getModel(): { getValueInRange(r: never): string } | null }) {
+  const sub = ed.onDidPaste((e) => {
+    // A DOM paste was recorded already (wireClipboard, capture phase).
+    if (e.clipboardEvent) return;
+    const text = ed.getModel()?.getValueInRange(e.range as never) ?? "";
+    const path = activeFilePath() ?? undefined;
+    recordPaste(text, { where: path ? path.slice(path.lastIndexOf("/") + 1) : "the editor", path });
+  });
+  return () => sub.dispose();
+}
+
+/** Files copied or cut in the Explorer (pasting them is recorded as the copy or move it does). */
+export function recordFileClipboard(kind: "copy" | "cut", paths: string[]) {
+  if (!paths.length) return;
+  const name = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+  recordActivity({
+    kind: "clipboard",
+    action: kind === "copy" ? "copy-files" : "cut-files",
+    path: paths[0],
+    text: `${kind === "copy" ? "Copied" : "Cut"} ${paths.length === 1 ? name(paths[0]) : `${paths.length} files and folders`} in the Explorer`,
+    data: { count: paths.length, files: paths.slice(0, 20).join(", ") },
   });
 }
 
@@ -152,9 +182,71 @@ function wireClipboard() {
     const text = e.clipboardData?.getData("text/plain") ?? "";
     recordPaste(text, whereOf(e.target));
   };
+  // Text dragged in from another app (a browser, a document) is a paste too. Files dropped are
+  // recorded as their import; TMCode's own drags (Explorer rows) are moves.
+  const onDrop = (e: DragEvent) => {
+    const types = [...(e.dataTransfer?.types ?? [])];
+    if (types.includes("Files") || types.some((t) => t.startsWith("application/x-tmcode"))) return;
+    const text = e.dataTransfer?.getData("text/plain") ?? "";
+    const at = whereOf(e.target);
+    if (text && at.where !== "TMCode") recordPaste(text, at, "drop");
+  };
   window.addEventListener("copy", onCopy);
   window.addEventListener("cut", onCopy);
   window.addEventListener("paste", onPaste, true);
+  window.addEventListener("drop", onDrop, true);
+}
+
+// ── time in other apps ──
+
+/** Shorter visits to another app aren't worth a line. */
+export const AWAY_MIN_MS = 30_000;
+
+/** "Away from TMCode for 3 min 20 s". */
+export function awayText(ms: number) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m} min ${s % 60} s` : `${m} min`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/**
+ * Time the student spent in other apps while working (TMCode's window not focused): `onFocus`
+ * gets each focus change and calls `record` with the stretch when the window comes back, if it
+ * lasted AWAY_MIN_MS or more. A clock can be passed for tests.
+ */
+export function createAwayTracker(record: (away: { ms: number; from: number; at: number }) => void, now: () => number = Date.now) {
+  let leftAt: number | null = null;
+  return (focused: boolean) => {
+    if (!focused) {
+      leftAt ??= now();
+      return;
+    }
+    if (leftAt === null) return;
+    const at = now();
+    const ms = at - leftAt;
+    const from = leftAt;
+    leftAt = null;
+    if (ms >= AWAY_MIN_MS) record({ ms, from, at });
+  };
+}
+
+/**
+ * The desktop's window focus ignores clicks into TMCode's preview panes (separate webviews); the
+ * browser build uses the page's focus. Recorded only while a folder is open.
+ */
+function wireAway() {
+  const onFocus = createAwayTracker(({ ms, from, at }) => {
+    if (!useWorkbench.getState().workspace) return;
+    recordActivity({ kind: "editor", action: "away", t: at, text: `Away from TMCode for ${awayText(ms)}`, data: { seconds: Math.round(ms / 1000), from: new Date(from).toISOString() } });
+  });
+  const native = getPlatform().onWindowFocus;
+  if (native) native(onFocus);
+  else {
+    window.addEventListener("blur", () => onFocus(false));
+    window.addEventListener("focus", () => onFocus(true));
+  }
 }
 
 // ── terminal ──
@@ -216,6 +308,7 @@ export function wireActivity() {
   onWorkspaceChanged(() => void open());
   void open();
   wireClipboard();
+  wireAway();
   wireOutsideChanges();
   wireActivityUpload();
   window.addEventListener("beforeunload", () => flushActivity());

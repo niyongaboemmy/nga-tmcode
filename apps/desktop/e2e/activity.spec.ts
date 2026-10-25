@@ -100,3 +100,32 @@ test("files created, renamed and deleted, copy and paste, and runs are recorded;
   await log.locator(".tm-actlog-main").first().click();
   await expect(log.locator(".tm-actlog-details")).toContainText("You");
 });
+
+test("Explorer copy and cut, the editor's own Paste, and text dragged in from another app are recorded", async ({ page }) => {
+  await boot(page);
+
+  // Files copied and cut in the Explorer.
+  await row(page, "main.py").click({ button: "right" });
+  await page.locator(".tm-menu-item").filter({ has: page.locator(".tm-menu-label", { hasText: /^Copy$/ }) }).click();
+  await row(page, "README.md").click({ button: "right" });
+  await page.locator(".tm-menu-item").filter({ has: page.locator(".tm-menu-label", { hasText: /^Cut$/ }) }).click();
+  const log = await openActivity(page);
+  await expect(log).toContainText("Copied main.py in the Explorer");
+  await expect(log).toContainText("Cut README.md in the Explorer");
+
+  // A paste through the clipboard API (no DOM paste event) still records the paste and its origin.
+  await row(page, "main.py").dblclick();
+  await page.locator(".tm-editor-area .monaco-editor .view-line").first().click();
+  // Monaco's Paste through the clipboard API (its menu, Edit › Paste on macOS): no DOM paste event.
+  await page.evaluate(() => (window as unknown as { __TMCODE_DEBUG__: { pasteViaApi(t: string): void } }).__TMCODE_DEBUG__.pasteViaApi("print('from a website')"));
+  await expect(log).toContainText("Pasted 1 line, 23 characters into main.py (from outside TMCode)");
+
+  // Text dragged in from a browser or a document.
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", "dragged from a web page");
+    const target = document.querySelector(".tm-editor-area .monaco-editor .view-lines")!;
+    target.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(log).toContainText("Dragged 1 line, 23 characters into main.py (from outside TMCode)");
+});
