@@ -129,3 +129,25 @@ test("Explorer copy and cut, the editor's own Paste, and text dragged in from an
   });
   await expect(log).toContainText("Dragged 1 line, 23 characters into main.py (from outside TMCode)");
 });
+
+test("a run is one entry with its command, exit code and duration", async ({ page }) => {
+  await boot(page);
+  await row(page, "js").click();
+  await row(page, "js/sum.js").dblclick();
+  await page.locator(".monaco-editor .view-lines").first().click();
+  await page.keyboard.press("F5");
+  await expect(page.getByTestId("run-console")).toContainText("exited with code 0");
+  const log = await openActivity(page);
+  const runs = log.locator('.tm-actlog-row[data-kind="run"]');
+  await expect(runs).toHaveCount(1);
+  await expect(runs).not.toContainText("Ran Run");
+  await expect(runs.locator(".tm-cmd")).toContainText("node sum.js");
+  await expect(runs.getByTestId("activity-run-status")).toContainText(/exit 0 · \d/);
+  await expect(runs).toHaveAttribute("data-tone", "ok");
+  // Details in words: the result, not internal keys.
+  await runs.locator(".tm-actlog-main").click();
+  await expect(log.locator(".tm-actlog-details")).toContainText("exited with code 0");
+  await expect(log.locator(".tm-actlog-details")).not.toContainText("runFile");
+  // The day header sums it up, with plurals.
+  await expect(log.locator(".tm-actlog-day-title").first()).toContainText(/1 action · 1 run(?!s)/);
+});

@@ -94,8 +94,10 @@ export function StatusChip({ status }: { status: RunStatus }) {
   return (
     <span className="tm-actlog-status" data-tone={status.tone} title={runStatusWords(status)} data-testid="activity-run-status">
       <Codicon name={TONE_ICON[status.tone]} className={status.tone === "running" ? "codicon-modifier-spin" : ""} />
-      <span>{status.label}</span>
-      {status.duration && <span className="tm-actlog-status-time">{status.duration}</span>}
+      <span>
+        {status.label}
+        {status.duration && <span className="tm-actlog-status-time"> · {status.duration}</span>}
+      </span>
     </span>
   );
 }
@@ -129,42 +131,53 @@ function RowText({ e }: { e: ActivityEvent }) {
 }
 
 function DayStats({ s, today, onAi }: { s: DaySummary; today: boolean; onAi: () => void }) {
+  const items: React.ReactNode[] = [<span key="actions">{plural(s.actions, "action")}</span>];
+  if (s.files) items.push(<span key="files">{plural(s.files, "file change")}</span>);
+  if (s.runs)
+    items.push(
+      <span key="runs">
+        {plural(s.runs, "run")}
+        {s.failedRuns > 0 && <span className="is-fail">, {s.failedRuns} failed</span>}
+      </span>,
+    );
+  if (s.pastes)
+    items.push(
+      <span key="pastes">
+        {plural(s.pastes, "paste")}
+        {s.outsidePastes > 0 && (
+          <span className="is-warn" title="Text pasted from another app or website">
+            , {s.outsidePastes} from outside
+          </span>
+        )}
+      </span>,
+    );
+  if (s.awayMs)
+    items.push(
+      <span key="away" title="Time spent in other apps (30 s or more at a time)">
+        <Codicon name="coffee" /> away {formatDuration(s.awayMs)}
+      </span>,
+    );
+  items.push(
+    <button
+      key="ai"
+      type="button"
+      className={`tm-actlog-aistat ${s.ai ? "has-ai" : ""}`}
+      onClick={onAi}
+      title={s.aiTools.length ? `AI used: ${s.aiTools.join(", ")}. Show only AI use.` : "No AI used. Show only AI use."}
+      {...(today ? { "data-testid": "activity-ai-count" } : {})}
+    >
+      <Codicon name="sparkle" />
+      {s.ai ? `${s.ai} with AI · ${s.aiTools.join(", ")}` : "no AI"}
+    </button>,
+  );
   return (
     <span className="tm-actlog-daystats">
-      <span className="tm-actlog-daystat">{plural(s.actions, "action")}</span>
-      {s.files > 0 && <span className="tm-actlog-daystat">{plural(s.files, "file change")}</span>}
-      {s.runs > 0 && (
-        <span className="tm-actlog-daystat">
-          {plural(s.runs, "run")}
-          {s.failedRuns > 0 && <span className="is-fail"> · {s.failedRuns} failed</span>}
-        </span>
-      )}
-      {s.pastes > 0 && (
-        <span className="tm-actlog-daystat">
-          {plural(s.pastes, "paste")}
-          {s.outsidePastes > 0 && (
-            <span className="is-warn" title="Text pasted from another app or website">
-              {" "}
-              · {s.outsidePastes} from outside
-            </span>
-          )}
-        </span>
-      )}
-      {s.awayMs > 0 && (
-        <span className="tm-actlog-daystat" title="Time spent in other apps (30 s or more at a time)">
-          <Codicon name="coffee" /> away {formatDuration(s.awayMs)}
-        </span>
-      )}
-      <button
-        type="button"
-        className={`tm-actlog-daystat tm-actlog-aistat ${s.ai ? "has-ai" : ""}`}
-        onClick={onAi}
-        title={s.aiTools.length ? `AI used: ${s.aiTools.join(", ")}. Show only AI use.` : "No AI used. Show only AI use."}
-        {...(today ? { "data-testid": "activity-ai-count" } : {})}
-      >
-        <Codicon name="sparkle" />
-        {s.ai ? `${s.ai} with AI · ${s.aiTools.join(", ")}` : "no AI"}
-      </button>
+      {items.map((node, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span className="tm-actlog-daysep"> · </span>}
+          <span className="tm-actlog-daystat">{node}</span>
+        </React.Fragment>
+      ))}
     </span>
   );
 }
@@ -268,6 +281,7 @@ export function ActivityView({ filter: search }: { filter: string }) {
           <section key={g.day} className="tm-actlog-day" aria-label={dayLabel(g.day)}>
             <h3 className="tm-actlog-day-title">
               <span className="tm-actlog-day-name">{dayLabel(g.day)}</span>
+              <span className="tm-actlog-daysep is-hidden">: </span>
               {days.get(g.day) && <DayStats s={days.get(g.day)!} today={g.day === today} onAi={() => setFilter("ai")} />}
             </h3>
             {g.items.map((e) => {
