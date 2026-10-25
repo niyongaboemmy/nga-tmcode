@@ -14,6 +14,7 @@ import type {
   FileEncoding,
   ExtHostTransportEvent,
   AccountHost,
+  AiToolEvent,
   AccountStatus,
   GitEvent,
   GitHost,
@@ -249,6 +250,18 @@ export async function createTauriPlatform(): Promise<Platform> {
     languageServers: createLanguageServerHost(),
     http: {
       request: (req) => invoke("api_request", { req: { ...req, body: req.body ?? null } }),
+    },
+    aiTools: {
+      setPolicy: (p) => void invoke("ai_tools_policy", { blocked: p.blocked, message: p.message, catalog: p.catalog }).catch(() => {}),
+      onEvent(cb) {
+        let un: (() => void) | null = null;
+        let stopped = false;
+        void listen<AiToolEvent>("ai-tool", (e) => cb(e.payload)).then((u) => (stopped ? u() : (un = u)));
+        return () => {
+          stopped = true;
+          un?.();
+        };
+      },
     },
     proc: {
       run: async (command, cwd, onEvent) => {

@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { recordActivity } from "../activity/log";
-import { isAiExtension } from "../activity/aiExtensions";
+import { aiExtensionName, isAiExtension } from "../activity/aiExtensions";
+import { aiGate, thirdPartyMessage } from "../ai/gate";
+import { useAi } from "../ai/service";
 import { getPlatform, log, notify, openQuickInput, showDialog, useWorkbench } from "../state/store";
 import { useExam } from "../exam/state";
 import type { ExtensionHost, StoredExtension } from "../platform/types";
@@ -52,6 +54,37 @@ export function extensionHost(): ExtensionHost | undefined {
 export function extensionsBlocked(): boolean {
   const p = useExam.getState().phase;
   return p === "active" || p === "locked" || p === "submitting" || useWorkbench.getState().policy.mode !== "practice";
+}
+
+/**
+ * Third-party AI extensions (Claude Code, Copilot, Codex…) are off (AI usage control): Task
+ * Mentor's status says so (`thirdPartyExtensions`), or it is unknown in an assignment's project,
+ * or an exam. They bypass Task Mentor, so this is client side and best-effort; the activity log
+ * records attempts. Other extensions keep working.
+ */
+export function aiExtensionsBlocked(): boolean {
+  return extensionsBlocked() || !aiGate().thirdParty;
+}
+
+/** Why AI extensions are off now (null: they may run). */
+export function aiExtensionsBlockedReason(): string | null {
+  if (!aiExtensionsBlocked()) return null;
+  return thirdPartyMessage(aiGate()) ?? "Extensions are disabled during exams.";
+}
+
+/** This extension is an AI tool and AI tools are off. */
+export function aiExtensionBlocked(id: string, manifest?: Parameters<typeof isAiExtension>[1]): boolean {
+  return isAiExtension(id, manifest) && aiExtensionsBlocked();
+}
+
+/** Refuses (with the reason, and an activity log entry) an AI extension while AI tools are off. */
+export function refuseAiExtension(id: string, manifest: Parameters<typeof isAiExtension>[1], attempt: string): boolean {
+  if (!aiExtensionBlocked(id, manifest)) return false;
+  const name = aiExtensionName(id, manifest);
+  const why = aiExtensionsBlockedReason() ?? "AI tools are turned off.";
+  notify("warning", `${name} can't be used now. ${why}`);
+  recordActivity({ kind: "extension", action: "blocked", text: `Tried to ${attempt} ${name}: AI tools are off`, data: { id, ai: true, attempt }, ai: { by: name, how: "blocked" } });
+  return true;
 }
 
 function toInstalled(s: StoredExtension, disabled: Set<string>): InstalledExtension | null {
@@ -112,6 +145,7 @@ export async function installExtension(ext: Pick<GalleryExtension, "id" | "displ
     notify("warning", "Extensions are disabled during exams.");
     return false;
   }
+  if (refuseAiExtension(ext.id, { displayName: ext.displayName, description: (ext as { description?: string }).description, categories: (ext as { categories?: string[] }).categories }, "install")) return false;
   if (!ext.downloadUrl) {
     notify("error", `${ext.displayName} has no download on Open VSX.`);
     return false;
@@ -167,6 +201,7 @@ async function finishInstall(stored: StoredExtension): Promise<boolean> {
     log("Extensions", `Installed ${item.id} v${item.version}${item.manifest.hasCode ? (item.enabled ? " (it runs code)" : " (disabled: its code was not trusted)") : ""}`);
     recordActivity({ kind: "extension", action: "install", text: `Installed the extension ${item.manifest.displayName || item.id}${isAiExtension(item.id, item.manifest) ? " (an AI tool)" : ""}`, data: { id: item.id, version: item.version, ai: isAiExtension(item.id, item.manifest) } });
     announce(item);
+    if (aiExtensionBlocked(item.id, item.manifest)) notify("warning", `${aiExtensionName(item.id, item.manifest)} is installed but won't run now. ${aiExtensionsBlockedReason() ?? ""}`);
     return true;
   }
 }
@@ -251,7 +286,8 @@ export const monacoSink: { apply: (exts: InstalledExtension[], host: ExtensionHo
 
 export function activeExtensions(): InstalledExtension[] {
   if (extensionsBlocked()) return [];
-  return useExtensions.getState().installed.filter((e) => e.enabled);
+  const noAi = aiExtensionsBlocked();
+  return useExtensions.getState().installed.filter((e) => e.enabled && !(noAi && isAiExtension(e.id, e.manifest)));
 }
 
 let lastApplied: InstalledExtension[] | null = null;
@@ -310,6 +346,23 @@ const recheck = () => {
   applyContributions();
 };
 useExam.subscribe(recheck);
+
+// AI extensions switch off and on with Task Mentor's AI status (school switch, project change).
+let wasAiBlocked = false;
+useAi.subscribe(() => {
+  const blocked = aiExtensionsBlocked();
+  if (blocked === wasAiBlocked) return;
+  wasAiBlocked = blocked;
+  const ai = useExtensions.getState().installed.filter((e) => e.enabled && isAiExtension(e.id, e.manifest));
+  if (!ai.length) return;
+  if (blocked && !extensionsBlocked()) {
+    log("Extensions", `AI extensions are off: ${aiExtensionsBlockedReason() ?? ""}`);
+    recordActivity({ kind: "extension", action: "blocked", text: `AI extensions turned off (${ai.map((e) => e.manifest.displayName || e.id).join(", ")})`, data: { ids: ai.map((e) => e.id).join(","), ai: true } });
+  }
+  // The extension host restarts with (or without) them, as after enabling or disabling one.
+  useExtensions.setState({ version: useExtensions.getState().version + 1 });
+  applyContributions();
+});
 useWorkbench.subscribe((s, prev) => {
   if (s.policy !== prev.policy) recheck();
 });

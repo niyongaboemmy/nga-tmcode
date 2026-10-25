@@ -79,6 +79,8 @@ fn main() {
             "exthost_send",
             "exthost_stop",
             "exthost_policy",
+            // AI usage control: third-party AI tools in terminals
+            "ai_tools_policy",
             "exthost_secret",
             "webview_publish",
             "webview_dispose",

@@ -86,7 +86,9 @@ pub fn proc_run(app: AppHandle, ws: State<'_, Workspace>, procs: State<'_, Procs
         use std::os::windows::process::CommandExt;
         c.creation_flags(0x0800_0000);
     }
+    crate::ai_tools::apply_command(&mut c);
     let mut child = c.spawn().map_err(|e| format!("Could not start the command: {e}"))?;
+    crate::ai_tools::watch(Some(child.id()));
     let id = procs.next.fetch_add(1, Ordering::Relaxed) + 1;
     procs.trees.lock().unwrap().insert(id, Tree::of(child.id()));
     log::info!("proc {id}: {command} (in {})", dir.display());

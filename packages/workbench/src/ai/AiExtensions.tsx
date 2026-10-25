@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { extensionHost, extensionsBlocked, installExtension, useExtensions } from "../extensions/service";
+import { extensionHost, installExtension, useExtensions } from "../extensions/service";
+import { useAiExtensionsBlockedReason } from "../parts/extensions/ExtensionsView";
 import { getGalleryExtension } from "../extensions/gallery";
 import { showContainer, useViews } from "../exthost/views/model";
 import { useInstallLabel } from "../parts/extensions/InstallProgress";
@@ -26,6 +27,7 @@ function Row({ a }: { a: (typeof ASSISTANTS)[number] }) {
   const label = useInstallLabel(a.id, busy);
   const container = useViews((s) => s.containers.find((c) => c.extensionId === a.id && c.location === "secondarySidebar") ?? s.containers.find((c) => c.extensionId === a.id));
   const [error, setError] = useState<string | null>(null);
+  const blockedReason = useAiExtensionsBlockedReason();
 
   const install = async () => {
     setError(null);
@@ -45,18 +47,18 @@ function Row({ a }: { a: (typeof ASSISTANTS)[number] }) {
         <div className="tm-aihub-name">
           {a.name} <span className="tm-aihub-by">{a.by}</span>
         </div>
-        <div className="tm-aihub-note">{error ?? a.note}</div>
+        <div className="tm-aihub-note">{error ?? (blockedReason && !installed ? blockedReason : a.note)}</div>
       </div>
       {busy ? (
         <span className="tm-aihub-busy" role="status">
           <Codicon name="loading" className="codicon-modifier-spin" /> {label}
         </span>
       ) : installed ? (
-        <button type="button" className="tm-chat-starter tm-aihub-btn" onClick={() => (container ? showContainer(container.key) : notify("info", `${a.name} is starting. Open it from the activity bar or the secondary side bar.`))} disabled={!installed.enabled}>
+        <button type="button" className="tm-chat-starter tm-aihub-btn" onClick={() => (container ? showContainer(container.key) : notify("info", `${a.name} is starting. Open it from the activity bar or the secondary side bar.`))} disabled={!installed.enabled || !!blockedReason} title={blockedReason ?? undefined}>
           <Codicon name="link-external" /> Open
         </button>
       ) : (
-        <button type="button" className="tm-chat-starter tm-aihub-btn" onClick={() => void install()} disabled={extensionsBlocked()}>
+        <button type="button" className="tm-chat-starter tm-aihub-btn" onClick={() => void install()} disabled={!!blockedReason} title={blockedReason ?? undefined} data-testid={`aihub-install-${a.id}`}>
           <Codicon name="cloud-download" /> Install
         </button>
       )}

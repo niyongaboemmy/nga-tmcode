@@ -10,6 +10,7 @@ import { extensionHost, installExtension, installFromVsix, setExtensionEnabled, 
 import { parseJsonc } from "../../textmate/jsonc";
 import { setExtensionsQuery, useExtensionsView } from "../../extensions/viewState";
 import { RuntimeBadge } from "../../exthost/ui";
+import { thirdPartyMessage, useAiGate } from "../../ai/gate";
 
 /**
  * VS Code's Extensions view over Open VSX: a marketplace search box; with no
@@ -26,6 +27,13 @@ export function useExtensionsBlocked() {
   const examPhase = useExam((s) => s.phase);
   const practice = useWorkbench((s) => s.policy.mode === "practice");
   return examPhase === "active" || examPhase === "locked" || examPhase === "submitting" || !practice;
+}
+
+/** Why third-party AI extensions are off now (Task Mentor's AI status, exams), or null. */
+export function useAiExtensionsBlockedReason(): string | null {
+  const gate = useAiGate();
+  const blocked = useExtensionsBlocked();
+  return thirdPartyMessage(gate, blocked);
 }
 
 /** Icon of a gallery or installed extension, as a data: URL (null while loading or when there is none). */

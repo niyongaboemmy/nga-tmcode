@@ -1,21 +1,26 @@
 import { registerCommand } from "../commands/registry";
-import { useExam } from "../exam/state";
 import { monaco, setupMonaco } from "../monaco/setup";
-import { showAuxiliaryView, useWorkbench } from "../state/store";
+import { notify, showAuxiliaryView } from "../state/store";
 import { ask } from "./chat";
+import { aiGate } from "./gate";
+import { wireAiProject } from "./project";
+import { wireAiTools } from "./tools";
 import { wireInlineSuggestions } from "./inline";
 import { loadAiSettings, refreshAiStatus, setAiSuggestions, useAi } from "./service";
 
 /**
  * TMCode AI's commands: Ask (⌘I, the selection goes along), Explain / Fix / Write Tests on the
  * selection (also in the editor's context menu), suggestions on/off, and the model picker.
- * None of them runs in an exam.
+ * They run only when the AI gate allows (ai/gate.ts: Task Mentor's status, the exam policy).
  */
 
-const allowed = () => !useExam.getState().quiz && useWorkbench.getState().policy.mode === "practice";
+const allowed = () => aiGate().chat;
+const completeAllowed = () => aiGate().complete;
 
 function askNow(prompt: string) {
   showAuxiliaryView("chat");
+  const gate = aiGate();
+  if (!gate.chat) return notify("info", gate.message ?? "TMCode AI is off.");
   void ask(prompt);
 }
 
@@ -24,6 +29,8 @@ export function wireAi() {
   if (wired) return;
   wired = true;
   void loadAiSettings();
+  wireAiProject();
+  wireAiTools();
   wireInlineSuggestions();
   registerCommand({
     id: "tmcodeAI.ask",
@@ -43,7 +50,7 @@ export function wireAi() {
     id: "tmcodeAI.toggleSuggestions",
     title: "Toggle Suggestions While Typing",
     category: "TMCode AI",
-    enabled: allowed,
+    enabled: completeAllowed,
     run: () => setAiSuggestions(!useAi.getState().suggestions),
   });
   registerCommand({

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { useExam } from "../exam/state";
+import { useAiGate } from "../ai/gate";
 import { ExtViewPanes } from "../exthost/views/ViewPanes";
 import { useViews, whenFor, type IconSpec } from "../exthost/views/model";
 import { useContextVersion } from "../exthost/state";
@@ -12,21 +13,23 @@ const ChatView = lazy(() => import("../ai/ChatView").then((m) => ({ default: m.C
 /**
  * The secondary side bar (VS Code's auxiliary bar), opposite the primary one: TMCode AI's chat and
  * the views extensions contribute to `viewsContainers.secondarySidebar` (Claude Code's chat).
- * Never during exams: AI and extensions are off then.
+ * Extensions' views never show during exams. TMCode AI's chat shows when the AI gate allows it
+ * (in an exam only when the exam's policy turns AI on), else the reason.
  */
 export function AuxiliaryBar() {
   const view = useWorkbench((s) => s.auxiliaryView);
   const practice = useWorkbench((s) => s.policy.mode === "practice");
   const inExam = useExam((s) => !!s.quiz);
+  const gate = useAiGate();
   useContextVersion((s) => s.v);
   const containers = useViews((s) => s.containers).filter((c) => c.location === "secondarySidebar" && practice && !inExam && whenFor(c.when));
   const tabs: { key: string; title: string; icon: IconSpec }[] = [{ key: "chat", title: "TMCode AI", icon: { codicon: "sparkle" } }, ...containers.map((c) => ({ key: c.key, title: c.title, icon: c.icon }))];
   const current = tabs.find((t) => t.key === view) ?? tabs[0];
-  if (inExam || !practice) {
+  if ((inExam || !practice) && !gate.chat) {
     return (
       <aside className="tm-auxbar" aria-label="Secondary Side Bar">
-        <p className="tm-auxbar-off">
-          <Codicon name="lock" /> AI and extensions are off during exams.
+        <p className="tm-auxbar-off" data-testid="auxbar-locked">
+          <Codicon name="lock" /> {gate.reason === "EXAM_ACTIVE" ? "AI and extensions are off during exams." : gate.message}
         </p>
       </aside>
     );
