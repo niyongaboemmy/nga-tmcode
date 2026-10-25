@@ -849,6 +849,14 @@ export async function deleteEntries(paths: string[]) {
 }
 
 /** "trashed" / "deleted" for good / false: kept. */
+/**
+ * Deletes one entry without the "Are you sure?" question (to the Trash where there is one).
+ * For undoing what the Explorer itself just made (a paste, a duplicate, a new file).
+ */
+export function deleteEntryUnasked(path: string) {
+  return deleteOne(path);
+}
+
 async function deleteOne(path: string): Promise<"trashed" | "deleted" | false> {
   const fs = getPlatform().fs;
   const name = basename(path);

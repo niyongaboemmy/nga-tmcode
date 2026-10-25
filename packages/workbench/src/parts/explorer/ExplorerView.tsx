@@ -15,6 +15,7 @@ import {
   moveEntry,
   notify,
   openContextMenu,
+  openEditorInput,
   openFile,
   renameEntry,
   revealView,
@@ -31,7 +32,10 @@ import { SkeletonRows } from "../../widgets/Skeleton";
 import { useProjects } from "../../projects/service";
 import { firstFileFor, openAssignmentLanguage, useAssignments } from "../../projects/assignments";
 import { writeClipboardText } from "../../util/clipboard";
-import { copyEntries, cutEntries, duplicateEntry, pasteEntries } from "./fileClipboard";
+import { copyEntries, copyPathsInto, cutEntries, duplicateEntry, pasteEntries, useFileClipboard } from "./fileClipboard";
+import { recordCreated, recordMove, undoFileOp } from "./fileUndo";
+import { terminalAllowed } from "@tmcode/protocol";
+import { useSearchUi } from "../search/SearchView";
 import { rangeBetween, rowLabel, topLevelPaths, typeAheadMatch, visibleChildren, visibleRows, type Row } from "./explorerModel";
 import { importBrowserFiles, importPaths } from "./importFiles";
 import type { DirEntry } from "../../platform/types";
@@ -219,6 +223,21 @@ function FirstFile() {
   );
 }
 
+/** "Select for Compare": the left side of the next "Compare with Selected". */
+export const useCompareSource = create<{ path: string | null }>(() => ({ path: null }));
+
+/** VS Code's "Open in Integrated Terminal": a new shell in that folder (when terminals are allowed). */
+function openInTerminal(folder: string) {
+  window.dispatchEvent(new CustomEvent("tmcode:new-terminal", { detail: { cwd: folder } }));
+}
+const canOpenTerminal = () => !!getPlatform().terminal && terminalAllowed(useWorkbench.getState().policy);
+
+/** VS Code's "Find in Folder...": the Search view, limited to that folder. */
+function findInFolder(folder: string) {
+  useSearchUi.setState({ include: folder ? `${folder}/**` : "", showDetails: !!folder });
+  revealView("search");
+}
+
 export function ExplorerView() {
   const workspace = useWorkbench((s) => s.workspace);
   const rows = useRows();
@@ -239,6 +258,8 @@ export function ExplorerView() {
   const gitDecorations = useGit((s) => s.decorations);
   const gitIgnored = useGit((s) => s.ignored);
   const osDropTarget = useOsDrag((s) => s.target);
+  const compareSource = useCompareSource((s) => s.path);
+  const cut = useFileClipboard((s) => (s?.mode === "cut" ? s.paths : null));
   const os = getPlatform().os;
   const [collapsed, setCollapsed] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -371,6 +392,20 @@ export function ExplorerView() {
       { kind: "item", label: "New File...", keybinding: kb("explorer.newFile"), run: () => void beginExplorerEdit({ mode: "newFile", target: folder }) },
       { kind: "item", label: "New Folder...", run: () => void beginExplorerEdit({ mode: "newFolder", target: folder }) },
     ];
+    const folderTools: ContextMenuItem[] = [
+      ...(canOpenTerminal() ? ([{ kind: "item", label: "Open in Integrated Terminal", run: () => openInTerminal(folder) }] as ContextMenuItem[]) : []),
+      { kind: "item", label: "Find in Folder...", keybinding: os === "mac" ? "⌥⇧F" : "Shift+Alt+F", run: () => findInFolder(folder) },
+    ];
+    if (!entry) {
+      // The empty space below the files: the project folder itself, as in VS Code.
+      items.push(
+        { kind: "separator" },
+        ...(getPlatform().reveal ? ([{ kind: "item", label: revealLabel(), run: () => void getPlatform().reveal?.("") }] as ContextMenuItem[]) : []),
+        ...folderTools,
+        { kind: "separator" },
+        { kind: "item", label: "Paste", keybinding: os === "mac" ? "⌘V" : "Ctrl+V", run: () => void pasteEntries("") },
+      );
+    }
     if (entry) {
       items.push(
         ...(entry.kind === "file"
@@ -382,6 +417,23 @@ export function ExplorerView() {
         { kind: "separator" },
         ...(getPlatform().reveal
           ? ([{ kind: "item", label: revealLabel(), run: () => void getPlatform().reveal?.(entry.path) }] as ContextMenuItem[])
+          : []),
+        ...(entry.kind === "dir" ? folderTools : folderTools.slice(0, -1)),
+        ...(entry.kind === "file"
+          ? ([
+              { kind: "separator" },
+              { kind: "item", label: "Select for Compare", run: () => useCompareSource.setState({ path: entry.path }) },
+              ...(compareSource && compareSource !== entry.path
+                ? ([
+                    {
+                      kind: "item",
+                      label: "Compare with Selected",
+                      run: () =>
+                        openEditorInput({ kind: "historyDiff", id: `compare:${compareSource}:${entry.path}`, path: entry.path, entry: compareSource, time: Date.now(), preview: false, source: "file", label: basename(compareSource) }),
+                    },
+                  ] as ContextMenuItem[])
+                : []),
+            ] as ContextMenuItem[])
           : []),
         { kind: "separator" },
         { kind: "item", label: "Cut", keybinding: os === "mac" ? "⌘X" : "Ctrl+X", run: () => cutEntries([entry.path]) },
@@ -456,7 +508,9 @@ export function ExplorerView() {
     const mod = os === "mac" ? e.metaKey : e.ctrlKey;
     switch (e.key) {
       case "ArrowDown":
-        move(idx + 1, e.shiftKey);
+        // macOS: ⌘↓ opens the selected file (Finder's and VS Code's "open").
+        if (os === "mac" && e.metaKey && row) activate(row, true);
+        else move(idx + 1, e.shiftKey);
         break;
       case "ArrowUp":
         move(idx < 0 ? rows.length - 1 : idx - 1, e.shiftKey);
@@ -503,6 +557,15 @@ export function ExplorerView() {
         if (selected.size > 1 && selection) setMulti([selection]);
         else return;
         break;
+      case "z":
+      case "Z":
+        // ⌘Z / Ctrl+Z with the Explorer focused undoes the last file operation, as in VS Code.
+        if (!mod || e.altKey || e.shiftKey) {
+          if (!mod && !e.altKey) return typeAheadKey(e, idx);
+          return;
+        }
+        void undoFileOp();
+        break;
       case "a":
       case "c":
       case "x":
@@ -544,6 +607,7 @@ export function ExplorerView() {
   // ── drag & drop: move files and folders between folders; files from the OS are copied in ──
   // Moves use pointer events, not HTML5 drag and drop: the desktop's native file-drop handler (files
   // dragged in from Finder / File Explorer arrive with their paths) swallows HTML5 drops in the page.
+  const copyModifier = (ev: { altKey: boolean; ctrlKey: boolean }) => (os === "mac" ? ev.altKey : ev.ctrlKey);
   const onRowPointerDown = (e: ReactPointerEvent, entry: DirEntry) => {
     if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || edit || isProtectedEntry(entry.path)) return;
     const paths = selected.has(entry.path) ? topLevelPaths([...selected]) : [entry.path];
@@ -573,6 +637,7 @@ export function ExplorerView() {
         document.body.append(ghost);
       }
       ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 8}px)`;
+      ghost.classList.toggle("is-copy", copyModifier(ev));
       setDropTarget(folderAtPoint(ev.clientX, ev.clientY));
     };
     const up = (ev: PointerEvent) => {
@@ -582,7 +647,8 @@ export function ExplorerView() {
       suppressClick.current = true;
       setTimeout(() => (suppressClick.current = false), 0);
       const folder = folderAtPoint(ev.clientX, ev.clientY);
-      if (folder !== null) void movePaths(paths, folder);
+      // VS Code: hold Option (macOS) / Ctrl (Windows, Linux) while dropping to copy instead of move.
+      if (folder !== null) void (copyModifier(ev) ? copyPathsInto(paths, folder) : movePaths(paths, folder));
     };
     const key = (ev: globalThis.KeyboardEvent) => {
       if (ev.key === "Escape") cleanup();
@@ -597,6 +663,7 @@ export function ExplorerView() {
     if (folder && !expanded[folder]) await toggleDir(folder, true);
     const names = new Set((await getPlatform().fs.readDir(folder).catch(() => [] as DirEntry[])).map((x) => x.name));
     let moved = 0;
+    const done: { from: string; to: string }[] = [];
     for (const from of paths) {
       const name = basename(from);
       if (!from || dirname(from) === folder || isWithin(folder, from)) continue;
@@ -609,11 +676,13 @@ export function ExplorerView() {
         await moveEntry(from, join(folder, name));
         names.add(name);
         moved++;
+        done.push({ from, to: join(folder, name) });
       } catch (err) {
         notify("error", `Could not move '${name}': ${String((err as Error)?.message ?? err)}`);
       }
     }
     if (moved === 1) select(join(folder, basename(paths.find((p) => names.has(basename(p))) ?? paths[0])));
+    recordMove(`move of ${moved === 1 ? `'${basename(done[0].from)}'` : `${moved} items`}`, done);
   };
   const isOsFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files") && !e.dataTransfer.types.includes("application/x-tmcode-path");
   const onDragOver = (e: DragEvent, entry: DirEntry | null) => {
@@ -655,6 +724,7 @@ export function ExplorerView() {
         siblings={(dirs[atParent] ?? []).map((e) => e.name)}
         onSubmit={async (name) => {
           const path = await createEntry(atParent, name, edit.mode === "newFolder" ? "dir" : "file");
+          recordCreated(`new ${edit.mode === "newFolder" ? "folder" : "file"} '${basename(path)}'`, [path]);
           if (edit.mode === "newFile") openFile(path, { pinned: true });
         }}
       />
@@ -674,7 +744,12 @@ export function ExplorerView() {
           kind={entry.kind}
           initial={entry.name}
           siblings={(dirs[dirname(entry.path)] ?? []).map((e) => e.name)}
-          onSubmit={(name) => renameEntry(entry.path, name)}
+          onSubmit={async (name) => {
+            const from = entry.path;
+            const to = join(dirname(from), name.trim());
+            await renameEntry(from, name);
+            if (to !== from && !isProtectedEntry(from)) recordMove(`rename of '${basename(from)}'`, [{ from, to }]);
+          }}
         />,
       );
     } else {
@@ -697,6 +772,7 @@ export function ExplorerView() {
             "tm-list-row",
             "tm-tree-row",
             isSelected ? "is-selected" : "",
+            cut?.includes(entry.path) ? "is-cut" : "",
             selection === entry.path ? "is-focused" : "",
             row.chain ? "is-compact" : "",
             activePath === entry.path ? "is-active-editor" : "",

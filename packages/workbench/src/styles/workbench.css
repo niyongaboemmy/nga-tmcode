@@ -9515,6 +9515,19 @@ button.tm-setting-badge {
 }
 
 /* Explorer: the name of what is being moved, beside the pointer (pointer-event drag). */
+/* Explorer: files that were cut stay dimmed until they are pasted (VS Code). */
+.tm-tree-row.is-cut .tm-tree-label,
+.tm-tree-row.is-cut .tm-themed-icon {
+  opacity: 0.5;
+}
+
+/* Dragging with Option / Ctrl held copies: the ghost says so. */
+.tm-drag-ghost.is-copy::before {
+  content: "+";
+  margin-right: 6px;
+  font-weight: 600;
+}
+
 .tm-drag-ghost {
   position: fixed;
   top: 0;
