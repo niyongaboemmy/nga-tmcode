@@ -4,6 +4,8 @@
  * in memory. The workbench never talks to Tauri directly.
  */
 
+import type { AiToolCatalog } from "@tmcode/protocol";
+
 export type OsKind = "mac" | "windows" | "linux";
 
 export interface DirEntry {
@@ -193,6 +195,33 @@ export interface Platform {
   debug?: DebugHost;
   /** Built-in language servers (Pyright); absent where none can run. */
   languageServers?: LanguageServerHost;
+  /** Third-party AI tools in terminals (desktop: ai_tools.rs); absent → not controlled. */
+  aiTools?: AiToolsHost;
+}
+
+// ───────────── third-party AI tools in terminals (AI usage control) ─────────────
+
+export interface AiToolsPolicy {
+  /** AI CLIs off: new terminals get stubs and no provider keys; running ones are stopped. */
+  blocked: boolean;
+  /** Why (shown by the stubs). */
+  message: string;
+  catalog: AiToolCatalog;
+}
+
+export interface AiToolEvent {
+  /** "blocked": stopped; "seen": allowed, reported for the activity log. */
+  action: "blocked" | "seen";
+  tool: string;
+  /** A package manager installing it. */
+  install: boolean;
+  command: string;
+  message: string;
+}
+
+export interface AiToolsHost {
+  setPolicy(policy: AiToolsPolicy): void;
+  onEvent(cb: (e: AiToolEvent) => void): () => void;
 }
 
 // ───────────── built-in language servers (review V4) ─────────────

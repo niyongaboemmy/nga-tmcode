@@ -15,6 +15,7 @@ mod lsp;
 mod netcoredbg;
 mod phpdebug;
 mod account;
+mod ai_tools;
 mod api;
 mod proc;
 mod projects;
@@ -320,6 +321,7 @@ pub fn run() {
             app_info,
             set_native_theme,
             menus::menu_update,
+            ai_tools::ai_tools_policy,
             take_pending_open,
             workspace::ws_open,
             workspace::ws_reopen,
@@ -450,6 +452,7 @@ pub fn run() {
                 let _ = app.deep_link().register_all();
             }
             build_main_window(app)?;
+            ai_tools::start(app.handle());
             // Debug self-tests measure rendering: a window behind other apps is throttled by
             // macOS (no frames, no timers), so bring it forward and keep it there.
             if cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").is_ok() {

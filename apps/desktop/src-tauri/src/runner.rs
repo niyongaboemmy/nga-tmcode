@@ -382,7 +382,10 @@ fn spawn_pipe(program: &Path, args: &[String], cwd: &Path) -> std::io::Result<st
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    cmd.spawn()
+    crate::ai_tools::apply_command(&mut cmd);
+    let child = cmd.spawn()?;
+    crate::ai_tools::watch(Some(child.id()));
+    Ok(child)
 }
 
 /// Runs one step with pipes; streams output; returns the exit event.
@@ -619,12 +622,14 @@ pub(crate) fn run_pty(program: &Path, args: &[String], cwd: &Path, size: (u16, u
     for (k, v) in env {
         cmd.env(k, v);
     }
+    crate::ai_tools::apply_pty(&mut cmd);
     let mut child = match pty.slave.spawn_command(cmd) {
         Ok(c) => c,
         Err(e) => return fail(format!("Could not start {}: {e}", program.display())),
     };
     drop(pty.slave);
     let pid = child.process_id().unwrap_or(0);
+    crate::ai_tools::watch(Some(pid));
     let tree = Tree::of(pid); // the pty child leads its own session (Unix)
     let writer = pty.master.take_writer().ok();
     if let Some(s) = runs.sessions.lock().unwrap().get_mut(&id) {

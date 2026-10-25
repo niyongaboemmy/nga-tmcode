@@ -281,7 +281,10 @@ pub fn pty_spawn(
             cmd.env(&m.name, v);
         }
     }
+    // Third-party AI tools off (AI usage control): shims first on PATH, no provider keys.
+    crate::ai_tools::apply_pty(&mut cmd);
     let child = pty.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    crate::ai_tools::watch(child.process_id());
     drop(pty.slave);
     let mut reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
@@ -353,6 +356,7 @@ pub fn pty_resize(terms: State<'_, Terminals>, id: u32, cols: u16, rows: u16) ->
 #[tauri::command]
 pub fn pty_kill(terms: State<'_, Terminals>, id: u32) -> Result<(), String> {
     if let Some(mut s) = terms.sessions.lock().unwrap().remove(&id) {
+        crate::ai_tools::unwatch(s.child.process_id());
         let _ = s.child.kill();
     }
     Ok(())

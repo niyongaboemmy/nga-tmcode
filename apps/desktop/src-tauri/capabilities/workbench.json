@@ -109,6 +109,7 @@
     "allow-exthost-send",
     "allow-exthost-stop",
     "allow-exthost-policy",
+    "allow-ai-tools-policy",
     "allow-exthost-secret",
     "allow-webview-publish",
     "allow-webview-dispose",

@@ -4,6 +4,7 @@ import { notify, showAuxiliaryView } from "../state/store";
 import { ask } from "./chat";
 import { aiGate } from "./gate";
 import { wireAiProject } from "./project";
+import { wireAiTools } from "./tools";
 import { wireInlineSuggestions } from "./inline";
 import { loadAiSettings, refreshAiStatus, setAiSuggestions, useAi } from "./service";
 
@@ -29,6 +30,7 @@ export function wireAi() {
   wired = true;
   void loadAiSettings();
   wireAiProject();
+  wireAiTools();
   wireInlineSuggestions();
   registerCommand({
     id: "tmcodeAI.ask",
