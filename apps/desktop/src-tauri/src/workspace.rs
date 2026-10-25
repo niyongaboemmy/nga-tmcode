@@ -495,6 +495,18 @@ pub fn move_to_trash(root: &Path, path: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    /// The pasteboard reader is JavaScript inside a Rust string: it must still parse and run.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_clipboard_reader_runs() {
+        let out = std::process::Command::new("/usr/bin/osascript").args(["-l", "JavaScript", "-e", super::MAC_CLIPBOARD_FILES_JXA]).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        // Whatever the clipboard holds, only real paths come back (never file:// or .file/id=).
+        for line in String::from_utf8_lossy(&out.stdout).lines().filter(|l| !l.is_empty()) {
+            assert!(line.starts_with('/') && !line.contains(".file/id="), "{line}");
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -650,16 +662,21 @@ pub async fn ws_clipboard_files() -> Vec<String> {
     tauri::async_runtime::spawn_blocking(clipboard_files).await.unwrap_or_default()
 }
 
+#[cfg(target_os = "macos")]
+const MAC_CLIPBOARD_FILES_JXA: &str = "ObjC.import('AppKit'); \
+var urls = $.NSPasteboard.generalPasteboard.readObjectsForClassesOptions($.NSArray.arrayWithObject($.NSURL), \
+$.NSDictionary.dictionaryWithObjectForKey($.NSNumber.numberWithBool(true), 'NSPasteboardURLReadingFileURLsOnlyKey')); \
+var out = []; if (urls) { for (var i = 0; i < urls.count; i++) { var u = urls.objectAtIndex(i).filePathURL; \
+if (u && !u.isNil()) out.push(ObjC.unwrap(u.path)); } } out.join('\\n')";
+
 fn clipboard_files() -> Vec<String> {
     use std::process::Command;
+    // Finder puts file *reference* URLs on the pasteboard (file:///.file/id=6571367.258359306),
+    // which no POSIX path matches: AppKit reads them as NSURLs and filePathURL turns each into
+    // its real path. Several files, folders and plain file URLs come out the same way.
     #[cfg(target_os = "macos")]
     let out = Command::new("/usr/bin/osascript")
-        .args([
-            "-l",
-            "JavaScript",
-            "-e",
-            "ObjC.import('AppKit'); var items = $.NSPasteboard.generalPasteboard.pasteboardItems; var out = []; if (items) { for (var i = 0; i < items.count; i++) { var s = items.objectAtIndex(i).stringForType('public.file-url'); if (s) out.push(ObjC.unwrap(s)); } } out.join('\\n')",
-        ])
+        .args(["-l", "JavaScript", "-e", MAC_CLIPBOARD_FILES_JXA])
         .output();
     #[cfg(windows)]
     let out = {
@@ -678,6 +695,8 @@ fn clipboard_files() -> Vec<String> {
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        // An unresolved reference URL (file:///.file/id=…) is no path: skip it rather than fail.
+        .filter(|l| !l.starts_with("file:///.file/id="))
         .map(|l| l.strip_prefix("file://").map(|p| percent_decode(p)).unwrap_or_else(|| l.to_string()))
         .filter(|p| std::path::Path::new(p).exists())
         .collect()

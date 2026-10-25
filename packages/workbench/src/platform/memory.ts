@@ -167,6 +167,9 @@ export class SwitchableFileSystem implements FileSystem {
   }
   /** Set by the dev / e2e platform only: the browser has no Trash. */
   trash?: (p: string) => Promise<void>;
+  /** Set by the dev / e2e platform only: files "copied in Finder" (localStorage tmcode:mock-os-clipboard). */
+  clipboardFiles?: () => Promise<string[]>;
+  importPaths?: (sources: string[], dest: string, overwrite: boolean) => Promise<{ imported: string[]; conflicts: string[] }>;
 }
 
 /** Journal in localStorage (browser build); survives reloads like the desktop one survives crashes. */
@@ -417,6 +420,29 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     fs.trash = async (p) => {
       if (localStorage.getItem("tmcode:mock-trash-fail")) throw new Error("The Trash is not available.");
       await fs.remove(p);
+    };
+    // A pretend OS clipboard of files ("copied in Finder"): [{ path: "/Users/me/Desktop/notes.txt", content }].
+    const osClipboard = (): { path: string; content: string }[] => {
+      try {
+        return JSON.parse(localStorage.getItem("tmcode:mock-os-clipboard") ?? "[]");
+      } catch {
+        return [];
+      }
+    };
+    fs.clipboardFiles = async () => osClipboard().map((f) => f.path);
+    fs.importPaths = async (sources, dest, overwrite) => {
+      const files = osClipboard().filter((f) => sources.includes(f.path));
+      const existing = new Set((await fs.readDir(dest).catch(() => [])).map((e) => e.name));
+      const name = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+      const conflicts = files.map((f) => name(f.path)).filter((n) => existing.has(n));
+      if (conflicts.length && !overwrite) return { imported: [], conflicts };
+      const imported: string[] = [];
+      for (const f of files) {
+        const to = dest ? `${dest}/${name(f.path)}` : name(f.path);
+        await fs.writeFile(to, f.content);
+        imported.push(to);
+      }
+      return { imported, conflicts: [] };
     };
   }
   const switchTo = (root: string) => {

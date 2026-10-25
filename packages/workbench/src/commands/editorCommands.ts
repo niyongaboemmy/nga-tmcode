@@ -2,6 +2,13 @@ import { monaco } from "../monaco/setup";
 import { codeEditorFor } from "../monaco/editors";
 import { workbench } from "../state/store";
 import { executeCommand, getCommand, isEnabled, registerCommand } from "./registry";
+import { undoFileOp } from "../parts/explorer/fileUndo";
+
+/** The Explorer's file tree has focus (not its inline name box): Undo there means file operations. */
+const explorerFocused = () => {
+  const el = typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
+  return !!el?.closest(".tm-explorer") && !el.closest("input, textarea");
+};
 
 /**
  * Editor commands that follow focus (V7): Undo, Find and Select All act on
@@ -46,6 +53,11 @@ export function runOnEditor(id: string, ed = targetEditor()) {
 }
 
 function routedUndo(which: "undo" | "redo") {
+  // Edit › Undo (⌘Z, the macOS menu bar) with the Explorer focused: its last file operation.
+  if (explorerFocused()) {
+    if (which === "undo") void undoFileOp();
+    return;
+  }
   const t = focusTarget();
   if (t.kind === "terminal") return;
   if (t.kind === "input") {
@@ -73,6 +85,8 @@ const canEdit = () => {
   const t = focusTarget();
   return t.kind === "input" || t.kind === "editor" || !!codeEditorFor(workbench.get().activeGroup);
 };
+/** Undo / Redo also act on the Explorer's file operations when it has focus. */
+const canUndo = () => explorerFocused() || canEdit();
 
 /** Monaco actions with their own Monaco keys (shown in menus, palette and the shortcuts list). */
 const EDITOR_ACTIONS: [id: string, title: string, category?: string][] = [
@@ -96,8 +110,8 @@ export function registerEditorCommands() {
     registerCommand({ id, title, category, editorOwned: true, enabled: hasEditor, run: () => runOnEditor(id) });
   }
   // These replace the plain wrappers in builtin.ts: same ids, focus-aware.
-  registerCommand({ id: "undo", title: "Undo", category: "Edit", editorOwned: true, enabled: canEdit, run: () => routedUndo("undo") });
-  registerCommand({ id: "redo", title: "Redo", category: "Edit", editorOwned: true, enabled: canEdit, run: () => routedUndo("redo") });
+  registerCommand({ id: "undo", title: "Undo", category: "Edit", editorOwned: true, enabled: canUndo, run: () => routedUndo("undo") });
+  registerCommand({ id: "redo", title: "Redo", category: "Edit", editorOwned: true, enabled: canUndo, run: () => routedUndo("redo") });
   registerCommand({ id: "actions.find", title: "Find", category: "Edit", editorOwned: true, enabled: () => focusTarget().kind !== "input" && (hasEditor() || focusTarget().kind === "terminal"), run: routedFind });
   registerCommand({
     id: "editor.action.selectAll",

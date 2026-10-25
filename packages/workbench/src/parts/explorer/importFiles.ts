@@ -1,5 +1,6 @@
 import { getPlatform, loadDir, log, notify, showDialog, toggleDir, useWorkbench } from "../../state/store";
 import { basename, join } from "../../util/paths";
+import { recordCreated } from "./fileUndo";
 
 /**
  * Files dragged in from Finder / File Explorer: copied (never moved) into the
@@ -33,7 +34,12 @@ async function confirmReplace(conflicts: string[], dest: string) {
   return choice === "replace";
 }
 
-async function finish(dest: string, imported: string[]) {
+/**
+ * `undoable`: nothing was replaced, so undo may simply remove what came in (a replaced file's
+ * old content is gone; removing the new one would not bring it back).
+ */
+async function finish(dest: string, imported: string[], undoable: boolean) {
+  if (undoable && imported.length) recordCreated(`copy of ${imported.length === 1 ? `'${basename(imported[0])}'` : `${imported.length} files`} into the project`, imported);
   if (dest) await toggleDir(dest, true);
   await loadDir(dest);
   if (imported.length) useWorkbench.setState({ selection: imported[imported.length - 1] });
@@ -48,11 +54,12 @@ export async function importPaths(dest: string, sources: string[]) {
   if (!sources.length || !fs.importPaths || !allowed()) return;
   try {
     let res = await fs.importPaths(sources, dest, false);
-    if (res.conflicts.length) {
+    const replaced = res.conflicts.length > 0;
+    if (replaced) {
       if (!(await confirmReplace(res.conflicts, dest))) return;
       res = await fs.importPaths(sources, dest, true);
     }
-    await finish(dest, res.imported);
+    await finish(dest, res.imported, !replaced);
   } catch (e) {
     notify("error", `Could not copy the files: ${String((e as Error)?.message ?? e)}`);
   }
@@ -75,5 +82,5 @@ export async function importBrowserFiles(dest: string, files: File[]) {
   } catch (e) {
     notify("error", `Could not copy the files: ${String((e as Error)?.message ?? e)}`);
   }
-  await finish(dest, imported);
+  await finish(dest, imported, !conflicts.length);
 }
