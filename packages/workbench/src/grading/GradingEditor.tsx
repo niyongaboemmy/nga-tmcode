@@ -8,6 +8,9 @@ import { openInTaskMentor } from "../projects/taskMentorLinks";
 import { useProjects } from "../projects/service";
 import { showAssignment } from "../projects/assignments";
 import { revealComment } from "./comments";
+import { useAiGate } from "../ai/gate";
+import { clearAiMeta, useAiGrading } from "./aiGrading";
+import { AiDraftBanner, AiDraftBox, aiMarks, aiMenuItems, AiTag } from "./AiGradingParts";
 import { compareWithVersion, diffWithStarter, draftGradeCount, GRADING_SHORTCUTS, openGradingDiff, registerGradingController, releaseDraftGrades } from "./commands";
 import { changesAgainst, revisionFiles, starterOf, type Change, type Version } from "./diff";
 import { draftFrom, draftKey, dropDraft, inputFromDraft, putDraft, rebaseDraft, setFailed, useDrafts, type Draft } from "./drafts";
@@ -176,6 +179,7 @@ interface PanelApi {
   saveAndNext(): void;
   focus(): void;
   returnForChanges(): boolean;
+  aiDraft(): boolean;
 }
 
 /** Task Mentor's Grading page for this activity (and student). */
@@ -236,12 +240,17 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
   const [saveMode, setSaveMode] = useState<SaveMode>(savedMode);
   useEffect(() => loadSaveMode(setSaveMode), []);
   const [hasHtml, setHasHtml] = useState<boolean | null>(null);
+  // AI-assisted grading: the "Draft with AI" box, and what in the form is still the AI's.
+  const [aiBox, setAiBox] = useState(false);
+  const aiMeta = useAiGrading((s) => s.meta[dkey]);
+  const gate = useAiGate();
   const lastSave = useRef<{ release: boolean; next: boolean }>({ release: true, next: false });
   const panelRef = useRef<HTMLDivElement>(null);
   const ids = useId();
   const review = useGrading((s) => s.review);
   const loadingReview = useGrading((s) => s.loadingReview);
   const dirty = !!stored;
+  const marks = aiMarks(aiMeta, stored ?? pristine);
   const setDraft = (d: Draft) => {
     setJustSaved(null);
     putDraft(dkey, d, pristine, row.grade?.version ?? null);
@@ -282,6 +291,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
     setFailCode(r.ok ? null : (r.code ?? null));
     if (r.ok) {
       dropDraft(dkey);
+      clearAiMeta(dkey);
       setFailed(dkey, null);
       setConflict(null);
       setJustSaved(r.message);
@@ -303,6 +313,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
   };
   const useTheirs = () => {
     dropDraft(dkey);
+    clearAiMeta(dkey);
     setFailed(dkey, null);
     setConflict(null);
     void loadRoster(gkey, { quiet: true });
@@ -321,6 +332,11 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
     returnForChanges: () => {
       if (!canReturn) return false;
       setReturning({ message: "", error: null, busy: false });
+      return true;
+    },
+    aiDraft: () => {
+      if (!canDraftWithAi) return false;
+      setAiBox(true);
       return true;
     },
   };
@@ -360,6 +376,8 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
                 ? `Graded ${when(row.grade.graded_at)}`
                 : "";
   const os = getPlatform().os;
+  // "Draft with AI" (Task Mentor's AI): for submitted work, where TMCode AI is allowed.
+  const canDraftWithAi = gradable && gate.chat && row.state !== "not_started";
   // Task Mentor says where Return works (not quiz practicals); graded work can be reopened with Allow Resubmission.
   const canReturn = (roster.activity.can_return ?? !quiz) && roster.activity.can_grade && (row.state === "submitted" || row.state === "graded") && row.project?.kind === "tm";
   const openOnGitHub = () => row.project?.repo_url && void openExternalUrl(row.link?.git_commit ? `${row.project.repo_url.replace(/\.git$/, "")}/tree/${row.link.git_commit}` : row.project.repo_url);
@@ -372,6 +390,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       ? [{ kind: "item" as const, label: "Run the Student's Unit Tests", disabled: !row.link?.revision_id, run: () => void import("./unitTests").then((m) => m.runStudentUnitTests(gkey, row)) }]
       : []),
     ...(canReturn && !returning ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Return for Changes…", run: () => setReturning({ message: "", error: null, busy: false }) }] : []),
+    ...(gradable ? aiMenuItems({ loaded, thirdParty: gate.thirdParty, canDraft: canDraftWithAi && !aiBox, openBox: () => setAiBox(true) }) : []),
     { kind: "separator" },
     { kind: "item", label: shortcuts ? "Hide Shortcuts" : "Shortcuts", run: () => setShortcuts(!shortcuts) },
   ];
@@ -439,6 +458,11 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
             {loading ? "Opening…" : "Open Their Project"}
           </button>
         )}
+        {canDraftWithAi && (
+          <button type="button" className={`tm-button tm-button--secondary tm-grade-ai-button ${aiBox ? "is-on" : ""}`} onClick={() => setAiBox(!aiBox)} aria-expanded={aiBox} data-testid="grade-ai-draft" title="An AI drafts scores, comments and feedback from the rubric; you review them and Save">
+            <Codicon name="sparkle" /> Draft with AI
+          </button>
+        )}
         {/* L3: the rare actions live in one menu, not as buttons above the work. */}
         <button
           type="button"
@@ -453,6 +477,9 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
           More Actions <Codicon name="chevron-down" />
         </button>
       </div>
+
+      {aiBox && canDraftWithAi && row.student && <AiDraftBox gkey={gkey} row={row} dkey={dkey} onClose={() => setAiBox(false)} />}
+      {row.student && <AiDraftBanner dkey={dkey} studentName={row.student.name} />}
 
       {returning && (
         <div className="tm-grade-return" role="group" aria-labelledby={`${ids}-ret`} data-testid="grade-return-form">
@@ -573,6 +600,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
               <div key={i} className={`tm-grade-criterion ${i === firstMissing ? `is-missing ${draft.scores.some((x) => x !== null) ? "is-started" : ""}` : ""}`} data-testid="grade-criterion">
                 <div className="tm-grade-criterion-name" title={c.description ? `${c.criteria}\n${c.description}` : c.criteria}>
                   {c.criteria}
+                  {(marks.score(i) || marks.comment(i)) && <AiTag title={marks.score(i) ? "Score drafted by AI: still as the AI gave it" : "Note drafted by AI: still as the AI wrote it"} />}
                 </div>
                 {c.description && <p className="tm-grade-criterion-desc">{c.description}</p>}
                 <div className="tm-grade-criterion-row">
@@ -598,6 +626,11 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
                   <p className="tm-grade-warn" role="status" data-testid="grade-clamped">
                     <Codicon name="warning" /> {warn[i]}
                   </p>
+                )}
+                {openComment !== i && marks.comment(i) && (
+                  <button type="button" className="tm-grade-ai-comment" onClick={() => setOpenComment(i)} title="The AI's note for the student: click to edit it" data-testid="grade-ai-comment">
+                    <AiTag /> <span>{draft.comments[i]}</span>
+                  </button>
                 )}
                 {openComment === i && (
                   <textarea
@@ -640,6 +673,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
                 data-testid="grade-final-score"
               />
               {max > 0 && <span className="tm-grade-max">/ {max}</span>}
+              {marks.final && <AiTag title="Grade drafted by AI: still as the AI gave it" />}
             </div>
             {warn[-1] && (
               <p className="tm-grade-warn" role="status" data-testid="grade-clamped">
@@ -653,6 +687,7 @@ function GradePanel({ gkey, roster, row, onNext, apiRef }: { gkey: string; roste
       <section className="tm-grade-feedback">
         <h3>
           <label htmlFor={`${ids}-feedback`}>Feedback</label>
+          {marks.feedback && <AiTag title="Feedback drafted by AI: still as the AI wrote it" />}
         </h3>
         <textarea id={`${ids}-feedback`} className="tm-input" rows={3} placeholder="What went well, and what to improve" value={draft.feedback} disabled={!gradable} onChange={(e) => setDraft({ ...draft, feedback: e.target.value })} data-testid="grade-feedback" />
       </section>
@@ -753,6 +788,7 @@ export function GradingEditor({ input }: { input: Input }) {
   const selected = useGrading((s) => s.selected[key]);
   const localDrafts = useDrafts((s) => s.drafts);
   const failedSaves = useDrafts((s) => s.failed);
+  const aiDrafts = useAiGrading((s) => s.meta);
   // The teacher's filter survives the tab re-mounting while a review folder opens (per practical, this session).
   const [filter, setFilterState] = useState<Filter>(() => filters.get(key) ?? "to-grade");
   const setFilter = (f: Filter) => {
@@ -866,6 +902,7 @@ export function GradingEditor({ input }: { input: Input }) {
         saveAndNext: () => panelApi.current?.saveAndNext(),
         focusPanel: () => live.current.focus(),
         returnForChanges: () => panelApi.current?.returnForChanges() ?? false,
+        aiDraft: () => panelApi.current?.aiDraft() ?? false,
       }),
     [key],
   );
@@ -1102,11 +1139,16 @@ export function GradingEditor({ input }: { input: Input }) {
                       <Codicon name="warning" />
                     </span>
                   ) : (
-                    unsaved && (
+                    unsaved &&
+                    (aiDrafts[dk] ? (
+                      <span className="tm-grade-unsaved is-ai" role="img" aria-label="AI draft to review" title={`AI draft by ${aiDrafts[dk].by}: review it, then Save (kept on this computer)`} data-testid="grade-row-unsaved">
+                        <Codicon name="sparkle" />
+                      </span>
+                    ) : (
                       <span className="tm-grade-unsaved" role="img" aria-label="Unsaved changes" title="Unsaved changes (kept on this computer)" data-testid="grade-row-unsaved">
                         <Codicon name="circle-filled" className="tm-grade-draft" />
                       </span>
-                    )
+                    ))
                   )}
                 </div>
               );

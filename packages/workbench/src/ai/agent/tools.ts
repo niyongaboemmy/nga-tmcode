@@ -3,7 +3,7 @@ import { ensureDocument, getDocument, saveDocument } from "../../monaco/document
 import { applyExternalChanges } from "../../monaco/external";
 import { monaco } from "../../monaco/setup";
 import { buildRegExp, listFiles, searchText } from "../../parts/search/search";
-import { getPlatform, moveEntry, openFile } from "../../state/store";
+import { getPlatform, moveEntry, openFile, useWorkbench } from "../../state/store";
 
 /**
  * What TMCode AI's agent can do in the project (the tools it is given, Claude Code's set in small):
@@ -35,11 +35,43 @@ export const TOOL_DEFS = [
   { name: "run_command", description: "Run a shell command in the project folder (tests, a build, the program) and get its output.", parameters: { type: "object", properties: { command: str }, required: ["command"] } },
 ] as const;
 
-export type ToolName = (typeof TOOL_DEFS)[number]["name"];
-export const READ_ONLY = new Set<string>(["list_files", "read_file", "search", "get_problems"]);
+/**
+ * While a teacher reviews a submission: the grading tools. `propose_grade` only fills the grade form
+ * as an AI draft (the teacher reviews and saves); it never saves anything.
+ */
+export const GRADING_TOOL_DEFS = [
+  { name: "get_grading_context", description: "The grading task: the activity, its brief, the rubric (index, criteria, max_score), the student and any test results. Call it before grading.", parameters: { type: "object", properties: {} } },
+  {
+    name: "propose_grade",
+    description:
+      "Fill the teacher's grade form with your draft (it is NOT saved: the teacher reviews, adjusts and saves). rubric_scores: one per criterion, score 0..max_score in half points, comment for the student citing files and lines. score: only when there is no rubric. feedback: to the student. teacher_notes: for the teacher only. confidence: low, medium or high.",
+    parameters: {
+      type: "object",
+      properties: {
+        rubric_scores: { type: "array", items: { type: "object", properties: { index: { type: "integer" }, score: { type: "number" }, comment: str }, required: ["index", "score"] } },
+        score: { type: ["number", "null"] },
+        feedback: str,
+        teacher_notes: str,
+        confidence: { type: "string", enum: ["low", "medium", "high"] },
+      },
+      required: ["rubric_scores", "feedback", "confidence"],
+    },
+  },
+] as const;
 
-export function toolDefs(mode: AgentMode, canRun: boolean) {
-  return TOOL_DEFS.filter((t) => (mode === "plan" ? READ_ONLY.has(t.name) : t.name !== "run_command" || canRun)).map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown> } }));
+export type ToolName = (typeof TOOL_DEFS)[number]["name"];
+export const READ_ONLY = new Set<string>(["list_files", "read_file", "search", "get_problems", "get_grading_context"]);
+/** Tools that change nothing on disk and save nothing (allowed in every mode, Plan included). */
+const HARMLESS = new Set<string>(["propose_grade"]);
+
+/** The draft file any AI may write in a review folder (the only file there that may change). */
+export const GRADING_DRAFT_PATH = ".tmcode/grading/draft.json";
+
+export function toolDefs(mode: AgentMode, canRun: boolean, grading = false) {
+  const defs: readonly { name: string; description: string; parameters: unknown }[] = [...TOOL_DEFS, ...(grading ? GRADING_TOOL_DEFS : [])];
+  return defs
+    .filter((t) => (mode === "plan" ? READ_ONLY.has(t.name) || HARMLESS.has(t.name) : t.name !== "run_command" || canRun))
+    .map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown> } }));
 }
 
 // ── what needs the student's OK, by mode (Claude Code's permission modes) ──
@@ -51,7 +83,7 @@ const RISKY_COMMAND = /\b(rm|rmdir|del|sudo|chmod|chown|curl|wget|ssh|scp|git (p
 export type Verdict = "allow" | "ask" | "refuse";
 
 export function permission(mode: AgentMode, name: string, args: Record<string, unknown>): Verdict {
-  if (READ_ONLY.has(name)) return "allow";
+  if (READ_ONLY.has(name) || HARMLESS.has(name)) return "allow";
   if (mode === "plan") return "refuse";
   if (mode === "manual") return "ask";
   if (name === "run_command") {
@@ -197,9 +229,42 @@ function replaceOnce(text: string, oldText: string, newText: string): string {
   return t.slice(0, at) + norm(newText) + t.slice(at + o.length);
 }
 
+/** Hooks for the grading tools (set by the grading module while it is loaded; none: not grading). */
+export const gradingTools: {
+  context?: () => Promise<unknown>;
+  propose?: (args: Record<string, unknown>) => Promise<{ ok: boolean; errors?: string[]; notes?: string[] }>;
+  /** The chat's `purpose: "grading"` context while a staff member reviews a submission (null: not grading). */
+  chatContext?: () => { purpose: "grading"; grading: NonNullable<import("../service").ChatContext["grading"]> } | null;
+} = {};
+
+/** A read-only folder (a submission under review) refuses changes, except the grading draft file. */
+function readOnlyRefusal(name: string, a: Record<string, unknown>): ToolResult | null {
+  if (!useWorkbench.getState().readOnly || !["edit_file", "write_file", "rename_file", "delete_file"].includes(name)) return null;
+  const paths = name === "rename_file" ? [a.from, a.to] : [a.path];
+  if (paths.every((p) => String(p ?? "").replace(/^\.\/+/, "") === GRADING_DRAFT_PATH) && name !== "rename_file" && name !== "delete_file") return null;
+  return {
+    ok: false,
+    output: `This folder is read-only (${useWorkbench.getState().readOnlyReason ?? "a submission under review"}). Don't change files here. To grade it, call propose_grade${gradingTools.propose ? "" : ` or write ${GRADING_DRAFT_PATH}`}.`,
+    summary: "Refused: the folder is read-only",
+  };
+}
+
 export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelled: boolean }): Promise<ToolResult> {
   const a = parseArgs(call);
   const fs = getPlatform().fs;
+  const refused = readOnlyRefusal(call.function.name, a);
+  if (refused) return refused;
+  if (call.function.name === "get_grading_context") {
+    const ctx = gradingTools.context ? await gradingTools.context().catch(() => null) : null;
+    return ctx ? { ok: true, output: clip(JSON.stringify(ctx, null, 2)), summary: "Read the grading task (brief and rubric)" } : { ok: false, output: "No submission is open for grading.", summary: "No grading task open" };
+  }
+  if (call.function.name === "propose_grade") {
+    if (!gradingTools.propose) return { ok: false, output: "No submission is open for grading.", summary: "No grading task open" };
+    const r = await gradingTools.propose(a);
+    return r.ok
+      ? { ok: true, output: `The draft is in the teacher's grade form (NOT saved: the teacher reviews and saves it).${r.notes?.length ? ` TMCode adjusted: ${r.notes.join(" ")}` : ""}`, summary: "Proposed a grade (the teacher reviews and saves)" }
+      : { ok: false, output: `The draft was not used: ${(r.errors ?? []).join(" ")} Fix it and call propose_grade again.`, summary: "Proposed grade refused" };
+  }
   try {
     switch (call.function.name as ToolName) {
       case "list_files": {
@@ -251,6 +316,7 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
         const after = replaceOnce(before, String(a.old_text ?? ""), String(a.new_text ?? ""));
         await cp.remember(path);
         await writeText(path, after, false);
+        if (path === GRADING_DRAFT_PATH) await applyExternalChanges([path]);
         return { ok: true, output: `Edited ${path}.`, summary: `Edited ${name(path)}`, diff: { path, before, after } };
       }
       case "write_file": {
@@ -259,7 +325,9 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
         const content = String(a.content ?? "");
         await cp.remember(path);
         await writeText(path, content, before === null);
-        if (before === null) openFile(path);
+        if (path === GRADING_DRAFT_PATH) {
+          if (before !== null) await applyExternalChanges([path]);
+        } else if (before === null) openFile(path);
         return { ok: true, output: `${before === null ? "Created" : "Wrote"} ${path} (${lines(content)} lines).`, summary: `${before === null ? "Created" : "Rewrote"} ${name(path)}`, diff: { path, before: before ?? "", after: content } };
       }
       case "rename_file": {

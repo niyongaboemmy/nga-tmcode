@@ -4,7 +4,7 @@ import { getDocument, languageForPath } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
-import { Checkpoint, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
+import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { asAiError, chat, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 
 /**
@@ -123,6 +123,13 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
     chips.push(m.slice(m.lastIndexOf("/") + 1));
   }
   if (extra.length) context.task = [context.task, ...extra].filter(Boolean).join("\n\n");
+  // A teacher reviewing a submission: Task Mentor answers as a grading assistant (staff only).
+  const grading = gradingTools.chatContext?.() ?? null;
+  if (grading) {
+    context.purpose = grading.purpose;
+    context.grading = grading.grading;
+    chips.push(`grading ${grading.grading.student_name}`);
+  }
   return { context, chips };
 }
 
@@ -191,7 +198,7 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
           reject(e);
         },
       },
-      agent && agent.mode !== "chat" ? { mode: agent.mode, step: agent.step, tools: toolDefs(agent.mode, canRun) } : undefined,
+      agent && agent.mode !== "chat" ? { mode: agent.mode, step: agent.step, tools: toolDefs(agent.mode, canRun, !!gradingTools.chatContext?.()) } : undefined,
     )
       .then((c) => (cancel = c))
       .catch(reject);
@@ -249,7 +256,8 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
     for (let step = 0; step < MAX_STEPS; step++) {
       if (stopFlag.cancelled) break;
       const prefix = content ? `${content}\n\n` : "";
-      const r = await streamOnce(id, wire, step === 0 ? context : undefined, { mode, step }, prefix);
+      // Later steps carry only the grading purpose (Task Mentor keeps the grading prompt for every step).
+      const r = await streamOnce(id, wire, step === 0 ? context : context.purpose ? { purpose: context.purpose, grading: context.grading } : undefined, { mode, step }, prefix);
       provider = r.provider;
       model = r.model;
       if (r.text.trim()) content = prefix + r.text;

@@ -15,7 +15,8 @@ import { createFakeCodeRunner } from "./memoryCodeRunner";
  * `setLegacyGradeComments(on)`, `gradeOf(type, id, questionId, studentId)`,
  * `setScanLimit(maxFileBytes)`; `grade(id, grade, feedback, rubricScores?)`; grading review:
  * `simulateOtherTeacherGrade(type, id, questionId, studentId, grade)`, `setGradingReview(on)`,
- * `failGradeSaves(status | null)`, `returnedProjects()`.
+ * `failGradeSaves(status | null)`, `returnedProjects()`; AI-assisted grading: `lastAiDraftBody()`, and
+ * localStorage "tmcode:mock-ai-draft" = "404" (a Task Mentor without …/ai-draft) or an error code.
  *
  * Assignments follow docs/ASSIGNMENTS_PLAN.md: practical 51 has starter files,
  * case study 52 has none.
@@ -131,6 +132,7 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
   // PUT /grading… fails with this status (failGradeSaves), to see Retry.
   let failGradeSave: number | null = null;
   let gradingSeeded = false;
+  let lastAiDraft: Record<string, unknown> | null = null;
   let legacyComments = false;
   // Is the student's quiz attempt open? (Task Mentor records a practical answer only then.)
   let quizOpen = true;
@@ -213,7 +215,11 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     const order: Record<string, number> = { submitted: 0, in_progress: 1, graded: 2, not_started: 3 };
     rows.sort((x, y) => order[x.state] - order[y.state] || x.student.name.localeCompare(y.student.name));
     return {
-      activity: { type, id, title: a ? a.title : quiz!.title, course_id: 3, due_date: a ? a.due_date : quiz!.due_date, max_points: max, rubric, question: q ? { id: q.question_id, text: `<p>${q.title}</p>`, instructions: "" } : null, questions: type === "quiz" ? questions : [], can_grade: true, ...(gradingReview ? { can_return: type === "assignment" } : {}) },
+      activity: {
+        type, id, title: a ? a.title : quiz!.title, course_id: 3, due_date: a ? a.due_date : quiz!.due_date, max_points: max, rubric, question: q ? { id: q.question_id, text: `<p>${q.title}</p>`, instructions: "" } : null, questions: type === "quiz" ? questions : [], can_grade: true, ...(gradingReview ? { can_return: type === "assignment" } : {}),
+        // Task Mentor main 2026-10: the brief, for AI-assisted grading.
+        brief: a ? { description: a.description_html ?? null, instructions: a.instructions ?? null, language: a.language ?? null, kind: a.kind ?? null, submission_type: "tmcode", attachments: a.attachments ?? [], starter: null, status: a.status ?? null } : { description: q ? `<p>${q.title}</p>` : null, instructions: null, language: "html", kind: "quiz", submission_type: "tmcode", attachments: [], starter: null, status: "published" },
+      },
       counts: { total: rows.length, to_grade: rows.filter((r) => r.state === "submitted").length, graded: rows.filter((r) => r.state === "graded").length, ...(gradingReview ? { drafts: rows.filter((r) => (r.grade as { status?: string } | null)?.status === "draft").length } : {}) },
       rows,
     };
@@ -423,6 +429,27 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
       if (proj && release) proj.status = "graded";
       if (!gradingReview) return { status: 200, body: { ok: true, score: total, max_points: r.activity.max_points } };
       return { status: 200, body: { ok: true, score: total, max_points: r.activity.max_points, released: release, locks_student: locks, grade: gradeOut(saved), version: saved.version } };
+    }
+    // AI-assisted grading (Task Mentor 2026-10-25): a draft, never saved.
+    if ((m = p.match(/^\/grading\/(assignment|quiz)\/(\d+)\/students\/(\d+)\/ai-draft$/)) && req.method === "POST") {
+      lastAiDraft = body;
+      const fail = localStorage.getItem("tmcode:mock-ai-draft");
+      if (fail === "404") return err(404, "NOT_FOUND", "No route");
+      if (fail) return { status: 403, body: { code: fail, message: fail === "BYOK_REJECTED" ? "The provider refused the key (401)." : "Premium AI isn't turned on for your account." } };
+      const r = roster(m[1], Number(m[2]), (body.question_id as number | null) ?? null);
+      if (!r) return err(404, "NOT_FOUND", "Activity not found.");
+      const name = people.get(Number(m[3])) ?? "The student";
+      const mode = String(body.mode ?? "free");
+      const tier = mode.startsWith("premium:") ? "premium" : mode.startsWith("byok:") ? "byok" : "free";
+      const model = tier === "free" ? "openai/gpt-oss-20b" : mode.slice(mode.indexOf(":") + 1);
+      // Deliberately one score too high: TMCode clamps it.
+      const rubric_scores = r.activity.rubric.map((c, index) => ({ index, score: index === 0 ? c.max_score - 2 : c.max_score + 3, comment: index === 0 ? "Adding works; empty items are accepted too (app.js:1)." : "Clear names." }));
+      return {
+        status: 200,
+        body: {
+          draft: { rubric_scores, score: r.activity.rubric.length ? null : Math.max(0, r.activity.max_points - 1), feedback: `Good work, ${name.split(" ")[0]}. ${body.instructions ? `(focus: ${String(body.instructions).slice(0, 60)}) ` : ""}Check empty input next time.`, teacher_notes: "Check whether empty items are rejected.", confidence: "medium", warnings: [], by: `TMCode AI · ${model}`, model, tier },
+        },
+      };
     }
     // Release every draft of an activity (Task Mentor 0.12).
     if ((m = p.match(/^\/grading\/(assignment|quiz)\/(\d+)\/release$/)) && req.method === "POST") {
@@ -751,6 +778,14 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     /** false: a Task Mentor before draft grades, line comments, graded_by and versions (it ignores release / if_version). */
     setGradingReview(on: boolean) {
       gradingReview = on;
+    },
+    /** The last POST …/ai-draft body (mode, byok, instructions, tests). */
+    lastAiDraftBody() {
+      return lastAiDraft;
+    },
+    /** The last TMCode AI /chat body (mode, byok, context.purpose / grading). */
+    lastAiChatBody() {
+      return ai.lastChat.body;
     },
     /** Grade saves fail with this HTTP status (null: they work again). */
     failGradeSaves(status: number | null) {
