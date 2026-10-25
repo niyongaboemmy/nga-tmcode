@@ -1,13 +1,16 @@
 import { create } from "zustand";
 import { getPlatform } from "../state/store";
 import { aiExamActive, aiGate, aiReasonText } from "./gate";
+import { MissingKeyError, modeFields, parseMode, providerLabel } from "./keys";
 
 /**
  * TMCode AI: chat and inline suggestions from Task Mentor (/api/tmcode/ai, free AI only; the keys
  * stay on the server). The student picks how it answers:
  * - "free" (default): OpenRouter's free models;
  * - "auto": TMCode picks a free AI that still has requests left today;
- * - "<provider>/<model>": one free model.
+ * - "<provider>/<model>": one free model;
+ * - "premium:<provider>/<model>": the school's paid models, for users it entitled (Task Mentor ≥ 2026-10-25);
+ * - "byok:<provider>/<model>": the user's own key (ai/keys.ts), sent with that request only.
  * Whether it may run is Task Mentor's AI status for the open project (ai/gate.ts), sent with
  * `project_id`; in exams the exam policy's `ai`. Without an NGA sign-in it can't run.
  */
@@ -41,8 +44,19 @@ export interface AiStatus {
   /** The assignment's or quiz's AI setting when the project is linked to one (else null). */
   mode?: "off" | "hints" | "full" | null;
   features?: { assist: boolean; complete: boolean };
-  /** Third-party AI tools (extensions such as Claude Code, AI CLIs in the terminal). */
+  /** Third-party AI tools (extensions such as Claude Code, AI CLIs in the terminal); staff follow the school's staff switch. */
   thirdPartyExtensions?: boolean;
+  /*
+   * Premium AI and own keys (Task Mentor 2026-10-25 and later; older servers send none of these and
+   * TMCode then shows the free models only).
+   */
+  /** A grader (teacher, programme lead…): the staff AI rules apply. */
+  staff?: boolean;
+  tiers?: { free: true; premium: boolean; byok: boolean };
+  /** "premium:<provider>/<model>" ids; empty unless the user is entitled. */
+  premium_models?: AiModel[];
+  premium_you?: { used: number; limit: number } | null;
+  byok_providers?: { id: string; label: string; suggested_models: string[] }[];
 }
 
 /** The open project (Task Mentor id) the AI status is for. */
@@ -109,7 +123,31 @@ export function setAiSuggestions(on: boolean) {
 export function modeLabel(mode: string, status: AiStatus | null = useAi.getState().status): string {
   if (mode === "free") return "Free";
   if (mode === "auto") return "Auto";
+  const p = parseMode(mode);
+  if (p.tier === "premium") return `${status?.premium_models?.find((m) => m.id === mode)?.label ?? p.model} · Premium`;
+  if (p.tier === "byok") return `${p.model} · your ${providerLabel(p.provider ?? "")} key`;
   return status?.models.find((m) => m.id === mode)?.label ?? mode.split("/").slice(1).join("/");
+}
+
+/**
+ * The picked mode, unless this Task Mentor can't serve it any more (premium taken away, own keys
+ * turned off, or an older server): then Free, so a request never fails for a choice that's gone.
+ */
+export function effectiveMode(mode: string = useAi.getState().mode, status: AiStatus | null = useAi.getState().status): string {
+  const tier = parseMode(mode).tier;
+  if (tier === "free" || !status) return mode;
+  if (tier === "premium") return status.tiers?.premium && status.premium_models?.some((m) => m.id === mode) ? mode : "free";
+  return status.tiers?.byok ? mode : "free";
+}
+
+/** `mode` (and `byok`) for a request body: own keys are read from the keychain now. */
+export async function requestModeFields(): Promise<{ mode: string; byok?: { provider: string; key: string } }> {
+  try {
+    return await modeFields(effectiveMode());
+  } catch (e) {
+    if (e instanceof MissingKeyError) throw new AiRequestError("BYOK_MISSING", e.message);
+    throw e;
+  }
 }
 
 export class AiRequestError extends Error {
@@ -137,6 +175,8 @@ export function aiErrorFromResponse(status: number, body: unknown): AiRequestErr
     const reason = pick("reason") ?? (code === "EXAM_ACTIVE" ? "EXAM_ACTIVE" : "GLOBAL_OFF");
     return new AiRequestError(code, aiReasonText(reason, message), reason);
   }
+  if (code === "PREMIUM_REQUIRED") return new AiRequestError(code, message ?? "Premium AI isn't turned on for your account. Pick a free model, or ask your school.");
+  if (code === "BYOK_REJECTED") return new AiRequestError(code, `Your own API key was refused${message ? `: ${message}` : ". Check the key and its credit in Settings › TMCode AI › Your API keys, or pick another model."}`);
   return new AiRequestError(code, message ?? `Task Mentor answered ${status}.`);
 }
 
@@ -271,6 +311,9 @@ export interface ChatContext {
   fileText?: string;
   problems?: string[];
   task?: string;
+  /** "grading": a teacher grading a review folder (Task Mentor uses its grading prompt for staff). */
+  purpose?: "grading";
+  grading?: { activity_title: string; brief: string; rubric: { index: number; criteria: string; description: string | null; max_score: number }[]; student_name: string; question_text?: string };
 }
 
 export interface StreamHandlers {
@@ -284,7 +327,7 @@ export interface StreamHandlers {
 export async function chat(messages: WireMessage[], context: ChatContext | undefined, on: StreamHandlers, agent?: AgentRequest): Promise<() => void> {
   const gate = aiGate();
   if (!gate.chat) throw new AiRequestError(gate.reason === "EXAM_ACTIVE" ? "EXAM_ACTIVE" : "AI_DISABLED", gate.message ?? aiReasonText(gate.reason), gate.reason ?? undefined);
-  const { id } = await call<{ id: string }>("POST", "/chat", { mode: useAi.getState().mode, messages, context, ...(agent ? { agent } : {}), ...projectField() });
+  const { id } = await call<{ id: string }>("POST", "/chat", { ...(await requestModeFields()), messages, context, ...(agent ? { agent } : {}), ...projectField() });
   const h = host();
   let finished = false;
   let handle: { cancel(): void } | null = null;
@@ -305,7 +348,8 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
           const err = aiErrorFromResponse(403, d);
           noteRefusal(err);
           on.error(err);
-        } else on.error(new AiRequestError(String(d.code ?? "FAILED"), String(d.message ?? "The AI didn't answer.")));
+        } else if (d.code === "PREMIUM_REQUIRED" || d.code === "BYOK_REJECTED") on.error(aiErrorFromResponse(403, d));
+        else on.error(new AiRequestError(String(d.code ?? "FAILED"), String(d.message ?? "The AI didn't answer.")));
       });
   });
   if (!h.stream) throw new AiRequestError("OLD_APP", "Update TMCode to use TMCode AI.");
@@ -329,7 +373,7 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
 /** One ghost-text suggestion at the cursor (null: nothing, or no allowance left). */
 export async function completeAt(input: { prefix: string; suffix: string; language: string; path: string }): Promise<{ text: string; provider: string; model: string } | null> {
   if (!aiGate().complete) return null;
-  const r = await call<{ text: string | null; provider?: string; model?: string }>("POST", "/complete", { mode: useAi.getState().mode, ...input, ...projectField() });
+  const r = await call<{ text: string | null; provider?: string; model?: string }>("POST", "/complete", { ...(await requestModeFields()), ...input, ...projectField() });
   return r.text ? { text: r.text, provider: r.provider ?? "", model: r.model ?? "" } : null;
 }
 

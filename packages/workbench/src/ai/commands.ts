@@ -64,6 +64,14 @@ export function wireAi() {
       await pickMode();
     },
   });
+  registerCommand({
+    id: "tmcodeAI.manageKeys",
+    title: "Manage Your API Keys",
+    category: "TMCode AI",
+    aliases: ["byok", "own key", "api key", "premium"],
+    run: () => void import("./ChatView").then((m) => m.openAiKeysSettings()),
+  });
+  void import("./keys").then((m) => m.loadAiKeys()).catch(() => {});
   setupMonaco();
   // The editor's context menu, as VS Code's "Copilot" submenu.
   for (const [id, label, order] of [

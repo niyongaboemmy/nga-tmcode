@@ -7,6 +7,7 @@ import { WORKSPACE_SETTINGS_FILE } from "../../state/settingsJson";
 import { allThemes, useThemes } from "../../themes/themeService";
 import { allIconThemes, useIconTheme } from "../../themes/iconThemes";
 import { ExtensionSettingsSection } from "../../exthost/ui";
+import { AiKeysSettingsSection, aiKeysMatch } from "../../ai/AiKeysSettings";
 
 /** Enum options, including themes contributed by installed extensions. */
 function useOptions(def: Extract<SettingDef, { type: "enum" }>) {
@@ -185,6 +186,14 @@ export function SettingsEditor() {
               {s.title}
             </a>
           ))}
+          {!workspaceTab && !onlyModified && aiKeysMatch(query) && (
+            <a href="#settings-TMCode AI" onClick={(e) => {
+              e.preventDefault();
+              document.getElementById("settings-TMCode AI")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}>
+              TMCode AI
+            </a>
+          )}
         </nav>
         <div className="tm-settings-list tm-scroll">
           {sections.length === 0 && !query && !onlyModified && <p className="tm-muted">{workspaceTab ? "This folder doesn't change any setting TMCode has." : "No settings found."}</p>}
@@ -234,6 +243,8 @@ export function SettingsEditor() {
               })}
             </section>
           ))}
+          {/* Your own AI keys (OS keychain) and premium AI: not plain settings, never in settings.json. */}
+          {!workspaceTab && !onlyModified && <AiKeysSettingsSection query={query} />}
           {/* ── extension host (feat/exthost): settings contributed by extensions ── */}
           {!workspaceTab && <ExtensionSettingsSection query={query} onlyModified={onlyModified} />}
         </div>

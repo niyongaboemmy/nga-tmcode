@@ -7,7 +7,19 @@ import type { TmResponse, TmStreamEvent } from "./types";
  * "PROVIDER_QUOTA" makes Free answers fail as an exhausted OpenRouter pool would.
  * localStorage "tmcode:mock-ai-policy" = a JSON AI decision ({"allowed":false,"reason":"TEACHER_OFF",
  * "message":"…"}) makes the status carry it (AI usage control) and chat/complete answer 403 AI_DISABLED.
+ * localStorage "tmcode:mock-ai-tiers" = {"premium":true,"byok":true,"staff":true} makes the status a
+ * Task Mentor with premium AI and own keys (without it: an older one, free only). An own key "bad"
+ * is refused (BYOK_REJECTED); `lastChatBody` on the returned object is the last /chat body.
  */
+
+function mockTiers(): { premium?: boolean; byok?: boolean; staff?: boolean } | null {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem("tmcode:mock-ai-tiers") : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 function mockPolicy(): { allowed: boolean; reason: string; message: string; thirdPartyExtensions?: boolean } | null {
   try {
@@ -21,6 +33,7 @@ function mockPolicy(): { allowed: boolean; reason: string; message: string; thir
 const CHAT_LIMIT = 40;
 
 export function memoryAi() {
+  const lastChat: { body: Record<string, unknown> | null } = { body: null };
   let used = 0;
   let completes = 0;
   let seq = 0;
@@ -38,6 +51,15 @@ export function memoryAi() {
     const readCall = calls.find((c) => c.function.name === "read_file");
     const path = readCall ? String(JSON.parse(readCall.function.arguments).path) : String(job.context.file ?? "js/app.js");
     const call = (name: string, args: Record<string, unknown>) => ({ text: "", tool_calls: [{ id: `call_${++callSeq}`, type: "function" as const, function: { name, arguments: JSON.stringify(args) } }] });
+    // A teacher grading (context.purpose "grading"): read the task, then propose a grade.
+    if (job.context.purpose === "grading") {
+      if (!results.length) return call("get_grading_context", {});
+      if (results.length === 1) {
+        const ctx = JSON.parse(results[0].content ?? "{}") as { rubric?: { index: number; max_score: number }[] };
+        return call("propose_grade", { rubric_scores: (ctx.rubric ?? []).map((c) => ({ index: c.index, score: c.max_score - 1, comment: `Mostly there (criterion ${c.index + 1}).` })), feedback: "Nice structure; handle empty input.", teacher_notes: "Run it with an empty item.", confidence: "high" });
+      }
+      return { text: "I put a draft in your grade form. Review it, then Save." };
+    }
     if (!results.length) return call("read_file", { path });
     const read = results[0].content ?? "";
     if (job.agent.mode === "plan") return { text: `Here is the plan for **${path}**:\n\n1. Replace \`console.log\` with \`console.info\` for messages.\n2. Keep everything else as it is.` };
@@ -66,6 +88,21 @@ export function memoryAi() {
         pools: { openrouter: { label: "OpenRouter (free models)", used: 4, limit: 50, remaining: 46 }, groq: { label: "Groq (free tier)", used: 0, limit: 1000, remaining: 1000 } },
         openrouter: { used: 4, limit: 50, remaining: 46 },
         ...(() => {
+          const t = mockTiers();
+          if (!t) return {};
+          return {
+            staff: !!t.staff,
+            tiers: { free: true, premium: !!t.premium, byok: t.byok !== false },
+            premium_models: t.premium ? [{ id: "premium:anthropic/claude-sonnet-4-5", label: "claude-sonnet-4-5", provider: "anthropic", providerLabel: "Anthropic (premium)" }, { id: "premium:openai/gpt-4.1", label: "gpt-4.1", provider: "openai", providerLabel: "OpenAI (premium)" }] : [],
+            premium_you: t.premium ? { used: 3, limit: 50 } : null,
+            byok_providers: [
+              { id: "openai", label: "OpenAI", suggested_models: ["gpt-4.1-mini", "gpt-4.1"] },
+              { id: "anthropic", label: "Anthropic", suggested_models: ["claude-sonnet-4-5"] },
+              { id: "gemini", label: "Google Gemini", suggested_models: ["gemini-2.5-flash"] },
+            ],
+          };
+        })(),
+        ...(() => {
           const p = mockPolicy();
           return p ? { allowed: p.allowed, reason: p.reason, message: p.message, mode: null, features: { assist: p.allowed, complete: p.allowed }, thirdPartyExtensions: p.thirdPartyExtensions ?? p.allowed } : {};
         })(),
@@ -86,11 +123,16 @@ export function memoryAi() {
   }
 
   return {
+    lastChat,
     route(method: string, path: string, body: Record<string, unknown>): TmResponse {
       if (path === "/status" && method === "GET") return status();
       const policy = mockPolicy();
       if (policy && !policy.allowed && (path === "/chat" || path === "/complete")) return { status: 403, body: { code: "AI_DISABLED", reason: policy.reason, message: policy.message } };
       if (path === "/chat" && method === "POST") {
+        lastChat.body = body;
+        const mode = String(body.mode ?? "free");
+        if (mode.startsWith("premium:") && !mockTiers()?.premium) return { status: 403, body: { code: "PREMIUM_REQUIRED", message: "Premium AI isn't turned on for your account." } };
+        if (mode.startsWith("byok:") && (body.byok as { key?: string } | undefined)?.key === "bad") return { status: 400, body: { code: "BYOK_REJECTED", message: "The provider refused the key (401 Unauthorized)." } };
         const messages = (body.messages as { role: string; content: string }[]) ?? [];
         const id = `job-${++seq}`;
         const agent = body.agent as { mode: string; step: number } | undefined;
