@@ -263,6 +263,12 @@ export async function createTauriPlatform(): Promise<Platform> {
         };
       },
     },
+    // Own AI provider keys (BYOK): the OS keychain, read just before each request (ai_keys.rs).
+    aiKeys: {
+      get: (provider) => invoke<string | null>("ai_key_get", { provider }),
+      set: (provider, key) => invoke("ai_key_set", { provider, key }),
+      delete: (provider) => invoke("ai_key_delete", { provider }),
+    },
     proc: {
       run: async (command, cwd, onEvent) => {
         const channel = new Channel<ProcEvent>();

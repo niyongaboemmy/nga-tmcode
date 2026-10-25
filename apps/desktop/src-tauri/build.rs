@@ -82,6 +82,10 @@ fn main() {
             // AI usage control: third-party AI tools in terminals
             "ai_tools_policy",
             "exthost_secret",
+            // Own AI provider keys (BYOK) in the OS keychain
+            "ai_key_set",
+            "ai_key_get",
+            "ai_key_delete",
             "webview_publish",
             "webview_dispose",
             "auth_sign_in",

@@ -199,6 +199,17 @@ export interface Platform {
   languageServers?: LanguageServerHost;
   /** Third-party AI tools in terminals (desktop: ai_tools.rs); absent → not controlled. */
   aiTools?: AiToolsHost;
+  /**
+   * The user's own AI provider keys (BYOK). Desktop: the OS keychain (ai_keys.rs); the dev browser
+   * build keeps them in memory only. Never localStorage, never logged.
+   */
+  aiKeys?: AiKeysHost;
+}
+
+export interface AiKeysHost {
+  get(provider: string): Promise<string | null>;
+  set(provider: string, key: string): Promise<void>;
+  delete(provider: string): Promise<void>;
 }
 
 // ───────────── third-party AI tools in terminals (AI usage control) ─────────────

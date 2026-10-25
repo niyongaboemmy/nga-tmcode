@@ -535,9 +535,20 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
           },
         }
       : {}),
+    // Dev server / e2e only: own AI keys in this window's memory (the desktop app uses the OS keychain).
+    ...(import.meta.env?.DEV ? { aiKeys: memoryAiKeys() } : {}),
     watch(onChange) {
       watchers.add(onChange);
       return () => watchers.delete(onChange);
     },
+  };
+}
+
+function memoryAiKeys(): import("./types").AiKeysHost {
+  const keys = new Map<string, string>();
+  return {
+    get: async (provider) => keys.get(provider) ?? null,
+    set: async (provider, key) => void keys.set(provider, key),
+    delete: async (provider) => void keys.delete(provider),
   };
 }
