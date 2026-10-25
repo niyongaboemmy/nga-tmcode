@@ -579,7 +579,7 @@ pub async fn tm_api(app: AppHandle, request: TmRequest) -> Result<TmResponse, St
     if !valid_tm_path(&request.path) {
         return Err("Not a Task Mentor TMCode API path.".into());
     }
-    if exam_active(&app) {
+    if exam_active(&app) && !allowed_during_exam(&request.path) {
         return Err("Task Mentor projects are not available during an exam.".into());
     }
     let (token, mis) = {
@@ -638,6 +638,13 @@ pub enum StreamEvent {
 #[derive(Default)]
 pub struct Streams(Mutex<std::collections::HashMap<u32, tauri::async_runtime::JoinHandle<()>>>);
 
+/// TMCode AI's paths stay open during an exam: Task Mentor decides there from the quiz's AI setting
+/// and the school's policy (an `ai: "off"` exam refuses), and TMCode must hear when either changes
+/// mid-exam. Every other Task Mentor path (projects, assignments) stays closed until it ends.
+pub fn allowed_during_exam(path: &str) -> bool {
+    path.starts_with("/api/tmcode/ai/")
+}
+
 /// A Task Mentor GET whose body keeps coming (a live run's events, `text/event-stream`). Same rules
 /// as `tm_api` (TMCode paths only, signed in, not during an exam); no overall time limit, only for
 /// the connection. The body goes to `on_event` piece by piece until it ends or `tm_stream_cancel`.
@@ -646,7 +653,7 @@ pub async fn tm_stream(app: AppHandle, streams: State<'_, Streams>, id: u32, pat
     if !valid_tm_path(&path) {
         return Err("Not a Task Mentor TMCode API path.".into());
     }
-    if exam_active(&app) {
+    if exam_active(&app) && !allowed_during_exam(&path) {
         return Err("Task Mentor projects are not available during an exam.".into());
     }
     let (token, mis) = {
@@ -718,6 +725,18 @@ pub fn tm_stream_cancel(streams: State<'_, Streams>, id: u32) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_tmcode_ai_paths_stay_open_during_an_exam() {
+        assert!(super::allowed_during_exam("/api/tmcode/ai/status?project_id=4"));
+        assert!(super::allowed_during_exam("/api/tmcode/ai/events"));
+        assert!(super::allowed_during_exam("/api/tmcode/ai/chat/abc/stream"));
+        assert!(!super::allowed_during_exam("/api/tmcode/projects"));
+        assert!(!super::allowed_during_exam("/api/tmcode/assignments/mine"));
+        assert!(!super::allowed_during_exam("/api/tmcode/ai"));
+        // `..` never gets this far: valid_tm_path refuses it first.
+        assert!(!super::valid_tm_path("/api/tmcode/ai/../projects"));
+    }
+
     use super::*;
 
     #[test]

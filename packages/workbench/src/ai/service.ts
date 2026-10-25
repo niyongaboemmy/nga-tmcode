@@ -1,7 +1,6 @@
 import { create } from "zustand";
-import { getPlatform, useWorkbench } from "../state/store";
-import { useExam } from "../exam/state";
-import { aiGate, aiReasonText } from "./gate";
+import { getPlatform } from "../state/store";
+import { aiExamActive, aiGate, aiReasonText } from "./gate";
 
 /**
  * TMCode AI: chat and inline suggestions from Task Mentor (/api/tmcode/ai, free AI only; the keys
@@ -67,6 +66,8 @@ interface AiState {
   project: AiProject;
   /** The project the status was asked for. */
   statusFor: number | null;
+  /** The status was asked for during an exam (only such a status speaks for the exam). */
+  statusInExam: boolean;
   /** Task Mentor's last refusal (403 AI_DISABLED / EXAM_ACTIVE), until the next status. */
   denied: { reason: string; message: string | null } | null;
 }
@@ -74,7 +75,7 @@ interface AiState {
 const MODE_KEY = "tmcodeAI.mode";
 const SUGGEST_KEY = "tmcodeAI.suggestions";
 
-export const useAi = create<AiState>(() => ({ status: null, error: null, loading: false, mode: "free", suggestions: false, agentMode: "manual", project: { id: null, assessment: false }, statusFor: null, denied: null }));
+export const useAi = create<AiState>(() => ({ status: null, error: null, loading: false, mode: "free", suggestions: false, agentMode: "manual", project: { id: null, assessment: false }, statusFor: null, statusInExam: false, denied: null }));
 const AGENT_KEY = "tmcodeAI.agentMode";
 
 export function setAgentMode(agentMode: AiState["agentMode"]) {
@@ -151,6 +152,24 @@ export function currentAiProjectId(): number | null {
   return useAi.getState().project.id;
 }
 
+let soon: ReturnType<typeof setTimeout> | null = null;
+/**
+ * Asks for the status after `delayMs` (calls meanwhile fold into one). Many apps hear the same
+ * "changed" at once; a little spread keeps them from asking Task Mentor in the same instant.
+ */
+export function refreshAiStatusSoon(delayMs = 0) {
+  if (soon) return;
+  soon = setTimeout(() => {
+    soon = null;
+    void refreshAiStatus();
+  }, Math.max(0, delayMs));
+}
+
+/** An exam started or ended: a status from the other side of it says nothing about now. */
+export function forgetAiStatus() {
+  useAi.setState({ status: null, statusFor: null, statusInExam: false, denied: null });
+}
+
 /** The open project changed: the old status says nothing about the new one. */
 export function setAiProject(project: AiProject) {
   const was = useAi.getState().project;
@@ -203,17 +222,25 @@ function projectField(): { project_id?: number } {
 }
 
 let statusSeq = 0;
-/** Asks Task Mentor whether AI may run (for the open project). In exams only when the exam allows AI. */
+/**
+ * Asks Task Mentor whether AI may run (for the open project), in exams too: a teacher may change
+ * the quiz's AI setting, or the school its policy, while the exam runs (ai/live.ts says when).
+ */
 export async function refreshAiStatus() {
-  if (useExam.getState().quiz && useWorkbench.getState().policy.ai !== "full") return;
   const project = currentAiProjectId();
+  const inExam = aiExamActive();
   const seq = ++statusSeq;
   useAi.setState({ loading: true });
   try {
     const status = await call<AiStatus>("GET", project != null ? `/status?project_id=${project}` : "/status");
-    // A newer request (another project) wins.
+    // A newer request (another project) wins; an exam that started or ended meanwhile asks again.
     if (seq !== statusSeq || currentAiProjectId() !== project) return;
-    useAi.setState({ status, statusFor: project, denied: null, error: null, loading: false });
+    if (aiExamActive() !== inExam) {
+      useAi.setState({ loading: false });
+      void refreshAiStatus();
+      return;
+    }
+    useAi.setState({ status, statusFor: project, statusInExam: inExam, denied: null, error: null, loading: false });
   } catch (e) {
     if (seq !== statusSeq) return;
     useAi.setState({ error: (e as Error).message, loading: false });
