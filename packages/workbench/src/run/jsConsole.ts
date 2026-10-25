@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { recordActivity } from "../activity/log";
+import { finishRun, recordRun } from "./runActivity";
 import { getDocument, saveAll } from "../monaco/documents";
 import { getPlatform, log, showPanel } from "../state/store";
 import { useExam } from "../exam/state";
@@ -258,6 +258,8 @@ let host: Promise<ConsoleHost> | null = null;
 let seq = 0;
 let entrySeq = 0;
 let pendingEval = false;
+/** The Activity entry of the file run going on (its result is written when it ends). */
+let runActivity: number | null = null;
 const pending = new Map<number, (data: unknown) => void>();
 /** The running program: its script URL and how stack positions map back to the student's files. */
 let mapping: { file: string; url: string; map: SourceMapLike | null; decoded: number[][][] | null } | null = null;
@@ -393,6 +395,10 @@ function finish(last: { ok: boolean; ms: number; stopped?: boolean }, code?: num
   const text = last.stopped ? "Stopped" : code !== undefined ? `process.exit(${code}) after ${ms} ms` : last.ok ? `Finished in ${ms} ms` : `Failed after ${ms} ms`;
   if (get().file && !pendingEval) push({ level: "system", args: [], text, outcome: last.stopped ? "stopped" : last.ok ? "ok" : "error" });
   set({ status: "idle", last: { ...last, ms }, startedAt: null });
+  if (!pendingEval) {
+    finishRun(runActivity, { status: last.stopped ? "stopped" : last.ok ? "ok" : "error", ...(code !== undefined ? { exit: code } : {}), duration_ms: ms });
+    runActivity = null;
+  }
 }
 
 // ───────────── stacks back to the student's files ─────────────
@@ -503,7 +509,9 @@ export async function runInJsConsole(path: string, opts: { reveal?: boolean } = 
   set({ entries: [], status: "running", file: path, startedAt: Date.now(), last: null });
   push({ level: "system", args: [], text: `Running ${path}` });
   log("Run", `JavaScript Console: ${path}`);
-  recordActivity({ kind: "run", action: "run", path, text: `Ran ${path} in the JavaScript Console` });
+  if (runActivity !== null) finishRun(runActivity, { status: "stopped" });
+  runActivity = recordRun({ kind: "run", action: "run", path, text: `Ran ${path} in the JavaScript Console`, data: { where_run: "JavaScript Console" } });
+  finishRun(runActivity, { status: "running" });
   if (source === null) {
     push({ level: "error", args: [{ t: "str", v: `Cannot read ${path}` }] });
     finish({ ok: false, ms: 0 });

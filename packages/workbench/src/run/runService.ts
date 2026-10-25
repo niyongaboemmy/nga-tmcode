@@ -1,5 +1,5 @@
 import { profileById, profileForPath } from "@tmcode/profiles";
-import { recordActivity } from "../activity/log";
+import { finishRun, recordRun, runEndOf, setRunCommand } from "./runActivity";
 import type { Profile } from "@tmcode/protocol";
 import { executeCommand } from "../commands/registry";
 import { ensureDocument, saveAll } from "../monaco/documents";
@@ -231,7 +231,8 @@ export async function runFile(path: string, opts: RunOptions = {}) {
     emit({ type: "info", text: "Running in the browser: the program gets no keyboard input. Use the Testing view to run it with input, or the TMCode desktop app for interactive programs." });
   }
   log("Run", `Run ${target.entry} (${target.profile.id})`);
-  recordActivity({ kind: "run", action: "run", path: target.entry, text: `Ran ${target.entry}`, data: { profile: target.profile.id } });
+  const activity = recordRun({ kind: "run", action: "run", path: target.entry, text: `Ran ${target.entry}`, data: { profile: target.profile.id } });
+  finishRun(activity, { status: "running" });
 
   let buildOut = "";
   let runTail = "";
@@ -254,6 +255,7 @@ export async function runFile(path: string, opts: RunOptions = {}) {
         emit(e);
         if (e.type === "step") {
           phase = e.phase;
+          if (e.phase === "run") setRunCommand(activity, e.command);
           if (e.phase === "run") setRunState({ status: "running", startedAt: Date.now() });
         } else if (e.type === "stdout" || e.type === "stderr") {
           if (phase === "build") buildOut += e.data;
@@ -267,6 +269,7 @@ export async function runFile(path: string, opts: RunOptions = {}) {
     const exit = await done;
     if (current === handle) current = null;
     setRunState({ status: "idle", lastExit: { code: exit.code, timed_out: exit.timed_out, killed: exit.killed, duration_ms: exit.duration_ms } });
+    finishRun(activity, runEndOf(exit));
     if (exit.phase === "build" && exit.code !== 0) {
       const files = await showDiagnostics(buildOut, target.entry);
       if (files) showPanel("problems");
@@ -277,6 +280,7 @@ export async function runFile(path: string, opts: RunOptions = {}) {
     const message = String((e as Error)?.message ?? e);
     emit({ type: "error", message });
     setRunState({ status: "idle" });
+    finishRun(activity, { status: "error" });
     const missing = message.includes("could not find");
     // The tool is missing: Task Mentor can run the program live when its code runner allows it.
     const { canRunOnTaskMentor, runOnTaskMentor } = await import("./serverRun");

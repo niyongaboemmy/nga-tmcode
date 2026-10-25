@@ -38,7 +38,15 @@ async function load(root: string): Promise<ActivityEvent[]> {
       /* a damaged day is skipped, never fatal */
     }
   }
-  return out.sort((a, b) => a.t - b.t);
+  return out.map(settled).sort((a, b) => a.t - b.t);
+}
+
+/** A run still "running" when TMCode closed has no result to show (it never said how it ended). */
+function settled(e: ActivityEvent): ActivityEvent {
+  if (e.data?.status !== "running") return e;
+  const data = { ...e.data };
+  delete data.status;
+  return { ...e, data };
 }
 
 let writing: Promise<void> = Promise.resolve();

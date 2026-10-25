@@ -54,6 +54,8 @@ function TerminalActions() {
   );
 }
 
+const LEVEL_ICON: Record<string, string | undefined> = { warn: "warning", error: "error" };
+
 function OutputView({ filter }: { filter: string }) {
   const all = useWorkbench((s) => s.output);
   const channel = useOutputChannelFilter();
@@ -65,15 +67,48 @@ function OutputView({ filter }: { filter: string }) {
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight;
   }, [lines.length]);
   return (
-    <div ref={ref} className="tm-output tm-scroll tm-mono" role="log" aria-live="polite">
+    <div ref={ref} className="tm-output tm-scroll tm-mono" role="log" aria-live="polite" data-channel={channel ? "one" : "all"}>
+      {!lines.length && <div className="tm-output-empty">{filter ? "No output matches the filter." : channel ? `Nothing in ${channel} yet.` : "No output yet."}</div>}
       {lines.map((l, i) => (
         <div key={i} className={`tm-output-line is-${l.level}`}>
+          <span className="tm-output-gutter" aria-hidden>
+            {LEVEL_ICON[l.level] && <Codicon name={LEVEL_ICON[l.level]!} />}
+          </span>
           <span className="tm-output-time">{new Date(l.t).toLocaleTimeString([], { hour12: false })}</span>
-          <span className="tm-output-channel">[{l.channel}]</span> {l.text}
+          {/* One channel shown: its name is in the picker, not on every line. */}
+          {!channel && <span className="tm-output-channel">[{l.channel}]</span>}
+          <span className="tm-output-text">{l.text}</span>
         </div>
       ))}
     </div>
   );
+}
+
+/** The panel's tab strip scrolls when it is too narrow; the hidden side fades, and the active tab stays in view. */
+function useTabOverflow(active: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState<"" | "start" | "end" | "both">("");
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const start = el.scrollLeft > 1;
+      const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdge(start && end ? "both" : start ? "start" : end ? "end" : "");
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    el.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", measure);
+    };
+  }, []);
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
+  return { ref, edge };
 }
 
 export function Panel() {
@@ -97,22 +132,23 @@ export function Panel() {
   const inExam = useExam((s) => !!s.quiz);
   const extPanels = useViews((s) => s.containers).filter((c) => c.location === "panel" && practice && !inExam);
 
-  const tabs: { id: PanelId; label: string; badge?: number }[] = [
+  const tabs: { id: PanelId; label: string; badge?: number; ai?: number }[] = [
     { id: "problems", label: "Problems", badge: problemCount || undefined },
     { id: "output", label: "Output" },
     ...(debugTab ? [{ id: "debugConsole" as const, label: "Debug Console" }] : []),
     { id: "run", label: "Run" },
     { id: "jsConsole", label: "JavaScript Console" },
-    { id: "activity", label: "Activity", badge: aiToday || undefined },
+    { id: "activity", label: "Activity", ai: aiToday || undefined },
     ...(terminalOn ? [{ id: "terminal" as const, label: "Terminal" }] : []),
     ...extPanels.map((c) => ({ id: c.key as PanelId, label: c.title })),
   ];
   const current = tabs.some((t) => t.id === active) ? active : "problems";
+  const strip = useTabOverflow(current);
 
   return (
     <section className="tm-panel" aria-label="Panel">
       <header className="tm-panel-header">
-        <div className="tm-panel-tabs" role="tablist">
+        <div ref={strip.ref} className="tm-panel-tabs" role="tablist" data-overflow={strip.edge || undefined}>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -124,6 +160,13 @@ export function Panel() {
             >
               {t.label}
               {t.badge ? <span className="tm-badge tm-badge--accent">{t.badge}</span> : null}
+              {/* AI use today: a quiet mark, not an unread count. */}
+              {t.ai ? (
+                <span className="tm-panel-tab-ai" title={`${t.ai} action${t.ai === 1 ? "" : "s"} with AI today`} aria-label={`${t.ai} with AI today`}>
+                  <Codicon name="sparkle" />
+                  {t.ai}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -171,7 +214,7 @@ export function Panel() {
           )}
           {current !== "terminal" && current !== "run" && !current.startsWith("ext:") && (
             <div className="tm-input-box tm-panel-filter">
-              <input className="tm-input" placeholder={current === "problems" ? "Filter (e.g. text, **/*.py)" : "Filter"} aria-label="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <input className="tm-input" placeholder={current === "problems" ? "Filter (e.g. text, **/*.py)" : current === "activity" ? "Filter activity" : current === "output" ? "Filter output" : "Filter"} aria-label="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
               <Codicon name="filter" className="tm-input-trailing" />
             </div>
           )}
