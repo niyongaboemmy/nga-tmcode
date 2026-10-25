@@ -1,13 +1,12 @@
 import { recordActivity, sizeText } from "../activity/log";
-import { useExam } from "../exam/state";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { pathOfUri } from "../monaco/documents";
-import { useWorkbench } from "../state/store";
+import { aiGate } from "./gate";
 import { completeAt, useAi } from "./service";
 
 /**
  * TMCode AI's ghost text while typing (VS Code's inline suggestions): only when the student turned
- * suggestions on, never in exams, after a short pause (Monaco's debounce), at the end of a line or
+ * suggestions on, only when the AI gate allows (Task Mentor's status, the exam policy), after a short pause (Monaco's debounce), at the end of a line or
  * before closing brackets, with the last few answers cached. Tab accepts; the accept is logged.
  */
 
@@ -31,7 +30,7 @@ export function wireInlineSuggestions() {
       async provideInlineCompletions(model, position, context, token) {
         const { suggestions } = useAi.getState();
         const explicit = context.triggerKind === monaco.languages.InlineCompletionTriggerKind.Explicit;
-        if ((!suggestions && !explicit) || useExam.getState().quiz || useWorkbench.getState().policy.mode !== "practice" || Date.now() < quietUntil) return { items: [] };
+        if ((!suggestions && !explicit) || !aiGate().complete || Date.now() < quietUntil) return { items: [] };
         if (model.uri.scheme !== "tmcode") return { items: [] };
         const line = model.getLineContent(position.lineNumber);
         const after = line.slice(position.column - 1);

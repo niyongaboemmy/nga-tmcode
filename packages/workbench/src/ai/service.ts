@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import { getPlatform } from "../state/store";
+import { getPlatform, useWorkbench } from "../state/store";
 import { useExam } from "../exam/state";
+import { aiGate, aiReasonText } from "./gate";
 
 /**
  * TMCode AI: chat and inline suggestions from Task Mentor (/api/tmcode/ai, free AI only; the keys
@@ -8,7 +9,8 @@ import { useExam } from "../exam/state";
  * - "free" (default): OpenRouter's free models;
  * - "auto": TMCode picks a free AI that still has requests left today;
  * - "<provider>/<model>": one free model.
- * Off during exams (Task Mentor refuses too) and without an NGA sign-in.
+ * Whether it may run is Task Mentor's AI status for the open project (ai/gate.ts), sent with
+ * `project_id`; in exams the exam policy's `ai`. Without an NGA sign-in it can't run.
  */
 
 export interface AiModel {
@@ -27,6 +29,28 @@ export interface AiStatus {
   you: { chat: { used: number; limit: number }; complete: { used: number; limit: number }; agent?: { used: number; limit: number } };
   pools: Record<string, { label: string; used: number; limit: number; remaining: number }>;
   openrouter: { used: number; limit: number; remaining: number } | null;
+  /*
+   * AI usage control (Task Mentor 2026-10 and later; older servers don't send these, and the gate
+   * then decides as before, exam-only).
+   */
+  /** May this user use TMCode AI here (school switch, teacher's setting, role)? */
+  allowed?: boolean;
+  /** Why (GLOBAL_OFF, TEACHER_OFF, HINTS_ONLY, ROLE_OFF, ALLOWED_BY_ROLE…). */
+  reason?: string;
+  /** Words for the student. */
+  message?: string;
+  /** The assignment's or quiz's AI setting when the project is linked to one (else null). */
+  mode?: "off" | "hints" | "full" | null;
+  features?: { assist: boolean; complete: boolean };
+  /** Third-party AI tools (extensions such as Claude Code, AI CLIs in the terminal). */
+  thirdPartyExtensions?: boolean;
+}
+
+/** The open project (Task Mentor id) the AI status is for. */
+export interface AiProject {
+  id: number | null;
+  /** Linked to an assignment or quiz. */
+  assessment: boolean;
 }
 
 interface AiState {
@@ -39,12 +63,18 @@ interface AiState {
   suggestions: boolean;
   /** How TMCode AI works: chat only, or an agent mode (ai/chat.ts MODES). */
   agentMode: "chat" | "manual" | "edit" | "plan" | "auto";
+  /** The open project; every AI request carries its id. */
+  project: AiProject;
+  /** The project the status was asked for. */
+  statusFor: number | null;
+  /** Task Mentor's last refusal (403 AI_DISABLED / EXAM_ACTIVE), until the next status. */
+  denied: { reason: string; message: string | null } | null;
 }
 
 const MODE_KEY = "tmcodeAI.mode";
 const SUGGEST_KEY = "tmcodeAI.suggestions";
 
-export const useAi = create<AiState>(() => ({ status: null, error: null, loading: false, mode: "free", suggestions: false, agentMode: "manual" }));
+export const useAi = create<AiState>(() => ({ status: null, error: null, loading: false, mode: "free", suggestions: false, agentMode: "manual", project: { id: null, assessment: false }, statusFor: null, denied: null }));
 const AGENT_KEY = "tmcodeAI.agentMode";
 
 export function setAgentMode(agentMode: AiState["agentMode"]) {
@@ -85,9 +115,51 @@ export class AiRequestError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    /** AI_DISABLED / EXAM_ACTIVE: why (GLOBAL_OFF, TEACHER_OFF…). */
+    readonly reason?: string,
   ) {
     super(message);
   }
+}
+
+/**
+ * Task Mentor's refusal as an error. AI_DISABLED carries `code`, `reason` and `message` at the top
+ * level or under `error`; older servers say `error_code` (EXAM_ACTIVE during an exam session).
+ */
+export function aiErrorFromResponse(status: number, body: unknown): AiRequestError {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const nested = (b.error && typeof b.error === "object" ? b.error : {}) as Record<string, unknown>;
+  const pick = (k: string) => (typeof b[k] === "string" && b[k] ? (b[k] as string) : typeof nested[k] === "string" && nested[k] ? (nested[k] as string) : undefined);
+  const code = pick("code") ?? pick("error_code") ?? `HTTP_${status}`;
+  const message = pick("message") ?? (typeof b.error === "string" ? b.error : undefined);
+  if (code === "AI_DISABLED" || code === "EXAM_ACTIVE") {
+    const reason = pick("reason") ?? (code === "EXAM_ACTIVE" ? "EXAM_ACTIVE" : "GLOBAL_OFF");
+    return new AiRequestError(code, aiReasonText(reason, message), reason);
+  }
+  return new AiRequestError(code, message ?? `Task Mentor answered ${status}.`);
+}
+
+/** A refusal locks the gate until the next status (which is asked for at once). */
+function noteRefusal(e: AiRequestError) {
+  if (!e.reason) return;
+  useAi.setState({ denied: { reason: e.reason, message: e.message } });
+  void refreshAiStatus();
+}
+
+/** The open project's Task Mentor id (null: none, or not a Task Mentor project). */
+export function currentAiProjectId(): number | null {
+  return useAi.getState().project.id;
+}
+
+/** The open project changed: the old status says nothing about the new one. */
+export function setAiProject(project: AiProject) {
+  const was = useAi.getState().project;
+  if (was.id === project.id && was.assessment === project.assessment) return;
+  if (was.id === project.id) {
+    useAi.setState({ project });
+    return;
+  }
+  useAi.setState({ project, status: null, statusFor: null, denied: null });
 }
 
 /**
@@ -118,18 +190,32 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
     throw new AiRequestError(/sign in/i.test(message) ? "SIGNED_OUT" : "OFFLINE", /sign in/i.test(message) ? "Sign in to NGA to use TMCode AI." : "TMCode AI can't reach Task Mentor. Check your connection.");
   }
   if (res.status >= 200 && res.status < 300) return res.body as T;
-  const b = (res.body ?? {}) as Record<string, unknown>;
   if (res.status === 401) throw new AiRequestError("SIGNED_OUT", "Sign in to NGA to use TMCode AI.");
-  throw new AiRequestError(String(b.error_code ?? `HTTP_${res.status}`), typeof b.message === "string" ? b.message : `Task Mentor answered ${res.status}.`);
+  const err = aiErrorFromResponse(res.status, res.body);
+  noteRefusal(err);
+  throw err;
 }
 
+/** `project_id` for a request body ({} without a project). */
+function projectField(): { project_id?: number } {
+  const id = currentAiProjectId();
+  return id != null ? { project_id: id } : {};
+}
+
+let statusSeq = 0;
+/** Asks Task Mentor whether AI may run (for the open project). In exams only when the exam allows AI. */
 export async function refreshAiStatus() {
-  if (useExam.getState().quiz) return;
+  if (useExam.getState().quiz && useWorkbench.getState().policy.ai !== "full") return;
+  const project = currentAiProjectId();
+  const seq = ++statusSeq;
   useAi.setState({ loading: true });
   try {
-    const status = await call<AiStatus>("GET", "/status");
-    useAi.setState({ status, error: null, loading: false });
+    const status = await call<AiStatus>("GET", project != null ? `/status?project_id=${project}` : "/status");
+    // A newer request (another project) wins.
+    if (seq !== statusSeq || currentAiProjectId() !== project) return;
+    useAi.setState({ status, statusFor: project, denied: null, error: null, loading: false });
   } catch (e) {
+    if (seq !== statusSeq) return;
     useAi.setState({ error: (e as Error).message, loading: false });
   }
 }
@@ -169,8 +255,9 @@ export interface StreamHandlers {
 
 /** Asks, then streams the answer. Returns a cancel function. */
 export async function chat(messages: WireMessage[], context: ChatContext | undefined, on: StreamHandlers, agent?: AgentRequest): Promise<() => void> {
-  if (useExam.getState().quiz) throw new AiRequestError("EXAM_ACTIVE", "TMCode AI is off while you're taking an exam.");
-  const { id } = await call<{ id: string }>("POST", "/chat", { mode: useAi.getState().mode, messages, context, ...(agent ? { agent } : {}) });
+  const gate = aiGate();
+  if (!gate.chat) throw new AiRequestError(gate.reason === "EXAM_ACTIVE" ? "EXAM_ACTIVE" : "AI_DISABLED", gate.message ?? aiReasonText(gate.reason), gate.reason ?? undefined);
+  const { id } = await call<{ id: string }>("POST", "/chat", { mode: useAi.getState().mode, messages, context, ...(agent ? { agent } : {}), ...projectField() });
   const h = host();
   let finished = false;
   let handle: { cancel(): void } | null = null;
@@ -184,7 +271,15 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
     if (name === "meta") on.meta(data as { provider: string; model: string });
     else if (name === "delta") on.delta(String((data as { text?: string }).text ?? ""));
     else if (name === "done") finish(() => on.done(data as { provider: string; model: string }));
-    else if (name === "error") finish(() => on.error(new AiRequestError(String((data as { code?: string }).code ?? "FAILED"), String((data as { message?: string }).message ?? "The AI didn't answer."))));
+    else if (name === "error")
+      finish(() => {
+        const d = (data ?? {}) as { code?: string; message?: string; reason?: string };
+        if (d.code === "AI_DISABLED" || d.code === "EXAM_ACTIVE") {
+          const err = aiErrorFromResponse(403, d);
+          noteRefusal(err);
+          on.error(err);
+        } else on.error(new AiRequestError(String(d.code ?? "FAILED"), String(d.message ?? "The AI didn't answer.")));
+      });
   });
   if (!h.stream) throw new AiRequestError("OLD_APP", "Update TMCode to use TMCode AI.");
   handle = await h
@@ -206,8 +301,8 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
 
 /** One ghost-text suggestion at the cursor (null: nothing, or no allowance left). */
 export async function completeAt(input: { prefix: string; suffix: string; language: string; path: string }): Promise<{ text: string; provider: string; model: string } | null> {
-  if (useExam.getState().quiz) return null;
-  const r = await call<{ text: string | null; provider?: string; model?: string }>("POST", "/complete", { mode: useAi.getState().mode, ...input });
+  if (!aiGate().complete) return null;
+  const r = await call<{ text: string | null; provider?: string; model?: string }>("POST", "/complete", { mode: useAi.getState().mode, ...input, ...projectField() });
   return r.text ? { text: r.text, provider: r.provider ?? "", model: r.model ?? "" } : null;
 }
 

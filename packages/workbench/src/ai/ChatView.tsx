@@ -2,7 +2,6 @@ import DOMPurify from "dompurify";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { recordActivity } from "../activity/log";
 import { rememberAiCopy } from "../activity/sources";
-import { useExam } from "../exam/state";
 import { monaco } from "../monaco/setup";
 import { listFiles } from "../parts/search/search";
 import { signIn, useProjects } from "../projects/service";
@@ -11,6 +10,7 @@ import { showQuickPick } from "../widgets/QuickPick";
 import { Codicon } from "../widgets/icons";
 import { renderMarkdown } from "../widgets/markdown";
 import { AiExtensions } from "./AiExtensions";
+import { useAiGate } from "./gate";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { approveStep, ask, MODES, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
 import { loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
@@ -388,7 +388,8 @@ export function ChatView() {
   const reference = useChat((s) => s.reference);
   const { status, mode, suggestions, error, agentMode } = useAi();
   const signedIn = useProjects((s) => !!s.account?.signed_in);
-  const inExam = useExam((s) => !!s.quiz);
+  const gate = useAiGate();
+  const projectId = useAi((s) => s.project.id);
   const [text, setText] = useState("");
   const [withFile, setWithFile] = useState(true);
   const [withProblems, setWithProblems] = useState(true);
@@ -415,8 +416,8 @@ export function ChatView() {
     void loadAiSettings();
   }, []);
   useEffect(() => {
-    if (signedIn && !inExam) void refreshAiStatus();
-  }, [signedIn, inExam]);
+    if (signedIn) void refreshAiStatus();
+  }, [signedIn, projectId]);
   useLayoutEffect(() => {
     const el = list.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
@@ -431,10 +432,11 @@ export function ChatView() {
     if (reference) input.current?.focus();
   }, [reference]);
 
-  if (inExam) {
+  if (!gate.chat) {
     return (
-      <div className="tm-chat tm-chat-off" data-testid="tmcode-ai-chat">
-        <Codicon name="lock" /> TMCode AI is off during exams.
+      <div className="tm-chat tm-chat-off" data-testid="tmcode-ai-chat" data-reason={gate.reason ?? undefined}>
+        <Codicon name="lock" />
+        <span data-testid="ai-lock-message">{gate.message ?? "TMCode AI is off."}</span>
       </div>
     );
   }
