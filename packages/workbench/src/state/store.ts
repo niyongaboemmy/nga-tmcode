@@ -24,8 +24,12 @@ type EditorInputBase =
   | { kind: "settingsJson"; id: "settingsJson"; preview: false }
   | { kind: "welcome"; id: "welcome"; preview: false }
   | { kind: "shortcuts"; id: "shortcuts"; preview: false }
-  /** Web preview of a folder (`root`), showing `entry` (e.g. index.html). */
-  | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react"; preview: false }
+  /**
+   * Web preview of a folder (`root`), showing `entry` (e.g. index.html). "php-runner": a PHP site's
+   * pages run on the school's code runner (run/phpRunner); `note` is the console's first line and
+   * `opened` (a time) runs the page again when Run opens it again.
+   */
+  | { kind: "preview"; id: string; root: string; entry: string; profile: "static" | "bundle-react" | "php-runner"; preview: false; note?: string; opened?: number }
   /** Expected vs actual output of one visible test. */
   | { kind: "testDiff"; id: string; testId: string; preview: false }
   /** Simple Browser on a local dev server (Vite, Next, Angular, Spring…). */

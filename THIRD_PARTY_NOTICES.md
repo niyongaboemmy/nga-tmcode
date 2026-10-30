@@ -10,6 +10,13 @@ licence; the full texts ship next to the files.
 - Licence: MIT, Copyright (c) 2015 - present Microsoft Corporation.
   Full text: `packages/workbench/src/themes/vscode/LICENSE.txt`
 
+## Visual Studio Code PHP grammar (HTML with embedded PHP)
+
+- Files: the `text.html.php` grammar in `packages/workbench/src/textmate/grammars.ts`
+- Source: <https://github.com/microsoft/vscode> (`extensions/php/syntaxes/html.tmLanguage.json`)
+- Licence: MIT, Copyright (c) 2015 - present Microsoft Corporation (the same text as
+  `packages/workbench/src/themes/vscode/LICENSE.txt`).
+
 ## Seti file icon theme ("Seti (Visual Studio Code)")
 
 TMCode's default file icon theme is VS Code's built-in Seti theme, unchanged.

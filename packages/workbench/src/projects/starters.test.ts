@@ -31,6 +31,22 @@ describe("starters (from the Runtime Catalog)", () => {
     expect(langs.find((l) => l.key === "python")!.starters[0].purpose).toBe("hello");
   });
 
+  it("offer PHP: pure PHP, a website with HTML, CSS & JavaScript, a small CMS (also under Website)", () => {
+    const langs = starterLanguages();
+    const php = langs.find((l) => l.key === "php")!;
+    expect(php.common).toBe(true);
+    expect(langs.findIndex((l) => l.key === "php")).toBeLessThan(langs.findIndex((l) => !l.common));
+    expect(php.starters.map((s) => s.id)).toEqual(expect.arrayContaining(["php-hello", "php-io", "php-web", "php-cms"]));
+    expect(php.starters[0].id).toBe("php-hello");
+    // Students looking for a website with PHP open Website first: PHP's websites follow its own.
+    const web = langs.find((l) => l.key === "web")!.starters;
+    expect(web[0].language).toBe("web");
+    expect(web.slice(-2).map((s) => s.id).sort()).toEqual(["php-cms", "php-web"]);
+    expect(startersForLanguage("PHP").map((s) => s.id)).toEqual(expect.arrayContaining(["php-hello", "php-io", "php-web", "php-cms"]));
+    // No starter is hidden for a tool missing on this computer: tools are only shown ("needs php").
+    expect(starterById("php-cms")?.tools).toBeUndefined();
+  });
+
   it("find the starter that replaced a New Project template by its old id", () => {
     expect(starterById("python")?.id).toBe("tmcode-python");
     expect(starterById("web")?.id).toBe("tmcode-web");

@@ -11,6 +11,7 @@ import { packageManagerFor, type PackageManager } from "../tasks/detect";
 import { detect as detectKinds, entryFor, kindById, KINDS, languageByKey, type KindDef } from "@nga/runtimes";
 import { profileForPath } from "@tmcode/profiles";
 import { BUILD_DIR, fileKind, localRun, type Os } from "./catalogRun";
+import { isPhpPage } from "./phpPages";
 
 export type ProjectKindId =
   | "static-site"
@@ -72,6 +73,10 @@ export type RunActionKind =
   | "markdownPreview"
   /** Run a .sql file in TMCode's built-in SQLite (results as tables, errors at their line). */
   | "sqlRun"
+  /** A PHP page in the preview, run on the school's code runner (no PHP needed here; run/phpRunner). */
+  | "phpPage"
+  /** A program run live in the Run panel on the school's code runner (Task Mentor), not this computer. */
+  | "remoteRun"
   /** A .logic file's truth tables (logical expressions), beside it. */
   | "logicPreview";
 
@@ -549,15 +554,18 @@ function phpProject(f: FolderSnapshot): ProjectInfo | null {
   const phpFiles = f.files.filter((n) => n.endsWith(".php"));
   if (!has(f, "composer.json") && !phpFiles.length) return null;
   const docroot = f.dirs.includes("public") && !has(f, "index.php") ? "public" : ".";
-  const actions: RunAction[] = [
-    action({ id: `devServer:${f.dir}:php-S`, kind: "devServer", label: `php: built-in server${where(f.dir)}`, icon: "play-circle", description: `php -S localhost:8000 -t ${docroot}`, command: `php -S localhost:8000 -t ${docroot}`, prelude, cwd: f.dir, port: 8000 }),
-  ];
+  const actions: RunAction[] = [phpServer(f.dir, docroot, prelude)];
   if (/phpunit/.test(composer)) actions.push(action({ id: `task:${f.dir}:phpunit`, kind: "task", label: `phpunit${where(f.dir)}`, icon: "beaker", command: "vendor/bin/phpunit", prelude, cwd: f.dir }));
   if (prelude) actions.push(action({ id: `task:${f.dir}:composer-install`, kind: "task", label: `composer: install${where(f.dir)}`, icon: "cloud-download", command: "composer install", cwd: f.dir }));
   actions.push(action({ id: `repl:${f.dir}:php`, kind: "repl", label: "PHP interactive shell", icon: "terminal", command: "php -a", cwd: f.dir }));
   // A folder of PHP scripts (no composer.json, no index.php, no public/) is exercises, not a website.
   const site = has(f, "composer.json") || has(f, "index.php") || f.dirs.includes("public");
   return { kind: "php", label: has(f, "composer.json") ? "PHP (Composer)" : "PHP", icon: "server", dir: f.dir, actions, ...(site ? {} : { loose: true }) };
+}
+
+/** PHP's built-in web server for a folder (PHP on this computer); Run opens the page being edited. */
+function phpServer(dir: string, docroot = ".", prelude?: string): RunAction {
+  return action({ id: `devServer:${dir}:php-S`, kind: "devServer", label: `php: built-in server${where(dir)}`, icon: "play-circle", description: `php -S localhost:8000 -t ${docroot}`, command: `php -S localhost:8000 -t ${docroot}`, prelude, cwd: dir, port: 8000 });
 }
 
 // ───────────── Ruby, Rails & Sinatra ─────────────
@@ -814,6 +822,8 @@ export interface FileContext {
   os?: Os;
   /** The page at webRoot actually loads this .js/.css file (else the file runs on its own). */
   pageLoadsFile?: boolean;
+  /** A .php file's website folder (index.php or composer.json around it; `laravel`: a Laravel app's), null when it is a loose file. */
+  phpSite?: { dir: string; laravel: boolean } | null;
 }
 
 const JS_EXTS = ["js", "mjs", "cjs", "ts", "mts", "cts"];
@@ -865,8 +875,19 @@ export function fileActions(path: string, ctx: FileContext): RunAction[] {
     // Any other language the Runtime Catalog knows: its run (and build) steps as terminal commands.
     const local = localRun(catalog, name, ctx.folderFiles ?? [name], ctx.os ?? "mac");
     const lang = languageByKey(catalog.language)?.label ?? catalog.language;
+    const php = catalog.language === "php";
+    // Laravel's views and routes run only inside Laravel (artisan serve, its project's Run).
+    const page = php && !ctx.phpSite?.laravel && isPhpPage(ctx.source ?? "", path);
+    if (page) {
+      // A page (HTML around its PHP, a form): PHP's own web server here first, a loose file's folder
+      // served as the site (a website folder's server is its project's); then the school's runner.
+      const site = ctx.phpSite?.dir ?? null;
+      if (site === null) out.push(phpServer(dir));
+      out.push(action({ id: `phpPage:${path}`, kind: "phpPage", label: `${name} on the School Runner`, icon: "cloud", description: "Page preview: links and forms work, no PHP needed here", root: site ?? dir, entry: site === null ? name : site ? path.slice(site.length + 1) : path, catalogKind: catalog.id }));
+    }
     // A Run-panel profile (PHP, Ruby, Kotlin, Dart, Swift) runs there first: keyboard input and example tests.
-    if (profileForPath(path)?.local) out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `${lang} in the Run panel`, entry: path, needs: "runner", catalogKind: catalog.id }));
+    if (profileForPath(path)?.local) out.push(action({ id: `runFile:${path}`, kind: "runFile", label: `Run ${name}`, icon: "play", description: `${lang} in the Run panel${php ? " (PHP on this computer)" : ""}`, entry: path, needs: "runner", catalogKind: catalog.id }));
+    if (php && !page && !ctx.phpSite?.laravel) out.push(action({ id: `remoteRun:${path}`, kind: "remoteRun", label: `Run ${name} on the School Runner`, icon: "cloud", description: "Run panel, keyboard input, no PHP needed here", entry: path, catalogKind: catalog.id }));
     if (local) {
       out.push(action({ id: `task:${dir}:file:${name}`, kind: "task", label: `Run ${name}`, icon: "play", description: `${lang} in a terminal`, command: local.run, prelude: local.build, cwd: dir, makeDir: local.build || /\.tmcode\/build/.test(local.run) ? BUILD_DIR : undefined, catalogKind: catalog.id }), ...debug());
     }
@@ -1014,7 +1035,7 @@ export function projectFamily(kind: ProjectKindId): Family {
 
 /** Starts the program (not a build, test, lint, install or REPL step): what Run may pick. */
 export function isRunLike(a: RunAction): boolean {
-  if (["runFile", "jsConsole", "livePreview", "openBrowser", "devServer", "sqlRun", "logicPreview"].includes(a.kind)) return true;
+  if (["runFile", "jsConsole", "livePreview", "openBrowser", "devServer", "sqlRun", "logicPreview", "phpPage", "remoteRun"].includes(a.kind)) return true;
   if (a.kind !== "task") return false;
   const c = `${a.command ?? ""} ${a.label}`;
   if (/\b(test|lint|install|package|build|clean|migrate|analy[sz]e|format|routes|pub get)\b/i.test(c) && !/\b(run|start|serve)\b/i.test(a.command ?? "")) return false;

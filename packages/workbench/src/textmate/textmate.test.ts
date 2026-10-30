@@ -147,6 +147,19 @@ describe("textmate engine", () => {
     expect(html["color"]).toBe("#9CDCFE");
   });
 
+  it("colours a .php file as HTML with PHP inside, HTML before <?php included (VS Code's text.html.php)", async () => {
+    const { scopeForLanguage } = await import("./grammars");
+    expect(scopeForLanguage("php")).toBe("text.html.php");
+    const c = await colours("text.html.php", "dark-modern", ["<!doctype html>", '<h1 class="title">Hi <?= $name ?></h1>', "<?php", "$total = count($items);", "?>", "<p>Done</p>"]);
+    // HTML tags and attributes as in an .html file, not PHP operators and constants.
+    expect(c["h1"]).toBe("#569CD6");
+    expect(c["class"]).toBe("#9CDCFE");
+    expect(c["p"]).toBe("#569CD6");
+    // The PHP inside <?php … ?> and <?= … ?> as PHP.
+    expect(c["$total"] ?? c["total"]).toBe("#9CDCFE");
+    expect(c["count"]).toBe("#DCDCAA");
+  });
+
   it("uses the light palette for Light Modern", async () => {
     const c = await colours("source.python", "light-modern", ["def f(): return 'x'"]);
     expect(c["def"]).toBe("#0000FF");

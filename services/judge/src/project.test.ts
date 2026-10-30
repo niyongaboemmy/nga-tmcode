@@ -13,6 +13,8 @@ import { IsolateSandbox, LocalSandbox, localPath, restoreSnapshot, type Sandbox 
 import { renderArgs, testFilterArgs, type TokenContext } from "./tokens.ts";
 import { availability, catalogView, detectView, resolveToolchains, runtimeChain } from "./toolchains.ts";
 import { parseTap } from "./unit.ts";
+import { PHP_ROUTER_PATH } from "../../../packages/workbench/src/vendor/nga-webrun/index.ts";
+import { phpPageRequest } from "../../../packages/workbench/src/run/phpPages.ts";
 
 /**
  * Catalog projects (build → unit tests → fresh I/O runs) against the local
@@ -456,6 +458,41 @@ describe("entries that aren't source files", () => {
     expect(r.entry).toBe("solution.py");
     expect(resolveProject(tc, { kind: "python/single", entry: "solution.py", files }).entry).toBe("solution.py");
     expect(() => resolveProject(tc, { kind: "python/single", entry: "nope.py", files })).toThrow(/not among the files/);
+  });
+});
+
+// ───────────── PHP pages (nga-webrun's router, as the MIS Code Playground and TMCode send them) ─────────────
+
+describe.runIf(can("php/single"))("php/single: a website's pages through the nga-webrun router", () => {
+  const site = [
+    { path: "includes/header.php", content: "<?php $title = $title ?? 'Site'; ?>\n<!DOCTYPE html>\n<html><head><title><?= htmlspecialchars($title) ?></title></head><body>\n" },
+    // HTML before <?php: a valid PHP file, printed as it is.
+    { path: "index.php", content: "<h1>Shop</h1>\n<?php $title = 'Home'; require __DIR__ . '/includes/header.php'; ?>\n<p>Welcome</p>\n</body></html>\n" },
+    // No <?php at all: plain HTML, still a valid PHP file.
+    { path: "about.php", content: "<p>About us</p>\n" },
+    { path: "admin/save.php", content: "<?php\nrequire __DIR__ . '/../includes/header.php';\necho '<p>' . htmlspecialchars($_POST['title'] ?? '') . ' (' . $_SERVER['REQUEST_METHOD'] . ', id ' . (int) ($_GET['id'] ?? 0) . ', in ' . basename(getcwd()) . ')</p>';\n" },
+  ];
+  // The request exactly as TMCode sends it (Task Mentor passes kind, entry, files and tests through).
+  const page = (path: string, method: "GET" | "POST", query: string, fields: [string, string][]) => project(phpPageRequest(site, { path, method, query, fields }) as ProjectRequest);
+
+  it("runs the router as the chosen entry among several files", () => {
+    const r = resolveProject(tc, phpPageRequest(site, { path: "index.php", method: "GET", query: "", fields: [] }) as ProjectRequest);
+    expect(r.kind.id).toBe("php/single");
+    expect(r.entry).toBe(PHP_ROUTER_PATH);
+  });
+
+  it("prints an HTML-first page, and a page with no <?php at all", async () => {
+    const home = await page("index.php", "GET", "", []);
+    expect(home.tests[0].verdict, JSON.stringify(home.tests[0])).toBe("ok");
+    expect(home.tests[0].stdout).toMatch(/^<h1>Shop<\/h1>\n<!DOCTYPE html>[\s\S]*<title>Home<\/title>[\s\S]*<p>Welcome<\/p>/);
+    const about = await page("about.php", "GET", "", []);
+    expect(about.tests[0].stdout).toBe("<p>About us</p>\n");
+  });
+
+  it("serves a form posted to a page in a sub-folder (its own folder, $_GET and $_POST filled)", async () => {
+    const r = await page("admin/save.php", "POST", "id=7", [["title", "<b>Hi</b>"]]);
+    expect(r.tests[0].stderr).toBe("");
+    expect(r.tests[0].stdout).toContain("<p>&lt;b&gt;Hi&lt;/b&gt; (POST, id 7, in admin)</p>");
   });
 });
 

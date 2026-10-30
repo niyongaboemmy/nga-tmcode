@@ -33,6 +33,7 @@ import { SettingsEditor } from "./SettingsEditor";
 import { ShortcutsEditor } from "./ShortcutsEditor";
 import { WelcomePage } from "./WelcomePage";
 import { PreviewEditor } from "./PreviewEditor";
+import { PhpPagePreview } from "./PhpPagePreview";
 import { TestDiffEditor } from "./TestDiffEditor";
 import { BrowserEditor } from "./BrowserEditor";
 import { HistoryDiffEditor } from "../../history/HistoryDiffEditor";
@@ -629,7 +630,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "snippets" && <SnippetsEditor key={active.id} input={active} />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
-        {active?.kind === "preview" && <PreviewEditor key={active.id} input={active} />}
+        {active?.kind === "preview" && (active.profile === "php-runner" ? <PhpPagePreview key={active.id} input={active} /> : <PreviewEditor key={active.id} input={active} />)}
         {active?.kind === "testDiff" && <TestDiffEditor key={active.id} input={active} />}
         {active?.kind === "extension" && <ExtensionEditor key={active.id} extensionId={active.extensionId} />}
         {active?.kind === "webview" && <WebviewEditor key={active.id} handle={active.handle} />}

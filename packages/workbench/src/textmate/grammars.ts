@@ -24,6 +24,32 @@ export interface GrammarDef {
 /** `?raw` keeps tsc from type-checking megabytes of JSON; JSON.parse is also faster than a JS object literal. */
 const obj = (p: Promise<{ default: string }>): Promise<RawGrammarSource> => p.then((m) => ({ kind: "object", value: JSON.parse(m.default) }));
 
+/** A PHP block: `<?php … ?>`, `<?= … ?>`, or `<?php` to the end of the file. */
+const phpTag = (name: string, begin: string) => ({
+  begin,
+  beginCaptures: { 0: { name: "punctuation.section.embedded.begin.php" } },
+  end: "(\\?)>",
+  endCaptures: { 0: { name: "punctuation.section.embedded.end.php" }, 1: { name: "source.php" } },
+  name,
+  contentName: "source.php",
+  patterns: [{ include: "source.php" }],
+});
+
+/**
+ * VS Code's PHP grammar (extensions/php/syntaxes/html.tmLanguage.json, MIT): HTML, with PHP
+ * injected wherever `<?php` opens (between tags, inside attributes and inline scripts).
+ */
+const HTML_PHP = {
+  scopeName: "text.html.php",
+  injections: {
+    "L:text.html.php - (meta.embedded | meta.tag), L:text.html.php meta.tag, L:source.js.embedded.html": { patterns: [{ include: "#php-tag" }] },
+  },
+  patterns: [{ include: "text.html.derivative" }],
+  repository: {
+    "php-tag": { patterns: [phpTag("meta.embedded.block.php", "<\\?(?i:php|=)?(?![^?]*\\?>)"), phpTag("meta.embedded.line.php", "<\\?(?i:php|=)?")] },
+  },
+};
+
 /** Built-in grammars: scope → lazy chunk. */
 const BUILTIN: GrammarDef[] = [
   { scopeName: "source.python", load: () => obj(import("tm-grammars/grammars/python.json?raw")) },
@@ -48,6 +74,7 @@ const BUILTIN: GrammarDef[] = [
   { scopeName: "source.glsl", load: () => obj(import("tm-grammars/grammars/glsl.json?raw")) },
   { scopeName: "source.java", load: () => obj(import("tm-grammars/grammars/java.json?raw")) },
   { scopeName: "source.php", load: () => obj(import("tm-grammars/grammars/php.json?raw")) },
+  { scopeName: "text.html.php", load: async () => ({ kind: "object", value: HTML_PHP }), embeddedLanguages: { "source.php": "php", "text.html": "html" } },
   { scopeName: "source.sql", load: () => obj(import("tm-grammars/grammars/sql.json?raw")) },
   { scopeName: "source.shell", load: () => obj(import("tm-grammars/grammars/shellscript.json?raw")) },
   { scopeName: "text.shell-session", load: () => obj(import("tm-grammars/grammars/shellsession.json?raw")) },
@@ -95,7 +122,9 @@ const BUILTIN_LANGUAGES: Record<string, string> = {
   c: "source.c",
   cpp: "source.cpp",
   java: "source.java",
-  php: "source.php",
+  // A .php file is HTML with PHP inside <?php … ?> (VS Code's text.html.php), not PHP code alone:
+  // with source.php, HTML before <?php was coloured as PHP operators and names.
+  php: "text.html.php",
   sql: "source.sql",
   mysql: "source.sql",
   pgsql: "source.sql",

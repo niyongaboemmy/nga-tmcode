@@ -1,0 +1,93 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.6;
+    color: #1f2328;
+    background: #f6f8fa;
+}
+
+.site-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: #0b5cad;
+}
+
+.site-header a {
+    color: #fff;
+    text-decoration: none;
+    margin-left: 1rem;
+}
+
+.site-header .logo {
+    margin-left: 0;
+    font-weight: 700;
+}
+
+main {
+    max-width: 40rem;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.card {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+}
+
+label {
+    display: grid;
+    gap: 0.25rem;
+    font-weight: 600;
+}
+
+input,
+textarea {
+    font: inherit;
+    padding: 0.5rem;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+}
+
+button {
+    justify-self: start;
+    padding: 0.5rem 1.25rem;
+    font: inherit;
+    color: #fff;
+    background: #0b5cad;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.hint {
+    margin: 0;
+    color: #57606a;
+    font-size: 0.9rem;
+}
+
+.errors {
+    color: #cf222e;
+}
+
+blockquote {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    border-left: 4px solid #0b5cad;
+}
+
+.site-footer {
+    text-align: center;
+    color: #57606a;
+    font-size: 0.9rem;
+}

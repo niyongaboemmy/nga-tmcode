@@ -262,6 +262,8 @@ const KIND_ICON: Record<RunAction["kind"], string> = {
   markdownPreview: "open-preview",
   sqlRun: "database",
   logicPreview: "table",
+  phpPage: "cloud",
+  remoteRun: "cloud",
 };
 
 function primaryTitle(a: RunAction) {

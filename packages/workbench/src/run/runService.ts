@@ -363,8 +363,9 @@ export async function refreshToolchains() {
  * One preview column, like VS Code's Live Preview: a new preview replaces the
  * one already showing (in its group); otherwise it opens to the side.
  */
-export function openPreview(root: string, entry: string, profile: "static" | "bundle-react") {
-  const input = { kind: "preview" as const, id: `preview:${join(root, entry)}`, root, entry, profile, preview: false as const };
+export function openPreview(root: string, entry: string, profile: "static" | "bundle-react" | "php-runner", note?: string) {
+  const php = profile === "php-runner";
+  const input = { kind: "preview" as const, id: `preview:${php ? "php:" : ""}${join(root, entry)}`, root, entry, profile, preview: false as const, ...(note ? { note } : {}), ...(php ? { opened: Date.now() } : {}) };
   const { groups } = useWorkbench.getState();
   const host = groups.find((g) => g.editors.some((e) => e.kind === "preview"));
   // Hidden behind the brief (work mode): reopen it where the brief stays visible.
@@ -377,7 +378,7 @@ export function openPreview(root: string, entry: string, profile: "static" | "bu
   useWorkbench.setState({
     groups: groups.map((g) =>
       g === host
-        ? { ...g, editors: g.editors.some((e) => e.id === input.id) ? g.editors : g.editors.map((e) => (e === old ? input : e)), activeId: input.id }
+        ? { ...g, editors: g.editors.some((e) => e.id === input.id) ? g.editors.map((e) => (e.id === input.id ? input : e)) : g.editors.map((e) => (e === old ? input : e)), activeId: input.id }
         : g,
     ),
   });
