@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.23.0 — 2026-10-30
+
+**TMCode 0.23: PHP runs without installing PHP, PHP files can start with HTML, and new PHP website and CMS starters.** Without PHP on the computer, Run now sends your PHP to the school's code runner, the same one the MIS Code Playground uses: a page opens in the preview with its links and forms working, and a script runs in the Run panel with keyboard input. With PHP installed, nothing changes.
+
+### PHP without installing PHP
+
+- **Run a PHP page or website on the school's runner.** It opens in the preview, rendered like the MIS Code Playground:
+  - links and forms open the next page (`$_GET` and `$_POST` filled), with Back and Run Again;
+  - the page re-runs when you save;
+  - PHP warnings and errors show in the preview's console.
+- **Run a PHP script on the school's runner.** Its output appears live in the Run panel, and you can type input while it waits.
+- **PHP installed:** Run still uses `php -S` (or `php file.php`). Run ▾ also offers "… on the School Runner", and TMCode remembers your choice.
+- **Still need PHP installed:** Composer, Laravel, PHPUnit and `php -a`. The install card says so.
+- On the school's runner every page runs fresh, so files a page writes (a CMS's posts) aren't kept. Run PHP locally to keep them.
+
+### PHP files can start with HTML
+
+- `.php` files are coloured as HTML with PHP inside (VS Code's grammar). HTML before `<?php`, or a file with no `<?php` at all, now looks right instead of broken.
+
+### New PHP starters
+
+- **PHP website (HTML, CSS & JavaScript):** pages sharing a header and footer, a stylesheet, a script, and a contact form that validates and escapes what it shows.
+- **PHP CMS:** posts kept in a JSON file, public list and post pages, and an admin form to add and edit posts (CSRF token, Post/Redirect/Get).
+- PHP's website starters are also listed under **Website (HTML, CSS, JavaScript)**.
+
+### All changes
+
+- Release notes 0.23.0: PHP without installing PHP, HTML-first .php files, PHP starters
+- PHP without installing PHP, HTML-first .php files, and PHP website starters
+
 ## 0.22.0 — 2026-10-25
 
 **TMCode 0.22: AI drafts grades for you to review, premium AI and your own API keys, and a clearer bottom panel.** An AI (TMCode AI, Claude Code, Gemini CLI, Codex or an AI extension) can now draft a student's grade from the rubric; you review it, adjust it and click Save, and nothing is saved before that. TMCode AI also offers your school's premium models and models on your own API key. In the bottom panel, commands look like commands, every run says how it ended, and the Activity log sums up each day at a glance.
