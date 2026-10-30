@@ -18,7 +18,7 @@ What TMCode does for each technology. Every row has a template in **File › New
 | Go (net/http, gin, echo, fiber) | `go run .` | ✅ Delve (`go install github.com/go-delve/delve/cmd/dlv@latest`) | API Tester | ✅ `go test` |
 | Rust (Cargo, axum, actix…) | `cargo run` | ✅ LLDB | API Tester | ✅ `cargo test` |
 | C# / .NET, ASP.NET Core | `dotnet run`, `dotnet watch run` | ✅ netcoredbg (downloaded once) | API Tester | ✅ `dotnet test` (xUnit, NUnit, MSTest) |
-| PHP, Laravel | `php -S`, `php artisan serve`; ▶ on a .php file | ✅ Xdebug + PHP Debug adapter (downloaded once); Listen for Xdebug for web requests | built-in browser, API Tester | ✅ PHPUnit, `php artisan test` |
+| PHP, Laravel | `php -S`, `php artisan serve`; ▶ on a .php file. Without PHP on the computer, pages and scripts run on the school's code runner (pages in the preview, links and forms working; scripts in the Run panel); Composer and Laravel need PHP | ✅ Xdebug + PHP Debug adapter (downloaded once); Listen for Xdebug for web requests | built-in browser, preview (school's code runner), API Tester | ✅ PHPUnit, `php artisan test` |
 | Ruby, Rails, Sinatra | `ruby`, `bin/rails server`, Sinatra | ✅ rdbg (Ruby 3.1+) | built-in browser, API Tester | ✅ RSpec, Rails (minitest) |
 | Dart, Flutter | `dart run`; Flutter web in the built-in browser (hot reload: r) | ✅ Dart / Flutter debug adapters | built-in browser | ✅ `dart test`, `flutter test` |
 | Swift | `swift run`; ▶ on a .swift file | ✅ lldb-dap (Swift packages: `swift build` first) | — | ✅ `swift test` |

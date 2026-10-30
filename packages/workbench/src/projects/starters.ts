@@ -62,13 +62,18 @@ export interface StarterLanguage {
   starters: Starter[];
 }
 
-/** Every language that has starters, in picker order, each with its starters (catalog order). */
+/**
+ * Every language that has starters, in picker order, each with its starters (catalog order).
+ * Websites also offer PHP's websites (pages, forms, a small CMS) after their own: a student
+ * looking for "a website with PHP" opens Website first.
+ */
 export function starterLanguages(): StarterLanguage[] {
   const label = (key: string) => (key === "web" ? "Website (HTML, CSS, JavaScript)" : (LANGUAGES.find((l) => l.key === key)?.label ?? key));
   const keys = [...new Set(STARTERS.map((s) => s.language))];
   const rank = (k: string) => (FIRST.includes(k) ? FIRST.indexOf(k) : FIRST.length);
+  const startersOf = (key: string) => (key === "web" ? [...catalogStartersFor(STARTERS, "web"), ...catalogStartersFor(STARTERS, "php").filter((s) => s.purpose === "web")] : catalogStartersFor(STARTERS, key));
   return keys
-    .map((key) => ({ key, label: label(key), common: FIRST.includes(key), starters: catalogStartersFor(STARTERS, key) }))
+    .map((key) => ({ key, label: label(key), common: FIRST.includes(key), starters: startersOf(key) }))
     .sort((a, b) => rank(a.key) - rank(b.key) || a.label.localeCompare(b.label));
 }
 

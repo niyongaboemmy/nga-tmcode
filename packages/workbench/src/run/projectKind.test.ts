@@ -299,9 +299,11 @@ describe("more technologies", () => {
 
   it("single files of many languages run in a terminal", () => {
     const all = (p: string) => fileActions(p, { webRoot: null });
-    const run = (p: string) => all(p).find((a) => a.kind !== "runFile")!;
+    const run = (p: string) => all(p).find((a) => a.kind !== "runFile" && a.kind !== "remoteRun")!;
     // PHP, Ruby, Kotlin, Dart, Swift run in the Run panel first (keyboard input, example tests).
     for (const f of ["src/hello.php", "a.rb", "a.kt", "a.dart", "a.swift"]) expect(all(f)[0]).toMatchObject({ kind: "runFile", entry: f, needs: "runner" });
+    // A PHP script can also run on the school's code runner (no PHP on this computer needed).
+    expect(all("src/hello.php")[1]).toMatchObject({ kind: "remoteRun", entry: "src/hello.php", needs: "none", catalogKind: "php/single" });
     // The commands come from the Runtime Catalog's run steps (its tool names, TMCode's build folder).
     expect(run("src/hello.php")).toMatchObject({ kind: "task", command: "php -d display_errors=stderr hello.php", cwd: "src", catalogKind: "php/single" });
     expect(run("a.rb").command).toBe(`ruby -e 'STDOUT.sync=true; load ARGV.shift' a.rb`);
@@ -383,6 +385,29 @@ describe("one Run: resolveRun", () => {
   it("a loose PHP script runs as a script", () => {
     const php = detectProjects([folder({ "calc.php": "<?php echo 1;" })]);
     expect(resolveRun({ projects: php, file: fileActions("calc.php", { webRoot: null }), activePath: "calc.php", pins: {}, ctx: DESKTOP }).reason).toBe("it's the file you're editing");
+  });
+
+  it("a PHP page (HTML before <?php, or no <?php at all) is a page: PHP's server here, or the school's runner", () => {
+    const page = '<!DOCTYPE html>\n<html><body>\n<h1>Hi <?= htmlspecialchars($_GET["name"] ?? "you") ?></h1>\n</body></html>\n';
+    // A loose page: its folder served by `php -S` here first, then the page on the school's runner.
+    const loose = fileActions("shop/cart.php", { webRoot: null, source: page });
+    expect(loose.map((a) => a.kind)).toEqual(["devServer", "phpPage", "runFile", "task", "repl"]);
+    expect(loose[0]).toMatchObject({ id: "devServer:shop:php-S", command: "php -S localhost:8000 -t .", cwd: "shop" });
+    expect(loose[1]).toMatchObject({ kind: "phpPage", root: "shop", entry: "cart.php", needs: "none", practiceOnly: false });
+    expect(fileActions("plain.php", { webRoot: null, source: "<p>No PHP in here yet.</p>" })[1]).toMatchObject({ kind: "phpPage", entry: "plain.php" });
+    // Inside a website (index.php around it): the site's own server, and the page by its path in the site.
+    const inSite = fileActions("site/pages/about.php", { webRoot: null, source: page, phpSite: { dir: "site", laravel: false } });
+    expect(inSite.map((a) => a.kind)).toEqual(["phpPage", "runFile", "task", "repl"]);
+    expect(inSite[0]).toMatchObject({ root: "site", entry: "pages/about.php" });
+    expect(fileActions("about.php", { webRoot: null, source: page, phpSite: { dir: "", laravel: false } })[0]).toMatchObject({ root: "", entry: "about.php" });
+    // Laravel's views run inside Laravel only.
+    expect(fileActions("app/resources/views/home.blade.php", { webRoot: null, source: page, phpSite: { dir: "app", laravel: true } }).some((a) => a.kind === "phpPage" || a.kind === "remoteRun")).toBe(false);
+    // An exam (no terminal): the page runs on the school's runner.
+    const site = detectProjects([folder({ "index.php": page })]);
+    const exam = { ...DESKTOP, practice: false, terminal: false };
+    expect(resolveRun({ projects: site, file: fileActions("index.php", { webRoot: null, source: page, phpSite: { dir: "", laravel: false } }), activePath: "index.php", pins: {}, ctx: exam }).action?.kind).toBe("phpPage");
+    // With PHP here, a website still runs on PHP's built-in server.
+    expect(resolveRun({ projects: site, file: fileActions("index.php", { webRoot: null, source: page, phpSite: { dir: "", laravel: false } }), activePath: "index.php", pins: {}, ctx: DESKTOP }).action?.command).toBe("php -S localhost:8000 -t .");
   });
 
   it("a web page previews itself, not the site's index", () => {

@@ -86,6 +86,33 @@ describe("starters", () => {
     }
   });
 
+  it("give PHP pure PHP (hello, input/output), a website with HTML, CSS & JavaScript, and a small CMS", () => {
+    const php = startersFor(manifests, "php");
+    expect(php.map((m) => m.id)).toEqual(expect.arrayContaining(["php-hello", "php-io", "php-phpunit", "php-web", "php-cms", "tmcode-php", "tmcode-laravel"]));
+    expect(php.find((m) => m.id === "php-io")?.tests?.io).toBe(".nga/tests.json");
+    const read = (id: string, path: string) => STARTERS.find((s) => s.manifest.id === id)!.files.find((f) => f.path === path)?.content ?? "";
+    for (const id of ["php-web", "php-cms"]) {
+      const m = manifests.find((x) => x.id === id)!;
+      expect(m, id).toMatchObject({ kind: "php/web", purpose: "web", entry: "index.php" });
+      // No Composer, nothing to download: they run on PHP alone (here, or on the school's code runner).
+      expect(m.setup, id).toBeUndefined();
+      expect(STARTERS.find((s) => s.manifest.id === id)!.files.some((f) => f.path === "composer.json"), id).toBe(false);
+    }
+    // The website: pages that start with HTML, a shared header/footer, CSS, JavaScript, a form handled safely.
+    expect(read("php-web", "index.php")).toMatch(/require __DIR__ \. '\/includes\/header\.php'/);
+    expect(read("php-web", "includes/header.php")).toMatch(/<link rel="stylesheet" href="css\/style\.css">/);
+    expect(read("php-web", "includes/footer.php")).toMatch(/<script src="js\/app\.js"><\/script>/);
+    expect(read("php-web", "index.php")).toMatch(/<form[^>]*method="post" action="contact\.php"/);
+    expect(read("php-web", "includes/functions.php")).toMatch(/htmlspecialchars\(/);
+    expect(read("php-web", "contact.php")).toMatch(/\$_SERVER\['REQUEST_METHOD'\] !== 'POST'/);
+    // The CMS: posts in a JSON file, escaped output, a signed CSRF token on the admin form, POST only.
+    expect(JSON.parse(read("php-cms", "data/posts.json")).length).toBeGreaterThan(0);
+    expect(read("php-cms", "admin/edit.php")).toMatch(/csrf_valid\('edit-post'/);
+    expect(read("php-cms", "admin/edit.php")).toMatch(/csrf_field\('edit-post'\)/);
+    expect(read("php-cms", "lib/csrf.php")).toMatch(/hash_equals\(/);
+    expect(read("php-cms", "lib/posts.php")).toMatch(/htmlspecialchars\(/);
+  });
+
   it("io-exercises have 1–4 visible tests", () => {
     for (const s of STARTERS.filter((x) => x.manifest.purpose === "io-exercise" && !x.manifest.id.startsWith("tmcode-"))) {
       const io = IoTestsSchema.parse(JSON.parse(s.files.find((f) => f.path === ".nga/tests.json")!.content));

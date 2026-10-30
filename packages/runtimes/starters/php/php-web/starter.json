@@ -1,0 +1,21 @@
+{
+  "id": "php-web",
+  "language": "php",
+  "kind": "php/web",
+  "title": "PHP – Website with HTML, CSS & JavaScript",
+  "description": "Pages that share a header and footer, a stylesheet, a script and a contact form handled by PHP",
+  "level": "beginner",
+  "purpose": "web",
+  "entry": "index.php",
+  "open": [
+    "index.php",
+    "contact.php"
+  ],
+  "tags": [
+    "websites",
+    "forms",
+    "include"
+  ],
+  "since": "2026.10.7",
+  "icon": "globe"
+}

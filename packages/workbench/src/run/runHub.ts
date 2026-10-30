@@ -206,8 +206,11 @@ export async function refreshFileActions() {
     const rel = webRoot ? path.slice(webRoot.length + 1) : path;
     pageLoadsFile = page.includes(rel) || page.includes(basename(path));
   }
+  // A .php file inside a website (index.php, composer.json) or a Laravel app: that folder is its site.
+  const site = ext === "php" ? get().projects.filter((p) => (p.kind === "php" || p.kind === "laravel") && !p.loose && (p.dir === "" || path.startsWith(`${p.dir}/`))).sort((a, b) => b.dir.length - a.dir.length)[0] : undefined;
+  const phpSite = site ? { dir: site.dir, laravel: site.kind === "laravel" } : null;
   if (gen !== fileGen) return;
-  set({ fileActions: fileActionsFor(path, { webRoot, source, debuggable, pageLoadsFile, folderFiles, os: getPlatform().os }) });
+  set({ fileActions: fileActionsFor(path, { webRoot, source, debuggable, pageLoadsFile, folderFiles, os: getPlatform().os, phpSite }) });
 }
 
 /** Run File: the active file's own first runnable action (PHP, Ruby, SQL… included), not the project. */
@@ -247,7 +250,7 @@ export function setRunTarget(id: string | null) {
 
 function rememberFileChoice(a: RunAction) {
   const path = activeFilePath();
-  if (!path || !["runFile", "jsConsole", "livePreview", "debug"].includes(a.kind)) return;
+  if (!path || !["runFile", "jsConsole", "livePreview", "debug", "phpPage", "remoteRun"].includes(a.kind)) return;
   const fileChoice = { ...get().fileChoice, [extname(path)]: a.kind };
   set({ fileChoice });
   void getPlatform().store.set("runFileChoice", fileChoice);
@@ -340,6 +343,15 @@ async function dispatchAction(a: RunAction, subject: string, opts: { reason?: st
     case "logicPreview":
       if (a.entry && activeFilePath() !== a.entry) openFile(a.entry, { pinned: true });
       return openBeside({ kind: "logic", id: `logic:${a.entry}`, path: a.entry!, preview: false });
+    case "phpPage": {
+      const { openPhpPage } = await import("./phpRunner");
+      return openPhpPage(a.root ?? "", a.entry ?? "index.php", `${note} Its links and forms open the site's other pages the same way.`);
+    }
+    case "remoteRun": {
+      const { runOnTaskMentor } = await import("./serverRun");
+      await runOnTaskMentor(a.entry!, `${basename(a.entry!)} runs on the school's code runner (Task Mentor).`, { kind: a.catalogKind });
+      return;
+    }
   }
 }
 
@@ -524,12 +536,25 @@ async function preflight(a: RunAction, opts: { remember?: boolean; reason?: stri
     dismissNotificationByKey("preflight");
     return true;
   }
+  // PHP: the school's code runner runs it instead (pages in the preview, scripts in the Run panel);
+  // Composer and Laravel still need PHP here, so they get the card below.
+  let composer = false;
+  if (missing.tool === "php") {
+    const { phpMissingNote, runPhpOnSchoolRunner, tellPhpMissing } = await import("./phpRunner");
+    if (await runPhpOnSchoolRunner(a, phpMissingNote(a))) {
+      tellPhpMissing();
+      return false;
+    }
+    composer = (await import("./phpPages")).needsLocalPhp(a.command);
+  }
   const guide = guideById(missing.guide);
   // Task Mentor's code runner can run a program file meanwhile (when it offers live runs).
-  const file = a.kind === "runFile" || a.kind === "task" ? (a.entry ?? activeFilePath()) : null;
+  const file = !composer && (a.kind === "runFile" || a.kind === "task") ? (a.entry ?? activeFilePath()) : null;
   const { canRunOnTaskMentor, runOnTaskMentor } = await import("./serverRun");
   const remote = !!file && (await canRunOnTaskMentor());
-  notify("warning", `${guide.language} isn't installed on this computer yet, so TMCode can't run ${a.label.replace(/^Run /, "")}. Install it once, then choose Check Again${remote ? ", or run it on Task Mentor" : ""}.`, [
+  const signedOut = missing.tool === "php" && !(await import("./codeRunner")).codeTransport();
+  const why = composer ? " Composer, Laravel and the PHP shell run only with PHP on this computer." : signedOut ? " Or sign in to Task Mentor: PHP then runs on the school's code runner." : "";
+  notify("warning", `${guide.language} isn't installed on this computer yet, so TMCode can't run ${a.label.replace(/^Run /, "")}. Install it once, then choose Check Again${remote ? ", or run it on Task Mentor" : ""}.${why}`, [
     ...(remote ? [{ label: "Run on Task Mentor", run: () => void runOnTaskMentor(file!, `${guide.language} isn't installed on this computer, so ${basename(file!)} runs on Task Mentor.`) }] : []),
     { label: "How to Install", run: () => showInstallGuide(missing.guide) },
     {

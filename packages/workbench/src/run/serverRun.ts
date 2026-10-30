@@ -147,9 +147,10 @@ export function endRemoteInput() {
 
 /**
  * Runs `entry` on Task Mentor in the Run panel. `why` is the first line ("This computer doesn't
- * have GHC, so Main.hs runs on Task Mentor."). False when Task Mentor can't run it live.
+ * have GHC, so Main.hs runs on Task Mentor."). `kind` overrides the folder's (a PHP script in a
+ * website folder runs as php/single, not as the site). False when Task Mentor can't run it live.
  */
-export async function runOnTaskMentor(entry: string, why?: string): Promise<boolean> {
+export async function runOnTaskMentor(entry: string, why?: string, opts: { kind?: string } = {}): Promise<boolean> {
   const t = codeTransport();
   const caps = await capabilities(t);
   if (!t || !caps?.interactive) {
@@ -170,7 +171,7 @@ export async function runOnTaskMentor(entry: string, why?: string): Promise<bool
   writeConsole({ type: "info", text: `▶ ${why ?? `${basename(entry)} runs on Task Mentor.`}` });
   writeConsole({ type: "info", text: "Type your input below and press Enter. Ctrl+C stops the program; End of Input closes its input." });
   if (pack.skipped) writeConsole({ type: "info", text: `${pack.skipped} file(s) were too many or too large to send.` });
-  log("Run", `Run ${entry} on Task Mentor (${pack.files.length} files, ${language ?? pack.kind ?? "detected"})`);
+  log("Run", `Run ${entry} on Task Mentor (${pack.files.length} files, ${language ?? opts.kind ?? pack.kind ?? "detected"})`);
   const activity = recordRun({ kind: "run", action: "run", path: entry, text: `Ran ${entry} on Task Mentor`, data: { where_run: "Task Mentor", files: pack.files.length, language: language ?? pack.kind ?? "detected" } });
   finishRun(activity, { status: "running" });
   const started = Date.now();
@@ -216,7 +217,7 @@ export async function runOnTaskMentor(entry: string, why?: string): Promise<bool
             }
           }
         };
-        session = await startSession(t, { language, kind: pack.kind, entry: pack.entry, files: pack.files }, toRun);
+        session = await startSession(t, { language, kind: opts.kind ?? pack.kind, entry: pack.entry, files: pack.files }, toRun);
         handle = remoteHandle(session, (text) => writeConsole({ type: "stdout", data: text }));
         return handle;
       },
