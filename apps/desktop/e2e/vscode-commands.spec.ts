@@ -17,6 +17,8 @@ const activeTab = (page: Page) => page.locator(".tm-tab.is-active");
 
 async function palette(page: Page, text: string) {
   await page.keyboard.press(`${MOD}+Shift+p`);
+  // Type only once the palette's input has focus (on CI WebKit, keys pressed earlier were lost).
+  await expect(page.locator(".tm-quick-input input")).toBeFocused();
   await page.keyboard.type(text);
   await expect(page.locator(".tm-qi-item.is-focused")).toContainText(text.replace(/^.*: /, ""));
   await page.keyboard.press("Enter");
