@@ -3,7 +3,7 @@ import { extname } from "../../util/paths";
 
 /**
  * What a file can be previewed as, besides its text: documents (PDF, Word)
- * open in the document viewer; Markdown and CSV keep their text editor with
+ * open in the document viewer; Markdown, CSV and SQL (a schema diagram) keep their text editor with
  * an Edit / Preview switch above it, Edit first (as GitHub does).
  */
 
@@ -17,12 +17,13 @@ export function isDocumentFile(path: string): boolean {
   return documentKind(path) !== null;
 }
 
-export type PreviewKind = "markdown" | "csv";
+export type PreviewKind = "markdown" | "csv" | "sql";
 
 export function previewKind(path: string): PreviewKind | null {
   const ext = extname(path).toLowerCase();
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "csv" || ext === "tsv") return "csv";
+  if (ext === "sql") return "sql";
   return null;
 }
 

@@ -43,7 +43,8 @@ import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
 import { DocumentEditor } from "./DocumentEditor";
 import { CsvPreview } from "./CsvPreview";
-import { isDocumentFile, previewKind, setViewMode, useViewMode } from "./documentPreview";
+import { SqlDiagram } from "./SqlDiagram";
+import { isDocumentFile, previewKind, setViewMode, useViewMode, type PreviewKind } from "./documentPreview";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
 import { ExtensionTitleActions } from "../../exthost/ui";
 // ── git ──
@@ -632,7 +633,15 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
             <CodeEditor groupId={group.id} path={active?.kind === "file" && !isMediaFile(active.path) ? active.path : lastFile(group)} />
           </div>
         )}
-        {previewing && active?.kind === "file" && (previewKind(active.path) === "csv" ? <CsvPreview key={active.path} path={active.path} /> : <MarkdownEditor key={active.path} input={{ kind: "markdown", id: `inline:${active.path}`, path: active.path, preview: false }} inline />)}
+        {previewing &&
+          active?.kind === "file" &&
+          (activePreview === "csv" ? (
+            <CsvPreview key={active.path} path={active.path} />
+          ) : activePreview === "sql" ? (
+            <SqlDiagram key={active.path} path={active.path} />
+          ) : (
+            <MarkdownEditor key={active.path} input={{ kind: "markdown", id: `inline:${active.path}`, path: active.path, preview: false }} inline />
+          ))}
         {active?.kind === "file" && isMediaFile(active.path) && (isDocumentFile(active.path) ? <DocumentEditor key={active.path} path={active.path} /> : <MediaEditor key={active.path} path={active.path} />)}
         {active?.kind === "image" && <MediaEditor key={active.id} path={active.path} />}
         {active?.kind === "markdown" && <MarkdownEditor key={active.id} input={active} />}
@@ -661,8 +670,8 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
   );
 }
 
-/** Edit (the default) or Preview above a Markdown or CSV file, as GitHub shows them. */
-function ViewModeBar({ path, mode, kind }: { path: string; mode: "edit" | "preview"; kind: "markdown" | "csv" }) {
+/** Edit (the default) or Preview above a Markdown, CSV or SQL file, as GitHub shows them. */
+function ViewModeBar({ path, mode, kind }: { path: string; mode: "edit" | "preview"; kind: PreviewKind }) {
   const tab = (m: "edit" | "preview", icon: string, label: string) => (
     <button type="button" role="radio" aria-checked={mode === m} className="tm-viewmode-tab" onClick={() => setViewMode(path, m)} data-testid={`viewmode-${m}`}>
       <Codicon name={icon} />
@@ -672,7 +681,7 @@ function ViewModeBar({ path, mode, kind }: { path: string; mode: "edit" | "previ
   return (
     <div className="tm-viewmode-bar" role="radiogroup" aria-label="Edit or preview" data-testid="viewmode-bar" data-mode={mode}>
       {tab("edit", "edit", "Edit")}
-      {tab("preview", kind === "csv" ? "table" : "open-preview", "Preview")}
+      {tab("preview", kind === "csv" ? "table" : kind === "sql" ? "type-hierarchy" : "open-preview", "Preview")}
       {mode === "preview" && kind === "markdown" && <span className="tm-viewmode-hint">Tick a task box to update the file.</span>}
     </div>
   );

@@ -12,6 +12,7 @@ fn main() {
             "ws_open_file",
             "ws_open_path",
             "ws_reveal",
+            "export_save",
             "ws_copy",
             "ws_read_dir",
             "ws_read_file",

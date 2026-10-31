@@ -174,6 +174,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     openFile: () => invoke("ws_open_file"),
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
+    saveFileAs: (fileName, data, filter) => invoke<string | null>("export_save", { fileName, base64: bytesToBase64(data), filterName: filter.name, extensions: filter.extensions }),
     newWindow: (path) => invoke("window_new", { path: path ?? null }),
     openExternal: (url) => invoke("open_external", { url }),
     portFree: (port) => invoke<boolean>("proc_port_free", { port }),
@@ -513,4 +514,11 @@ function createTauriAccount(): AccountHost {
     defaultBase: () => invoke("proj_default_base"),
     moveFolder: (from, base) => invoke("proj_move_folder", { from, base }),
   };
+}
+
+/** Bytes as base64 for an IPC argument, in chunks (String.fromCharCode takes a limited number of arguments). */
+function bytesToBase64(data: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < data.length; i += 0x8000) bin += String.fromCharCode(...data.subarray(i, i + 0x8000));
+  return btoa(bin);
 }

@@ -38,6 +38,7 @@ mod watcher;
 mod webview;
 mod workspace;
 mod encoding;
+mod export;
 
 use serde::Serialize;
 use tauri::webview::WebviewBuilder;
@@ -396,6 +397,7 @@ pub fn run() {
             workspace::ws_search_files,
             debug::debug_processes,
             workspace::ws_read_file_anyway,
+            export::export_save,
             ai_attach::attach_pick,
             ai_attach::attach_clipboard,
             ai_attach::attach_read,

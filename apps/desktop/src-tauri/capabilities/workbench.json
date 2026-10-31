@@ -28,6 +28,7 @@
     "allow-ws-copy",
     "allow-ws-read-base64",
     "allow-open-external",
+    "allow-export-save",
     "allow-ws-write-file",
     "allow-ws-create-file",
     "allow-ws-create-dir",
