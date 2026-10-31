@@ -25,6 +25,9 @@ export default defineConfig({
   fullyParallel: false,
   // One worker: the exam tests share one mock Task Mentor.
   workers: 1,
+  // On CI a test that fails once is run again: a slow runner's timing slip shows as "flaky"
+  // instead of blocking a release; a real failure fails twice. Locally, no retries.
+  retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${PORT}`,

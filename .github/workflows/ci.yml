@@ -10,9 +10,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  web:
-    name: Typecheck, unit and e2e (Chromium + WebKit)
+  checks:
+    name: Typecheck and unit tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       # Node 24 ships npm 11, which the lock file needs.
@@ -23,14 +24,33 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npx vitest run
-      - run: npx playwright install --with-deps chromium webkit
+
+  e2e:
+    # The suite runs one test at a time (one shared mock Task Mentor), so it is split across
+    # runners instead: each browser in four shards, about 12 minutes in all instead of 70.
+    name: e2e (${{ matrix.browser }} ${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
         working-directory: apps/desktop
-      - run: npx playwright test
+      - run: npx playwright test --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/4
         working-directory: apps/desktop
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.browser }}-${{ matrix.shard }}
           path: apps/desktop/test-results
           retention-days: 7
 
@@ -41,6 +61,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,6 +81,7 @@ jobs:
   judge:
     name: tm-judge inside isolate (cgroup v2)
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -114,6 +136,7 @@ jobs:
     name: Runner languages on Ubuntu 26.04
     runs-on: ubuntu-latest
     container: ubuntu:26.04
+    timeout-minutes: 40
     steps:
       - name: Base packages
         run: |
