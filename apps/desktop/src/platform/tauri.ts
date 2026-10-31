@@ -119,6 +119,21 @@ export let devOptions: DevOptions = { workspace: null, selftest: false, selftest
 /** Folder or file passed on the command line (`tmcode ~/project`). */
 export let launchPath: string | null = null;
 
+/**
+ * A New Window keeps its own UI state (layout, open editors, backups) in its own
+ * store, so two windows never write over each other's; it starts with the main
+ * window's settings, recent folders and sign-ins.
+ */
+async function secondaryStore(pid: number): Promise<LazyStore> {
+  const main = new LazyStore("settings.json", { defaults: {}, autoSave: false });
+  const own = new LazyStore(`window-${pid}.json`, { defaults: {}, autoSave: 200 });
+  for (const [key, value] of await main.entries().catch(() => [] as [string, unknown][])) {
+    if (/^(backups:|editors:|session:)/.test(key)) continue;
+    await own.set(key, value);
+  }
+  return own;
+}
+
 export async function createTauriPlatform(): Promise<Platform> {
   const info = await invoke<{
     version: string;
@@ -134,12 +149,15 @@ export async function createTauriPlatform(): Promise<Platform> {
     open_path: string | null;
     /** Debug builds: developer tools may open (Toggle Developer Tools). */
     devtools?: boolean;
+    /** A New Window process (lib.rs window_new). */
+    secondary?: boolean;
+    pid?: number;
   }>("app_info");
   devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, selftestExthost: !!info.dev_selftest_exthost, selftestExtensions: !!info.dev_selftest_extensions, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
-  const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
+  const store = info.secondary ? await secondaryStore(info.pid ?? 0) : new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
   let zoom = 1;
 
@@ -156,6 +174,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     openFile: () => invoke("ws_open_file"),
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
+    newWindow: (path) => invoke("window_new", { path: path ?? null }),
     openExternal: (url) => invoke("open_external", { url }),
     portFree: (port) => invoke<boolean>("proc_port_free", { port }),
     clipboard: {

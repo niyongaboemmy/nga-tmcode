@@ -586,7 +586,21 @@ export async function openFileDialog(): Promise<boolean> {
   });
   if (!ws) return false;
   if (get().workspace?.root !== ws.root && !(await setWorkspace(ws))) return false;
+  if (ws.file && (await openedWorkspaceFile(ws.root, ws.file))) return true;
   if (ws.file) openFile(ws.file, { pinned: true });
+  return true;
+}
+
+/** A .code-workspace file: open its folders (state/workspaceFile.ts) instead of editing it. */
+async function openedWorkspaceFile(root: string, file: string): Promise<boolean> {
+  if (!/\.code-workspace$/i.test(file)) return false;
+  const text = await getPlatform()
+    .fs.readFile(file)
+    .catch(() => null);
+  if (text === null) return false;
+  const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+  const { openWorkspaceFile } = await import("./workspaceFile");
+  await openWorkspaceFile(`${root.replace(/[\\/]+$/, "")}${sep}${file.replace(/\//g, sep)}`, text);
   return true;
 }
 
@@ -606,6 +620,7 @@ export async function openPathFromOs(path: string): Promise<boolean> {
   try {
     const ws = await p.openPath(path);
     if (get().workspace?.root !== ws.root && !(await setWorkspace(ws))) return false;
+    if (ws.file && (await openedWorkspaceFile(ws.root, ws.file))) return true;
     if (ws.file) openFile(ws.file, { pinned: true });
     return true;
   } catch (e) {

@@ -24,6 +24,7 @@ fn main() {
             "ws_remove",
             "ws_trash",
             "ws_import",
+            "window_new",
             "git_blame",
             "git_graph",
             "ws_search_files",

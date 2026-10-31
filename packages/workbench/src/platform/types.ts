@@ -150,6 +150,8 @@ export interface Platform {
   openFile?(): Promise<{ name: string; root: string; file?: string } | null>;
   /** Opens a folder or file given by absolute path (command line, Open With). */
   openPath?(path: string): Promise<{ name: string; root: string; file?: string }>;
+  /** File › New Window: another TMCode window (desktop), optionally opening a folder. */
+  newWindow?(path?: string): Promise<void>;
   /** Shows a workspace path in Finder / File Explorer. */
   reveal?(path: string): Promise<void>;
   /** Changes made outside TMCode (workspace-relative paths). Returns an unsubscribe. */

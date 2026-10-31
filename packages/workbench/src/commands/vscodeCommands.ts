@@ -40,6 +40,7 @@ import {
   updateSetting,
   useWorkbench,
   type EditorGroup,
+  togglePanel,
 } from "../state/store";
 
 /**
@@ -301,6 +302,44 @@ export function registerVsCodeCommands() {
     win: "mod+alt+o",
     enabled: () => !inExam(),
     run: pickRecent,
+  });
+  // ── windows (desktop): another TMCode window is its own process with its own layout ──
+  const canOpenWindow = () => !!getPlatform().newWindow && !inExam();
+  registerCommand({
+    id: "workbench.action.newWindow",
+    title: "New Window",
+    category: "File",
+    keybinding: "mod+shift+n",
+    enabled: canOpenWindow,
+    run: () => void getPlatform().newWindow?.().catch((e) => notify("error", String((e as Error)?.message ?? e))),
+  });
+  registerCommand({
+    id: "workbench.action.openRecentInNewWindow",
+    title: "Open Recent in New Window...",
+    category: "File",
+    enabled: () => canOpenWindow() && get().recent.length > 0,
+    run: async () => {
+      const pick = await showQuickPick({ placeholder: "Select a folder to open in a new window", items: get().recent.map((r) => ({ id: r.root, label: r.name, description: r.root, icon: "folder" })) });
+      if (pick) await getPlatform().newWindow?.(pick.id).catch((e) => notify("error", String((e as Error)?.message ?? e)));
+    },
+  });
+  // ── layout ──
+  for (const where of ["Left", "Right", "Bottom"] as const) {
+    registerCommand({
+      id: `workbench.action.positionPanel${where}`,
+      title: `Move Panel ${where}`,
+      category: "View",
+      run: () => {
+        updateSetting("workbench.panel.defaultLocation", where.toLowerCase() as "left" | "right" | "bottom");
+        if (!get().panelVisible) togglePanel();
+      },
+    });
+  }
+  registerCommand({
+    id: "workbench.action.toggleCenteredLayout",
+    title: "Toggle Centered Layout",
+    category: "View",
+    run: () => updateSetting("workbench.editor.centeredLayout", !get().settings["workbench.editor.centeredLayout"]),
   });
   registerCommand({ id: "workbench.action.clearRecentFiles", title: "Clear Recently Opened...", category: "File", enabled: () => !inExam(), run: clearRecentlyOpened });
   registerCommand({

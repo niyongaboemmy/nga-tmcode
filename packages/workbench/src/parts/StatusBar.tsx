@@ -18,6 +18,7 @@ import type { SyncState } from "../projects/types";
 // ── git ──
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { blameText, useBlame } from "../scm/blame";
+import { switchWorkspaceFolder, useWorkspaceFile } from "../state/workspaceFile";
 import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
 import { useIsTeacher, useRoleChecking } from "../state/role";
@@ -197,6 +198,19 @@ function LanguageItem({ language }: { language: string | null }) {
   );
 }
 
+/** A .code-workspace file's folders: the open one, and a click to switch (state/workspaceFile.ts). */
+function WorkspaceFolderItem() {
+  const folders = useWorkspaceFile((s) => s.folders);
+  const root = useWorkbench((s) => s.workspace?.root);
+  const at = folders.findIndex((f) => f.path === root);
+  if (folders.length < 2 || at < 0) return null;
+  return (
+    <Item title="Switch to another folder of this workspace" onClick={() => void switchWorkspaceFolder()}>
+      <Codicon name="root-folder" /> {folders[at].name} ({at + 1} of {folders.length})
+    </Item>
+  );
+}
+
 /** Git blame of the current line ("Ada, 3 days ago"); hover for the commit. */
 function BlameItem() {
   const line = useBlame((s) => s.line);
@@ -245,6 +259,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <span>{MODE_LABEL[mode]}</span>
         </Item>
         {!simple && <GitItems />}
+        <WorkspaceFolderItem />
         <ProjectStatus />
         <SyncStatus />
         <BusyItem />

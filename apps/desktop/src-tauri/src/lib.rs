@@ -70,6 +70,10 @@ pub const WORKBENCH: &str = "workbench";
 struct AppInfo {
     version: &'static str,
     os: &'static str,
+    /// A window opened with New Window (its own process): it keeps its own UI state.
+    secondary: bool,
+    /// This process's id (a secondary window's store is named after it).
+    pid: u32,
     /// Debug builds only: a folder to open and whether to run the self-test
     /// (`TMCODE_DEV_WORKSPACE`, `TMCODE_DEV_SELFTEST=1`), for checks inside the
     /// real WKWebView / WebView2 where nobody can click.
@@ -126,7 +130,26 @@ fn app_info() -> AppInfo {
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
         devtools: cfg!(debug_assertions),
+        secondary: is_secondary_window(),
+        pid: std::process::id(),
     }
+}
+
+/// `--new-window`: started by New Window; not the single instance that `tmcode <path>` and links reach.
+fn is_secondary_window() -> bool {
+    std::env::args().any(|a| a == "--new-window")
+}
+
+/// File › New Window (and Open in New Window): another TMCode window, as its own process.
+#[tauri::command]
+fn window_new(path: Option<String>) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("--new-window");
+    if let Some(p) = path.filter(|p| !p.is_empty() && !p.starts_with('-')) {
+        cmd.arg(p);
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| format!("Could not open a new window: {e}"))
 }
 
 /// Everything the workbench page started that a new page can't talk to any more:
@@ -280,9 +303,12 @@ pub fn run() {
     let builder = builder
         .menu(|app| menus::build(app))
         .on_menu_event(|app, event| menus::on_menu_event(app, event.id().as_ref()));
-    let app = builder
-        // Must be first: a second launch (or a tmcode:// link) focuses the running window.
-        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+    // Must be first: a second launch (or a tmcode:// link) focuses the running window.
+    // A New Window process is not that instance (it would hand itself to the first one).
+    let builder = if is_secondary_window() {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             if let Some(w) = app.get_window(WINDOW) {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
@@ -292,6 +318,8 @@ pub fn run() {
                 let _ = app.emit_to(tauri::EventTarget::webview(WORKBENCH), "open-path", path);
             }
         }))
+    };
+    let app = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -362,6 +390,7 @@ pub fn run() {
             workspace::ws_remove,
             workspace::ws_trash,
             workspace::ws_import,
+            window_new,
             git::git_blame,
             git::git_graph,
             workspace::ws_search_files,

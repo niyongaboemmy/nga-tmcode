@@ -30,6 +30,7 @@ import { wireDocuments } from "./monaco/documents";
 import { wireBackups } from "./state/backups";
 import { wireTaskRunner } from "./tasks/runner";
 import { wireBlame } from "./scm/blame";
+import { wireWorkspaceFile } from "./state/workspaceFile";
 import { wireRunServices } from "./run/wire";
 import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
@@ -94,6 +95,8 @@ export function Workbench() {
   const reduceMotion = useWorkbench((s) => s.settings["workbench.reduceMotion"]);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
+  const panelLocation = useWorkbench((s) => s.settings["workbench.panel.defaultLocation"] ?? "bottom");
+  const centered = useWorkbench((s) => !!s.settings["workbench.editor.centeredLayout"]);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
   // View › Appearance: hidden activity / status bar, side bar on the right (never hidden in exams).
   const examLayout = useWorkbench((s) => s.policy.mode !== "practice");
@@ -128,6 +131,7 @@ export function Workbench() {
     wireBackups();
     wireTaskRunner();
     wireBlame();
+    wireWorkspaceFile();
     wireSmartEditor();
     wireRunServices();
     wireScm();
@@ -314,16 +318,24 @@ export function Workbench() {
               <SideBar />
             </Allotment.Pane>,
             <Allotment.Pane key="main" minSize={220} priority={LayoutPriority.High}>
-              <Allotment vertical className="tm-split" proportionalLayout={false}>
+              {/* The Panel below the editor, or beside it (workbench.panel.defaultLocation). */}
+              <Allotment key={`panel-${panelLocation}`} vertical={panelLocation === "bottom"} className="tm-split" proportionalLayout={false}>
+                {panelLocation === "left" && (
+                  <Allotment.Pane minSize={200} preferredSize={420} visible={panelVisible} snap>
+                    <Panel />
+                  </Allotment.Pane>
+                )}
                 <Allotment.Pane minSize={120} visible={!panelMaximized}>
-                  <main className="tm-editor-area" aria-label="Editor">
+                  <main className={`tm-editor-area ${centered ? "is-centered" : ""}`} aria-label="Editor">
                     <EditorArea />
                     <DebugToolbar />
                   </main>
                 </Allotment.Pane>
-                <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>
-                  <Panel />
-                </Allotment.Pane>
+                {panelLocation !== "left" && (
+                  <Allotment.Pane minSize={panelLocation === "bottom" ? 100 : 200} preferredSize={panelLocation === "bottom" ? 260 : 420} visible={panelVisible} snap>
+                    <Panel />
+                  </Allotment.Pane>
+                )}
               </Allotment>
             </Allotment.Pane>,
           )}

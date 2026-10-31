@@ -47,6 +47,10 @@ export interface Settings {
   "terminal.integrated.gpuAcceleration": "auto" | "on" | "off";
   "terminal.integrated.minimumContrastRatio": number;
   "workbench.reduceMotion": boolean;
+  /** Where the Panel sits (VS Code's workbench.panel.defaultLocation). */
+  "workbench.panel.defaultLocation": "bottom" | "left" | "right";
+  /** Centered Layout: the editor in the middle of a wide window. */
+  "workbench.editor.centeredLayout": boolean;
   /** "default": check at start and every 6 hours; "manual": only from the command; "none": never. */
   "update.mode": "default" | "manual" | "none";
   /**
@@ -177,6 +181,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.gpuAcceleration": "auto",
   "terminal.integrated.minimumContrastRatio": 4.5,
   "workbench.reduceMotion": false,
+  "workbench.panel.defaultLocation": "bottom",
+  "workbench.editor.centeredLayout": false,
   "update.mode": "default",
   "projects.autoSave": "assignments",
   "projects.presence": true,
@@ -295,6 +301,18 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         ],
         dynamicOptions: "iconThemes",
       },
+      {
+        key: "workbench.panel.defaultLocation",
+        label: "Panel: Position",
+        description: "Where the Panel (Terminal, Problems, Output…) sits: below the editor, or beside it.",
+        type: "enum",
+        options: [
+          { value: "bottom", label: "Bottom" },
+          { value: "left", label: "Left" },
+          { value: "right", label: "Right" },
+        ],
+      },
+      { key: "workbench.editor.centeredLayout", label: "Centered Layout", description: "Keep the editor in the middle of a wide window, with space on both sides.", type: "boolean" },
       {
         key: "workbench.reduceMotion",
         label: "Reduce Motion",
