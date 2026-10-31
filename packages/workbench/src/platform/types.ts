@@ -31,6 +31,8 @@ export interface FileSystem {
   trash?(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;
+  /** A binary file's bytes as text anyway (invalid characters replaced), for "Open Anyway". */
+  readFileAnyway?(path: string): Promise<string>;
   // ── encodings and imports (feat/files-search) ──
   /** The encoding a file is read and saved with ("utf8", "utf8bom", "utf16le", "utf16be", "windows1252", "iso88591"). */
   encodingOf?(path: string): Promise<FileEncoding>;

@@ -27,6 +27,7 @@ import { NotificationCenter } from "./widgets/NotificationCenter";
 import { zoomIn, zoomOut } from "./state/windowZoom";
 import { inExam } from "./exam/state";
 import { wireDocuments } from "./monaco/documents";
+import { wireBackups } from "./state/backups";
 import { wireRunServices } from "./run/wire";
 import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
@@ -122,6 +123,7 @@ export function Workbench() {
     installFormatterSelection();
     registerFormatterActions();
     wireDocuments();
+    wireBackups();
     wireSmartEditor();
     wireRunServices();
     wireScm();

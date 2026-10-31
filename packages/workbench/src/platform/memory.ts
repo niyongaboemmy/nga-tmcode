@@ -52,6 +52,14 @@ export class MemoryFileSystem implements FileSystem {
   async readFile(path: string) {
     const content = this.files.get(path);
     if (content === undefined) throw new Error(`File '${path}' does not exist`);
+    // As on the desktop: a file with NUL bytes is binary.
+    if (content.includes("\u0000")) throw new Error(`'${path}' is a binary file and cannot be opened as text.`);
+    return content;
+  }
+
+  async readFileAnyway(path: string) {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`File '${path}' does not exist`);
     return content;
   }
 
@@ -137,6 +145,9 @@ export class SwitchableFileSystem implements FileSystem {
   }
   readFile(p: string) {
     return this.target.readFile(p);
+  }
+  readFileAnyway(p: string) {
+    return this.target.readFileAnyway ? this.target.readFileAnyway(p) : this.target.readFile(p);
   }
   writeFile(p: string, c: string) {
     return this.target.writeFile(p, c);

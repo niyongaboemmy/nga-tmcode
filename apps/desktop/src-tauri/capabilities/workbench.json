@@ -35,6 +35,7 @@
     "allow-ws-remove",
     "allow-ws-trash",
     "allow-ws-import",
+    "allow-ws-read-file-anyway",
     "allow-attach-pick",
     "allow-attach-clipboard",
     "allow-attach-read",

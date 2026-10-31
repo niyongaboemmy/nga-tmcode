@@ -269,6 +269,12 @@ fn build_main_window(app: &mut App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Crash recovery: a panic lands in TMCode's log (the workbench restores unsaved files on the next start).
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("TMCode crashed: {info}");
+        default_hook(info);
+    }));
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -356,6 +362,7 @@ pub fn run() {
             workspace::ws_remove,
             workspace::ws_trash,
             workspace::ws_import,
+            workspace::ws_read_file_anyway,
             ai_attach::attach_pick,
             ai_attach::attach_clipboard,
             ai_attach::attach_read,

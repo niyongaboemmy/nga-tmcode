@@ -1,4 +1,5 @@
 import { inExam, useExam } from "../exam/state";
+import { backupsBeforeQuit, hotExitCovers } from "./backups";
 import { confirmCloseDirty, log, showDialog, useWorkbench } from "./store";
 
 /**
@@ -38,6 +39,8 @@ async function runGuards(): Promise<boolean> {
       log("Workbench", `Quit check failed: ${String((e as Error)?.message ?? e)}`, "warn");
     }
   }
+  // Leaving normally: unsaved files are backed up, and the next start isn't a crash.
+  await backupsBeforeQuit().catch(() => undefined);
   return true;
 }
 
@@ -63,10 +66,11 @@ export async function beforeReload(): Promise<boolean> {
   return beforeQuit();
 }
 
-/** Save All / Don't Save / Cancel for unsaved files. */
+/** Save All / Don't Save / Cancel for unsaved files; none with hot exit (they come back next time, as in VS Code). */
 async function unsavedFiles(): Promise<boolean> {
   const dirty = Object.keys(useWorkbench.getState().dirty);
   if (!dirty.length) return true;
+  if (hotExitCovers()) return true;
   // A failed save throws: stay open so the student sees the error.
   const choice = await confirmCloseDirty(dirty).catch(() => "cancel" as const);
   return choice !== "cancel";

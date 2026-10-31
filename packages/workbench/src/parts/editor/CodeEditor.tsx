@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isVirtualPath, readonlyVirtual } from "../../util/virtual";
 import { allCommands, dispatchKeybindingFor, executeCommand } from "../../commands/registry";
-import { ensureDocument, languageForPath, saveOnFocusChange } from "../../monaco/documents";
+import { ensureDocument, forcedReadOnly, LARGE_FILE_CHARS, languageForPath, openAnyway, saveOnFocusChange } from "../../monaco/documents";
+import { HexView } from "./HexView";
 import { registerCodeEditor } from "../../monaco/editors";
 import { monaco, monacoThemeFor, setupMonaco } from "../../monaco/setup";
 import { defaultFontFamily, type Settings } from "../../state/settings";
@@ -86,6 +87,20 @@ function codeEditorOptions(settings: Settings, level: Intelligence, os: OsKind) 
   return { ...editorOptions(settings, os), ...help, ...smartEditorOptions(settings, level, help) };
 }
 
+/** Large-file mode (VS Code turns the same things off for large files). */
+const LARGE_FILE_OPTIONS: monaco.editor.IEditorOptions = {
+  minimap: { enabled: false },
+  folding: false,
+  wordWrap: "off",
+  occurrencesHighlight: "off",
+  selectionHighlight: false,
+  links: false,
+  colorDecorators: false,
+  stickyScroll: { enabled: false },
+  bracketPairColorization: { enabled: false },
+  guides: { bracketPairs: false, indentation: false },
+};
+
 /**
  * One Monaco instance per editor group; switching tabs swaps models and
  * restores each file's scroll/cursor state, exactly like VS Code.
@@ -97,6 +112,12 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
   const currentPath = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // A binary file: "Open Anyway" (read-only text) or the hex viewer, as VS Code offers.
+  const [binary, setBinary] = useState<"ask" | "hex" | null>(null);
+  const [anyway, setAnyway] = useState(0);
+  // Large-file mode: heavy features off so typing stays fast.
+  const [large, setLarge] = useState(false);
+  const [largeDismissed, setLargeDismissed] = useState(false);
   // The model's language: `[python]` settings apply to Python files only.
   const [language, setLanguage] = useState<string | null>(null);
   const userSettings = useWorkbench((s) => s.userSettings);
@@ -188,6 +209,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
     if (!ed) return;
     let cancelled = false;
     setError(null);
+    setBinary(null);
     // Only show the skeleton if loading is slow enough to notice (large or remote files).
     const slow = setTimeout(() => !cancelled && setLoading(true), 150);
     if (currentPath.current) {
@@ -195,10 +217,11 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       viewStates.current.set(currentPath.current, vs);
       if (vs) editorMemento.viewStates.set(`${groupId}:${currentPath.current}`, vs);
     }
-    ensureDocument(path)
+    (anyway ? openAnyway(path) : ensureDocument(path))
       .then((model) => {
         if (cancelled || model.isDisposed()) return;
         ed.setModel(model);
+        setLarge(model.getValueLength() > LARGE_FILE_CHARS);
         currentPath.current = path;
         const vs = viewStates.current.get(path) ?? (editorMemento.viewStates.get(`${groupId}:${path}`) as monaco.editor.ICodeEditorViewState | undefined);
         if (vs) ed.restoreViewState(vs);
@@ -209,7 +232,16 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
         if (pos) setCursor({ line: pos.lineNumber, column: pos.column, selected: 0 });
         setEditorInfo({ language: model.getLanguageId() || languageForPath(path), eol: model.getEOL() === "\r\n" ? "CRLF" : "LF" });
       })
-      .catch((e) => !cancelled && setError(String(e?.message ?? e)))
+      .catch((e) => {
+        if (cancelled) return;
+        const message = String(e?.message ?? e);
+        if (/is a binary file/.test(message)) {
+          // Nothing of the previous file stays behind the notice.
+          ed.setModel(null);
+          currentPath.current = null;
+          setBinary("ask");
+        } else setError(message);
+      })
       .finally(() => {
         clearTimeout(slow);
         if (!cancelled) setLoading(false);
@@ -218,16 +250,29 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       cancelled = true;
       clearTimeout(slow);
     };
+  }, [path, anyway]);
+
+  useEffect(() => {
+    setAnyway(0);
+    setLargeDismissed(false);
   }, [path]);
 
   useEffect(() => {
     const ed = editorRef.current;
     // An extension's read-only document (the original side it shows, a generated view).
     const extReadOnly = !!path && isVirtualPath(path) && readonlyVirtual.has(path);
+    const forced = !!path && forcedReadOnly.has(path);
     ed?.updateOptions({
       ...codeEditorOptions(settings, intelligence, os),
-      readOnly: readOnly || extReadOnly,
-      readOnlyMessage: { value: extReadOnly ? "This document belongs to an extension and can't be edited." : (readOnlyReason ?? "Time is up. Your code can no longer be changed.") },
+      ...(large ? LARGE_FILE_OPTIONS : {}),
+      readOnly: readOnly || extReadOnly || forced,
+      readOnlyMessage: {
+        value: extReadOnly
+          ? "This document belongs to an extension and can't be edited."
+          : forced
+            ? "This binary file is shown as text and can't be edited here."
+            : (readOnlyReason ?? "Time is up. Your code can no longer be changed."),
+      },
     });
     setHelpLevel.current?.(intelligence);
     // Indentation set for this language or by the folder wins over what Monaco guessed from the file.
@@ -247,7 +292,7 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       if (explicit("editor.insertSpaces")) opts.insertSpaces = settings["editor.insertSpaces"];
       if (Object.keys(opts).length) model.updateOptions(opts);
     }
-  }, [settings, os, readOnly, readOnlyReason, intelligence, language, languageSettings, workspaceSettings, path, loading]);
+  }, [settings, os, readOnly, readOnlyReason, intelligence, language, languageSettings, workspaceSettings, path, loading, large, anyway]);
 
 
   return (
@@ -258,6 +303,32 @@ export function CodeEditor({ groupId, path }: { groupId: number; path: string })
       {loading && (
         <div className="tm-editor-loading">
           <SkeletonLines lines={12} label="Opening file" />
+        </div>
+      )}
+      {large && !largeDismissed && !binary && (
+        <div className="tm-editor-banner" role="status" data-testid="large-file-banner">
+          <span>This file is large, so the minimap, folding and some highlighting are off to keep typing fast.</span>
+          <button type="button" className="tm-link-button" onClick={() => setLargeDismissed(true)}>
+            OK
+          </button>
+        </div>
+      )}
+      {binary === "ask" && (
+        <div className="tm-editor-binary" data-testid="binary-notice">
+          <p>This file is not displayed in the text editor because it is either binary or uses an unsupported text encoding.</p>
+          <div className="tm-editor-binary-actions">
+            <button type="button" className="tm-button" onClick={() => setAnyway((n) => n + 1)}>
+              Open Anyway
+            </button>
+            <button type="button" className="tm-button tm-button--secondary" onClick={() => setBinary("hex")}>
+              Open in Hex Viewer
+            </button>
+          </div>
+        </div>
+      )}
+      {binary === "hex" && path && (
+        <div className="tm-editor-hex">
+          <HexView path={path} />
         </div>
       )}
       {error && (

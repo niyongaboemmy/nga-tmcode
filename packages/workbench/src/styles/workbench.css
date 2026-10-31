@@ -11481,3 +11481,83 @@ button.tm-setting-badge {
   border: 1px solid var(--border);
   object-fit: cover;
 }
+
+/* ───────────── Binary files, hex viewer, large-file mode ───────────── */
+.tm-editor-binary {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--editor-bg);
+  color: var(--foreground);
+  text-align: center;
+}
+.tm-editor-binary p {
+  max-width: 460px;
+  margin: 0;
+}
+.tm-editor-binary-actions {
+  display: flex;
+  gap: 8px;
+}
+.tm-editor-hex {
+  position: absolute;
+  inset: 0;
+  background: var(--editor-bg);
+}
+.tm-hex {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: var(--font-mono, Menlo, Consolas, monospace);
+  font-size: 12px;
+}
+.tm-hex-head {
+  padding: 4px 16px;
+  color: var(--description);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+}
+.tm-hex-body {
+  flex: 1;
+  overflow: auto;
+}
+.tm-hex-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 20px;
+  padding: 0 16px;
+  align-items: center;
+  white-space: pre;
+}
+.tm-hex-offset {
+  color: var(--description);
+}
+.tm-hex-ascii {
+  color: var(--editor-fg);
+  opacity: 0.8;
+}
+.tm-hex-error {
+  padding: 24px;
+}
+.tm-editor-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: var(--notification-bg, var(--sidebar-bg));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}

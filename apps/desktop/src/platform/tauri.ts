@@ -191,6 +191,7 @@ export async function createTauriPlatform(): Promise<Platform> {
       readDir: (path) => invoke<DirEntry[]>("ws_read_dir", { path }),
       readFile: (path) => invoke<string>("ws_read_file", { path }),
       readBase64: (path) => invoke<string>("ws_read_base64", { path }),
+      readFileAnyway: (path) => invoke<string>("ws_read_file_anyway", { path }),
       writeFile: (path, content) => invoke("ws_write_file", { path, content }),
       createFile: (path) => invoke("ws_create_file", { path }),
       createDir: (path) => invoke("ws_create_dir", { path }),

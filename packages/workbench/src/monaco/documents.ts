@@ -136,6 +136,23 @@ export function ensureDocument(path: string, opts: { background?: boolean } = {}
   return p;
 }
 
+/** Binary files opened as text with "Open Anyway": read-only, so a save can't damage them. */
+export const forcedReadOnly = new Set<string>();
+
+/** "Open Anyway" on a binary file: its bytes as text, read-only. */
+export async function openAnyway(path: string): Promise<monaco.editor.ITextModel> {
+  const fs = getPlatform().fs;
+  const text = await (fs.readFileAnyway ? fs.readFileAnyway(path) : fs.readFile(path));
+  disposeDoc(path);
+  const model = createTrackedModel(path, text);
+  docs.set(path, { model, savedVersion: model.getAlternativeVersionId(), diskText: text });
+  forcedReadOnly.add(path);
+  return model;
+}
+
+/** Text this long opens in large-file mode (minimap, folding and other heavy features off). */
+export const LARGE_FILE_CHARS = 5 * 1024 * 1024;
+
 const changeListeners = new Set<(path: string) => void>();
 /** Fires on every edit and save of an open file (live preview, test file reload). */
 export function onDocumentChanged(l: (path: string) => void) {
@@ -355,7 +372,14 @@ export function saveOnFocusChange() {
   if (useWorkbench.getState().settings["files.autoSave"] === "onFocusChange") void saveAll("auto");
 }
 
+/** Auto save "onWindowChange" (and "onFocusChange"): the window lost focus. */
+function saveOnWindowChange() {
+  const mode = useWorkbench.getState().settings["files.autoSave"];
+  if (mode === "onWindowChange" || mode === "onFocusChange") void saveAll("auto");
+}
+
 function disposeDoc(path: string) {
+  forcedReadOnly.delete(path);
   const doc = docs.get(path);
   if (!doc) return;
   doc.model.dispose();
@@ -426,7 +450,10 @@ export function wireDocuments() {
   monaco.editor.onDidCreateModel(adoptForeignModel);
   monaco.editor.onDidChangeMarkers(() => recomputeProblems());
 
-  window.addEventListener("blur", saveOnFocusChange);
+  // The desktop knows when the app window itself loses focus (clicks into a preview pane don't count).
+  const host = getPlatform();
+  if (host.onWindowFocus) host.onWindowFocus((focused) => !focused && saveOnWindowChange());
+  else window.addEventListener("blur", saveOnWindowChange);
   // Built-in language servers (Pyright) start when a file of their language opens.
   void import("../lsp/servers").then((m) => m.wireLanguageServers()).catch(() => {});
   log("Workbench", "Editor services ready");

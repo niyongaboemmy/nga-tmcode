@@ -29,7 +29,9 @@ export interface Settings {
   "editor.bracketPairColorization.enabled": boolean;
   "editor.stickyScroll.enabled": boolean;
   "editor.formatOnSave": boolean;
-  "files.autoSave": "off" | "afterDelay" | "onFocusChange";
+  "files.autoSave": "off" | "afterDelay" | "onFocusChange" | "onWindowChange";
+  /** Hot exit: quitting with unsaved files keeps them for next time instead of asking (VS Code's files.hotExit). */
+  "files.hotExit": "onExit" | "off";
   "files.autoSaveDelay": number;
   "terminal.integrated.fontSize": number;
   /** Shell profile id for new terminals ("zsh", "bash", "pwsh", "cmd", "gitbash", "wsl"…); "" = the system's shell. */
@@ -158,6 +160,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "editor.formatOnSave": false,
   "files.autoSave": "afterDelay",
   "files.autoSaveDelay": 1000,
+  "files.hotExit": "onExit",
   "terminal.integrated.fontSize": 13,
   "terminal.integrated.defaultProfile": "",
   "terminal.integrated.fontFamily": "",
@@ -433,6 +436,17 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "off", label: "off" },
           { value: "afterDelay", label: "afterDelay" },
           { value: "onFocusChange", label: "onFocusChange" },
+          { value: "onWindowChange", label: "onWindowChange" },
+        ],
+      },
+      {
+        key: "files.hotExit",
+        label: "Hot Exit",
+        description: "Quitting with unsaved files keeps them for next time instead of asking to save. They also come back after a crash.",
+        type: "enum",
+        options: [
+          { value: "onExit", label: "onExit" },
+          { value: "off", label: "off" },
         ],
       },
       {

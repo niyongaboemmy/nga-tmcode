@@ -13,7 +13,8 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 /// Files above this size are not opened as text (the editor would crawl).
-const MAX_TEXT_BYTES: u64 = 5 * 1024 * 1024;
+/// Larger files open in the editor's large-file mode (the workbench turns heavy features off above 5 MB).
+const MAX_TEXT_BYTES: u64 = 50 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Workspace(Mutex<Option<PathBuf>>);
@@ -274,6 +275,22 @@ pub fn read_file(root: &Path, path: &str) -> Result<String, String> {
     Ok(encoding::decode(&bytes, enc))
 }
 
+/// "Open Anyway" on a binary file: its bytes as text (invalid sequences replaced), up to the same size.
+pub fn read_file_anyway(root: &Path, path: &str) -> Result<String, String> {
+    let file = resolve(root, path)?;
+    let meta = fs::metadata(&file).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_TEXT_BYTES {
+        return Err(format!("'{path}' is too large to open in the editor ({} MB).", meta.len() / 1_048_576));
+    }
+    let bytes = fs::read(&file).map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[tauri::command]
+pub fn ws_read_file_anyway(ws: State<'_, Workspace>, path: String) -> Result<String, String> {
+    read_file_anyway(&ws.root()?, &path)
+}
+
 #[tauri::command]
 pub fn ws_file_encoding(ws: State<'_, Workspace>, path: String) -> Result<String, String> {
     let file = resolve(&ws.root()?, &path)?;
@@ -508,6 +525,18 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn binary_files_open_only_when_asked_and_large_files_open() {
+        let (_d, root) = root();
+        fs::write(root.join("blob.bin"), [b'a', 0, 0xff, b'b']).unwrap();
+        assert!(read_file(&root, "blob.bin").unwrap_err().contains("binary"));
+        assert_eq!(read_file_anyway(&root, "blob.bin").unwrap(), "a\u{0}\u{fffd}b");
+        // 6 MB of text: opens (the workbench's large-file mode takes it from there).
+        fs::write(root.join("big.log"), "x".repeat(6 * 1024 * 1024)).unwrap();
+        assert_eq!(read_file(&root, "big.log").unwrap().len(), 6 * 1024 * 1024);
+        assert!(read_file_anyway(&root, "../outside").is_err());
+    }
 
     #[test]
     fn copy_entry_copies_files_and_folders_inside_the_workspace() {

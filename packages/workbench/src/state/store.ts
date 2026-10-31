@@ -449,7 +449,15 @@ export async function setWorkspace(ws: { name: string; root: string }): Promise<
   log("Workspace", `Opened ${ws.name}`);
   restoringLayout = true;
   await restoreEditors(ws.root).finally(() => (restoringLayout = false));
+  for (const l of openedListeners) await Promise.resolve(l(ws.root)).catch(() => undefined);
   return true;
+}
+
+const openedListeners = new Set<(root: string) => void | Promise<void>>();
+/** Fires once a folder is open and its editors are restored (hot exit restores unsaved files then). */
+export function onWorkspaceOpened(l: (root: string) => void | Promise<void>) {
+  openedListeners.add(l);
+  return () => openedListeners.delete(l);
 }
 
 const workspaceListeners = new Set<() => void>();
