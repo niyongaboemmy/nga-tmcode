@@ -59,7 +59,8 @@ describe("extension test controllers", () => {
     ctrl.createRunProfile(
       "Run",
       1,
-      (req: { include?: { id: string }[] }) => {
+      (request: unknown) => {
+        const req = request as { include?: { id: string }[] };
         ran = req.include?.map((i) => i.id) ?? "all";
         const run = ctrl.createTestRun(req);
         run.started(t1);
