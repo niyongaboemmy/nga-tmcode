@@ -17,6 +17,7 @@ import * as T from "../api/types";
 import { Uri, setUriPlatform } from "../api/uri";
 import { CancellationTokenSource, EventEmitter, type CancellationToken, type Event } from "../api/events";
 import { RpcConnection } from "../rpc";
+import { TaskService } from "./tasks";
 import { activationEventsOf, matchesActivationEvent, STARTUP_EVENTS, workspaceContainsPatterns } from "../activation";
 import { ConfigurationModel, affects, configurationDefaults, configurationProperties, type Flat } from "../configuration";
 import * as C from "./convert";
@@ -287,6 +288,8 @@ export class ExtHost {
   readonly virtual: VirtualDocs;
   /** `window.tabGroups`, fed by the workbench's `$tabsChanged`. */
   readonly tabs: TabsService;
+  /** Extensions' tasks (tasks.ts). */
+  readonly tasks: TaskService;
   readonly env: HostEnvironment;
   data!: InitData;
   fs!: HostFs;
@@ -355,6 +358,7 @@ export class ExtHost {
     this.rpc = new RpcConnection(send);
     this.virtual = new VirtualDocs(this.rpc);
     this.tabs = new TabsService(this.rpc, this.paths);
+    this.tasks = new TaskService(this.rpc);
     EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText(e)}`);
     env.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();

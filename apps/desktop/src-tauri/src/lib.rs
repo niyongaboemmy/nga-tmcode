@@ -362,6 +362,7 @@ pub fn run() {
             workspace::ws_remove,
             workspace::ws_trash,
             workspace::ws_import,
+            debug::debug_processes,
             workspace::ws_read_file_anyway,
             ai_attach::attach_pick,
             ai_attach::attach_clipboard,

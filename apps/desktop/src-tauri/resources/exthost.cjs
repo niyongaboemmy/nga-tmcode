@@ -2479,6 +2479,94 @@ var VirtualDocs = class {
   }
 };
 
+// packages/exthost/src/host/tasks.ts
+var quote = (a) => /^[\w@%+=:,./${}-]+$/.test(a) ? a : `"${a.replace(/(["\\$`])/g, "\\$1")}"`;
+var argText = (a) => typeof a === "string" ? quote(a) : a && typeof a === "object" && typeof a.value === "string" ? quote(a.value) : "";
+function toTaskDTO(task) {
+  const ex = task.execution;
+  let command2 = "";
+  let options;
+  if (ex instanceof ShellExecution) {
+    const base = typeof ex.commandLine === "string" ? ex.commandLine : argText(ex.commandLine);
+    const args = Array.isArray(ex.args) ? ex.args.map(argText).filter(Boolean) : [];
+    command2 = [base, ...args].filter(Boolean).join(" ");
+    options = ex.options;
+  } else if (ex instanceof ProcessExecution) {
+    const args = Array.isArray(ex.args) ? ex.args.map(argText).filter(Boolean) : [];
+    command2 = [quote(ex.process), ...args].join(" ");
+    options = ex.options;
+  } else return null;
+  if (!command2.trim()) return null;
+  const group = task.group instanceof TaskGroup ? task.group.id : "";
+  return {
+    label: task.name,
+    source: task.source || "extension",
+    command: command2,
+    cwd: typeof options?.cwd === "string" ? options.cwd : "",
+    group: group === "build" || group === "test" ? group : "",
+    isBackground: !!task.isBackground,
+    problemMatchers: task.problemMatchers ?? [],
+    detail: (() => {
+      const d = task.detail;
+      return typeof d === "string" ? d : void 0;
+    })()
+  };
+}
+var TaskService = class {
+  constructor(rpc) {
+    this.rpc = rpc;
+    rpc.register("$provideTasks", () => this.provideDTOs());
+    rpc.register("$taskEnded", ([id, exitCode]) => {
+      const e = this.#executions.get(Number(id));
+      if (!e) return null;
+      this.#executions.delete(Number(id));
+      this.onDidEndTaskProcess.fire({ execution: e.execution, exitCode: typeof exitCode === "number" ? exitCode : void 0 });
+      this.onDidEndTask.fire({ execution: e.execution });
+      return null;
+    });
+  }
+  rpc;
+  #providers = /* @__PURE__ */ new Map();
+  #seq = 0;
+  #executions = /* @__PURE__ */ new Map();
+  onDidStartTask = new EventEmitter();
+  onDidEndTask = new EventEmitter();
+  onDidStartTaskProcess = new EventEmitter();
+  onDidEndTaskProcess = new EventEmitter();
+  get taskExecutions() {
+    return [...this.#executions.values()].map((e) => e.execution);
+  }
+  register(type, provider) {
+    const id = ++this.#seq;
+    this.#providers.set(id, { type, provider });
+    return { dispose: () => void this.#providers.delete(id) };
+  }
+  /** Every provider's tasks (a failing provider gives none). */
+  async fetch(filter) {
+    const out = [];
+    for (const { type, provider } of this.#providers.values()) {
+      if (filter?.type && filter.type !== type) continue;
+      try {
+        out.push(...await provider.provideTasks() ?? []);
+      } catch {
+      }
+    }
+    return out;
+  }
+  async provideDTOs() {
+    return (await this.fetch()).map(toTaskDTO).filter((t) => !!t);
+  }
+  async execute(task) {
+    const dto = toTaskDTO(task);
+    if (!dto) throw new Error(`TMCode can't run the task '${task.name}': only shell and process tasks are supported.`);
+    const id = Number(await this.rpc.request("$main.executeTask", [dto]));
+    const execution = { task, terminate: () => void this.rpc.request("$main.terminateTask", [id]).catch(() => void 0) };
+    this.#executions.set(id, { task, execution });
+    this.onDidStartTask.fire({ execution });
+    return execution;
+  }
+};
+
 // packages/exthost/src/activation.ts
 var list = (v) => Array.isArray(v) ? v.filter((x) => !!x && typeof x === "object") : [];
 function activationEventsOf(manifest) {
@@ -3577,7 +3665,11 @@ function createApi(host2, ext) {
       ext.context?.subscriptions.push(d);
       return d;
     },
-    registerTaskProvider: () => noopDisposable(),
+    registerTaskProvider: (type, provider) => {
+      const d = host2.tasks.register(String(type), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
+    },
     updateWorkspaceFolders: () => false
   });
   const languages = g("languages", {
@@ -3712,7 +3804,22 @@ function createApi(host2, ext) {
     onDidChangeBreakpoints: new EventEmitter().event,
     onDidReceiveDebugSessionCustomEvent: new EventEmitter().event
   });
-  const tasks = g("tasks", { taskExecutions: [], onDidStartTask: new EventEmitter().event, onDidEndTask: new EventEmitter().event, onDidStartTaskProcess: new EventEmitter().event, onDidEndTaskProcess: new EventEmitter().event });
+  const tasks = g("tasks", {
+    get taskExecutions() {
+      return host2.tasks.taskExecutions;
+    },
+    registerTaskProvider: (type, provider) => {
+      const d = host2.tasks.register(String(type), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
+    },
+    fetchTasks: (filter) => host2.tasks.fetch(filter),
+    executeTask: (task) => host2.tasks.execute(task),
+    onDidStartTask: host2.tasks.onDidStartTask.event,
+    onDidEndTask: host2.tasks.onDidEndTask.event,
+    onDidStartTaskProcess: host2.tasks.onDidStartTaskProcess.event,
+    onDidEndTaskProcess: host2.tasks.onDidEndTaskProcess.event
+  });
   const api = {
     version: API_VERSION,
     commands,
@@ -4965,6 +5072,8 @@ var ExtHost = class {
   virtual;
   /** `window.tabGroups`, fed by the workbench's `$tabsChanged`. */
   tabs;
+  /** Extensions' tasks (tasks.ts). */
+  tasks;
   env;
   data;
   fs;
@@ -5031,6 +5140,7 @@ var ExtHost = class {
     this.rpc = new RpcConnection(send2);
     this.virtual = new VirtualDocs(this.rpc);
     this.tabs = new TabsService(this.rpc, this.paths);
+    this.tasks = new TaskService(this.rpc);
     EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText2(e)}`);
     env2.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();

@@ -496,6 +496,65 @@ pub struct Probe {
     message: Option<String>,
 }
 
+/// A running process, for "Attach to Process" (`${command:pickProcess}`).
+#[derive(Serialize, Debug, PartialEq)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub name: String,
+    pub command: String,
+}
+
+/// `ps -axo pid=,comm=,args=` lines → processes (Unix). Pure.
+pub fn parse_ps(out: &str) -> Vec<ProcessInfo> {
+    out.lines()
+        .filter_map(|l| {
+            let l = l.trim_start();
+            let (pid, rest) = l.split_once(char::is_whitespace)?;
+            let pid: u32 = pid.parse().ok()?;
+            let rest = rest.trim_start();
+            let (comm, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+            let name = comm.rsplit('/').next().unwrap_or(comm).to_string();
+            Some(ProcessInfo { pid, name, command: args.trim().to_string() })
+        })
+        .collect()
+}
+
+/// `tasklist /fo csv /nh` lines → processes (Windows). Pure.
+pub fn parse_tasklist(out: &str) -> Vec<ProcessInfo> {
+    out.lines()
+        .filter_map(|l| {
+            let cols: Vec<&str> = l.split("\",\"").map(|c| c.trim_matches('"')).collect();
+            let pid: u32 = cols.get(1)?.parse().ok()?;
+            let name = cols.first()?.to_string();
+            Some(ProcessInfo { pid, command: name.clone(), name })
+        })
+        .collect()
+}
+
+/// The processes the user can attach a debugger to (their own, on Unix).
+#[tauri::command]
+pub async fn debug_processes() -> Result<Vec<ProcessInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let out = std::process::Command::new("tasklist").args(["/fo", "csv", "/nh"]).creation_flags(0x0800_0000).output().map_err(|e| e.to_string())?;
+            Ok(parse_tasklist(&String::from_utf8_lossy(&out.stdout)))
+        }
+        #[cfg(not(windows))]
+        {
+            let user = std::env::var("USER").unwrap_or_default();
+            let mut cmd = std::process::Command::new("ps");
+            if user.is_empty() { cmd.args(["-axo", "pid=,comm=,args="]); } else { cmd.args(["-U", &user, "-o", "pid=,comm=,args="]); }
+            let out = cmd.output().map_err(|e| e.to_string())?;
+            let me = std::process::id();
+            Ok(parse_ps(&String::from_utf8_lossy(&out.stdout)).into_iter().filter(|p| p.pid != me).collect())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Can `kind` be debugged on this computer, and if not, what would fix it?
 #[tauri::command]
 pub async fn debug_probe(app: AppHandle, kind: String) -> Result<Probe, String> {
@@ -976,6 +1035,20 @@ pub fn debug_run_in_terminal(app: AppHandle, ws: State<'_, Workspace>, tools: St
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lists_processes_from_ps_and_tasklist() {
+        let ps = "  412 /usr/local/bin/node node server.js --inspect\n 99 python3 python3 -m http.server\n bad line\n";
+        assert_eq!(
+            super::parse_ps(ps),
+            vec![
+                super::ProcessInfo { pid: 412, name: "node".into(), command: "node server.js --inspect".into() },
+                super::ProcessInfo { pid: 99, name: "python3".into(), command: "python3 -m http.server".into() },
+            ]
+        );
+        let tl = "\"node.exe\",\"4120\",\"Console\",\"1\",\"52,000 K\"\n";
+        assert_eq!(super::parse_tasklist(tl), vec![super::ProcessInfo { pid: 4120, name: "node.exe".into(), command: "node.exe".into() }]);
+    }
+
     use super::*;
 
     #[test]

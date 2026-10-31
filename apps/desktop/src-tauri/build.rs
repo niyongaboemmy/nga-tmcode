@@ -24,6 +24,7 @@ fn main() {
             "ws_remove",
             "ws_trash",
             "ws_import",
+            "debug_processes",
             "ws_read_file_anyway",
             "attach_pick",
             "attach_clipboard",

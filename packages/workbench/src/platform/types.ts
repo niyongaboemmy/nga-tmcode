@@ -448,6 +448,8 @@ export interface DebugHost {
   setExamPolicy?(allowed: boolean): void;
   /** DAP `runInTerminal`: the debuggee runs in the Run console (so it can read input). */
   runInTerminal?(request: { args: string[]; cwd?: string; env?: Record<string, string | null>; cols?: number; rows?: number }, onEvent: (e: RunEvent) => void): Promise<RunHandle>;
+  /** Running processes, for "Attach to Process" (`${command:pickProcess}`). */
+  processes?(): Promise<{ pid: number; name: string; command: string }[]>;
 }
 
 // ───────────── web preview (plan §9) ─────────────

@@ -420,7 +420,8 @@ function noToolsForE2e(runner: Runner): Runner {
 }
 
 export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT): Platform {
-  const practice = new MemoryFileSystem(seed);
+  // e2e can add files to the practice folder too (they survive a reload).
+  const practice = new MemoryFileSystem({ ...seed, ...mockFolderSeed("memory://practice-project") });
   const fs = new SwitchableFileSystem(practice);
   const exams = new Map<number, MemoryFileSystem>();
   // Dev server / e2e: folders TMCode creates for projects and assignments (memory://folders/<name>).

@@ -155,7 +155,12 @@
         { "command": "tmcode.runProject", "label": "Run Project" },
         { "command": "tmcode.runTests", "label": "Run Tests" },
         "-",
-        { "command": "editor.debug.action.toggleBreakpoint", "label": "Toggle Breakpoint" }
+        { "command": "debug.addConfiguration", "label": "Add Configuration..." },
+        "-",
+        { "command": "editor.debug.action.toggleBreakpoint", "label": "Toggle Breakpoint" },
+        { "command": "editor.debug.action.conditionalBreakpoint", "label": "Conditional Breakpoint..." },
+        { "command": "editor.debug.action.addLogPoint", "label": "Logpoint..." },
+        { "command": "workbench.debug.viewlet.action.removeAllBreakpoints", "label": "Remove All Breakpoints" }
       ]
     },
     {
@@ -166,6 +171,8 @@
         "-",
         { "command": "workbench.action.tasks.runTask", "label": "Run Task..." },
         { "command": "workbench.action.tasks.build", "label": "Run Build Task..." },
+        { "command": "workbench.action.tasks.test", "label": "Run Test Task..." },
+        { "command": "workbench.action.tasks.configureTaskRunner", "label": "Configure Tasks..." },
         { "command": "workbench.action.terminal.runSelectedText", "label": "Run Selected Text" },
         { "command": "workbench.action.terminal.runRecentCommand", "label": "Run Recent Command..." },
         { "command": "workbench.action.terminal.focusFind", "label": "Find in Terminal" },

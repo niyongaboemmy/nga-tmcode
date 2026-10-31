@@ -121,7 +121,8 @@ export function createSimulatedTerminal(fs: FileSystem) {
           for (const c of part.split("&&")) {
             const t = c.trim();
             if (t === "exit" || t.startsWith("exit ")) {
-              exit(t === "exit" ? lastCode : Number(t.slice(5)) || 0);
+              const arg = t.slice(5).trim();
+              exit(t === "exit" || arg === "$?" ? lastCode : Number(arg) || 0);
               return;
             }
             lastCode = await runOne(t);

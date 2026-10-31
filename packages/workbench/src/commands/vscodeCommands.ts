@@ -11,8 +11,6 @@ import { useMaximizedGroup } from "../state/editorMaximize";
 import { clearAllNotifications, showNotificationCenter, toggleDoNotDisturb, useNotificationCenter } from "../state/notificationCenter";
 import { groupOrder, neighbour, reconcile } from "../state/layout";
 import { activeTerminal } from "../terminal/active";
-import { runInTerminal } from "../tasks/service";
-import { defaultBuildTask } from "../tasks/buildTask";
 import { configureUserSnippets, insertSnippet, userSnippetsAllowed } from "../snippets/userSnippets";
 import { listFiles } from "../parts/search/search";
 import { showQuickPick } from "../widgets/QuickPick";
@@ -263,15 +261,9 @@ function focusTerminal() {
 // ───────────── tasks ─────────────
 
 async function runBuildTask() {
-  const fs = getPlatform().fs;
-  const text = await fs.readFile(".vscode/tasks.json").catch(() => null);
-  const task = text ? defaultBuildTask(text, getPlatform().os) : null;
-  if (task) {
-    const { ensureTrusted } = await import("../trust/trust");
-    if (!(await ensureTrusted("Tasks"))) return;
-    runInTerminal(task.command, { cwd: task.cwd, name: task.label });
-    return;
-  }
+  // tasks.json's default build task, with its dependencies and problem matchers.
+  const { runDefaultTask } = await import("../tasks/runner");
+  if (await runDefaultTask("build")) return;
   // No build task: the Run hub's run target (VS Code would offer to configure one).
   const run = getCommand("tmcode.runProject");
   if (run && isEnabled(run)) executeCommand(run.id);
@@ -500,6 +492,23 @@ export function registerVsCodeCommands() {
 
   // ── tasks and terminal ──
   registerCommand({ id: "workbench.action.tasks.build", title: "Run Build Task", category: "Tasks", keybinding: "mod+shift+b", enabled: () => hasWorkspace() && terminalAllowed(), run: runBuildTask });
+  registerCommand({
+    id: "workbench.action.tasks.test",
+    title: "Run Test Task",
+    category: "Tasks",
+    enabled: () => hasWorkspace() && terminalAllowed(),
+    run: async () => {
+      const { runDefaultTask } = await import("../tasks/runner");
+      if (!(await runDefaultTask("test"))) notify("info", 'No test task to run. Add one with "group": "test" to .vscode/tasks.json.');
+    },
+  });
+  registerCommand({
+    id: "workbench.action.tasks.configureTaskRunner",
+    title: "Configure Task",
+    category: "Tasks",
+    enabled: hasWorkspace,
+    run: async () => (await import("../tasks/service")).configureTasks(),
+  });
   registerCommand({
     id: "workbench.action.terminal.clear",
     title: "Clear",

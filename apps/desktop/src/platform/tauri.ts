@@ -42,6 +42,7 @@ function createDebugHost(): DebugHost {
   return {
     kinds: ["python", "node", "native", "java", "go", "dart", "flutter", "ruby", "dotnet", "php"],
     probe: (kind) => invoke<DebugProbe>("debug_probe", { kind }),
+    processes: () => invoke<{ pid: number; name: string; command: string }[]>("debug_processes"),
     async install(what, onEvent) {
       const channel = new Channel<DebugInstallEvent>();
       channel.onmessage = onEvent;

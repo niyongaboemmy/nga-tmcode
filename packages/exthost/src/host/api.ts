@@ -460,7 +460,11 @@ export function createApi(host: ExtHost, ext: ExtState) {
       ext.context?.subscriptions.push(d);
       return d;
     },
-    registerTaskProvider: () => noopDisposable(),
+    registerTaskProvider: (type: string, provider: Parameters<typeof host.tasks.register>[1]) => {
+      const d = host.tasks.register(String(type), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
+    },
     updateWorkspaceFolders: () => false,
   });
 
@@ -603,7 +607,22 @@ export function createApi(host: ExtHost, ext: ExtState) {
     onDidChangeBreakpoints: new EventEmitter<unknown>().event,
     onDidReceiveDebugSessionCustomEvent: new EventEmitter<unknown>().event,
   });
-  const tasks = g("tasks", { taskExecutions: [], onDidStartTask: new EventEmitter<unknown>().event, onDidEndTask: new EventEmitter<unknown>().event, onDidStartTaskProcess: new EventEmitter<unknown>().event, onDidEndTaskProcess: new EventEmitter<unknown>().event });
+  const tasks = g("tasks", {
+    get taskExecutions() {
+      return host.tasks.taskExecutions;
+    },
+    registerTaskProvider: (type: string, provider: Parameters<typeof host.tasks.register>[1]) => {
+      const d = host.tasks.register(String(type), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
+    },
+    fetchTasks: (filter?: { type?: string }) => host.tasks.fetch(filter),
+    executeTask: (task: Parameters<typeof host.tasks.execute>[0]) => host.tasks.execute(task),
+    onDidStartTask: host.tasks.onDidStartTask.event,
+    onDidEndTask: host.tasks.onDidEndTask.event,
+    onDidStartTaskProcess: host.tasks.onDidStartTaskProcess.event,
+    onDidEndTaskProcess: host.tasks.onDidEndTaskProcess.event,
+  });
 
   const api: Record<string, unknown> = {
     version: API_VERSION,

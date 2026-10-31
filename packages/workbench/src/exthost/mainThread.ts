@@ -1,4 +1,5 @@
 import { terminalOp } from "./terminals";
+import { registerExtensionTaskSource, toUserTask, type ExtensionTaskDTO } from "../tasks/extensionTasks";
 import { virtualChanged, virtualScheme } from "./virtualDocs";
 import { setExtensionEnv } from "../terminal/env";
 import type { TerminalEnvMutation } from "../platform/types";
@@ -35,6 +36,8 @@ export interface MainContext {
   /** Commands this host registered at runtime → unregister. */
   commands: Map<string, () => void>;
   persistState(scope: "global" | "workspace", extensionId: string, key: string, value: unknown): void;
+  /** Removes this host's task source (set when it is installed). */
+  disposeTaskSource?: () => void;
 }
 
 const MONACO_SEVERITY = [8, 4, 2, 1];
@@ -420,6 +423,19 @@ export function installMainThread(ctx: MainContext) {
   const kind = ctx.kind;
   hookModels();
   r.register("$main.ready", () => null);
+  // Extensions' tasks (tasks.registerTaskProvider / executeTask): listed in Run Task, run by the task runner.
+  ctx.disposeTaskSource?.();
+  ctx.disposeTaskSource = registerExtensionTaskSource(() => r.request("$provideTasks", []) as Promise<ExtensionTaskDTO[]>);
+  let taskSeq = 0;
+  r.register("$main.executeTask", ([dto]) => {
+    const id = ++taskSeq;
+    const task = toUserTask(dto as ExtensionTaskDTO);
+    void import("../tasks/runner").then(({ runUserTask }) =>
+      runUserTask(task.label, { tasks: [task], inputs: [] }).then((results) => r.request("$taskEnded", [id, results.at(-1)?.exitCode ?? null]).catch(() => undefined)),
+    );
+    return id;
+  });
+  r.register("$main.terminateTask", () => null);
   r.register("$main.virtualScheme", ([scheme, type, ext, on]) => virtualScheme(kind, r, String(scheme), type === "fs" ? "fs" : "content", String(ext), !!on));
   r.register("$main.virtualChanged", ([uri]) => virtualChanged(String(uri)));
   r.register("$main.envCollection", ([ext, list]) => setExtensionEnv(String(ext), (Array.isArray(list) ? list : []) as TerminalEnvMutation[]));

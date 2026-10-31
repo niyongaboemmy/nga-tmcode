@@ -267,6 +267,26 @@ export const TEMPLATES: ConfigTemplate[] = [
     config: { name: "Java: Attach (5005)", type: "java", request: "attach", hostName: "127.0.0.1", port: 5005 },
   },
   {
+    label: "Node.js: Attach",
+    description: "Attach to a Node.js program started with --inspect (port 9229)",
+    config: { type: "node", request: "attach", name: "Attach", port: 9229, skipFiles: ["<node_internals>/**"] },
+  },
+  {
+    label: "Node.js: Attach to Process",
+    description: "Pick a running Node.js program",
+    config: { type: "node", request: "attach", name: "Attach to Process", processId: "${command:PickProcess}", skipFiles: ["<node_internals>/**"] },
+  },
+  {
+    label: "Python Debugger: Attach",
+    description: "Attach to a program started with python -m debugpy --listen 5678",
+    config: { name: "Python Debugger: Attach", type: "debugpy", request: "attach", connect: { host: "localhost", port: 5678 } },
+  },
+  {
+    label: "Python Debugger: Attach using Process Id",
+    description: "Pick a running Python program",
+    config: { name: "Python Debugger: Attach using Process Id", type: "debugpy", request: "attach", processId: "${command:pickProcess}" },
+  },
+  {
     label: "Go: Launch Package",
     description: "Debug the Go package of the active file with Delve",
     config: { name: "Go: Launch Package", type: "go", request: "launch", mode: "debug", program: "${fileDirname}" },
@@ -347,6 +367,22 @@ export function substitute<T>(value: T, ctx: SubstitutionContext): T {
       // "${command:pickArgs}" expands to the chosen arguments, in place.
       return v.flatMap((x) => (x === "${command:pickArgs}" ? (ctx.args ?? []) : [walk(x)]));
     }
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+    return v;
+  };
+  return walk(value) as T;
+}
+
+/** Does a configuration use `${command:pickProcess}` (VS Code's spelling, any case)? */
+export function usesPickProcess(config: unknown): boolean {
+  return /\$\{command:pickProcess\}/i.test(JSON.stringify(config));
+}
+
+/** Puts the picked process id in: a value that is only the placeholder becomes the number. */
+export function withProcessId<T>(value: T, pid: number): T {
+  const walk = (v: unknown): unknown => {
+    if (typeof v === "string") return /^\$\{command:pickProcess\}$/i.test(v) ? pid : v.replace(/\$\{command:pickProcess\}/gi, String(pid));
+    if (Array.isArray(v)) return v.map(walk);
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
     return v;
   };
