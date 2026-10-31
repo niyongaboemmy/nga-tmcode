@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { tr, useLocale } from "../messages/i18n";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
 import { inAppMenus, menuItems, type MenuSpec } from "../commands/menus";
 import { closeContextMenu, getPlatform, openContextMenu, useWorkbench, type ContextMenuItem } from "../state/store";
@@ -43,7 +44,7 @@ function MenuButton() {
           r.bottom,
           MENUS.map((m) => ({
             kind: "item" as const,
-            label: `${m.label}  ›`,
+            label: `${tr(m.label)}  ›`,
             run: () => setTimeout(() => openContextMenu(r.left, r.bottom, itemsFor(m)), 0),
           })),
         );
@@ -65,6 +66,8 @@ export function menusThatFit(widths: number[], avail: number, moreWidth = 30): n
 }
 
 function MenuBar() {
+  // Re-render in the display language.
+  useLocale((s) => s.locale);
   const [open, setOpen] = useState<number | null>(null);
   const menuOpen = useWorkbench((s) => !!s.contextMenu);
   useEffect(() => {
@@ -122,7 +125,7 @@ function MenuBar() {
           onMouseEnter={(e) => open !== null && open !== i && show(i, e.currentTarget)}
           onKeyDown={(e) => (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") && show(i, e.currentTarget)}
         >
-          {m.label}
+          {tr(m.label)}
         </button>
       ))}
       {fit < MENUS.length && (
@@ -141,7 +144,7 @@ function MenuBar() {
             openContextMenu(
               r.left,
               r.bottom,
-              MENUS.slice(fit).map((m) => ({ kind: "item" as const, label: `${m.label}  ›`, run: () => setTimeout(() => openContextMenu(r.left, r.bottom, itemsFor(m)), 0) })),
+              MENUS.slice(fit).map((m) => ({ kind: "item" as const, label: `${tr(m.label)}  ›`, run: () => setTimeout(() => openContextMenu(r.left, r.bottom, itemsFor(m)), 0) })),
             );
           }}
         >

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { signal } from "../accessibility/signals";
 import { recordActivity } from "../activity/log";
 import { profileForPath } from "@tmcode/profiles";
 import { inExam, useExam } from "../exam/state";
@@ -1245,6 +1246,7 @@ async function onStopped(s: Session, b: StoppedEventBody) {
   const threadId = b.threadId ?? get().threads.find((t) => t.sessionId === s.id)?.id ?? 1;
   const frames = (await s.dap.stackTrace(threadId).catch(() => [] as StackFrame[])).map((f) => frameView(s, f));
   const reason = b.reason === "exception" ? "exception" : b.reason;
+  signal("debugStopped");
   set({
     phase: "stopped",
     progress: null,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTr } from "../../messages/i18n";
 import { DEFAULT_SETTINGS, SETTING_SECTIONS, type SettingDef, type SettingKey, type Settings } from "../../state/settings";
 import { openFile, openSpecialEditor, setWorkspaceSetting, updateSetting, useWorkbench } from "../../state/store";
 import { ActionButton, Codicon } from "../../widgets/icons";
@@ -97,6 +98,7 @@ function scopesOf(key: SettingKey, langs: Record<string, Partial<Settings>>) {
 }
 
 export function SettingsEditor() {
+  const t = useTr();
   const settings = useWorkbench((s) => s.userSettings);
   const languages = useWorkbench((s) => s.languageSettings);
   const overlay = useWorkbench((s) => s.workspaceSettings);
@@ -127,7 +129,7 @@ export function SettingsEditor() {
       <div className="tm-settings-header">
         <div className="tm-input-box tm-settings-search">
           <Codicon name="search" className="tm-input-leading" />
-          <input className="tm-input" placeholder="Search settings" aria-label="Search settings" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+          <input className="tm-input" placeholder={t("Search settings")} aria-label={t("Search settings")} value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
           <span className="tm-settings-count">{query || onlyModified ? `${count} Setting${count === 1 ? "" : "s"} Found` : ""}</span>
           <button
             type="button"
@@ -142,7 +144,7 @@ export function SettingsEditor() {
         </div>
         <div className="tm-settings-tabs" role="tablist" aria-label="Settings scope">
           <button type="button" role="tab" aria-selected={!workspaceTab} className={`tm-settings-tab ${!workspaceTab ? "is-active" : ""}`} onClick={() => setTab("user")}>
-            User
+            {t("User")}
           </button>
           {workspaceOpen && (
             <button
@@ -153,7 +155,7 @@ export function SettingsEditor() {
               title={`This folder's settings (${WORKSPACE_SETTINGS_FILE})`}
               onClick={() => setTab("workspace")}
             >
-              Workspace
+              {t("Workspace")}
             </button>
           )}
           <span className="tm-settings-tabs-actions">
@@ -186,7 +188,7 @@ export function SettingsEditor() {
               e.preventDefault();
               document.getElementById(`settings-${s.title}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}>
-              {s.title}
+              {t(s.title)}
             </a>
           ))}
           {!workspaceTab && !onlyModified && aiKeysMatch(query) && (
@@ -202,7 +204,7 @@ export function SettingsEditor() {
           {sections.length === 0 && !query && !onlyModified && <p className="tm-muted">{workspaceTab ? "This folder doesn't change any setting TMCode has." : "No settings found."}</p>}
           {sections.map((s) => (
             <section key={s.title} id={`settings-${s.title}`} className="tm-settings-section">
-              <h3>{s.title}</h3>
+              <h3>{t(s.title)}</h3>
               {s.settings.map((def) => {
                 const wsValue = overlay?.values[def.key];
                 const value = workspaceTab ? (wsValue ?? settings[def.key]) : settings[def.key];
@@ -212,8 +214,8 @@ export function SettingsEditor() {
                 return (
                   <div key={def.key} className={`tm-setting ${modified ? "is-modified" : ""}`} data-setting={def.key}>
                     <div className="tm-setting-title">
-                      <span className="tm-setting-category">{s.title}: </span>
-                      <strong>{def.label}</strong>
+                      <span className="tm-setting-category">{t(s.title)}: </span>
+                      <strong>{t(def.label)}</strong>
                       {modified && <span className="tm-setting-modified">{workspaceTab ? "Set in this folder" : "Modified"}</span>}
                       {!workspaceTab && inWorkspace(def.key) && (
                         <button type="button" className="tm-setting-badge" title="This folder's settings change it: see the Workspace tab" onClick={() => setTab("workspace")}>

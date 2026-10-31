@@ -47,6 +47,8 @@ export interface Settings {
   "terminal.integrated.gpuAcceleration": "auto" | "on" | "off";
   "terminal.integrated.minimumContrastRatio": number;
   "workbench.reduceMotion": boolean;
+  /** Display language of the workbench's own words ("en", "fr"). */
+  locale: "en" | "fr";
   /** Where the Panel sits (VS Code's workbench.panel.defaultLocation). */
   "workbench.panel.defaultLocation": "bottom" | "left" | "right";
   /** Centered Layout: the editor in the middle of a wide window. */
@@ -95,6 +97,8 @@ export interface Settings {
   "git.blame.statusBarItem.enabled": boolean;
   /** Screen reader mode for the editor. */
   "editor.accessibilitySupport": "auto" | "on" | "off";
+  /** Sounds for errors, failures and stops (VS Code's accessibility signals): with the screen reader ("auto"), always or never. */
+  "accessibility.signals": "auto" | "on" | "off";
   /** Whole-window zoom: 0 is 100 %, each step is 20 % (VS Code's window.zoomLevel). */
   "window.zoomLevel": number;
   /** User keybindings: command id → key ("mod+shift+k"; "" removes the key). Edited in Keyboard Shortcuts. */
@@ -181,6 +185,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.gpuAcceleration": "auto",
   "terminal.integrated.minimumContrastRatio": 4.5,
   "workbench.reduceMotion": false,
+  locale: "en",
   "workbench.panel.defaultLocation": "bottom",
   "workbench.editor.centeredLayout": false,
   "update.mode": "default",
@@ -200,6 +205,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "git.blame.editorDecoration.enabled": false,
   "git.blame.statusBarItem.enabled": true,
   "editor.accessibilitySupport": "auto",
+  "accessibility.signals": "auto",
   "window.zoomLevel": 0,
   "keybindings.user": {},
   "workbench.activityBar.visible": true,
@@ -300,6 +306,16 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "none", label: "None" },
         ],
         dynamicOptions: "iconThemes",
+      },
+      {
+        key: "locale",
+        label: "Display Language",
+        description: "The language of TMCode's menus, views and settings. Your code and Task Mentor's words are not translated.",
+        type: "enum",
+        options: [
+          { value: "en", label: "English" },
+          { value: "fr", label: "Français (French)" },
+        ],
       },
       {
         key: "workbench.panel.defaultLocation",
@@ -717,6 +733,17 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "auto", label: "auto (detect a screen reader)" },
           { value: "on", label: "on" },
           { value: "off", label: "off" },
+        ],
+      },
+      {
+        key: "accessibility.signals",
+        label: "Accessibility Signals",
+        description: "Short sounds when the cursor reaches a line with an error, a terminal command or a task fails or finishes, or the debugger stops.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "With the screen reader" },
+          { value: "on", label: "Always" },
+          { value: "off", label: "Never" },
         ],
       },
       { key: "window.zoomLevel", label: "Window: Zoom Level", description: "Zoom the whole window. 0 is 100 %, each step is 20 %.", type: "number", min: -5, max: 8 },

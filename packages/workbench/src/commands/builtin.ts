@@ -294,6 +294,31 @@ export function registerBuiltinCommands() {
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });
   registerCommand({ id: "workbench.action.keybindingsReference", title: "Open Keyboard Shortcuts", category: "Preferences", keybinding: "mod+k mod+s", run: () => openSpecialEditor("shortcuts") });
+  registerCommand({
+    id: "workbench.action.openIssueReporter",
+    title: "Report a Problem...",
+    category: "Help",
+    run: () => void import("../help/reportIssue").then((m) => m.openReport()),
+  });
+  registerCommand({
+    id: "editor.action.accessibleView",
+    title: "Open Accessible View",
+    category: "Accessibility",
+    keybinding: "alt+f2",
+    run: () => void import("../accessibility/AccessibleView").then((m) => m.openAccessibleView()),
+  });
+  registerCommand({
+    id: "workbench.action.configureLocale",
+    title: "Configure Display Language",
+    category: "Preferences",
+    run: async () => {
+      const { LOCALES } = await import("../messages/i18n");
+      const { showQuickPick } = await import("../widgets/QuickPick");
+      const current = useWorkbench.getState().settings.locale;
+      const pick = await showQuickPick({ placeholder: "Select Display Language", items: LOCALES.map((l) => ({ id: l.id, label: l.native, description: l.id === current ? "current" : l.label })) });
+      if (pick) updateSetting("locale", pick.id as "en" | "fr");
+    },
+  });
   registerCommand({ id: "workbench.action.openGlobalKeybindingsFile", title: "Open Keyboard Shortcuts (JSON)", category: "Preferences", run: () => openSpecialEditor("keybindingsJson") });
   registerCommand({ id: "workbench.action.openWelcome", title: "Home", category: "Help", run: () => openSpecialEditor("welcome") });
   registerCommand({ id: "workbench.action.showAbout", title: "About", category: "Help", run: showAbout });

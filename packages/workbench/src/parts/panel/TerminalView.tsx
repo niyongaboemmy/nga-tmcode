@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { signal } from "../../accessibility/signals";
 import { terminalEnv } from "../../terminal/env";
 import type { TerminalEnvMutation } from "../../platform/types";
 import { recordTerminalCommand } from "../../activity/sources";
@@ -262,6 +263,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
         recordTerminalCommand(c.command, inst.name || null);
       }
       decorateCommand(c, t, decorationActions);
+      if (c.exitCode !== undefined && c.exitCode !== 0) signal("terminalCommandFailed");
     });
     const inst: Instance = {
       id,

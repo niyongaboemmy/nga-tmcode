@@ -11823,3 +11823,33 @@ button.tm-setting-badge {
   font-size: 12px;
   white-space: pre-wrap;
 }
+
+/* ───────────── Accessible View ───────────── */
+.tm-accessible-view {
+  position: fixed;
+  inset: 12% 18%;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--widget-border);
+  border-radius: 8px;
+  background: var(--editor-bg);
+  box-shadow: 0 8px 32px var(--shadow);
+}
+.tm-accessible-view-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-accessible-view textarea {
+  flex: 1;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--editor-fg);
+  font-family: var(--font-mono, Menlo, Consolas, monospace);
+  font-size: 13px;
+}

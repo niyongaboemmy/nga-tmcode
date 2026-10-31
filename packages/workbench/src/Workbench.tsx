@@ -1,4 +1,8 @@
 import { useActivity } from "./state/activity";
+import { wireErrorCapture } from "./help/reportIssue";
+import { AccessibleView } from "./accessibility/AccessibleView";
+import { wireSignals } from "./accessibility/signals";
+import { setLocale } from "./messages/i18n";
 import { wireAi } from "./ai/commands";
 import { AuxiliaryBar } from "./parts/AuxiliaryBar";
 import { wireActivity } from "./activity/sources";
@@ -136,6 +140,11 @@ export function Workbench() {
     wireWorkspaceFile();
     wireProfiles();
     wireSettingsSync();
+    wireSignals();
+    wireErrorCapture();
+    // The display language follows its setting.
+    setLocale(useWorkbench.getState().settings.locale);
+    useWorkbench.subscribe((st, prev) => st.settings.locale !== prev.settings.locale && setLocale(st.settings.locale));
     wireSmartEditor();
     wireRunServices();
     wireScm();
@@ -224,7 +233,8 @@ export function Workbench() {
         } else if (reserved) e.preventDefault();
       };
       if (blockingRef.current) return done("none");
-      if (inTerminal && !(e.metaKey || e.ctrlKey || e.key === "F1")) return done("none");
+      // The terminal keeps its keys, except F1 and Alt+F2 (the Accessible View, for its output).
+      if (inTerminal && !(e.metaKey || e.ctrlKey || e.key === "F1" || (e.altKey && e.key === "F2"))) return done("none");
       // The shell's reverse search (Ctrl+R) wins over Reload Window inside the terminal.
       if (inTerminal && os !== "mac" && c === "mod+r") return done("none");
       if (inMonaco && (e.metaKey || e.ctrlKey) && e.code === "KeyK") return done("none");
@@ -349,6 +359,7 @@ export function Workbench() {
       <WebviewLayer />
       <StatusBar chord={chord} />
       <QuickInput />
+      <AccessibleView />
       <QuickPickHost />
       <TooltipHost />
       <ContextMenu />

@@ -1,4 +1,5 @@
 import { terminalAllowed } from "@tmcode/protocol";
+import { signal } from "../accessibility/signals";
 import { ensureDocument } from "../monaco/documents";
 import { monaco } from "../monaco/setup";
 import type { NewTerminalRequest, OwnedTerminal } from "../parts/panel/TerminalView";
@@ -200,6 +201,7 @@ export async function runUserTask(label: string, file?: TasksFile): Promise<Task
       const r = await runOne(t, command, cwd);
       results.push(r);
       const failed = r.exitCode !== null && r.exitCode !== 0;
+      signal(failed ? "taskFailed" : "taskCompleted");
       if (failed) {
         notify("error", `The task '${t.label}' failed (exit code ${r.exitCode}).`, r.problems ? [{ label: "Show Problems", run: () => showPanel("problems") }] : undefined);
       } else if (r.problems) notify("warning", `The task '${t.label}' found ${r.problems} problem${r.problems === 1 ? "" : "s"}.`, [{ label: "Show Problems", run: () => showPanel("problems") }]);
