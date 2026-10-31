@@ -11,6 +11,7 @@ import { loadAiKeys, providerLabel, setCustomModels, useAiKeys } from "./keys";
 import { Codicon } from "../widgets/icons";
 import { renderMarkdown } from "../widgets/markdown";
 import { AiExtensions } from "./AiExtensions";
+import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli, signInCli, useAiClis, validCliModel, type CliId } from "./aiClis";
 import { useAiGate } from "./gate";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { approveStep, ask, MODES, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
@@ -301,6 +302,7 @@ function Answer({ m }: { m: Message }) {
               Your API Keys
             </button>
           )}
+          <CliFixes code={m.error.code} cli={m.error.reason} />
           {m.error.code === "SIGNED_OUT" && (
             <button type="button" className="tm-link-button" onClick={() => void signIn()}>
               Sign in
@@ -322,9 +324,48 @@ function Answer({ m }: { m: Message }) {
   );
 }
 
-export async function pickMode() {
-  if (!useAiKeys.getState().loaded) await loadAiKeys().catch(() => {});
-  const { status, mode } = useAi.getState();
+/** What to do when an AI CLI couldn't answer (the chat's and the terminal's error boxes); `cli` is the error's reason. */
+export function CliFixes({ code, cli, retry }: { code: string; cli?: string; retry?: () => void }) {
+  if (!code.startsWith("CLI_")) return null;
+  const id = (cli && cli in CLIS ? cli : cliOf(useAi.getState().mode)) as CliId | null;
+  const spec = id ? CLIS[id] : null;
+  return (
+    <>
+      {code === "CLI_MISSING" && id && (
+        <button type="button" className="tm-link-button" onClick={() => installCli(id)} data-testid="cli-install">
+          Install {spec!.label}
+        </button>
+      )}
+      {code === "CLI_SIGNED_OUT" && id && (
+        <button type="button" className="tm-link-button" onClick={() => signInCli(id)} data-testid="cli-signin">
+          Sign In with {spec!.account}
+        </button>
+      )}
+      {code === "CLI_LIMIT" && id && (
+        <button type="button" className="tm-link-button" onClick={() => void getPlatform().openExternal?.(spec!.plans)} data-testid="cli-plans">
+          Your {spec!.account} Plan
+        </button>
+      )}
+      {(code === "CLI_LIMIT" || code === "CLI_FAILED") && retry && (
+        <button type="button" className="tm-link-button" onClick={retry}>
+          Try Again
+        </button>
+      )}
+      <button type="button" className="tm-link-button" onClick={() => (setAiMode("free"), retry?.())} data-testid="cli-use-free">
+        {retry ? "Use Free AI and Retry" : "Switch to Free"}
+      </button>
+    </>
+  );
+}
+
+/** Waits for `p`, at most `ms` (then goes on without it). */
+const within = (p: Promise<unknown>, ms: number) => Promise.race([p.catch(() => undefined), new Promise((r) => setTimeout(r, ms))]);
+
+/** The picker's items: what Task Mentor offers (asked first when not known yet) and the AI CLIs. */
+async function modeItems(): Promise<PickItem[]> {
+  // The status says which models, premium and own keys there are: without it only Free and Auto showed.
+  await Promise.all([useAi.getState().status ? null : within(refreshAiStatus(), 8000), useAiKeys.getState().loaded ? null : within(loadAiKeys(), 3000), within(detectAllClis(), 8000)]);
+  const { status, mode, error } = useAi.getState();
   const keys = useAiKeys.getState();
   const icon = (id: string, fallback: string) => (id === mode ? "check" : fallback);
   const free: PickItem[] = [
@@ -334,6 +375,7 @@ export async function pickMode() {
     ]).map((m) => ({ id: m.id, label: m.label, detail: m.detail, icon: icon(m.id, m.id === "auto" ? "sparkle" : "gift") })),
     ...(status?.models ?? []).map((m) => ({ id: m.id, label: m.label, description: m.providerLabel, icon: icon(m.id, "circuit-board") })),
   ];
+  if (!status) free.push({ id: "__retry", label: "Couldn't load the other models", detail: `${error ?? "Task Mentor didn't answer."} Pick this to try again.`, icon: "refresh", alwaysShow: true });
   // Premium (Task Mentor ≥ 2026-10-25): the school's paid models, for the users it entitled.
   const pu = status?.premium_you;
   const premium: PickItem[] = status?.tiers?.premium
@@ -348,13 +390,58 @@ export async function pickMode() {
       for (const m of models) byok.push({ id: `byok:${p.id}/${m}`, label: m, description: `${p.label} · your key`, icon: icon(`byok:${p.id}/${m}`, "key") });
       byok.push({ id: `__custom:${p.id}`, label: `Another ${p.label} model…`, description: "type its id", icon: "add" });
     }
-    byok.push({ id: "__keys", label: keys.saved.length ? "Manage Your API Keys…" : "Add Your Own API Key…", description: "Settings › TMCode AI", icon: "gear", alwaysShow: true });
   }
+  // Also while the status couldn't load (it used to vanish then); an older Task Mentor, or own keys off: none.
+  if (status?.tiers?.byok || !status) byok.push({ id: "__keys", label: keys.saved.length ? "Manage Your API Keys…" : "Add Your Own API Key…", description: "Settings › TMCode AI", icon: "gear", alwaysShow: true });
   const section = (list: PickItem[], label: string) => list.map((x, i) => (i === 0 ? { ...x, separator: label } : x));
-  const items = [...section(free, "Free"), ...section(premium, `Premium${pu ? ` · ${Math.max(0, pu.limit - pu.used)} of ${pu.limit} left today` : ""}`), ...section(byok, "Your keys")];
-  const picked = await showQuickPick({ title: "Which AI answers", placeholder: premium.length || byok.length ? "Free AI, your school's premium models, or your own keys." : "Free AI only. Auto picks one that still has requests left today (best for agent modes).", items, matchOnDescription: true });
+  return [
+    ...section(free, "Free"),
+    ...section(premium, `Premium${pu ? ` · ${Math.max(0, pu.limit - pu.used)} of ${pu.limit} left today` : ""}`),
+    ...section(cliItems(icon), "Your AI accounts"),
+    ...section(byok, "Your keys"),
+  ];
+}
+
+/**
+ * Your AI accounts (ai/aiClis.ts): each CLI's models when it's signed in; else what to do (install,
+ * sign in). One line for all of them where the school doesn't allow third-party AI tools.
+ */
+function cliItems(icon: (id: string, fallback: string) => string): PickItem[] {
+  if (!getPlatform().proc) return [];
+  const blocked = cliBlocked();
+  if (blocked) return [{ id: "__cli:blocked", label: "Claude Code, ChatGPT and Gemini", detail: blocked, icon: "lock" }];
+  const all = useAiClis.getState();
+  return CLI_IDS.flatMap((id): PickItem[] => {
+    const spec = CLIS[id];
+    const cc = all[id];
+    if (cc.state === "missing") return [{ id: `__cli:install:${id}`, label: `Install ${spec.label}…`, description: `your ${spec.account} account`, icon: "cloud-download" }];
+    if (cc.state === "signed-out") return [{ id: `__cli:signin:${id}`, label: `Sign In to ${spec.label}…`, description: `with your ${spec.account} account`, detail: "Installed, not signed in yet.", icon: "account" }];
+    if (cc.state === "unavailable") return [{ id: `__cli:retry:${id}`, label: spec.label, detail: `${cc.detail ?? "It couldn't be checked."} Pick this to check again.`, icon: "warning" }];
+    const base = `cli:${id}`;
+    const who = cc.account ?? `your ${spec.account} account`;
+    return [
+      { id: base, label: spec.label, description: `${who} · its default model`, detail: "Your own account answers (no TMCode AI allowance used). Agent modes open it in the terminal.", icon: icon(base, "terminal") },
+      ...spec.models.map((m) => ({ id: `${base}/${m.id}`, label: `${spec.label} · ${m.label}`, description: m.detail, icon: icon(`${base}/${m.id}`, "terminal") })),
+      { id: `__cli:model:${id}`, label: `Another ${spec.label} model…`, description: "type its name", icon: "add" },
+    ];
+  });
+}
+
+export async function pickMode() {
+  const picked = await showQuickPick({ title: "Which AI answers", placeholder: "Free AI, your school's premium models, your Claude, ChatGPT or Gemini account, or your own API keys.", items: modeItems(), matchOnDescription: true });
   if (!picked) return;
   if (picked.id === "__keys") return openAiKeysSettings();
+  if (picked.id === "__retry") return void refreshAiStatus().then(pickMode);
+  const cli = /^__cli:(install|signin|retry|model):(\w+)$/.exec(picked.id);
+  if (cli) {
+    const id = cli[2] as CliId;
+    if (cli[1] === "install") return installCli(id);
+    if (cli[1] === "signin") return signInCli(id);
+    if (cli[1] === "retry") return void detectCli(id, true).then(pickMode);
+    const model = await showInputBox({ title: `A ${CLIS[id].label} model`, prompt: `The model name, as ${CLIS[id].label} accepts it (--model)`, validate: (v) => (validCliModel(v) ? null : "One model name: letters, digits, dots, dashes.") });
+    return model ? setAiMode(`cli:${id}/${model.trim()}`) : undefined;
+  }
+  if (picked.id === "__cli:blocked") return void notify("info", cliBlocked() ?? "AI CLIs aren't available here.");
   if (picked.id.startsWith("__custom:")) {
     const provider = picked.id.slice("__custom:".length);
     const model = await showInputBox({ title: `A ${providerLabel(provider)} model`, prompt: "The model id, as the provider names it", placeholder: "e.g. gpt-4.1-mini", validate: (v) => (!v.trim() || /\s/.test(v.trim()) ? "One model id, without spaces." : null) });

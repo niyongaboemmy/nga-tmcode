@@ -5,7 +5,8 @@ import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
-import { asAiError, chat, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
+import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
+import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 import { attachmentChips, attachmentText, type Attachment } from "./attachments";
 
 /**
@@ -51,7 +52,8 @@ export interface Message {
   model?: string;
   provider?: string;
   streaming?: boolean;
-  error?: { code: string; message: string };
+  /** `reason`: why (AI_DISABLED), or which AI CLI failed (CLI_*). */
+  error?: { code: string; message: string; reason?: string };
   /** The agent's steps, in order (agent modes). */
   steps?: Step[];
   /** Files this request changed: "Undo all" puts them back. */
@@ -161,6 +163,8 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
   if (!question || useChat.getState().busy) return;
   const ref = useChat.getState().reference;
   if (ref) question = `About your earlier answer:\n> ${ref.excerpt.replace(/\n/g, "\n> ")}\n\n${question}`;
+  // An AI CLI in an agent mode: it works on the project itself, in a terminal (ai/aiClis.ts).
+  if (mode !== "chat" && isCliMode(effectiveMode())) return askCliAgent(text.trim(), question, mode);
   const { context, chips } = await gatherContext(opts);
   const prior = priorTurns();
   const images = (opts.attachments ?? []).flatMap((a) => (a.kind === "image" && a.image ? [a.image] : []));
@@ -181,6 +185,23 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
   const turn: WireMessage = { role: "user", content: images.length ? [{ type: "text", text: question }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))] : question };
   if (mode === "chat") return answerOnce(answer.id, [...prior, turn], context);
   return runAgent(answer.id, mode, [...prior, turn], context);
+}
+
+async function askCliAgent(shown: string, task: string, mode: AgentMode) {
+  const label = MODES.find((m) => m.id === mode)!.label;
+  const cli = CLIS[cliOf(effectiveMode()) ?? "claude"];
+  const user: Message = { id: ++seq, role: "user", content: shown, mode };
+  const answer: Message = { id: ++seq, role: "assistant", content: "", streaming: true, mode, provider: cli.label };
+  useChat.setState((s) => ({ messages: [...s.messages, user, answer], busy: true, history: [...s.history.filter((h) => h !== shown), shown].slice(-50), reference: null }));
+  const file = activeFilePath();
+  const r = await openCliAgent(file ? `${task}\n\n(The file open in the editor: ${file})` : task, mode, effectiveMode());
+  if (!r.ok) return fail(answer.id, r.error);
+  patch(answer.id, {
+    streaming: false,
+    model: "terminal",
+    content: `${cli.label} is working on this in the terminal (**${label}**: \`${r.command}\`). It asks there before anything the mode doesn't allow, and its changes show in your editor as it makes them.`,
+  });
+  useChat.setState({ busy: false });
 }
 
 /** One streamed request; resolves with its text and tool calls. */
@@ -231,16 +252,16 @@ function finish(id: number, content: string, provider: string, model: string) {
   recordActivity({
     kind: "ai",
     action: "answer",
-    text: `TMCode AI answered (${content.length} characters${/```/.test(content) ? ", with code" : ""})`,
+    text: `${isCliProvider(provider) ? provider : "TMCode AI"} answered (${content.length} characters${/```/.test(content) ? ", with code" : ""})`,
     data: { chars: content.length, model, provider },
     actor: { type: "tmcode-ai" },
-    ai: { by: "TMCode AI", how: "answered in the chat", model: `${provider} · ${model}` },
+    ai: { by: isCliProvider(provider) ? provider : "TMCode AI", how: "answered in the chat", model: `${provider} · ${model}` },
   });
 }
 
 function fail(id: number, err: unknown) {
   const e = asAiError(err as AiRequestError);
-  patch(id, { streaming: false, error: { code: e.code, message: e.message } });
+  patch(id, { streaming: false, error: { code: e.code, message: e.message, ...(e.reason ? { reason: e.reason } : {}) } });
   useChat.setState({ busy: false });
   cancel = null;
 }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getPlatform } from "../state/store";
+import { cliChat, cliModeLabel, isCliMode } from "./aiClis";
 import { aiExamActive, aiGate, aiReasonText } from "./gate";
 import { MissingKeyError, modeFields, parseMode, providerLabel, whenKeyRemoved } from "./keys";
 
@@ -10,7 +11,10 @@ import { MissingKeyError, modeFields, parseMode, providerLabel, whenKeyRemoved }
  * - "auto": TMCode picks a free AI that still has requests left today;
  * - "<provider>/<model>": one free model;
  * - "premium:<provider>/<model>": the school's paid models, for users it entitled (Task Mentor ≥ 2026-10-25);
- * - "byok:<provider>/<model>": the user's own key (ai/keys.ts), sent with that request only.
+ * - "byok:<provider>/<model>": the user's own key (ai/keys.ts), sent with that request only;
+ * - "cli:<claude|codex|gemini>[/<model>]": Claude Code, Codex (ChatGPT) or Gemini CLI on this
+ *   computer, signed in with the user's own account (ai/aiClis.ts): answers never reach Task Mentor
+ *   (suggestions use Free there).
  * Whether it may run is Task Mentor's AI status for the open project (ai/gate.ts), sent with
  * `project_id`; in exams the exam policy's `ai`. Without an NGA sign-in it can't run.
  */
@@ -131,6 +135,7 @@ export function setAiSuggestions(on: boolean) {
 export function modeLabel(mode: string, status: AiStatus | null = useAi.getState().status): string {
   if (mode === "free") return "Free";
   if (mode === "auto") return "Auto";
+  if (isCliMode(mode)) return cliModeLabel(mode);
   const p = parseMode(mode);
   if (p.tier === "premium") return `${status?.premium_models?.find((m) => m.id === mode)?.label ?? p.model} · Premium`;
   if (p.tier === "byok") return `${p.model} · your ${providerLabel(p.provider ?? "")} key`;
@@ -142,6 +147,8 @@ export function modeLabel(mode: string, status: AiStatus | null = useAi.getState
  * turned off, or an older server): then Free, so a request never fails for a choice that's gone.
  */
 export function effectiveMode(mode: string = useAi.getState().mode, status: AiStatus | null = useAi.getState().status): string {
+  // AI CLIs: where third-party AI tools are allowed (not in exams, not where the school says no).
+  if (isCliMode(mode)) return aiGate().thirdParty ? mode : "free";
   const tier = parseMode(mode).tier;
   if (tier === "free" || !status) return mode;
   if (tier === "premium") return status.tiers?.premium && status.premium_models?.some((m) => m.id === mode) ? mode : "free";
@@ -156,6 +163,7 @@ export function effectiveMode(mode: string = useAi.getState().mode, status: AiSt
 export function aiReadsImages(mode: string = useAi.getState().mode, status: AiStatus | null = useAi.getState().status): boolean {
   if (!status) return false;
   const m = effectiveMode(mode, status);
+  if (isCliMode(m)) return false;
   const models = status.models ?? [];
   if (m === "free") return models.some((x) => x.provider === "openrouter" && x.vision);
   if (m === "auto") return models.some((x) => x.vision);
@@ -166,8 +174,11 @@ export function aiReadsImages(mode: string = useAi.getState().mode, status: AiSt
 
 /** `mode` (and `byok`) for a request body: own keys are read from the keychain now. */
 export async function requestModeFields(): Promise<{ mode: string; byok?: { provider: string; key: string } }> {
+  const mode = effectiveMode();
+  // An AI CLI answers on this computer; what still goes to Task Mentor (suggestions) uses Free.
+  if (isCliMode(mode)) return { mode: "free" };
   try {
-    return await modeFields(effectiveMode());
+    return await modeFields(mode);
   } catch (e) {
     if (e instanceof MissingKeyError) throw new AiRequestError("BYOK_MISSING", e.message);
     throw e;
@@ -357,6 +368,8 @@ export interface StreamHandlers {
 export async function chat(messages: WireMessage[], context: ChatContext | undefined, on: StreamHandlers, agent?: AgentRequest): Promise<() => void> {
   const gate = aiGate();
   if (!gate.chat) throw new AiRequestError(gate.reason === "EXAM_ACTIVE" ? "EXAM_ACTIVE" : "AI_DISABLED", gate.message ?? aiReasonText(gate.reason), gate.reason ?? undefined);
+  const mode = effectiveMode();
+  if (isCliMode(mode) && !agent) return cliChat(messages, context, on, mode);
   const { id } = await call<{ id: string }>("POST", "/chat", { ...(await requestModeFields()), messages, context, ...(agent ? { agent } : {}), ...projectField() });
   const h = host();
   let finished = false;
