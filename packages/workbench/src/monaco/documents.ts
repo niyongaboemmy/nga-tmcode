@@ -15,7 +15,8 @@ import {
   useWorkbench,
   type Problem,
 } from "../state/store";
-import { basename, extname, isWithin, rebase } from "../util/paths";
+import { extname, isWithin, rebase } from "../util/paths";
+import { matchLanguage } from "./languageMatch";
 import { setIconLanguageResolver } from "../themes/iconThemes";
 import { recordSave, snapshotBeforeDelete, undoDeleteFor } from "../history/localHistory";
 import { isUntitled, untitledName, UNTITLED_SCHEME } from "../util/untitled";
@@ -65,18 +66,9 @@ const EXTRA_LANGS: Record<string, string> = { jsx: "javascript", tsx: "typescrip
 export function languageForPath(path: string): string {
   const ext = extname(path);
   if (EXTRA_LANGS[ext]) return EXTRA_LANGS[ext];
-  // File names first (Makefile), then the longest matching extension (".blade.php" before ".php");
-  // on a tie the later registration (an extension's language) wins, as in VS Code.
-  const name = basename(path).toLowerCase();
-  let best: { id: string; len: number } | null = null;
-  for (const l of monaco.languages.getLanguages()) {
-    if (l.filenames?.some((f) => f.toLowerCase() === name)) return l.id;
-    for (const e of l.extensions ?? []) {
-      const el = e.toLowerCase();
-      if (name.endsWith(el) && (!best || el.length >= best.len)) best = { id: l.id, len: el.length };
-    }
-  }
-  return best?.id ?? "plaintext";
+  // File names (Makefile, .env), then name patterns (.env.local), then the longest extension
+  // (".blade.php" before ".php"); an extension's language wins a tie, as in VS Code.
+  return matchLanguage(path, monaco.languages.getLanguages()) ?? "plaintext";
 }
 
 export function languageLabel(id: string | null): string {
