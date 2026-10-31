@@ -254,7 +254,8 @@ describe("textmate engine", () => {
       });
     }
     expect([...missing].filter((s) => !UNSHIPPED.has(s)).sort()).toEqual([]);
-  });
+    // Loads and tokenizes 200+ grammars: seconds on a slow CI runner.
+  }, 60_000);
 
   it("uses the light palette for Light Modern", async () => {
     const c = await colours("source.python", "light-modern", ["def f(): return 'x'"]);
