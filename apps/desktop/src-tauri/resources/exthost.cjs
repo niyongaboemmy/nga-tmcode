@@ -27,13 +27,13 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// packages/exthost/src/node/main.ts
+// src/node/main.ts
 var path2 = __toESM(require("node:path"), 1);
 var import_node_fs2 = require("node:fs");
 var import_node_module = __toESM(require("node:module"), 1);
 var import_node_async_hooks = require("node:async_hooks");
 
-// packages/exthost/src/api/uri.ts
+// src/api/uri.ts
 var windows = false;
 function setUriPlatform(isWindows) {
   windows = isWindows;
@@ -239,7 +239,7 @@ function asFormatted(uri, skipEncoding) {
   return res;
 }
 
-// packages/exthost/src/api/types.ts
+// src/api/types.ts
 function illegalArgument(name) {
   return new Error(`Illegal argument: ${name}`);
 }
@@ -1308,7 +1308,7 @@ var InlineCompletionItem = class {
   command;
 };
 
-// packages/exthost/src/api/events.ts
+// src/api/events.ts
 var EventEmitter = class _EventEmitter {
   static onListenerError = (e) => console.error(e);
   /** Set by the Node host: a listener runs in the context of the extension that subscribed (activity attribution). */
@@ -1390,10 +1390,10 @@ var CancellationTokenSource = class {
   }
 };
 
-// packages/exthost/src/node/main.ts
+// src/node/main.ts
 var import_node_url = require("node:url");
 
-// packages/exthost/src/rpc.ts
+// src/rpc.ts
 var encoder = new TextEncoder();
 var decoder = new TextDecoder();
 function encodeFrame(message) {
@@ -1582,7 +1582,7 @@ var RpcConnection = class {
   }
 };
 
-// packages/exthost/src/host/authentication.ts
+// src/host/authentication.ts
 var sameScopes = (a, b) => a.length === b.length && [...a].sort().join(" ") === [...b].sort().join(" ");
 var Authentication = class {
   constructor(host2) {
@@ -1674,7 +1674,7 @@ var Authentication = class {
   }
 };
 
-// packages/exthost/src/api/moreTypes.ts
+// src/api/moreTypes.ts
 var moreTypes_exports = {};
 __export(moreTypes_exports, {
   Breakpoint: () => Breakpoint,
@@ -2256,7 +2256,7 @@ var enums = {
   InlineCompletionEndOfLifeReasonKind: { Accepted: 0, Rejected: 1, Ignored: 2 }
 };
 
-// packages/exthost/src/host/tabs.ts
+// src/host/tabs.ts
 var Tab = class {
   constructor(id, group) {
     this.id = id;
@@ -2403,7 +2403,7 @@ function sameInput(a, b) {
   return x.viewType === y.viewType;
 }
 
-// packages/exthost/src/host/virtualDocs.ts
+// src/host/virtualDocs.ts
 var RESERVED = /* @__PURE__ */ new Set(["file", "untitled", "tmcode", "http", "https", "vscode", "tmwebview", "tmpreview"]);
 var enc = new TextEncoder();
 var dec = new TextDecoder();
@@ -2479,7 +2479,7 @@ var VirtualDocs = class {
   }
 };
 
-// packages/exthost/src/host/tasks.ts
+// src/host/tasks.ts
 var quote = (a) => /^[\w@%+=:,./${}-]+$/.test(a) ? a : `"${a.replace(/(["\\$`])/g, "\\$1")}"`;
 var argText = (a) => typeof a === "string" ? quote(a) : a && typeof a === "object" && typeof a.value === "string" ? quote(a.value) : "";
 function toTaskDTO(task) {
@@ -2567,7 +2567,7 @@ var TaskService = class {
   }
 };
 
-// packages/exthost/src/host/convert.ts
+// src/host/convert.ts
 var range = {
   from(r) {
     return [r.start.line, r.start.character, r.end.line, r.end.character];
@@ -2785,7 +2785,7 @@ function selector(sel) {
   return out;
 }
 
-// packages/exthost/src/host/scm.ts
+// src/host/scm.ts
 var ScmService = class {
   constructor(rpc, paths, cache2) {
     this.rpc = rpc;
@@ -2959,7 +2959,7 @@ var ScmService = class {
   }
 };
 
-// packages/exthost/src/host/testing.ts
+// src/host/testing.ts
 var Collection = class {
   constructor(owner, changed) {
     this.owner = owner;
@@ -3128,7 +3128,7 @@ Actual: ${e.actualOutput ?? ""}` : text;
   return Array.isArray(m) ? m.map(one).join("\n") : one(m);
 }
 
-// packages/exthost/src/host/debugConfig.ts
+// src/host/debugConfig.ts
 var DebugConfigService = class {
   constructor(rpc, folder) {
     this.rpc = rpc;
@@ -3169,7 +3169,7 @@ var DebugConfigService = class {
   }
 };
 
-// packages/exthost/src/activation.ts
+// src/activation.ts
 var list = (v) => Array.isArray(v) ? v.filter((x) => !!x && typeof x === "object") : [];
 function activationEventsOf(manifest) {
   const out = /* @__PURE__ */ new Set();
@@ -3194,7 +3194,7 @@ function workspaceContainsPatterns(events) {
   return events.filter((e) => e.startsWith("workspaceContains:")).map((e) => e.slice("workspaceContains:".length)).filter(Boolean);
 }
 
-// packages/exthost/src/configuration.ts
+// src/configuration.ts
 var isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function typeDefault(type) {
   const t = Array.isArray(type) ? type[0] : type;
@@ -3345,7 +3345,7 @@ function affects(changedKeys, section) {
   });
 }
 
-// packages/exthost/src/host/document.ts
+// src/host/document.ts
 var DEFAULT_WORD_REGEXP = /(-?\d*\.\d\w*)|([^`~!@#$%^&*()\-=+[{\]}\\|;:'",.<>/?\s]+)/g;
 var DocumentData = class {
   constructor(uri, text, languageId, version, saveFn, eol) {
@@ -3554,7 +3554,7 @@ var TextDocumentFacade = class {
   }
 };
 
-// packages/exthost/src/host/glob.ts
+// src/host/glob.ts
 var cache = /* @__PURE__ */ new Map();
 function escapeRe(c) {
   return c.replace(/[.+^$()|\\/]/g, "\\$&");
@@ -3622,7 +3622,7 @@ function enabledPatterns(obj) {
   return Object.entries(obj).filter(([, v]) => v === true).map(([k]) => k);
 }
 
-// packages/exthost/src/host/api.ts
+// src/host/api.ts
 var noopDisposable = () => new Disposable(() => {
 });
 function guard(host2, ext, nsName, ns) {
@@ -4379,7 +4379,7 @@ function createApi(host2, ext) {
   return guard(host2, ext, "", api);
 }
 
-// packages/exthost/src/host/terminals.ts
+// src/host/terminals.ts
 var C = "\x1B]633;C\x07";
 var D = (code) => `\x1B]633;D${code === void 0 ? "" : `;${code}`}\x07`;
 var Execution = class {
@@ -4572,7 +4572,7 @@ var TerminalService = class {
   }
 };
 
-// packages/exthost/src/host/views.ts
+// src/host/views.ts
 var isObj2 = (v) => !!v && typeof v === "object";
 var TYPED = {
   Uint8Array,
@@ -5223,7 +5223,7 @@ var ViewsHost = class {
   }
 };
 
-// packages/exthost/src/host/languageBasics.ts
+// src/host/languageBasics.ts
 var C2 = { lineComment: "//", blockComment: ["/*", "*/"] };
 var HASH = { lineComment: "#" };
 var XML = { blockComment: ["<!--", "-->"] };
@@ -5302,7 +5302,7 @@ function languageBasicsManifest(languages = Object.keys(LANGUAGE_COMMENTS).map((
   };
 }
 
-// packages/exthost/src/host/extHost.ts
+// src/host/extHost.ts
 var API_VERSION = "1.106.0";
 var NotSupportedError = class extends Error {
   constructor(what) {
@@ -6702,7 +6702,7 @@ function languageFromName(path3) {
   return EXT_LANG[ext] ?? "plaintext";
 }
 
-// packages/exthost/src/node/nodeFs.ts
+// src/node/nodeFs.ts
 var import_node_fs = require("node:fs");
 var path = __toESM(require("node:path"), 1);
 var NodeFs = class {
@@ -6804,7 +6804,7 @@ var NodeFs = class {
   }
 };
 
-// packages/exthost/src/node/ptyShim.ts
+// src/node/ptyShim.ts
 var PTY_SHIM_SOURCE = String.raw`"use strict";
 const { spawn: cp } = require("child_process");
 const { EventEmitter } = require("events");
@@ -6860,7 +6860,7 @@ exports.native = undefined;
 `;
 var PTY_SHIM_PACKAGE = JSON.stringify({ name: "node-pty", version: "1.0.0-tmcode", main: "lib/index.js", description: "TMCode's node-pty stand-in (no native addon)" }, null, 2);
 
-// packages/exthost/src/node/main.ts
+// src/node/main.ts
 var realWrite = process.stdout.write.bind(process.stdout);
 var realExit = process.exit.bind(process);
 function send(message) {
