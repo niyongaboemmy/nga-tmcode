@@ -163,6 +163,10 @@ export function createSimulatedTerminal(fs: FileSystem) {
               void runLine(cmd).finally(() => {
                 lineRunning = false;
               });
+            } else if (ch === "\x15") {
+              // Ctrl+U: clear the typed line (TMCode AI does before it types a command).
+              out("\b \b".repeat(line.length));
+              line = "";
             } else if (ch === "\x7f") {
               if (line) {
                 line = line.slice(0, -1);

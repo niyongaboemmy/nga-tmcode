@@ -1,6 +1,8 @@
 import type { Terminal } from "@xterm/xterm";
 import { getPlatform, notify, openContextMenu, type ContextMenuItem } from "../state/store";
 import { stateOf, type ShellIntegration, type TerminalCommand } from "./shellIntegration";
+import { worthFixing } from "./ai";
+import { openTerminalAi, terminalAiEnabled } from "./aiSession";
 
 /**
  * VS Code's command decorations: a mark in the terminal's left margin beside
@@ -44,6 +46,14 @@ export function commandMenu(c: TerminalCommand, actions: DecorationActions): Con
     { kind: "item", label: "Copy Command", disabled: !c.command, run: () => void copy(c.command, "command") },
     { kind: "item", label: "Copy Output", disabled: !output, run: () => void copy(output, "output") },
     { kind: "item", label: "Re-run Command", disabled: !c.command || stateOf(c) === "running", run: () => actions.run(c.command) },
+    // TMCode AI reads the terminal's last command, so only the last one gets these.
+    ...(terminalAiEnabled() && c.command && actions.integration()?.commands.at(-1) === c
+      ? [
+          { kind: "separator" as const },
+          ...(worthFixing(c.exitCode) ? [{ kind: "item" as const, label: "Fix with TMCode AI", run: () => openTerminalAi({ kind: "fix" }) }] : []),
+          { kind: "item" as const, label: "Explain with TMCode AI", disabled: stateOf(c) === "running", run: () => openTerminalAi({ kind: "explain" }) },
+        ]
+      : []),
   ];
 }
 

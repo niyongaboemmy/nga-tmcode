@@ -43,6 +43,9 @@ export interface Settings {
   /** TMCode's coloured prompt: "auto" when the shell's own prompt has no colours. */
   "terminal.integrated.tmcodePrompt": "auto" | "on" | "off";
   "terminal.integrated.stickyScroll.enabled": boolean;
+  "terminal.integrated.ai.enabled": boolean;
+  "terminal.integrated.ai.hashPrompt": boolean;
+  "terminal.integrated.ai.suggestFixes": boolean;
   /** "auto": the GPU renderer in the desktop app, the DOM renderer in the browser. */
   "terminal.integrated.gpuAcceleration": "auto" | "on" | "off";
   "terminal.integrated.minimumContrastRatio": number;
@@ -184,6 +187,9 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.shellIntegration.enabled": true,
   "terminal.integrated.tmcodePrompt": "auto",
   "terminal.integrated.stickyScroll.enabled": true,
+  "terminal.integrated.ai.enabled": true,
+  "terminal.integrated.ai.hashPrompt": true,
+  "terminal.integrated.ai.suggestFixes": true,
   "terminal.integrated.gpuAcceleration": "auto",
   "terminal.integrated.minimumContrastRatio": 4.5,
   "workbench.reduceMotion": false,
@@ -688,6 +694,24 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         ],
       },
       { key: "terminal.integrated.stickyScroll.enabled", label: "Sticky Scroll", description: "Keeps the running command at the top of the terminal while its output scrolls.", type: "boolean" },
+      {
+        key: "terminal.integrated.ai.enabled",
+        label: "TMCode AI in the Terminal",
+        description: "Ask TMCode AI for commands in your own words (⌘I / Ctrl+I in the terminal). Commands run only when you click Run. Your school's AI rules still apply.",
+        type: "boolean",
+      },
+      {
+        key: "terminal.integrated.ai.hashPrompt",
+        label: "Ask with # at the Prompt",
+        description: "Typing # and your words at the prompt (# list the files changed today) and pressing Enter asks TMCode AI instead of the shell. zsh, bash and fish with Shell Integration.",
+        type: "boolean",
+      },
+      {
+        key: "terminal.integrated.ai.suggestFixes",
+        label: "Offer a Fix When a Command Fails",
+        description: "After a command fails, shows Fix with AI and Explain beside the terminal.",
+        type: "boolean",
+      },
       {
         key: "terminal.integrated.gpuAcceleration",
         label: "GPU Acceleration",

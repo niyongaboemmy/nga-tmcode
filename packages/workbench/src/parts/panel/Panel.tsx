@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { tr, useLocale } from "../../messages/i18n";
 import { ProblemsView } from "./ProblemsView";
-import { clearOutput, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
+import { clearOutput, getPlatform, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { TerminalView } from "./TerminalView";
 import { RunConsole } from "./RunConsole";
@@ -26,11 +26,13 @@ import { useViews } from "../../exthost/views/model";
 import { terminalAllowed } from "@tmcode/protocol";
 import { terminalAction, useTerminalPanel } from "./TerminalView";
 import { newTerminal, openProfileMenu } from "../../terminal/commands";
+import { openTerminalAi } from "../../terminal/aiSession";
 
 /** VS Code's terminal title actions: New (+), the profile menu (⌄), Split, Kill. */
 function TerminalActions() {
   const count = useTerminalPanel((s) => s.count);
   const name = useTerminalPanel((s) => s.activeName);
+  const aiOn = useWorkbench((s) => s.settings["terminal.integrated.ai.enabled"] !== false);
   return (
     <>
       {count === 1 && name && (
@@ -49,6 +51,7 @@ function TerminalActions() {
           }}
         />
       </span>
+      {aiOn && <ActionButton icon="sparkle" label={`Ask TMCode AI (${getPlatform().os === "mac" ? "⌘I" : "Ctrl+I"})`} disabled={!count} onClick={() => openTerminalAi()} data-testid="terminal-ai-open" />}
       <ActionButton icon="split-horizontal" label="Split Terminal" disabled={!count} onClick={() => terminalAction("split")} />
       <ActionButton icon="trash" label="Kill Terminal" disabled={!count} onClick={() => terminalAction("kill")} />
     </>

@@ -192,3 +192,34 @@ test("an older Task Mentor: no premium or own keys, Free only", async ({ page })
   await expect(picker).not.toContainText("Premium");
   await expect(picker).not.toContainText("Your keys");
 });
+
+test("own keys: a wrong provider's key is spotted, the key is tested when saved, a model is one click, and removing the key goes back to Free", async ({ page }) => {
+  await teacher(page, { "tmcode:mock-ai-tiers": JSON.stringify({ premium: false, byok: true, staff: true }) });
+  await command(page, "TMCode AI: Manage Your API Keys");
+  const keys = page.getByTestId("ai-keys-settings");
+  await expect(keys.getByTestId("ai-premium-off")).toContainText("Not turned on for your account");
+  const openai = keys.locator('[data-provider="openai"]');
+  await openai.getByTestId("ai-key-add").click();
+  await openai.getByTestId("ai-key-input").fill("sk-ant-api03-mine");
+  await expect(openai.getByTestId("ai-key-shape")).toHaveText(/looks like an Anthropic key, not an OpenAI key/);
+
+  // A key the provider refuses: said at once, not at the first question.
+  await openai.getByTestId("ai-key-input").fill("bad");
+  await openai.getByTestId("ai-key-save").click();
+  await expect(openai.getByTestId("ai-key-check")).toContainText("OpenAI refused your API key");
+
+  await openai.getByTestId("ai-key-add").click();
+  await openai.getByTestId("ai-key-input").fill("sk-proj-good-key");
+  await openai.getByTestId("ai-key-save").click();
+  await expect(openai.getByTestId("ai-key-check")).toContainText("Your key works (gpt-4.1-mini answered).");
+
+  const use = openai.getByTestId("ai-key-use");
+  await use.getByRole("button", { name: "gpt-4.1-mini" }).click();
+  await expect(use.getByRole("button", { name: "gpt-4.1-mini" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ControlOrMeta+i");
+  await expect(page.getByTestId("ai-mode")).toContainText("gpt-4.1-mini · your OpenAI key");
+
+  await openai.getByTestId("ai-key-remove").click();
+  await expect(openai.getByTestId("ai-key-state")).toHaveText("No key");
+  await expect(page.getByTestId("ai-mode")).toContainText("Free");
+});

@@ -37,6 +37,8 @@ export function wireAi() {
     title: "Ask TMCode AI",
     category: "TMCode AI",
     keybinding: "mod+i",
+    // In the terminal ⌘I asks TMCode AI there (Terminal: Ask TMCode AI in the Terminal), as in VS Code.
+    when: () => !(document.activeElement as HTMLElement | null)?.closest?.(".xterm, .tm-term-ai"),
     enabled: allowed,
     run: () => {
       showAuxiliaryView("chat");

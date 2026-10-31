@@ -61,6 +61,14 @@ export async function saveAiKey(provider: string, key: string) {
 export async function removeAiKey(provider: string) {
   await host()?.delete(provider);
   rememberSaved(useAiKeys.getState().saved.filter((p) => p !== provider));
+  // A model on that key can't answer any more: back to Free rather than failing the next question.
+  onKeyRemoved?.(provider);
+}
+
+let onKeyRemoved: ((provider: string) => void) | null = null;
+/** ai/service.ts: what to do when a provider's key goes (it owns the picked mode). */
+export function whenKeyRemoved(fn: (provider: string) => void) {
+  onKeyRemoved = fn;
 }
 
 export function setCustomModels(provider: string, list: string[]) {
@@ -110,6 +118,55 @@ export async function modeFields(mode: string, read: (provider: string) => Promi
 
 const LABELS: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Google Gemini", openrouter: "OpenRouter", groq: "Groq", deepseek: "DeepSeek" };
 export const providerLabel = (p: string) => LABELS[p] ?? p;
+
+/** How each provider's keys start (the keys pages say so); a key of another provider is a common slip. */
+const KEY_SHAPES: { provider: ByokProvider; re: RegExp }[] = [
+  { provider: "anthropic", re: /^sk-ant-/ },
+  { provider: "openrouter", re: /^sk-or-/ },
+  { provider: "groq", re: /^gsk_/ },
+  { provider: "gemini", re: /^AIza/ },
+];
+
+/**
+ * A warning when `key` looks like another provider's ("This looks like an Anthropic key."), else
+ * null. Only a hint: providers change formats, so the key is saved either way.
+ */
+export function keyShapeWarning(provider: string, key: string): string | null {
+  const k = key.trim();
+  if (!k) return null;
+  const looks = KEY_SHAPES.find((s) => s.re.test(k))?.provider;
+  if (looks && looks !== provider) return `This looks like ${looks === "anthropic" ? "an" : "a"} ${providerLabel(looks)} key, not ${/^[aeiou]/i.test(providerLabel(provider)) ? "an" : "a"} ${providerLabel(provider)} key.`;
+  const own = KEY_SHAPES.find((s) => s.provider === provider);
+  if (own && !own.re.test(k)) return `${providerLabel(provider)} keys usually start with "${own.re.source.replace(/^\^/, "")}". Check you copied the whole key.`;
+  return null;
+}
+
+export type KeyCheck = { ok: true; model: string } | { ok: false; code: string; message: string };
+
+/**
+ * "Test key": asks Task Mentor to try the saved key once (POST /api/tmcode/ai/byok/verify, Task
+ * Mentor ≥ 2026-11) with `model`, else the provider's cheap check model. The key goes in that
+ * request's body only, as with every question.
+ */
+export async function verifyAiKey(provider: string, model?: string): Promise<KeyCheck> {
+  const key = await readAiKey(provider);
+  if (!key) return { ok: false, code: "BYOK_MISSING", message: `No ${providerLabel(provider)} key is saved on this computer.` };
+  const account = getPlatform().account;
+  if (!account) return { ok: false, code: "NO_ACCOUNT", message: "Sign in to NGA to test your key." };
+  let res;
+  try {
+    res = await account.request<Record<string, unknown>>({ method: "POST", path: "/api/tmcode/ai/byok/verify", json: { provider, key, ...(model ? { model } : {}) } });
+  } catch (e) {
+    return { ok: false, code: "OFFLINE", message: /sign in/i.test(String((e as Error)?.message ?? e)) ? "Sign in to NGA to test your key." : "Can't reach Task Mentor. Check your connection." };
+  }
+  const body = (res.body ?? {}) as Record<string, unknown>;
+  if (res.status >= 200 && res.status < 300 && body.ok) return { ok: true, model: String(body.model ?? model ?? "") };
+  if (res.status === 404) return { ok: false, code: "OLD_SERVER", message: "Your Task Mentor can't test keys yet. The key is checked on your first question." };
+  const nested = (body.error && typeof body.error === "object" ? body.error : {}) as Record<string, unknown>;
+  const code = String(body.code ?? body.error_code ?? nested.code ?? `HTTP_${res.status}`);
+  const message = String(body.message ?? nested.message ?? (typeof body.error === "string" ? body.error : "") ?? "") || `Task Mentor answered ${res.status}.`;
+  return { ok: false, code, message };
+}
 
 /** Where each provider's keys are made (Settings links). */
 export const KEY_PAGES: Record<string, string> = {

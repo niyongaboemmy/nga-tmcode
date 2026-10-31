@@ -84,6 +84,8 @@ export interface ShellIntegration extends IDisposable {
   onChange(listener: () => void): IDisposable;
   /** The text a command printed. */
   outputOf(c: TerminalCommand): string;
+  /** What is typed at the prompt now (null: a command runs, or no prompt is known). */
+  promptInput(): string | null;
 }
 
 /**
@@ -189,6 +191,18 @@ export function attachShellIntegration(term: Terminal, decorate?: (c: TerminalCo
         else lines.push(text);
       }
       return lines.join("\n").replace(/\s+$/, "");
+    },
+    promptInput() {
+      if (current || !pending?.input || pending.input.isDisposed) return null;
+      const buf = term.buffer.active;
+      let text = lineText(term, pending.input.line).slice(pending.inputX ?? 0);
+      // A long line wraps onto the next rows.
+      for (let y = pending.input.line + 1; y <= buf.baseY + buf.cursorY; y++) {
+        const line = buf.getLine(y);
+        if (!line?.isWrapped) break;
+        text += line.translateToString(true);
+      }
+      return text.trimEnd();
     },
     dispose() {
       handler.dispose();

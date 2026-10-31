@@ -11388,6 +11388,396 @@ button.tm-setting-badge {
   color: var(--description);
 }
 
+/* ───────────── TMCode AI in the terminal (⌘I, "# words", Fix with AI) ───────────── */
+.tm-term-ai {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--ai) 45%, var(--widget-border, var(--border)));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--widget-bg, var(--editor-bg)) 92%, var(--ai));
+  box-shadow:
+    0 12px 32px -8px var(--shadow),
+    0 0 0 1px color-mix(in srgb, var(--ai) 12%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--ai) 40%, transparent);
+  color: var(--foreground);
+  font: 13px var(--font-ui);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  animation: tm-term-ai-in var(--dur-med, 180ms) var(--ease-out, ease-out);
+  overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.tm-term-ai::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--ai), color-mix(in srgb, var(--ai) 40%, var(--info)), transparent);
+  opacity: 0.9;
+}
+.tm-term-ai[data-phase="asking"]::before {
+  background-size: 200% 100%;
+  animation: tm-term-ai-flow 1.4s linear infinite;
+}
+@keyframes tm-term-ai-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.98);
+  }
+}
+@keyframes tm-term-ai-flow {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-term-ai,
+  .tm-term-ai[data-phase="asking"]::before,
+  .tm-term-ai-shimmer {
+    animation: none;
+  }
+}
+.tm-term-ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 6px 12px;
+}
+.tm-term-ai-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tm-term-ai-title .codicon {
+  color: var(--ai);
+}
+.tm-term-ai-model {
+  min-width: 0;
+  max-width: 260px;
+}
+.tm-term-ai-model > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-term-ai-quota {
+  color: var(--description);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tm-term-ai-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 0 12px;
+  overflow: auto;
+}
+.tm-term-ai-body:empty {
+  display: none;
+}
+.tm-term-ai-lock,
+.tm-term-ai-tip,
+.tm-term-ai-explanation,
+.tm-term-ai-question,
+.tm-term-ai-card-why,
+.tm-term-ai-risk,
+.tm-term-ai-error p {
+  margin: 0;
+  line-height: 1.45;
+}
+.tm-term-ai-lock {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--warning);
+}
+.tm-term-ai-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tm-term-ai-example {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast, 100ms), background var(--dur-fast, 100ms);
+}
+.tm-term-ai-example:hover {
+  border-color: color-mix(in srgb, var(--ai) 60%, var(--border));
+  background: color-mix(in srgb, var(--ai) 10%, transparent);
+}
+.tm-term-ai-tip {
+  margin-top: 8px;
+  color: var(--description);
+  font-size: 12px;
+}
+.tm-term-ai-tip code,
+.tm-term-ai kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.tm-term-ai kbd {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--description);
+  line-height: 15px;
+  text-align: center;
+}
+.tm-button kbd {
+  margin-left: 6px;
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  color: inherit;
+  opacity: 0.8;
+}
+.tm-term-ai-request {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 5px 10px;
+  border-radius: 10px 10px 2px 10px;
+  background: color-mix(in srgb, var(--ai) 14%, transparent);
+  overflow-wrap: anywhere;
+}
+.tm-term-ai-request .tm-cmd {
+  background: transparent;
+}
+.tm-term-ai-thinking {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+.tm-term-ai-shimmer {
+  height: 10px;
+  width: 92%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--foreground) 7%, transparent) 25%, color-mix(in srgb, var(--ai) 25%, transparent) 50%, color-mix(in srgb, var(--foreground) 7%, transparent) 75%);
+  background-size: 200% 100%;
+  animation: tm-term-ai-flow 1.2s linear infinite;
+}
+.tm-term-ai-shimmer.is-short {
+  width: 55%;
+}
+.tm-term-ai-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--description);
+  font-size: 12px;
+}
+.tm-term-ai-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tm-term-ai-question {
+  display: flex;
+  gap: 6px;
+  color: var(--info);
+}
+.tm-term-ai-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--success);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--editor-bg) 70%, transparent);
+}
+.tm-term-ai-card.is-caution {
+  border-left-color: var(--warning);
+}
+.tm-term-ai-card.is-danger {
+  border-left-color: var(--error);
+  background: color-mix(in srgb, var(--error) 6%, var(--editor-bg));
+}
+.tm-term-ai-card .tm-cmd {
+  display: block;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  line-height: 19px;
+}
+.tm-term-ai-card-why {
+  color: var(--description);
+  font-size: 12px;
+}
+.tm-term-ai-risk {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 12px;
+}
+.tm-term-ai-risk.is-caution {
+  color: var(--warning);
+}
+.tm-term-ai-risk.is-danger {
+  color: var(--error);
+  font-weight: 600;
+}
+.tm-term-ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tm-term-ai-actions.is-confirm > span {
+  color: var(--error);
+  font-weight: 600;
+}
+.tm-button--danger {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+.tm-button--danger:hover {
+  filter: brightness(1.1);
+}
+.tm-term-ai-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--error);
+}
+.tm-term-ai-error .tm-term-ai-actions {
+  color: var(--foreground);
+}
+.tm-term-ai-input {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 8px 12px 0;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--input-border, var(--border));
+  border-radius: 8px;
+  background: var(--input-bg, var(--editor-bg));
+  transition: border-color var(--dur-fast, 100ms), box-shadow var(--dur-fast, 100ms);
+}
+.tm-term-ai-input:focus-within {
+  border-color: var(--ai);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ai) 22%, transparent);
+}
+.tm-term-ai-textarea {
+  flex: 1;
+  min-height: 22px;
+  max-height: 96px;
+  padding: 3px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--input-fg, var(--foreground));
+  font: inherit;
+  line-height: 18px;
+  resize: none;
+  field-sizing: content;
+}
+.tm-term-ai-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--ai);
+  color: #fff;
+  cursor: pointer;
+}
+.tm-term-ai-send:disabled {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--description);
+  cursor: default;
+}
+.tm-term-ai-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px 8px;
+  color: var(--description);
+  font-size: 11px;
+}
+@media (max-width: 520px) {
+  .tm-term-ai-foot > span,
+  .tm-term-ai-quota {
+    display: none;
+  }
+}
+/* After a failed command: "✗ npm tset failed  ✨ Fix with AI  Explain  ✕". */
+.tm-term-ai-hint {
+  position: absolute;
+  right: 22px;
+  bottom: 10px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 40px);
+  padding: 4px 4px 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--error) 40%, var(--widget-border, var(--border)));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--widget-bg, var(--editor-bg)) 94%, var(--error));
+  box-shadow: 0 6px 18px -6px var(--shadow);
+  font: 12px var(--font-ui);
+  animation: tm-term-ai-in-hint var(--dur-med, 180ms) var(--ease-out, ease-out);
+}
+@keyframes tm-term-ai-in-hint {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.tm-term-ai-hint > .codicon:first-child {
+  color: var(--error);
+}
+.tm-term-ai-hint-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--description);
+}
+.tm-term-ai-hint-text strong {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.tm-term-ai-hint-fix {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ai);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tm-term-ai-hint-fix:hover {
+  filter: brightness(1.1);
+}
+
 /* ───────────── TMCode AI attachments (paperclip, paste, drop) ───────────── */
 .tm-chat {
   position: relative;
@@ -12151,4 +12541,50 @@ button.tm-setting-badge {
 .tm-csv-table thead .tm-csv-n {
   left: 0;
   z-index: 2;
+}
+
+/* Settings › TMCode AI › Your API keys: key test result, wrong-provider hint, "Use for TMCode AI". */
+.tm-ai-key-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.tm-ai-key-check.is-ok {
+  color: var(--success);
+}
+.tm-ai-key-check.is-warn {
+  color: var(--warning);
+}
+.tm-ai-key-check.is-bad {
+  color: var(--error);
+}
+.tm-ai-key-use {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.tm-ai-key-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.tm-ai-key-model:hover {
+  border-color: color-mix(in srgb, var(--ai) 60%, var(--border));
+}
+.tm-ai-key-model.is-on {
+  border-color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 15%, transparent);
 }
