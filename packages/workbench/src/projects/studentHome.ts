@@ -49,10 +49,20 @@ const writeFlag = () => {
 function firstRunView() {
   const at = useWorkbench.getState();
   if (!isFirstRun() || inExam() || at.policy.mode !== "practice") return;
+  // Learning the role can take a few seconds. Once the student has clicked or typed, the
+  // side bar stays where they are (never pulled away from the Explorer mid-click).
+  let acted = false;
+  const act = () => {
+    acted = true;
+  };
+  window.addEventListener("pointerdown", act, { capture: true, once: true });
+  window.addEventListener("keydown", act, { capture: true, once: true });
   void import("../state/role").then(async ({ whenRoleResolved, isTeacherRole }) => {
     const { role } = await whenRoleResolved(4000);
+    window.removeEventListener("pointerdown", act, { capture: true });
+    window.removeEventListener("keydown", act, { capture: true });
     // The student may have chosen a view meanwhile: theirs wins.
-    if (role === "unknown" || inExam() || useWorkbench.getState().activeView !== "explorer") return;
+    if (acted || role === "unknown" || inExam() || useWorkbench.getState().activeView !== "explorer") return;
     revealView(isTeacherRole(role) ? "grading" : "assignments");
   });
 }
