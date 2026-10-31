@@ -13015,6 +13015,7 @@ button.tm-setting-badge {
 }
 .tm-sqld-issues li > button {
   flex: none;
+}
 .tm-ai-account-using {
   padding: 1px 8px;
   border-radius: 999px;
