@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.2.0 — 2026-10-31
+
+**TMCode 1.2: ask the terminal in your own words, easier own API keys, and colours for every kind of file.** Forgot a command? Press ⌘I (Ctrl+I) in the terminal, or type `#` and what you want at the prompt, and TMCode AI answers with the commands to run. When a command fails, Fix with AI explains why and gives the corrected one. Nothing runs until you click, and dangerous commands ask twice. Your own API keys are now tested when you add them, and `.env` files (and about 200 other file types) finally have colours.
+
+### TMCode AI in the terminal
+
+- **Ask in your own words.** Press **⌘I** (Ctrl+I) in the terminal, or click ✨ in the terminal's title bar, and say what you want: "find files bigger than 100 MB", "undo my last commit but keep the changes", "stop whatever is using port 3000".
+- **Or type `#` at the prompt:** `# list the files changed today`, then Enter. TMCode AI answers; the words never reach the shell. (zsh, bash and fish with Shell Integration.)
+- **Answers are commands you can use:**
+  - **Run** (⌘↵ / Ctrl+Enter) runs it in the terminal;
+  - **Insert** (⌥↵ / Alt+Enter) puts it at the prompt to edit first;
+  - **Copy**.
+  - Each command says what it does and names its important flags, so you learn the command, not just its result.
+- **Fix with AI.** When a command fails, Fix with AI and Explain appear beside the terminal. TMCode AI reads the command and the end of its output, says why it failed, and gives the corrected command. Fix and Explain are also in the menu of the last command's dot, and in the Command Palette (Terminal: Fix the Last Command with TMCode AI · Explain the Last Command with TMCode AI).
+- **Follow-ups** refine the answer: "only in the src folder", "for Windows".
+- **It knows where you are:** your shell, operating system, folder, the project's files (package.json, Makefile…) and your last commands.
+- **Safe by design:**
+  - Nothing runs until you click Run.
+  - TMCode checks every command itself. Commands that delete files, need administrator rights, force-push, rewrite git history, format a disk or run a script from the internet are marked **Dangerous** and ask "Run it anyway?". Installing packages or overwriting files is marked **Careful**.
+  - If a command is still running in the terminal, Run starts a new terminal instead of typing into the running program.
+- **Same rules as the rest of TMCode AI:** the model you pick (Free, Auto, Premium or your own key), today's allowance, and your school's and teacher's AI settings. It is off in exams, and the box says why when AI is off.
+- **The Activity log** records each question and each command run from an answer, with TMCode AI named.
+- **New settings (Terminal):**
+  - TMCode AI in the Terminal;
+  - Ask with # at the Prompt;
+  - Offer a Fix When a Command Fails.
+
+### Premium AI and your own API keys
+
+- **Test Key.** A key is tested as soon as you save it (one tiny request), and with Test Key at any time. A wrong key, no credit or an unknown model shows now, not at your first question.
+- **Wrong provider spotted.** Pasting an Anthropic key into OpenAI (or the other way round) shows a warning before you save.
+- **Use a model in one click.** Under each saved key, click a model to make TMCode AI answer with it.
+- **Removing a key** switches TMCode AI back to Free, so the next question doesn't fail.
+- **Premium explained.** When your school hasn't turned premium AI on for you, Settings › TMCode AI says so and where it's turned on.
+- **Current Claude models** suggested for Anthropic keys: claude-sonnet-5-5, claude-haiku-5-5, claude-opus-5-5.
+- More refusals offer **Switch to Free** (premium allowance used up, own keys turned off by the school, no key for that model).
+
+### Colours for every kind of file
+
+- **`.env` files have colours:** comments, names, values, numbers, true/false and `${VARIABLES}`. This covers `.env.local`, `.env.production`, `.env.example` and `*.env` too.
+- **About 200 more file types**, for example:
+  - ignore files (`.gitignore`, `.dockerignore`…), `.gitattributes`, `.editorconfig`, `.npmrc`;
+  - `requirements.txt`, `go.mod`, `Cargo.lock`, `Pipfile`, `tsconfig.json` (comments allowed);
+  - Dockerfile variants, Makefiles, `CMakeLists.txt`, Jenkinsfile and Gradle;
+  - nginx, Apache (`.htaccess`), SSH config, systemd, crontab, `.http` files, Terraform;
+  - Vue, Svelte, Astro, MDX, Blade, Jinja, Sass, Stylus;
+  - Haskell, Elixir, OCaml, Zig, Nim, LaTeX, Solidity, Nix, Fish and many more.
+- A file is recognised by its whole name first (`.env.local`, `Dockerfile.dev`), as in VS Code, not only by its last extension.
+
+### All changes
+
+- TMCode AI in the terminal: plain words in, commands out; easier own API keys (1.2.0)
+- textmate test: allow a minute to load every grammar (slow CI runners)
+- Colour .env files and 150+ more file types out of the box
+- First run: don't move the side bar once the student has clicked or typed
+
 ## 1.1.0 — 2026-10-31
 
 **TMCode 1.1: you choose where projects are saved, any folder can become an assignment's work, "not submitted" is impossible to miss, and PDF, Word, CSV and Markdown files preview.**
