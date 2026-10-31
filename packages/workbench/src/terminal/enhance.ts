@@ -96,7 +96,12 @@ async function pasteInto(term: Terminal) {
 }
 
 /** VS Code's terminal conveniences: Ctrl/Cmd-click links, file:line links, find, wide-char widths, server detection. */
-export function enhanceTerminal(term: Terminal): EnhancedTerminal {
+export interface EnhanceOptions {
+  /** Sees every key first; returning false keeps it from the shell (and from the handlers here). */
+  onKey?(e: KeyboardEvent): boolean | void;
+}
+
+export function enhanceTerminal(term: Terminal, opts: EnhanceOptions = {}): EnhancedTerminal {
   const search = new SearchAddon();
   term.loadAddon(search);
   term.loadAddon(new WebLinksAddon((event, uri) => {
@@ -136,6 +141,8 @@ export function enhanceTerminal(term: Terminal): EnhancedTerminal {
   });
 
   term.attachCustomKeyEventHandler((e) => {
+    // The owner's keys first (TMCode AI's ⌘I and "# words" + Enter); false = handled.
+    if (opts.onKey?.(e) === false) return false;
     if (e.type !== "keydown") return true;
     const mac = getPlatform().os === "mac";
     const mod = mac ? e.metaKey : e.ctrlKey;

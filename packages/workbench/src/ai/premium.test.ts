@@ -67,3 +67,14 @@ describe("third-party AI tools for staff", () => {
     expect(decideAiGate({ status: newer(), statusInExam: true, exam: true }).thirdParty).toBe(false);
   });
 });
+
+describe("own keys: settings help", () => {
+  it("warns when a key looks like another provider's", async () => {
+    const { keyShapeWarning } = await import("./keys");
+    expect(keyShapeWarning("openai", "sk-ant-api03-abc")).toBe("This looks like an Anthropic key, not an OpenAI key.");
+    expect(keyShapeWarning("anthropic", "sk-proj-abc")).toMatch(/Anthropic keys usually start with "sk-ant-"/);
+    expect(keyShapeWarning("groq", "gsk_abc")).toBeNull();
+    expect(keyShapeWarning("openai", "sk-proj-abc")).toBeNull();
+    expect(keyShapeWarning("deepseek", "")).toBeNull();
+  });
+});

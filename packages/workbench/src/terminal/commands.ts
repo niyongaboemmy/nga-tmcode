@@ -4,10 +4,18 @@ import { getPlatform, openContextMenu, openSpecialEditor, showPanel, updateSetti
 import { showQuickPick } from "../widgets/QuickPick";
 import { terminalAction, terminalCommandAction, useTerminalPanel } from "../parts/panel/TerminalView";
 import { loadTerminalProfiles } from "./profiles";
+import { openTerminalAi, terminalAiEnabled } from "./aiSession";
 
 const allowed = () => !!getPlatform().terminal && terminalAllowed(useWorkbench.getState().policy);
 const terminalFocused = () => !!(document.activeElement as HTMLElement | null)?.closest?.(".xterm");
 const hasTerminal = () => allowed() && useTerminalPanel.getState().count > 0;
+const aiReady = () => hasTerminal() && terminalAiEnabled();
+
+/** Shows the terminal, then opens TMCode AI on it (once the panel has a terminal to talk to). */
+function terminalAi(opts: Parameters<typeof openTerminalAi>[0] = {}) {
+  showPanel("terminal");
+  requestAnimationFrame(() => openTerminalAi(opts));
+}
 
 /** A new terminal with a chosen shell (the ⌄ menu, "Create New Terminal (With Profile)"). */
 export function newTerminal(profile?: string) {
@@ -59,6 +67,10 @@ export function registerTerminalCommands() {
   registerCommand({ id: "workbench.action.terminal.scrollToNextCommand", title: "Scroll To Next Command", category: "Terminal", keybinding: "mod+down", when: terminalFocused, enabled: hasTerminal, run: () => terminalCommandAction("next") });
   registerCommand({ id: "workbench.action.terminal.copyLastCommandOutput", title: "Copy Last Command Output", category: "Terminal", enabled: hasTerminal, run: () => terminalCommandAction("copyLastOutput") });
   registerCommand({ id: "workbench.action.terminal.copyLastCommand", title: "Copy Last Command", category: "Terminal", enabled: hasTerminal, run: () => terminalCommandAction("copyLastCommand") });
+  // TMCode AI in the terminal (terminal/ai.ts): plain words in, commands out.
+  registerCommand({ id: "workbench.action.terminal.chat.start", title: "Ask TMCode AI in the Terminal", category: "Terminal", keybinding: "mod+i", when: () => !!(document.activeElement as HTMLElement | null)?.closest?.(".xterm, .tm-term-ai"), enabled: aiReady, run: () => terminalAi() });
+  registerCommand({ id: "workbench.action.terminal.chat.fixLastCommand", title: "Fix the Last Command with TMCode AI", category: "Terminal", enabled: aiReady, run: () => terminalAi({ kind: "fix" }) });
+  registerCommand({ id: "workbench.action.terminal.chat.explainLastCommand", title: "Explain the Last Command with TMCode AI", category: "Terminal", enabled: aiReady, run: () => terminalAi({ kind: "explain" }) });
   registerCommand({ id: "workbench.action.terminal.selectDefaultShell", title: "Select Default Profile", category: "Terminal", enabled: allowed, run: () => void selectDefaultProfile() });
   registerCommand({
     id: "workbench.action.terminal.newWithProfile",

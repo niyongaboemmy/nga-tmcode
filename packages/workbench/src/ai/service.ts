@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { getPlatform } from "../state/store";
 import { aiExamActive, aiGate, aiReasonText } from "./gate";
-import { MissingKeyError, modeFields, parseMode, providerLabel } from "./keys";
+import { MissingKeyError, modeFields, parseMode, providerLabel, whenKeyRemoved } from "./keys";
 
 /**
  * TMCode AI: chat and inline suggestions from Task Mentor (/api/tmcode/ai, free AI only; the keys
@@ -115,6 +115,12 @@ export function setAiMode(mode: string) {
   useAi.setState({ mode });
   void getPlatform().store.set(MODE_KEY, mode);
 }
+
+// A removed key takes its models with it: a mode on that key falls back to Free.
+whenKeyRemoved((provider) => {
+  const p = parseMode(useAi.getState().mode);
+  if (p.tier === "byok" && p.provider === provider) setAiMode("free");
+});
 
 export function setAiSuggestions(on: boolean) {
   useAi.setState({ suggestions: on });
@@ -332,8 +338,11 @@ export interface ChatContext {
   fileText?: string;
   problems?: string[];
   task?: string;
-  /** "grading": a teacher grading a review folder (Task Mentor uses its grading prompt for staff). */
-  purpose?: "grading";
+  /**
+   * "grading": a teacher grading a review folder (Task Mentor uses its grading prompt for staff);
+   * "terminal": the terminal asking for shell commands (terminal/ai.ts, Task Mentor's terminal prompt).
+   */
+  purpose?: "grading" | "terminal";
   grading?: { activity_title: string; brief: string; rubric: { index: number; criteria: string; description: string | null; max_score: number }[]; student_name: string; question_text?: string };
 }
 

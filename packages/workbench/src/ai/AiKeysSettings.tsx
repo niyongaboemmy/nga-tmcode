@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { getPlatform, notify } from "../state/store";
 import { Codicon } from "../widgets/icons";
-import { aiKeysSupported, BYOK_PROVIDERS, KEY_PAGES, loadAiKeys, providerLabel, removeAiKey, saveAiKey, setCustomModels, useAiKeys } from "./keys";
-import { refreshAiStatus, useAi } from "./service";
+import { aiKeysSupported, BYOK_PROVIDERS, KEY_PAGES, keyShapeWarning, loadAiKeys, providerLabel, removeAiKey, saveAiKey, setCustomModels, useAiKeys, verifyAiKey, type KeyCheck } from "./keys";
+import { refreshAiStatus, setAiMode, useAi } from "./service";
 
 /**
  * Settings › TMCode AI › Your API keys: add or remove a key per provider (kept in the OS keychain,
@@ -24,6 +24,14 @@ function ProviderRow({ id, label, suggested }: { id: string; label: string; sugg
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [models, setModels] = useState(custom.join(", "));
+  const [check, setCheck] = useState<KeyCheck | "checking" | null>(null);
+  const mode = useAi((s) => s.mode);
+  const shape = editing ? keyShapeWarning(id, key) : null;
+  const allModels = [...new Set([...suggested, ...custom])];
+  const test = async (model?: string) => {
+    setCheck("checking");
+    setCheck(await verifyAiKey(id, model));
+  };
   useEffect(() => setModels(custom.join(", ")), [custom.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async () => {
     setBusy(true);
@@ -32,7 +40,9 @@ function ProviderRow({ id, label, suggested }: { id: string; label: string; sugg
       await saveAiKey(id, key);
       setKey("");
       setEditing(false);
-      notify("info", `Your ${label} key is saved in this computer's keychain. Pick one of its models in TMCode AI's model menu.`, undefined, { kind: "hint" });
+      notify("info", `Your ${label} key is saved in this computer's keychain. Testing it…`, undefined, { kind: "hint" });
+      // Tested at once: a wrong key or no credit shows now, not at the first question.
+      void test();
     } catch (e) {
       setError(String((e as Error)?.message ?? e));
     } finally {
@@ -59,7 +69,12 @@ function ProviderRow({ id, label, suggested }: { id: string; label: string; sugg
             </button>
           )}
           {saved && !editing && (
-            <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void removeAiKey(id)} data-testid="ai-key-remove">
+            <button type="button" className="tm-button tm-button--small tm-button--secondary" disabled={check === "checking"} onClick={() => void test()} data-testid="ai-key-test">
+              {check === "checking" ? "Testing…" : "Test Key"}
+            </button>
+          )}
+          {saved && !editing && (
+            <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => (setCheck(null), void removeAiKey(id))} data-testid="ai-key-remove">
               Remove
             </button>
           )}
@@ -96,9 +111,20 @@ function ProviderRow({ id, label, suggested }: { id: string; label: string; sugg
           </button>
         </div>
       )}
+      {shape && (
+        <p className="tm-ai-key-check is-warn" data-testid="ai-key-shape">
+          <Codicon name="warning" /> {shape}
+        </p>
+      )}
       {error && (
         <p className="tm-grade-inline-error" role="alert">
           <Codicon name="error" /> {error}
+        </p>
+      )}
+      {saved && check && check !== "checking" && (
+        <p className={`tm-ai-key-check ${check.ok ? "is-ok" : check.code === "OLD_SERVER" ? "is-warn" : "is-bad"}`} role="status" data-testid="ai-key-check">
+          <Codicon name={check.ok ? "pass-filled" : check.code === "OLD_SERVER" ? "info" : "error"} />{" "}
+          {check.ok ? `Your key works${check.model ? ` (${check.model} answered)` : ""}.` : check.message}
         </p>
       )}
       {saved && (
@@ -106,6 +132,20 @@ function ProviderRow({ id, label, suggested }: { id: string; label: string; sugg
           <span className="tm-muted">Models{suggested.length ? ` (besides ${suggested.slice(0, 3).join(", ")}${suggested.length > 3 ? "…" : ""})` : ""}</span>
           <input className="tm-input tm-input--wide" placeholder="Other model ids, separated by commas" value={models} onChange={(e) => setModels(e.target.value)} onBlur={() => setCustomModels(id, models.split(","))} data-testid="ai-key-models" />
         </label>
+      )}
+      {saved && allModels.length > 0 && (
+        <div className="tm-ai-key-use" data-testid="ai-key-use">
+          <span className="tm-muted">Use for TMCode AI:</span>
+          {allModels.map((m) => {
+            const id2 = `byok:${id}/${m}`;
+            const on = mode === id2;
+            return (
+              <button key={m} type="button" className={`tm-ai-key-model ${on ? "is-on" : ""}`} aria-pressed={on} title={on ? "TMCode AI answers with this model" : `Answer with ${m} on your key`} onClick={() => setAiMode(on ? "free" : id2)}>
+                {on && <Codicon name="check" />} {m}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -130,6 +170,16 @@ export function AiKeysSettingsSection({ query }: { query: string }) {
   return (
     <section id="settings-TMCode AI" className="tm-settings-section" data-testid="ai-keys-settings">
       <h3>TMCode AI</h3>
+      {tiers && !tiers.premium && (
+        <div className="tm-setting" data-testid="ai-premium-off">
+          <div className="tm-setting-title">
+            <strong>Premium AI</strong>
+          </div>
+          <div className="tm-setting-description">
+            Not turned on for your account. Your school can give you its premium models (Task Mentor › Admin › AI), or use your own API key below.
+          </div>
+        </div>
+      )}
       {tiers?.premium && (
         <div className="tm-setting" data-testid="ai-premium-note">
           <div className="tm-setting-title">

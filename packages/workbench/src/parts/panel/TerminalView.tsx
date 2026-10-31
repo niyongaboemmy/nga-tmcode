@@ -22,6 +22,10 @@ import { defaultProfileSetting, fallbackShellName, loadTerminalProfiles, pickPro
 import { attachShellIntegration, neighbourCommand, stickyCommand, type ShellIntegration, type TerminalCommand } from "../../terminal/shellIntegration";
 import { decorateCommand } from "../../terminal/commandDecorations";
 import type { Settings } from "../../state/settings";
+import { naturalLanguageRequest, worthFixing } from "../../terminal/ai";
+import { closeTerminalAi, openTerminalAi, registerTerminalAiHost, terminalAiEnabled, useTerminalAi } from "../../terminal/aiSession";
+import { useAiGate } from "../../ai/gate";
+import { FixHint, TerminalAi } from "./TerminalAi";
 
 /** Terminal colours of the active colour theme (its terminal.* keys); the static palettes cover the moment before it loads. */
 export function terminalTheme(theme: string): ITheme {
@@ -192,6 +196,12 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [renaming, setRenaming] = useState<number | null>(null);
   const [finding, setFinding] = useState(false);
+  // The last command that failed, per terminal, until the next one starts (✨ Fix with AI).
+  const [failed, setFailed] = useState<{ id: number; command: string } | null>(null);
+  const aiOpen = useTerminalAi((s) => s.open);
+  const aiGate = useAiGate();
+  const aiOn = useWorkbench((s) => s.settings["terminal.integrated.ai.enabled"] !== false);
+  const suggestFixes = useWorkbench((s) => s.settings["terminal.integrated.ai.suggestFixes"] !== false);
   // Terminals whose shell has printed something (until then a skeleton stands in for the prompt).
   const [started, setStarted] = useState<ReadonlySet<number>>(() => new Set());
   const markStarted = (id: number) => setStarted((s) => (s.has(id) ? s : new Set(s).add(id)));
@@ -246,7 +256,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    const extras = enhanceTerminal(term);
+    const extras = enhanceTerminal(term, { onKey: (e) => onTerminalKey(e, inst) });
     const id = ++seq;
     const decorationActions = {
       run: (cmd: string) => {
@@ -264,6 +274,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
       }
       decorateCommand(c, t, decorationActions);
       if (c.exitCode !== undefined && c.exitCode !== 0) signal("terminalCommandFailed");
+      if (c.exitCode === undefined) setFailed((f) => (f?.id === inst.id ? null : f));
+      else if (worthFixing(c.exitCode) && c.command) setFailed({ id: inst.id, command: c.command });
     });
     const inst: Instance = {
       id,
@@ -360,6 +372,58 @@ export function TerminalView({ visible }: { visible: boolean }) {
     const next = queued.current.shift();
     if (next) void create(next);
   };
+
+  /** TMCode AI's keys in a terminal: ⌘I / Ctrl+I opens it, "# words" + Enter at the prompt asks it. */
+  const onTerminalKey = (e: KeyboardEvent, inst: Instance): boolean | void => {
+    if (e.type !== "keydown" || !terminalAiEnabled()) return;
+    const mod = platform.os === "mac" ? e.metaKey : e.ctrlKey;
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "i") {
+      e.preventDefault();
+      setActiveId(inst.id);
+      queueMicrotask(() => openTerminalAi());
+      return false;
+    }
+    if (e.key !== "Enter" || e.shiftKey || e.altKey || mod || !inst.si.active) return;
+    if (useWorkbench.getState().settings["terminal.integrated.ai.hashPrompt"] === false) return;
+    const request = naturalLanguageRequest(inst.si.promptInput() ?? "");
+    if (!request) return;
+    e.preventDefault();
+    // Clear the line (Ctrl+U) so the words never reach the shell.
+    inst.session?.write("\x15");
+    setActiveId(inst.id);
+    queueMicrotask(() => openTerminalAi({ request }));
+    return false;
+  };
+
+  // TMCode AI reaches the active terminal through this (terminal/aiSession.ts).
+  useEffect(() => {
+    registerTerminalAiHost(() => {
+      const inst = live.current.find((i) => i.id === activeRef.current);
+      if (!inst) return null;
+      return {
+        id: inst.id,
+        shell: inst.shell,
+        os: platform.os,
+        cwd: () => inst.si.cwd ?? inst.cwd ?? useWorkbench.getState().workspace?.root,
+        recent: (withOutput) => {
+          const done = inst.si.commands.filter((c) => c.exitCode !== undefined && c.command).slice(-6);
+          return done.map((c, i) => ({ command: c.command, exitCode: c.exitCode, ...(withOutput && i === done.length - 1 ? { output: inst.si.outputOf(c) } : {}) }));
+        },
+        busy: () => inst.exited || !inst.session || !!inst.si.current,
+        type: (text) => {
+          if (!inst.session || inst.exited) return;
+          // Only where the shell says what's typed (zsh, bash, fish) is the line cleared first.
+          const typed = inst.si.active ? inst.si.promptInput() : null;
+          inst.session.write(`${typed ? "\x15" : ""}${text}`);
+          inst.term.focus();
+        },
+        runElsewhere: (command) => void create({ command }),
+        focus: () => inst.term.focus(),
+      };
+    });
+    return () => registerTerminalAiHost(() => null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const active = instances.find((i) => i.id === activeId) ?? null;
   // The active terminal's group: split terminals show side by side.
@@ -528,6 +592,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
   }, [workspace?.root]);
 
   const kill = (id: number) => {
+    if (useTerminalAi.getState().terminalId === id) closeTerminalAi(false);
     const list = live.current;
     const inst = list.find((i) => i.id === id);
     inst?.session?.kill();
@@ -580,6 +645,15 @@ export function TerminalView({ visible }: { visible: boolean }) {
         ))}
       </div>
       {finding && active && <TerminalFind key={active.id} inst={active} onClose={() => setFinding(false)} />}
+      {aiOn && <TerminalAi />}
+      {aiOn && suggestFixes && aiGate.chat && !aiOpen && failed && failed.id === activeId && (
+        <FixHint
+          command={failed.command}
+          onFix={() => (setFailed(null), openTerminalAi({ kind: "fix" }))}
+          onExplain={() => (setFailed(null), openTerminalAi({ kind: "explain" }))}
+          onDismiss={() => (setFailed(null), active?.term.focus())}
+        />
+      )}
       {renaming != null && instances.length <= 1 && (
         <div className="tm-terminal-rename-float">
           <RenameInput initial={labelOf(instances.find((i) => i.id === renaming) ?? instances[0])} onDone={(v) => (v === null ? setRenaming(null) : rename(renaming, v))} />

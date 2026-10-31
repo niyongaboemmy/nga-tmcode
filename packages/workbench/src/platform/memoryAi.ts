@@ -111,6 +111,21 @@ export function memoryAi() {
     };
   }
 
+  /** The terminal's AI (context.purpose "terminal"): commands as Task Mentor's terminal prompt answers them. */
+  function terminalAnswer(question: string): string {
+    const json = (o: unknown) => JSON.stringify(o);
+    const failed = /^\$ (.+)$/m.exec(question)?.[1];
+    if (/This command failed/.test(question) && failed) {
+      const fixed = failed.replace(/\btset\b/, "test").replace(/^gti\b/, "git");
+      return json({ commands: [{ command: fixed, explanation: `Runs \`${fixed}\` (the command was misspelled).` }], explanation: `\`${failed}\` failed because of a typo: you meant \`${fixed}\`.`, risk: "safe" });
+    }
+    if (/Explain this command/.test(question) && failed) return json({ commands: [{ command: failed, explanation: "The command you ran." }], explanation: `\`${failed.split(/\s+/)[0]}\` is a program; the words after it are its arguments.`, risk: "safe" });
+    if (/delete|remove|clean/i.test(question)) return json({ commands: [{ command: "rm -rf build", explanation: "Deletes the build folder and everything in it (-r: folders too, -f: without asking)." }], explanation: "This removes the build output; it is made again on the next build.", risk: "safe" });
+    if (/big|large/i.test(question)) return `Here you go:\n\n\`\`\`bash\nfind . -type f -size +100M\n\`\`\`\n\nLists files over 100 MB (-type f: files only).`;
+    if (/install/i.test(question)) return json({ commands: [{ command: "npm install", explanation: "Installs the packages in package.json." }], explanation: "Installs the project's packages.", risk: "caution" });
+    return json({ commands: [{ command: "ls -la", explanation: "Lists all files (-a: hidden ones too) with details (-l)." }, { command: "git status", explanation: "Shows what changed." }], explanation: "Two ways to see what's in this folder.", risk: "safe" });
+  }
+
   function answer(question: string, context: Record<string, unknown>): string {
     const seen = /\n\[(\d+) images?\]$/.exec(question);
     if (seen) return `I can see ${seen[1]} image${seen[1] === "1" ? "" : "s"}. The screenshot shows an error message on the page.`;
@@ -146,6 +161,10 @@ export function memoryAi() {
         const agent = body.agent as { mode: string; step: number } | undefined;
         jobs.set(id, { mode: String(body.mode ?? "free"), question: messages.filter((m) => m.role === "user").pop()?.content ?? "", context: (body.context as Record<string, unknown>) ?? {}, agent, messages: messages as unknown as Wire[] });
         return { status: 201, body: { id } };
+      }
+      if (path === "/byok/verify" && method === "POST") {
+        if (body.key === "bad") return { status: 400, body: { code: "BYOK_REJECTED", message: "OpenAI refused your API key: Incorrect API key provided." } };
+        return { status: 200, body: { ok: true, provider: body.provider, model: body.model ?? "gpt-4.1-mini" } };
       }
       if (path === "/complete" && method === "POST") {
         completes++;
@@ -188,7 +207,7 @@ export function memoryAi() {
           send("done", { provider, model, you: { used, limit: CHAT_LIMIT }, ...(turn.tool_calls ? { tool_calls: turn.tool_calls } : {}) });
           return onEvent({ type: "end" });
         }
-        const text = answer(job.question, job.context);
+        const text = job.context.purpose === "terminal" ? terminalAnswer(job.question) : answer(job.question, job.context);
         for (let i = 0; i < text.length && !cancelled; i += 12) {
           send("delta", { text: text.slice(i, i + 12) });
           await new Promise((r) => setTimeout(r, 8));

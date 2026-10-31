@@ -291,12 +291,12 @@ function Answer({ m }: { m: Message }) {
               Switch to Auto
             </button>
           )}
-          {["PREMIUM_REQUIRED", "BYOK_REJECTED", "BYOK_MISSING"].includes(m.error.code) && (
+          {["PREMIUM_REQUIRED", "PREMIUM_QUOTA", "BYOK_REJECTED", "BYOK_MISSING", "BYOK_DISABLED", "BYOK_KEY_REQUIRED"].includes(m.error.code) && (
             <button type="button" className="tm-link-button" onClick={() => setAiMode("free")}>
               Switch to Free
             </button>
           )}
-          {(m.error.code === "BYOK_REJECTED" || m.error.code === "BYOK_MISSING") && (
+          {(m.error.code === "BYOK_REJECTED" || m.error.code === "BYOK_MISSING" || m.error.code === "BYOK_KEY_REQUIRED") && (
             <button type="button" className="tm-link-button" onClick={openAiKeysSettings}>
               Your API Keys
             </button>
