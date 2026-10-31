@@ -110,12 +110,17 @@ mod tests {
         Request { enabled, prompt: prompt.into() }
     }
 
+    /// `base` joined with `parts` as this OS writes paths (backslashes on Windows).
+    fn joined(base: &str, parts: &[&str]) -> String {
+        parts.iter().fold(PathBuf::from(base), |p, part| p.join(part)).to_string_lossy().into_owned()
+    }
+
     #[test]
     fn zsh_points_zdotdir_at_the_scripts_and_remembers_the_users() {
         let env = |k: &str| (k == "HOME").then(|| "/Users/a".to_string());
         let i = inject("zsh", &["-l".into()], &req(true, "auto"), Path::new("/data/si"), &env).unwrap();
         assert_eq!(i.args, ["-l"]);
-        assert!(i.env.contains(&("ZDOTDIR".into(), "/data/si/zsh".into())));
+        assert!(i.env.contains(&("ZDOTDIR".into(), joined("/data/si", &["zsh"]))));
         assert!(i.env.contains(&("TMCODE_USER_ZDOTDIR".into(), "/Users/a".into())));
         assert!(i.env.contains(&("TMCODE_PROMPT".into(), "auto".into())));
         let own = |k: &str| (k == "ZDOTDIR").then(|| "/Users/a/.config/zsh".to_string());
@@ -127,7 +132,7 @@ mod tests {
     fn bash_uses_an_init_file_and_reads_the_login_files_itself() {
         let none = |_: &str| None;
         let i = inject("bash", &["-l".into()], &req(true, "off"), Path::new("/d"), &none).unwrap();
-        assert_eq!(i.args, ["--init-file", "/d/bash/tmcode.bash", "-i"]);
+        assert_eq!(i.args, ["--init-file".to_string(), joined("/d", &["bash", "tmcode.bash"]), "-i".to_string()]);
         assert!(i.env.contains(&("TMCODE_SHELL_LOGIN".into(), "1".into())));
         assert!(i.env.contains(&("TMCODE_PROMPT".into(), "off".into())));
         let i = inject("bash", &[], &req(true, "auto"), Path::new("/d"), &none).unwrap();
@@ -138,11 +143,11 @@ mod tests {
     fn fish_adds_a_vendor_conf_dir_and_restores_xdg_data_dirs() {
         let env = |k: &str| (k == "XDG_DATA_DIRS").then(|| "/opt/share".to_string());
         let i = inject("fish", &["-l".into()], &req(true, "auto"), Path::new("/d"), &env).unwrap();
-        assert!(i.env.contains(&("XDG_DATA_DIRS".into(), "/d/fish:/opt/share".into())));
+        assert!(i.env.contains(&("XDG_DATA_DIRS".into(), format!("{}:/opt/share", joined("/d", &["fish"])))));
         assert!(i.env.contains(&("TMCODE_FISH_XDG_DATA_DIRS".into(), "/opt/share".into())));
         let none = |_: &str| None;
         let i = inject("fish", &[], &req(true, "auto"), Path::new("/d"), &none).unwrap();
-        assert!(i.env.contains(&("XDG_DATA_DIRS".into(), "/d/fish:/usr/local/share:/usr/share".into())));
+        assert!(i.env.contains(&("XDG_DATA_DIRS".into(), format!("{}:/usr/local/share:/usr/share", joined("/d", &["fish"])))));
     }
 
     #[test]
