@@ -91,6 +91,8 @@ export interface TerminalSpawnOptions {
   profile?: string;
   /** Environment changes (extensions' environmentVariableCollection, a terminal's own env). */
   env?: TerminalEnvMutation[];
+  /** Shell integration (OSC 633 marks) and TMCode's coloured prompt; absent = the shell as it is. */
+  shellIntegration?: { enabled: boolean; prompt: "auto" | "on" | "off" };
   onData(data: string): void;
   onExit(code: number | null): void;
 }
@@ -177,6 +179,15 @@ export interface Platform {
   setNativeTheme?(theme: "dark" | "light"): void;
   /** Whole-window zoom (1 = 100 %); absent → the workbench zooms with CSS. */
   setZoom?(factor: number): void;
+  /**
+   * Files attached to TMCode AI questions (desktop: ai_attach.rs). Only paths the user picked,
+   * dropped or copied can be read.
+   */
+  attachments?: {
+    pick(): Promise<string[]>;
+    clipboard(): Promise<string[]>;
+    read(path: string): Promise<import("../ai/attachments").AttachedFile>;
+  };
   /** Files dragged in from Finder / File Explorer (desktop). Returns an unsubscribe. */
   onFileDrop?(cb: (e: FileDropEvent) => void): () => void;
   /** The app window gained or lost focus (desktop: the native window, so clicks into preview panes don't count). */

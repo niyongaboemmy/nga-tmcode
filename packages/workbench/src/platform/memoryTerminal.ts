@@ -28,7 +28,18 @@ export function createSimulatedTerminal(fs: FileSystem) {
       let lastCode = 0;
       let closed = false;
       const out = (s: string) => !closed && opts.onData(s.replace(/\n/g, "\r\n"));
-      const prompt = () => out(`\x1b[32m${cwd || "practice-project"}\x1b[0m $ `);
+      // Shell integration, as the desktop's injected scripts send it (OSC 633).
+      const marks = !!opts.shellIntegration?.enabled;
+      const mark = (s: string) => marks && out(`\x1b]633;${s}\x07`);
+      let ran = false;
+      const prompt = () => {
+        if (ran) mark(`D;${lastCode}`);
+        ran = false;
+        mark(`P;Cwd=${cwd || "practice-project"}`);
+        mark("A");
+        out(`\x1b[32m${cwd || "practice-project"}\x1b[0m $ `);
+        mark("B");
+      };
       const exit = (code: number) => {
         if (closed) return;
         closed = true;
@@ -142,6 +153,11 @@ export function createSimulatedTerminal(fs: FileSystem) {
               const cmd = line;
               line = "";
               out("\n");
+              if (cmd.trim()) {
+                mark(`E;${cmd.replace(/\\/g, "\\\\").replace(/;/g, "\\x3b")}`);
+                mark("C");
+                ran = true;
+              }
               lineRunning = true;
               void runLine(cmd).finally(() => {
                 lineRunning = false;

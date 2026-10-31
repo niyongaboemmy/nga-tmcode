@@ -205,10 +205,10 @@ export async function createTauriPlatform(): Promise<Platform> {
       importPaths: (sources, dest, overwrite) => invoke<{ imported: string[]; conflicts: string[] }>("ws_import", { sources, dest, overwrite }),
     },
     terminal: {
-      async spawn({ cols, rows, cwd, profile, env, onData, onExit }): Promise<TerminalSession> {
+      async spawn({ cols, rows, cwd, profile, env, shellIntegration, onData, onExit }): Promise<TerminalSession> {
         const channel = new Channel<PtyEvent>();
         channel.onmessage = (e) => (e.type === "data" ? onData(e.data) : onExit(e.code));
-        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, env: env?.length ? env : null, onEvent: channel });
+        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, env: env?.length ? env : null, shellIntegration: shellIntegration ?? null, onEvent: channel });
         return {
           write: (data) => void invoke("pty_write", { id, data }).catch(() => {}),
           resize: (c, r) => void invoke("pty_resize", { id, cols: c, rows: r }).catch(() => {}),
@@ -322,6 +322,11 @@ export async function createTauriPlatform(): Promise<Platform> {
         stopped = true;
         un?.();
       };
+    },
+    attachments: {
+      pick: () => invoke<string[]>("attach_pick"),
+      clipboard: () => invoke<string[]>("attach_clipboard"),
+      read: (path) => invoke("attach_read", { path }),
     },
     onFileDrop(cb) {
       let un: (() => void) | null = null;

@@ -6,6 +6,7 @@ import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { asAiError, chat, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
+import { attachmentChips, attachmentText, type Attachment } from "./attachments";
 
 /**
  * TMCode AI's conversation, as Claude Code's: one place for the question, the answer and, in the
@@ -86,6 +87,8 @@ export interface ContextOptions {
   problems: boolean;
   /** Files @-mentioned in the prompt: their text goes along. */
   mentions?: string[];
+  /** Files attached with the paperclip, dropped or pasted (ai/attachments.ts). */
+  attachments?: Attachment[];
 }
 
 export async function gatherContext(opts: ContextOptions): Promise<{ context: ChatContext; chips: string[] }> {
@@ -122,6 +125,9 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
     extra.push(`File ${m}:\n\`\`\`\n${text.slice(0, 30_000)}\n\`\`\``);
     chips.push(m.slice(m.lastIndexOf("/") + 1));
   }
+  const attached = attachmentText(opts.attachments ?? []);
+  if (attached) extra.push(attached);
+  chips.push(...attachmentChips(opts.attachments ?? []));
   if (extra.length) context.task = [context.task, ...extra].filter(Boolean).join("\n\n");
   // A teacher reviewing a submission: Task Mentor answers as a grading assistant (staff only).
   const grading = gradingTools.chatContext?.() ?? null;
@@ -164,7 +170,7 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
     action: "chat",
     path: context.file,
     text: `Asked TMCode AI${mode === "chat" ? "" : ` (${MODES.find((m) => m.id === mode)!.label})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
-    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode },
+    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
     actor: { type: "you" },
     ai: { by: "TMCode AI", how: mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
   });

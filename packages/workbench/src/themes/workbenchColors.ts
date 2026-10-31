@@ -58,6 +58,10 @@ const MAP: [string, string[], Defaults?][] = [
   ["--breadcrumb-fg", ["breadcrumb.foreground"], { dark: "#CCCCCCCC", light: "#616161CC" }],
 
   ["--panel-bg", ["panel.background", "editor.background"], { dark: "#1E1E1E", light: "#FFFFFF" }],
+  ["--term-cmd-default", ["terminalCommandDecoration.defaultBackground"], { dark: "#FFFFFF40", light: "#00000040" }],
+  ["--term-cmd-success", ["terminalCommandDecoration.successBackground"], { dark: "#1B81A8", light: "#2090D3" }],
+  ["--term-cmd-error", ["terminalCommandDecoration.errorBackground"], { dark: "#F14C4C", light: "#E51400" }],
+  ["--term-sticky-bg", ["terminalStickyScroll.background", "terminal.background", "panel.background"], { dark: "#181818", light: "#F8F8F8" }],
   ["--panel-title-active-fg", ["panelTitle.activeForeground"], { dark: "#E7E7E7", light: "#424242" }],
   ["--panel-title-inactive-fg", ["panelTitle.inactiveForeground"], { dark: "#E7E7E799", light: "#42424275" }],
   ["--panel-active-border", ["panelTitle.activeBorder", "panelTitle.activeForeground"], { dark: "#E7E7E7", light: "#424242" }],

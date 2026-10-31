@@ -15,6 +15,7 @@ mod lsp;
 mod netcoredbg;
 mod phpdebug;
 mod account;
+mod ai_attach;
 mod ai_keys;
 mod ai_tools;
 mod api;
@@ -29,6 +30,7 @@ mod github;
 mod console;
 mod preview;
 mod pty;
+mod shell_integration;
 mod runner;
 mod toolchains;
 mod updates;
@@ -299,6 +301,19 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_http::init())
         .manage(workspace::Workspace::default())
+        .manage(ai_attach::Granted::default())
+        // Files dropped on the window may be attached to a TMCode AI question (ai_attach.rs).
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                window.state::<ai_attach::Granted>().grant(paths.iter().cloned());
+            }
+        })
+        // The app's webview is a child webview of its window: drops arrive here too.
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                webview.state::<ai_attach::Granted>().grant(paths.iter().cloned());
+            }
+        })
         .manage(pty::Terminals::default())
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
@@ -341,6 +356,9 @@ pub fn run() {
             workspace::ws_remove,
             workspace::ws_trash,
             workspace::ws_import,
+            ai_attach::attach_pick,
+            ai_attach::attach_clipboard,
+            ai_attach::attach_read,
             workspace::ws_file_encoding,
             workspace::ws_reopen_with_encoding,
             workspace::ws_set_encoding,

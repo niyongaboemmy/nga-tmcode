@@ -11328,3 +11328,143 @@ button.tm-setting-badge {
   gap: 3px;
   font-size: 12px;
 }
+
+/* ───────────── Terminal shell integration (VS Code's command decorations, sticky scroll) ───────────── */
+.xterm .xterm-decoration-container .xterm-decoration.tm-term-cmd {
+  /* xterm sizes it to the prompt's first cell; the mark sits in the margin to its left. */
+  pointer-events: none;
+  overflow: visible;
+}
+.tm-term-cmd-mark {
+  position: absolute;
+  top: 0;
+  left: -17px;
+  width: 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px !important;
+  cursor: pointer;
+  pointer-events: auto;
+  color: var(--term-cmd-default);
+}
+.tm-term-cmd-mark.is-success {
+  color: var(--term-cmd-success);
+}
+.tm-term-cmd-mark.is-error {
+  color: var(--term-cmd-error);
+  font-size: 16px !important;
+}
+.tm-term-cmd-mark:hover {
+  filter: brightness(1.3);
+}
+.tm-term-sticky {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  gap: 0;
+  padding: 4px 0 3px 20px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--term-sticky-bg);
+  box-shadow: 0 3px 6px -4px var(--shadow);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tm-term-sticky:hover {
+  background: color-mix(in srgb, var(--term-sticky-bg) 85%, var(--foreground));
+}
+.tm-term-sticky-prompt {
+  color: var(--description);
+}
+
+/* ───────────── TMCode AI attachments (paperclip, paste, drop) ───────────── */
+.tm-chat {
+  position: relative;
+}
+.tm-chat-drop {
+  position: absolute;
+  inset: 6px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--focus-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sidebar-bg) 88%, var(--focus-border));
+  color: var(--foreground);
+  pointer-events: none;
+}
+.tm-chat-drop .codicon {
+  font-size: 28px !important;
+  color: var(--focus-border);
+}
+.tm-chat-attach {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+.tm-chat-attach:hover {
+  background: var(--toolbar-hover-bg, rgba(128, 128, 128, 0.18));
+  color: var(--foreground);
+}
+.tm-chat-attachment {
+  max-width: 100%;
+  gap: 4px;
+}
+.tm-chat-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.tm-chat-attachment-size {
+  color: var(--description);
+  font-size: 11px;
+}
+.tm-chat-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  margin-left: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--description);
+  cursor: pointer;
+}
+.tm-chat-attachment-remove:hover {
+  color: var(--foreground);
+}
+.tm-chat-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: cover;
+}
+.tm-chat-attach-error {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 2px 0 6px;
+  color: var(--warning-fg, #cca700);
+  font-size: 12px;
+}
