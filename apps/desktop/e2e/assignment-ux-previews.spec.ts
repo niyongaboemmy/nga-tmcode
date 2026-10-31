@@ -99,7 +99,10 @@ test("not submitted is unmistakable: the row, a banner over the code and the sta
   await showAssignments(page);
   await expect(row(page, 51).getByTestId("assignment-not-submitted-chip")).toBeVisible();
 
-  await banner.getByTestId("banner-submit").click();
+  // Submit stays on the brief (one door per step): the banner leads there.
+  await banner.getByTestId("banner-go-submit").click();
+  await expect(page.getByTestId("assignment-submit")).toBeFocused();
+  await page.getByTestId("assignment-submit").click();
   await page.locator(".tm-dialog").getByRole("button", { name: /Submit/ }).first().click();
   await expect(banner).toHaveAttribute("data-status", "submitted", { timeout: 15_000 });
   await expect(banner).toContainText("Submitted");

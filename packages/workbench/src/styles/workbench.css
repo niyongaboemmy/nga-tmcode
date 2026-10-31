@@ -4801,7 +4801,8 @@ kbd,
   height: 100%;
   min-height: 0;
 }
-.tm-explorer-stack > :first-child {
+/* The files take the room; Open Editors, Outline and Timeline (.tm-timeline) only their own height. */
+.tm-explorer-stack > .tm-pane:not(.tm-timeline) {
   flex: 1;
   min-height: 0;
 }
@@ -11957,7 +11958,7 @@ button.tm-setting-badge {
 .tm-viewmode-tab:hover {
   color: var(--foreground);
 }
-.tm-viewmode-tab.is-active {
+.tm-viewmode-tab[aria-checked="true"] {
   border-color: var(--border);
   border-bottom-color: var(--editor-bg);
   background: var(--editor-bg);
@@ -11995,6 +11996,9 @@ button.tm-setting-badge {
 }
 .tm-md-github h3 {
   font-size: 1.25em;
+}
+.tm-md-anchor::before {
+  content: "#";
 }
 .tm-md-anchor {
   position: absolute;

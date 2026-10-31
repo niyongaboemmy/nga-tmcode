@@ -91,7 +91,6 @@ export function MarkdownEditor({ input, inline = false }: { input: MarkdownInput
       a.className = "tm-md-anchor";
       a.href = `#${h.id}`;
       a.setAttribute("aria-label", `Link to ${h.textContent ?? "section"}`);
-      a.textContent = "#";
       h.prepend(a);
     }
     for (const img of root.querySelectorAll<HTMLImageElement>("img")) {

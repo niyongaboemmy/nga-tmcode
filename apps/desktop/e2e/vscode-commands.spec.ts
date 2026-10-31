@@ -57,6 +57,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("Reload Window asks about unsaved files: Cancel keeps the page, Don't Save reloads", async ({ page }) => {
+  // With hot exit (the default) unsaved files simply come back after the reload, as in VS Code; without it, TMCode asks.
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("reload-seeded")) return;
+    sessionStorage.setItem("reload-seeded", "1");
+    localStorage.setItem("tmcode:ui", JSON.stringify({ settings: { "files.hotExit": "off" } }));
+  });
   await boot(page);
   await autoSaveOff(page);
   await open(page, "main.py");

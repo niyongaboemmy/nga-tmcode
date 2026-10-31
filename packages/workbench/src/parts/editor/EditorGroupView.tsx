@@ -664,13 +664,13 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
 /** Edit (the default) or Preview above a Markdown or CSV file, as GitHub shows them. */
 function ViewModeBar({ path, mode, kind }: { path: string; mode: "edit" | "preview"; kind: "markdown" | "csv" }) {
   const tab = (m: "edit" | "preview", icon: string, label: string) => (
-    <button type="button" role="tab" aria-selected={mode === m} className={`tm-viewmode-tab ${mode === m ? "is-active" : ""}`} onClick={() => setViewMode(path, m)} data-testid={`viewmode-${m}`}>
+    <button type="button" role="radio" aria-checked={mode === m} className="tm-viewmode-tab" onClick={() => setViewMode(path, m)} data-testid={`viewmode-${m}`}>
       <Codicon name={icon} />
       {label}
     </button>
   );
   return (
-    <div className="tm-viewmode-bar" role="tablist" aria-label="Edit or preview" data-testid="viewmode-bar" data-mode={mode}>
+    <div className="tm-viewmode-bar" role="radiogroup" aria-label="Edit or preview" data-testid="viewmode-bar" data-mode={mode}>
       {tab("edit", "edit", "Edit")}
       {tab("preview", kind === "csv" ? "table" : "open-preview", "Preview")}
       {mode === "preview" && kind === "markdown" && <span className="tm-viewmode-hint">Tick a task box to update the file.</span>}

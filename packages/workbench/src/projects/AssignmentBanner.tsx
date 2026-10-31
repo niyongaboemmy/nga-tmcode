@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Codicon } from "../widgets/icons";
-import { dueLabel, showAssignment, submitAssignment, useAssignments } from "./assignments";
-import { useProjects, withdrawSubmission } from "./service";
+import { dueLabel, showAssignment, useAssignments } from "./assignments";
+import { useProjects } from "./service";
 import { deriveStatus } from "./status";
 
 /**
  * Over the code of an assignment's workspace: whether it is handed in, in
- * plain words and colour, with the one thing to do — so "did I submit?" is
+ * plain words and colour, and the way to the brief's Submit — so "did I submit?" is
  * never a question. Not submitted (orange) stays until it is; Submitted
  * (green), Graded (blue) and Closed can be hidden for the session.
  */
@@ -22,7 +22,11 @@ export function AssignmentBanner() {
   if (hidden === key || view.status === "not_started") return null;
   const due = dueLabel(a.due_date);
   const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
-  const submit = () => void submitAssignment(a.id);
+  // One door per step (0.16 "One way to do it"): Submit lives on the brief, so the banner leads there.
+  const goToSubmit = () => {
+    showAssignment(a.id, { toSide: true });
+    setTimeout(() => document.querySelector<HTMLElement>('[data-testid="assignment-submit"]')?.focus(), 150);
+  };
   let tone: "warning" | "success" | "info" | "muted";
   let icon: string;
   let text: React.ReactNode;
@@ -36,7 +40,7 @@ export function AssignmentBanner() {
           <b>Not submitted yet.</b> Your teacher can't see this work until you submit it.{due ? ` ${due.text}.` : ""}
         </>
       );
-      action = { label: busy === "submitting" ? "Submitting…" : "Submit…", run: submit, testid: "banner-submit" };
+      action = { label: busy === "submitting" ? "Submitting…" : "Go to Submit", run: goToSubmit, testid: "banner-go-submit" };
       break;
     case "returned":
       tone = "warning";
@@ -46,7 +50,7 @@ export function AssignmentBanner() {
           <b>Returned by your teacher</b>{a.my?.returned_message ? `: “${a.my.returned_message}”` : ""}. Make the changes, then submit again.
         </>
       );
-      action = { label: "Submit Again…", run: submit, testid: "banner-submit" };
+      action = { label: "Go to Submit", run: goToSubmit, testid: "banner-go-submit" };
       break;
     case "submitted":
       tone = "success";
@@ -57,7 +61,7 @@ export function AssignmentBanner() {
           {a.my?.submitted_at ? ` on ${when(a.my.submitted_at)}` : ""}. Your teacher sees this version.
         </>
       );
-      action = a.read_only ? null : { label: "Withdraw to Edit", run: () => void withdrawSubmission(current.id), testid: "banner-withdraw" };
+      action = null;
       break;
     case "graded":
       tone = "info";
