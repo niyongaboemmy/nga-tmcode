@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { signal } from "../accessibility/signals";
 import { recordActivity } from "../activity/log";
 import { profileForPath } from "@tmcode/profiles";
 import { inExam, useExam } from "../exam/state";
@@ -8,7 +9,7 @@ import type { DebugAdapterKind, DebugComponent, DebugConnection, DebugPrepared, 
 import { attachDebuggeeRun, clearConsole, clearRunMarkers, refreshToolchains, showDiagnostics, writeConsole } from "../run/runService";
 import { activeFilePath, getPlatform, loadDir, log, notify, openFile, revealView, showDialog, showPanel, useWorkbench, workbench } from "../state/store";
 import { basename, extname } from "../util/paths";
-import { showInputBox } from "../widgets/QuickPick";
+import { showInputBox, showQuickPick } from "../widgets/QuickPick";
 import { pickValue } from "./pick";
 import type { Capabilities, ExceptionBreakpointsFilter, OutputEventBody, RunInTerminalArguments, StackFrame, StartDebuggingArguments, StoppedEventBody, Variable } from "./dap";
 import { DapSession } from "./dapSession";
@@ -25,6 +26,8 @@ import {
   languageNoun,
   parseLaunchJson,
   substitute,
+  usesPickProcess,
+  withProcessId,
   toWorkspacePath,
   type LaunchConfig,
 } from "./launchJson";
@@ -285,12 +288,26 @@ export function selectConfiguration(name: string | null) {
   persist();
 }
 
+/**
+ * Extensions' debug configuration providers (debug.registerDebugConfigurationProvider), set by the
+ * extension host bridge: their starting points for Add Configuration, and their last word on a
+ * configuration before it starts (null: the extension stopped the launch).
+ */
+export const extensionDebugConfigs: {
+  provide: () => Promise<LaunchConfig[]>;
+  resolve: (config: LaunchConfig) => Promise<LaunchConfig | null>;
+} = { provide: async () => [], resolve: async (c) => c };
+
 export async function addConfiguration() {
   if (!useWorkbench.getState().workspace) return notify("info", "Open a folder to create a launch.json file.");
   const kind = debugKindForPath(activeFilePath());
   const order = (t: (typeof TEMPLATES)[number]) => (adapterKindFor(t.config.type) === kind ? 0 : 1);
+  const fromExtensions = await Promise.race([extensionDebugConfigs.provide().catch(() => [] as LaunchConfig[]), new Promise<LaunchConfig[]>((r) => setTimeout(() => r([]), 2000))]);
   const tpl = await pickValue(
-    [...TEMPLATES].sort((a, b) => order(a) - order(b)).map((t) => ({ label: t.label, description: t.description, value: t })),
+    [
+      ...[...TEMPLATES].sort((a, b) => order(a) - order(b)).map((t) => ({ label: t.label, description: t.description, value: t })),
+      ...fromExtensions.filter((c) => c.name && c.type).map((c) => ({ label: c.name, description: `from an extension (${c.type})`, value: { label: c.name, description: "", config: c } })),
+    ],
     { placeholder: "Select a debug configuration to add" },
   );
   if (!tpl) return;
@@ -761,6 +778,49 @@ async function startJavaAttach(config: LaunchConfig, resolved: LaunchConfig, roo
 }
 
 /**
+ * Node.js (js-debug) and Python (debugpy): attach to a program already running
+ * with its debugger listening (a port), or to a picked process.
+ */
+async function startAttach(kind: "node" | "python", config: LaunchConfig, resolved: LaunchConfig, root: string, opts: StartOptions): Promise<boolean> {
+  const connect = (resolved.connect as { host?: string; port?: number } | undefined) ?? {};
+  const port = Number(resolved.port ?? connect.port ?? (kind === "node" ? 9229 : 5678));
+  const host = String(resolved.address ?? resolved.host ?? connect.host ?? "127.0.0.1");
+  const pid = typeof resolved.processId === "number" || /^\d+$/.test(String(resolved.processId ?? "")) ? Number(resolved.processId) : null;
+  const target = pid !== null ? `process ${pid}` : `${host}:${port}`;
+  lastLaunch = { config };
+  set({ phase: "initializing", sessionName: config.name, progress: { title: `Attaching to ${target}…` }, threads: [], focus: null, stoppedAt: null, scopes: [], children: {}, lastEditorAction: "debug" });
+  clearDebugConsole();
+  revealView("debug");
+  log("Debug", `Attach "${config.name}" (${kind}) to ${target}`);
+  try {
+    if (!opts.noConsent && !(await ensureAdapter(kind))) return fail();
+    const { type: _t, request: _r, name, ...rest } = resolved;
+    void _t;
+    void _r;
+    const args =
+      kind === "node"
+        ? { skipFiles: ["<node_internals>/**"], ...rest, type: "pwa-node", request: "attach", name, cwd: root, ...(pid !== null ? { processId: String(pid) } : { address: host, port }) }
+        : { justMyCode: true, ...rest, type: "debugpy", request: "attach", name, ...(pid !== null ? { processId: pid } : { connect: { host, port } }) };
+    const prepared: DebugPrepared = { root, entry: "", cwd: root, program: "", args: [] };
+    const session = await createSession(kind, config, prepared, null);
+    await session.dap.initialize(kind, { runInTerminal: false });
+    adoptCapabilities(session);
+    showPanel("debugConsole");
+    await configureAndLaunch(session, args, "attach");
+    setProgress(null);
+    if (get().phase === "initializing") set({ phase: "running" });
+    return true;
+  } catch (e) {
+    const message = String((e as Error)?.message ?? e);
+    appendConsole({ kind: "error", text: message });
+    const hint = kind === "node" ? `Start it with node --inspect=${port}` : `Start it with python -m debugpy --listen ${port} your_program.py`;
+    notify("error", /ECONNREFUSED|connect|timed out/i.test(message) ? `Nothing is listening for a debugger at ${target}. ${hint}` : message);
+    await stopDebugging();
+    return fail();
+  }
+}
+
+/**
  * Go (Delve), Dart and Flutter: their debug adapters build and run the program
  * themselves, so TMCode skips its own build step and passes the paths.
  */
@@ -851,7 +911,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     return false;
   }
   await saveAll();
-  const config = cfg ?? currentConfig();
+  let config = cfg ?? currentConfig();
   const file = activeFilePath();
   if (!config) {
     notify("info", file ? `TMCode can't debug '${basename(file)}'. Open a .py, .js, .ts, .c or .cpp file.` : "Open a file to debug, or create a launch.json file.");
@@ -872,6 +932,25 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     );
     return false;
   }
+  // An extension's provider may adjust it, or stop the launch.
+  const byExtension = await Promise.race([extensionDebugConfigs.resolve(config).catch(() => config), new Promise<LaunchConfig | null>((r) => setTimeout(() => r(config), 3000))]);
+  if (!byExtension) return false;
+  config = byExtension;
+  // "Attach to Process": the student picks the running program.
+  if (usesPickProcess(config)) {
+    const list = (await host.processes?.().catch(() => [])) ?? [];
+    if (!list.length) {
+      notify("error", "TMCode could not list the running programs on this computer.");
+      return false;
+    }
+    const pick = await showQuickPick({
+      placeholder: "Pick the process to attach to",
+      matchOnDescription: true,
+      items: list.map((p) => ({ id: String(p.pid), label: `${p.name} (${p.pid})`, description: p.command })),
+    });
+    if (!pick) return false;
+    config = withProcessId(config, Number(pick.id));
+  }
   let pickedArgs: string[] | undefined;
   if (JSON.stringify(config).includes("${command:pickArgs}")) {
     const text = await showInputBox({ prompt: "Command Line Arguments", placeholder: "Enter the arguments, separated by spaces" });
@@ -882,6 +961,7 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
   const resolved = substitute(config, { root: ws.root, file, line, args: pickedArgs });
   if (kind === "go" || kind === "dart" || kind === "flutter" || kind === "ruby") return startSelfHosted(kind, config, resolved, ws.root, opts);
   if (kind === "java" && config.request === "attach") return startJavaAttach(config, resolved, ws.root, opts);
+  if ((kind === "node" || kind === "python") && config.request === "attach") return startAttach(kind, config, resolved, ws.root, opts);
   if (config.type === "swift") return startSwift(config, resolved, ws.root, opts);
   if (config.type === "kotlin") return startKotlin(config, resolved, ws.root, opts);
   if (kind === "dotnet") return startDotnet(config, resolved, ws.root, file, opts);
@@ -1166,6 +1246,7 @@ async function onStopped(s: Session, b: StoppedEventBody) {
   const threadId = b.threadId ?? get().threads.find((t) => t.sessionId === s.id)?.id ?? 1;
   const frames = (await s.dap.stackTrace(threadId).catch(() => [] as StackFrame[])).map((f) => frameView(s, f));
   const reason = b.reason === "exception" ? "exception" : b.reason;
+  signal("debugStopped");
   set({
     phase: "stopped",
     progress: null,

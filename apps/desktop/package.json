@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "bundle": "tauri build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "VISUAL=1 playwright test e2e/visual.spec.ts --project=chromium"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

@@ -1,4 +1,9 @@
 import { useActivity } from "./state/activity";
+import { AssignmentBanner } from "./projects/AssignmentBanner";
+import { wireErrorCapture } from "./help/reportIssue";
+import { AccessibleView } from "./accessibility/AccessibleView";
+import { wireSignals } from "./accessibility/signals";
+import { setLocale } from "./messages/i18n";
 import { wireAi } from "./ai/commands";
 import { AuxiliaryBar } from "./parts/AuxiliaryBar";
 import { wireActivity } from "./activity/sources";
@@ -27,6 +32,12 @@ import { NotificationCenter } from "./widgets/NotificationCenter";
 import { zoomIn, zoomOut } from "./state/windowZoom";
 import { inExam } from "./exam/state";
 import { wireDocuments } from "./monaco/documents";
+import { wireBackups } from "./state/backups";
+import { wireTaskRunner } from "./tasks/runner";
+import { wireBlame } from "./scm/blame";
+import { wireWorkspaceFile } from "./state/workspaceFile";
+import { wireProfiles } from "./state/profiles";
+import { wireSettingsSync } from "./state/settingsSync";
 import { wireRunServices } from "./run/wire";
 import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
@@ -91,6 +102,8 @@ export function Workbench() {
   const reduceMotion = useWorkbench((s) => s.settings["workbench.reduceMotion"]);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const panelVisible = useWorkbench((s) => s.panelVisible);
+  const panelLocation = useWorkbench((s) => s.settings["workbench.panel.defaultLocation"] ?? "bottom");
+  const centered = useWorkbench((s) => !!s.settings["workbench.editor.centeredLayout"]);
   const panelMaximized = useWorkbench((s) => s.panelMaximized);
   // View › Appearance: hidden activity / status bar, side bar on the right (never hidden in exams).
   const examLayout = useWorkbench((s) => s.policy.mode !== "practice");
@@ -122,6 +135,17 @@ export function Workbench() {
     installFormatterSelection();
     registerFormatterActions();
     wireDocuments();
+    wireBackups();
+    wireTaskRunner();
+    wireBlame();
+    wireWorkspaceFile();
+    wireProfiles();
+    wireSettingsSync();
+    wireSignals();
+    wireErrorCapture();
+    // The display language follows its setting.
+    setLocale(useWorkbench.getState().settings.locale);
+    useWorkbench.subscribe((st, prev) => st.settings.locale !== prev.settings.locale && setLocale(st.settings.locale));
     wireSmartEditor();
     wireRunServices();
     wireScm();
@@ -210,7 +234,8 @@ export function Workbench() {
         } else if (reserved) e.preventDefault();
       };
       if (blockingRef.current) return done("none");
-      if (inTerminal && !(e.metaKey || e.ctrlKey || e.key === "F1")) return done("none");
+      // The terminal keeps its keys, except F1 and Alt+F2 (the Accessible View, for its output).
+      if (inTerminal && !(e.metaKey || e.ctrlKey || e.key === "F1" || (e.altKey && e.key === "F2"))) return done("none");
       // The shell's reverse search (Ctrl+R) wins over Reload Window inside the terminal.
       if (inTerminal && os !== "mac" && c === "mod+r") return done("none");
       if (inMonaco && (e.metaKey || e.ctrlKey) && e.code === "KeyK") return done("none");
@@ -308,16 +333,27 @@ export function Workbench() {
               <SideBar />
             </Allotment.Pane>,
             <Allotment.Pane key="main" minSize={220} priority={LayoutPriority.High}>
-              <Allotment vertical className="tm-split" proportionalLayout={false}>
+              {/* The Panel below the editor, or beside it (workbench.panel.defaultLocation). */}
+              <Allotment key={`panel-${panelLocation}`} vertical={panelLocation === "bottom"} className="tm-split" proportionalLayout={false}>
+                {panelLocation === "left" && (
+                  <Allotment.Pane minSize={200} preferredSize={420} visible={panelVisible} snap>
+                    <Panel />
+                  </Allotment.Pane>
+                )}
                 <Allotment.Pane minSize={120} visible={!panelMaximized}>
-                  <main className="tm-editor-area" aria-label="Editor">
-                    <EditorArea />
-                    <DebugToolbar />
+                  <main className={`tm-editor-area tm-editor-area--stack ${centered ? "is-centered" : ""}`} aria-label="Editor">
+                    <AssignmentBanner />
+                    <div className="tm-editor-area-body">
+                      <EditorArea />
+                      <DebugToolbar />
+                    </div>
                   </main>
                 </Allotment.Pane>
-                <Allotment.Pane minSize={100} preferredSize={260} visible={panelVisible} snap>
-                  <Panel />
-                </Allotment.Pane>
+                {panelLocation !== "left" && (
+                  <Allotment.Pane minSize={panelLocation === "bottom" ? 100 : 200} preferredSize={panelLocation === "bottom" ? 260 : 420} visible={panelVisible} snap>
+                    <Panel />
+                  </Allotment.Pane>
+                )}
               </Allotment>
             </Allotment.Pane>,
           )}
@@ -327,6 +363,7 @@ export function Workbench() {
       <WebviewLayer />
       <StatusBar chord={chord} />
       <QuickInput />
+      <AccessibleView />
       <QuickPickHost />
       <TooltipHost />
       <ContextMenu />

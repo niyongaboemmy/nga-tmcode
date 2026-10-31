@@ -5,6 +5,7 @@ import { ActionButton } from "../widgets/icons";
 import { ExplorerView } from "./explorer/ExplorerView";
 import { SearchView } from "./search/SearchView";
 import { TestingView } from "./testing/TestingView";
+import { ExtensionScm, ExtensionTests } from "../exthost/extScmTests";
 import { TaskView } from "../exam/ExamViews";
 // ── git ──
 import { ScmTitleActions, ScmView } from "../scm/ScmView";
@@ -18,6 +19,7 @@ import { isTeacherRole, useRole, useRoleChecking } from "../state/role";
 import { GradingView } from "../grading/GradingView";
 import { TimelinePane } from "../history/TimelinePane";
 import { OutlinePane } from "../outline/OutlinePane";
+import { OpenEditorsPane } from "./explorer/OpenEditorsPane";
 import type { ContextMenuItem, ViewId } from "../state/store";
 // ── extension views (exthost/views) ──
 import { ExtViewPanes } from "../exthost/views/ViewPanes";
@@ -124,6 +126,7 @@ export function SideBar() {
       <div className="tm-sidebar-content">
         {view === "explorer" ? (
           <div className="tm-explorer-stack">
+            <OpenEditorsPane />
             <ExplorerView />
             <OutlinePane />
             <TimelinePane />
@@ -136,6 +139,7 @@ export function SideBar() {
         ) : view === "scm" ? (
           <WithExtViews container="scm">
             <ScmView />
+            <ExtensionScm />
           </WithExtViews>
         ) : view === "debug" ? (
           <WithExtViews container="debug">
@@ -154,6 +158,7 @@ export function SideBar() {
         ) : (
           <WithExtViews container="testing">
             <TestingView />
+            <ExtensionTests />
           </WithExtViews>
         )}
       </div>

@@ -17,6 +17,10 @@ import { SYNC_ICON, SYNC_LABEL, SYNC_TIP, SYNC_TONE } from "../projects/syncLabe
 import type { SyncState } from "../projects/types";
 // ── git ──
 import { useGit, useGitAllowed } from "../scm/gitService";
+import { blameText, useBlame } from "../scm/blame";
+import { switchWorkspaceFolder, useWorkspaceFile } from "../state/workspaceFile";
+import { DEFAULT_PROFILE, useProfiles } from "../state/profiles";
+import { useSettingsSync } from "../state/settingsSync";
 import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
 import { useIsTeacher, useRoleChecking } from "../state/role";
@@ -149,8 +153,8 @@ function ProjectStatus() {
     >
       <Codicon name={SYNC_ICON[state]} className={busy ? "codicon-modifier-spin" : ""} />
       {view && (
-        <span className="tm-status-student" data-testid="project-student-status" data-status={view.status}>
-          {view.syncing ? "Updating…" : STUDENT_STATUS_LABEL[view.status]} ·
+        <span className={`tm-status-student is-${view.status}`} data-testid="project-student-status" data-status={view.status}>
+          {view.syncing ? "Updating…" : view.status === "in_progress" || view.status === "returned" ? `${STUDENT_STATUS_LABEL[view.status]}: not submitted` : view.status === "submitted" ? "✓ Submitted" : STUDENT_STATUS_LABEL[view.status]} ·
         </span>
       )}
       <span data-testid="project-status" data-state={state}>
@@ -196,6 +200,53 @@ function LanguageItem({ language }: { language: string | null }) {
   );
 }
 
+/** The profile in use, when it isn't Default (click: switch). */
+function ProfileItem() {
+  const active = useProfiles((s) => s.active);
+  if (active === DEFAULT_PROFILE) return null;
+  return (
+    <Item title="Switch Profile" onClick={() => executeCommand("workbench.profiles.actions.switchProfile")}>
+      <Codicon name="account" /> {active}
+    </Item>
+  );
+}
+
+/** Settings Sync: on, syncing, or a problem (click: sync now). */
+function SyncItem() {
+  const { enabled, status } = useSettingsSync();
+  if (!enabled) return null;
+  return (
+    <Item className="tm-prio-low" title={status === "error" ? "Settings Sync had a problem. Click to try again." : "Settings Sync is on. Click to sync now."} onClick={() => executeCommand("workbench.userDataSync.actions.syncNow")}>
+      <Codicon name={status === "syncing" ? "sync~spin" : status === "error" ? "sync-ignored" : "sync"} />
+    </Item>
+  );
+}
+
+/** A .code-workspace file's folders: the open one, and a click to switch (state/workspaceFile.ts). */
+function WorkspaceFolderItem() {
+  const folders = useWorkspaceFile((s) => s.folders);
+  const root = useWorkbench((s) => s.workspace?.root);
+  const at = folders.findIndex((f) => f.path === root);
+  if (folders.length < 2 || at < 0) return null;
+  return (
+    <Item title="Switch to another folder of this workspace" onClick={() => void switchWorkspaceFolder()}>
+      <Codicon name="root-folder" /> {folders[at].name} ({at + 1} of {folders.length})
+    </Item>
+  );
+}
+
+/** Git blame of the current line ("Ada, 3 days ago"); hover for the commit. */
+function BlameItem() {
+  const line = useBlame((s) => s.line);
+  const on = useWorkbench((s) => s.settings["git.blame.statusBarItem.enabled"] !== false);
+  if (!on || !line) return null;
+  return (
+    <Item className="tm-prio-low" title={`${line.summary}\n${line.hash.slice(0, 8)} · ${line.author} · ${new Date(line.date * 1000).toLocaleString()}`} onClick={() => executeCommand("git.blame.toggleEditorDecoration")}>
+      <Codicon name="git-commit" /> {blameText(line, false)}
+    </Item>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -232,6 +283,8 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <span>{MODE_LABEL[mode]}</span>
         </Item>
         {!simple && <GitItems />}
+        <ProfileItem />
+        <WorkspaceFolderItem />
         <ProjectStatus />
         <SyncStatus />
         <BusyItem />
@@ -249,6 +302,8 @@ export function StatusBar({ chord }: { chord: string | null }) {
         {chord && <Item title="Waiting for second key of chord">({chord}) was pressed. Waiting for second key of chord...</Item>}
       </div>
       <div className="tm-status-right">
+        <SyncItem />
+        <BlameItem />
         {hasFile && (
           <>
             <Item title="Go to Line/Column" onClick={() => executeCommand("workbench.action.gotoLine")}>

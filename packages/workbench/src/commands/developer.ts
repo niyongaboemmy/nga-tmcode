@@ -1,4 +1,5 @@
 import { registerCommand } from "./registry";
+import { previewKind, setViewMode, viewModeOf } from "../parts/editor/documentPreview";
 import { monaco } from "../monaco/setup";
 import { codeEditorFor } from "../monaco/editors";
 import { activeTerminal } from "../terminal/active";
@@ -94,6 +95,17 @@ export function registerDeveloperCommands() {
       if (!path) return;
       const svg = /\.svg$/i.test(path);
       openEditorInput({ kind: svg ? "image" : "markdown", id: `${svg ? "image" : "markdown"}:${path}`, path, preview: false });
+    },
+  });
+
+  registerCommand({
+    id: "markdown.togglePreviewMode",
+    title: "Toggle Edit / Preview",
+    category: "Markdown",
+    enabled: () => !!previewKind(activeFilePath() ?? ""),
+    run: () => {
+      const path = activeFilePath();
+      if (path) setViewMode(path, viewModeOf(path) === "edit" ? "preview" : "edit");
     },
   });
 

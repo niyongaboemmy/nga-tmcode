@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { signal } from "../../accessibility/signals";
 import { terminalEnv } from "../../terminal/env";
 import type { TerminalEnvMutation } from "../../platform/types";
 import { recordTerminalCommand } from "../../activity/sources";
 import { create } from "zustand";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { defaultFontFamily } from "../../state/settings";
 import { useThemes } from "../../themes/themeService";
@@ -17,6 +19,9 @@ import { setActiveTerminal } from "../../terminal/active";
 import { recordCommand, CommandLineTracker } from "../../terminal/history";
 import { SkeletonLines } from "../../widgets/Skeleton";
 import { defaultProfileSetting, fallbackShellName, loadTerminalProfiles, pickProfile } from "../../terminal/profiles";
+import { attachShellIntegration, neighbourCommand, stickyCommand, type ShellIntegration, type TerminalCommand } from "../../terminal/shellIntegration";
+import { decorateCommand } from "../../terminal/commandDecorations";
+import type { Settings } from "../../state/settings";
 
 /** Terminal colours of the active colour theme (its terminal.* keys); the static palettes cover the moment before it loads. */
 export function terminalTheme(theme: string): ITheme {
@@ -87,8 +92,48 @@ interface Instance {
   term: Terminal;
   fit: FitAddon;
   extras: EnhancedTerminal;
+  /** OSC 633 marks from the shell (zsh, bash, fish with shell integration). */
+  si: ShellIntegration;
+  /** The GPU renderer, when it loaded. */
+  gpu: WebglAddon | null;
   session: TerminalSession | null;
   exited: boolean;
+}
+
+/** xterm options that follow the terminal settings. */
+function termOptions(s: Settings, os: Parameters<typeof defaultFontFamily>[0]) {
+  return {
+    fontFamily: s["terminal.integrated.fontFamily"]?.trim() || defaultFontFamily(os),
+    fontSize: s["terminal.integrated.fontSize"],
+    lineHeight: Math.min(3, Math.max(1, Number(s["terminal.integrated.lineHeight"]) || 1)),
+    minimumContrastRatio: Math.min(21, Math.max(1, Number(s["terminal.integrated.minimumContrastRatio"]) || 1)),
+  };
+}
+
+/** The GPU renderer: in the desktop app on "auto", never on "off"; the DOM renderer otherwise and whenever WebGL fails. */
+function useGpu(setting: Settings["terminal.integrated.gpuAcceleration"]) {
+  return setting === "on" || (setting !== "off" && getPlatform().kind === "desktop");
+}
+
+function loadGpu(inst: Instance) {
+  if (inst.gpu || !inst.term.element) return;
+  try {
+    const gpu = new WebglAddon();
+    gpu.onContextLoss(() => {
+      gpu.dispose();
+      if (inst.gpu === gpu) inst.gpu = null;
+    });
+    inst.term.loadAddon(gpu);
+    inst.gpu = gpu;
+  } catch {
+    // No WebGL2 here: the DOM renderer stays.
+    inst.gpu = null;
+  }
+}
+
+/** Shell integration: ⌘↑/⌘↓ (Ctrl+↑/↓) between commands, and the last command's output. */
+export function terminalCommandAction(action: "previous" | "next" | "copyLastOutput" | "copyLastCommand") {
+  window.dispatchEvent(new CustomEvent("tmcode:terminal-command", { detail: action }));
 }
 
 export interface NewTerminalRequest {
@@ -152,6 +197,11 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const markStarted = (id: number) => setStarted((s) => (s.has(id) ? s : new Set(s).add(id)));
   const theme = useThemes((s) => s.active?.id ?? "dark-modern");
   const fontSize = useWorkbench((s) => s.settings["terminal.integrated.fontSize"]);
+  const fontFamily = useWorkbench((s) => s.settings["terminal.integrated.fontFamily"]);
+  const lineHeight = useWorkbench((s) => s.settings["terminal.integrated.lineHeight"]);
+  const contrast = useWorkbench((s) => s.settings["terminal.integrated.minimumContrastRatio"]);
+  const gpuSetting = useWorkbench((s) => s.settings["terminal.integrated.gpuAcceleration"]);
+  const sticky = useWorkbench((s) => s.settings["terminal.integrated.stickyScroll.enabled"] !== false);
   const workspace = useWorkbench((s) => s.workspace);
   const platform = getPlatform();
   const supported = !!platform.terminal;
@@ -180,9 +230,10 @@ export function TerminalView({ visible }: { visible: boolean }) {
     const parent = req.splitOf != null ? live.current.find((i) => i.id === req.splitOf) : undefined;
     // A split starts the same shell as the terminal it splits, as in VS Code.
     const profile = pickProfile(profiles, req.profile ?? parent?.profile, defaultProfileSetting());
+    const settings = useWorkbench.getState().settings;
     const term = new Terminal({
-      fontFamily: defaultFontFamily(platform.os),
-      fontSize: useWorkbench.getState().settings["terminal.integrated.fontSize"],
+      ...termOptions(settings, platform.os),
+      drawBoldTextInBrightColors: true,
       // VS Code: a blinking bar while focused, an outline when not, so the cursor is always visible.
       cursorBlink: true,
       cursorStyle: "bar",
@@ -197,6 +248,23 @@ export function TerminalView({ visible }: { visible: boolean }) {
     term.loadAddon(fit);
     const extras = enhanceTerminal(term);
     const id = ++seq;
+    const decorationActions = {
+      run: (cmd: string) => {
+        if (!inst.session || inst.exited) return;
+        inst.session.write(`${cmd}\r`);
+        inst.term.focus();
+      },
+      integration: () => inst.si,
+    };
+    const si = attachShellIntegration(term, (c, t) => {
+      // The shell names the command: Run Recent Command and the activity log need no guessing.
+      if (c.exitCode === undefined && c.command) {
+        recordCommand(c.command);
+        recordTerminalCommand(c.command, inst.name || null);
+      }
+      decorateCommand(c, t, decorationActions);
+      if (c.exitCode !== undefined && c.exitCode !== 0) signal("terminalCommandFailed");
+    });
     const inst: Instance = {
       id,
       group: parent?.group ?? id,
@@ -207,6 +275,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
       term,
       fit,
       extras,
+      si,
+      gpu: null,
       session: null,
       exited: false,
     };
@@ -226,6 +296,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
         cwd: req.cwd ?? parent?.cwd,
         profile: profile?.id,
         env: terminalEnv(req.env),
+        shellIntegration: { enabled: settings["terminal.integrated.shellIntegration.enabled"] !== false, prompt: settings["terminal.integrated.tmcodePrompt"] ?? "auto" },
         onData: (d) => {
           markStarted(inst.id);
           term.write(d);
@@ -244,13 +315,16 @@ export function TerminalView({ visible }: { visible: boolean }) {
         // The folder changed while the shell started (session restore at launch): this one belongs to nothing.
         session.kill();
         extras.dispose();
+        si.dispose();
         term.dispose();
         spawning.current = false;
         if (visibleRef.current && live.current.length === 0) void create(req);
         return;
       }
       inst.session = session;
+      // Typed lines are guessed only without shell integration (PowerShell, cmd, integration off).
       const tracker = new CommandLineTracker((cmd) => {
+        if (si.active) return;
         recordCommand(cmd);
         recordTerminalCommand(cmd, inst.name ?? null);
       });
@@ -300,8 +374,10 @@ export function TerminalView({ visible }: { visible: boolean }) {
     for (const inst of shown) {
       const el = hosts.current.get(inst.id);
       if (!el) continue;
-      if (!inst.term.element) inst.term.open(el);
-      else if (inst.term.element.parentElement !== el) el.replaceChildren(inst.term.element);
+      if (!inst.term.element) {
+        inst.term.open(el);
+        if (useGpu(useWorkbench.getState().settings["terminal.integrated.gpuAcceleration"])) loadGpu(inst);
+      } else if (inst.term.element.parentElement !== el) el.replaceChildren(inst.term.element);
     }
     if (active) {
       setActiveTerminal(active.term);
@@ -341,11 +417,22 @@ export function TerminalView({ visible }: { visible: boolean }) {
   }, []);
 
   useEffect(() => {
+    const opts = termOptions(useWorkbench.getState().settings, platform.os);
     for (const i of instances) {
       i.term.options.theme = terminalTheme(theme);
-      i.term.options.fontSize = fontSize;
+      Object.assign(i.term.options, opts);
+      if (!useGpu(gpuSetting) && i.gpu) {
+        i.gpu.dispose();
+        i.gpu = null;
+      } else if (useGpu(gpuSetting)) loadGpu(i);
+      try {
+        if (i.term.element?.offsetParent) i.fit.fit();
+      } catch {
+        /* not laid out */
+      }
     }
-  }, [theme, fontSize, instances]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme, fontSize, fontFamily, lineHeight, contrast, gpuSetting, instances]);
 
   // First show creates a terminal (again after the folder changes); "New Terminal" adds one.
   useEffect(() => {
@@ -364,6 +451,27 @@ export function TerminalView({ visible }: { visible: boolean }) {
       } else void create({ command: cmd });
     };
     const onFind = () => setFinding(true);
+    const onCommand = (e: Event) => {
+      const inst = live.current.find((i) => i.id === activeRef.current);
+      if (!inst) return;
+      const action = (e as CustomEvent<string>).detail;
+      const buf = inst.term.buffer.active;
+      const done = inst.si.commands.filter((c) => c.exitCode !== undefined);
+      if (action === "previous" || action === "next") {
+        // At the bottom, ⌘↑ goes to the last command; scrolled up, to the one above the top line.
+        const from = action === "previous" && buf.viewportY >= buf.baseY ? buf.baseY + buf.cursorY : buf.viewportY;
+        const target = neighbourCommand(inst.si.commands, from, action === "previous" ? -1 : 1);
+        if (target) inst.term.scrollToLine(target.prompt.line);
+        else if (action === "next") inst.term.scrollToBottom();
+        inst.term.focus();
+        return;
+      }
+      const last = done[done.length - 1];
+      if (!last) return notify("info", "No command has finished in this terminal yet.");
+      const text = action === "copyLastOutput" ? inst.si.outputOf(last) : last.command;
+      const clip = getPlatform().clipboard;
+      void (clip ? clip.writeText(text) : navigator.clipboard.writeText(text)).catch(() => notify("warning", "Could not copy to the clipboard."));
+    };
     const onSplit = () => (activeRef.current != null ? void create({ splitOf: activeRef.current }) : void create());
     const onKill = () => activeRef.current != null && kill(activeRef.current);
     const onRename = (e: Event) => {
@@ -376,6 +484,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
     window.addEventListener("tmcode:new-terminal", onNew);
     window.addEventListener("tmcode:terminal-run", onRun);
     window.addEventListener("tmcode:terminal-find", onFind);
+    window.addEventListener("tmcode:terminal-command", onCommand);
     window.addEventListener("tmcode:terminal-split", onSplit);
     window.addEventListener("tmcode:terminal-kill", onKill);
     window.addEventListener("tmcode:terminal-rename", onRename);
@@ -383,6 +492,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
       window.removeEventListener("tmcode:new-terminal", onNew);
       window.removeEventListener("tmcode:terminal-run", onRun);
       window.removeEventListener("tmcode:terminal-find", onFind);
+      window.removeEventListener("tmcode:terminal-command", onCommand);
       window.removeEventListener("tmcode:terminal-split", onSplit);
       window.removeEventListener("tmcode:terminal-kill", onKill);
       window.removeEventListener("tmcode:terminal-rename", onRename);
@@ -409,6 +519,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
         for (const i of closing) {
           i.session?.kill();
           i.extras.dispose();
+          i.si.dispose();
           i.term.dispose();
         }
         if (busy) notify("info", `${busy === 1 ? "A terminal was" : `${busy} terminals were`} still running a program and ${busy === 1 ? "was" : "were"} closed. Terminals don't move to a new folder.`);
@@ -421,6 +532,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
     const inst = list.find((i) => i.id === id);
     inst?.session?.kill();
     inst?.extras.dispose();
+    inst?.si.dispose();
     inst?.term.dispose();
     hosts.current.delete(id);
     const rest = list.filter((i) => i.id !== id);
@@ -463,6 +575,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
               aria-label={`Terminal ${labelOf(inst)}`}
             />
             {!started.has(inst.id) && <ShellStarting />}
+            {sticky && <StickyCommand inst={inst} />}
           </div>
         ))}
       </div>
@@ -521,6 +634,47 @@ function RenameInput({ initial, onDone }: { initial: string; onDone: (value: str
         e.stopPropagation();
       }}
     />
+  );
+}
+
+/**
+ * VS Code's terminal sticky scroll: while a command's output scrolls past, its
+ * prompt line stays pinned at the top; clicking it scrolls back to the command.
+ */
+function StickyCommand({ inst }: { inst: Instance }) {
+  const [cmd, setCmd] = useState<TerminalCommand | undefined>(undefined);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setCmd(stickyCommand(inst.si.commands, inst.term.buffer.active.viewportY)));
+    };
+    const subs = [inst.term.onScroll(update), inst.term.onWriteParsed(update), inst.si.onChange(update)];
+    update();
+    return () => {
+      cancelAnimationFrame(frame);
+      subs.forEach((d) => d.dispose());
+    };
+  }, [inst]);
+  if (!cmd || !cmd.input || cmd.input.isDisposed) return null;
+  const line = inst.term.buffer.active.getLine(cmd.input.line)?.translateToString(true) ?? "";
+  const at = cmd.inputX ?? 0;
+  return (
+    <button
+      type="button"
+      className="tm-term-sticky"
+      data-testid="terminal-sticky"
+      title="Scroll to this command"
+      style={{ fontFamily: inst.term.options.fontFamily, fontSize: inst.term.options.fontSize }}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => {
+        inst.term.scrollToLine(cmd.prompt.line);
+        inst.term.focus();
+      }}
+    >
+      <span className="tm-term-sticky-prompt">{line.slice(0, at)}</span>
+      <span className="tm-term-sticky-command">{cmd.command || line.slice(at).trim()}</span>
+    </button>
   );
 }
 

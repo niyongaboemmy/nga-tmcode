@@ -31,6 +31,13 @@ export interface FileSystem {
   trash?(path: string): Promise<void>;
   /** Binary files (images) as base64; absent where unsupported. */
   readBase64?(path: string): Promise<string>;
+  /** A binary file's bytes as text anyway (invalid characters replaced), for "Open Anyway". */
+  readFileAnyway?(path: string): Promise<string>;
+  /**
+   * Search, fast path (desktop: Rust, in parallel): which of `files` contain a match on disk.
+   * Rejects when the query needs JavaScript's regex features; the caller then searches every file itself.
+   */
+  searchFiles?(files: string[], query: { pattern: string; isRegex: boolean; matchCase: boolean; wholeWord: boolean }): Promise<string[]>;
   // ── encodings and imports (feat/files-search) ──
   /** The encoding a file is read and saved with ("utf8", "utf8bom", "utf16le", "utf16be", "windows1252", "iso88591"). */
   encodingOf?(path: string): Promise<FileEncoding>;
@@ -91,6 +98,8 @@ export interface TerminalSpawnOptions {
   profile?: string;
   /** Environment changes (extensions' environmentVariableCollection, a terminal's own env). */
   env?: TerminalEnvMutation[];
+  /** Shell integration (OSC 633 marks) and TMCode's coloured prompt; absent = the shell as it is. */
+  shellIntegration?: { enabled: boolean; prompt: "auto" | "on" | "off" };
   onData(data: string): void;
   onExit(code: number | null): void;
 }
@@ -141,6 +150,8 @@ export interface Platform {
   openFile?(): Promise<{ name: string; root: string; file?: string } | null>;
   /** Opens a folder or file given by absolute path (command line, Open With). */
   openPath?(path: string): Promise<{ name: string; root: string; file?: string }>;
+  /** File › New Window: another TMCode window (desktop), optionally opening a folder. */
+  newWindow?(path?: string): Promise<void>;
   /** Shows a workspace path in Finder / File Explorer. */
   reveal?(path: string): Promise<void>;
   /** Changes made outside TMCode (workspace-relative paths). Returns an unsubscribe. */
@@ -177,6 +188,15 @@ export interface Platform {
   setNativeTheme?(theme: "dark" | "light"): void;
   /** Whole-window zoom (1 = 100 %); absent → the workbench zooms with CSS. */
   setZoom?(factor: number): void;
+  /**
+   * Files attached to TMCode AI questions (desktop: ai_attach.rs). Only paths the user picked,
+   * dropped or copied can be read.
+   */
+  attachments?: {
+    pick(): Promise<string[]>;
+    clipboard(): Promise<string[]>;
+    read(path: string): Promise<import("../ai/attachments").AttachedFile>;
+  };
   /** Files dragged in from Finder / File Explorer (desktop). Returns an unsubscribe. */
   onFileDrop?(cb: (e: FileDropEvent) => void): () => void;
   /** The app window gained or lost focus (desktop: the native window, so clicks into preview panes don't count). */
@@ -435,6 +455,8 @@ export interface DebugHost {
   setExamPolicy?(allowed: boolean): void;
   /** DAP `runInTerminal`: the debuggee runs in the Run console (so it can read input). */
   runInTerminal?(request: { args: string[]; cwd?: string; env?: Record<string, string | null>; cols?: number; rows?: number }, onEvent: (e: RunEvent) => void): Promise<RunHandle>;
+  /** Running processes, for "Attach to Process" (`${command:pickProcess}`). */
+  processes?(): Promise<{ pid: number; name: string; command: string }[]>;
 }
 
 // ───────────── web preview (plan §9) ─────────────
@@ -567,6 +589,26 @@ export interface GitCommit {
   subject: string;
 }
 
+/** One line of `git blame`. */
+export interface BlameLine {
+  line: number;
+  hash: string;
+  author: string;
+  date: number;
+  summary: string;
+}
+
+/** A commit of the graph, with its parents. */
+export interface GraphCommit {
+  hash: string;
+  short: string;
+  parents: string[];
+  author: string;
+  date: number;
+  refs: string;
+  subject: string;
+}
+
 export type GitEvent = { type: "step"; name: string } | { type: "progress"; line: string };
 
 /** A long-running git operation (clone, pull, push…). */
@@ -607,6 +649,10 @@ export interface GitHost {
   showAt?(path: string, commit: string): Promise<string | null>;
   /** The commits that changed a file, newest first (the Timeline). */
   fileLog?(path: string, limit: number): Promise<GitCommit[]>;
+  /** Who last changed each line (the status bar and inline blame). */
+  blame?(path: string): Promise<BlameLine[]>;
+  /** Every branch's commits with their parents, newest first (the Graph). */
+  graph?(limit: number): Promise<GraphCommit[]>;
   /** Puts this text in the index as the file's staged content (Stage Change for one hunk). */
   stageContent?(path: string, content: string): Promise<void>;
   stage(paths: string[]): Promise<void>;

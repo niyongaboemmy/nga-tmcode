@@ -13,7 +13,7 @@ export type ThemeId = string;
 export interface Settings {
   "workbench.colorTheme": ThemeId;
   /**
-   * File icon theme: "vs-seti" (VS Code's Seti, the default), "vs-minimal",
+   * File icon theme: "vs-seti-folders" (Seti with coloured folders, the default), "vs-seti" (VS Code's Seti), "vs-minimal",
    * "tmcode" (TMCode's colour badges), "none", or "ext:<publisher.name>:<id>".
    */
   "workbench.iconTheme": string;
@@ -29,12 +29,30 @@ export interface Settings {
   "editor.bracketPairColorization.enabled": boolean;
   "editor.stickyScroll.enabled": boolean;
   "editor.formatOnSave": boolean;
-  "files.autoSave": "off" | "afterDelay" | "onFocusChange";
+  "files.autoSave": "off" | "afterDelay" | "onFocusChange" | "onWindowChange";
+  /** Hot exit: quitting with unsaved files keeps them for next time instead of asking (VS Code's files.hotExit). */
+  "files.hotExit": "onExit" | "off";
   "files.autoSaveDelay": number;
   "terminal.integrated.fontSize": number;
   /** Shell profile id for new terminals ("zsh", "bash", "pwsh", "cmd", "gitbash", "wsl"…); "" = the system's shell. */
   "terminal.integrated.defaultProfile": string;
+  "terminal.integrated.fontFamily": string;
+  "terminal.integrated.lineHeight": number;
+  /** Shell integration (zsh, bash, fish): command marks, command navigation, exit codes. */
+  "terminal.integrated.shellIntegration.enabled": boolean;
+  /** TMCode's coloured prompt: "auto" when the shell's own prompt has no colours. */
+  "terminal.integrated.tmcodePrompt": "auto" | "on" | "off";
+  "terminal.integrated.stickyScroll.enabled": boolean;
+  /** "auto": the GPU renderer in the desktop app, the DOM renderer in the browser. */
+  "terminal.integrated.gpuAcceleration": "auto" | "on" | "off";
+  "terminal.integrated.minimumContrastRatio": number;
   "workbench.reduceMotion": boolean;
+  /** Display language of the workbench's own words ("en", "fr"). */
+  locale: "en" | "fr";
+  /** Where the Panel sits (VS Code's workbench.panel.defaultLocation). */
+  "workbench.panel.defaultLocation": "bottom" | "left" | "right";
+  /** Centered Layout: the editor in the middle of a wide window. */
+  "workbench.editor.centeredLayout": boolean;
   /** "default": check at start and every 6 hours; "manual": only from the command; "none": never. */
   "update.mode": "default" | "manual" | "none";
   /**
@@ -47,6 +65,8 @@ export interface Settings {
   "projects.presence": boolean;
   /** Where new projects are created ("" = ~/TMCode Projects). */
   "projects.folder": string;
+  /** Start / Open ask where a new project's folder goes (else: the Projects Folder). */
+  "projects.askLocation": boolean;
   /**
    * PHP websites: "ask" (default) offers the computer's web server folder (XAMPP/MAMP/WAMP htdocs) when
    * there is one; "webServer" always uses it; "projectsFolder" keeps them with the other projects
@@ -71,8 +91,16 @@ export interface Settings {
   "explorer.compactFolders": boolean;
   /** The Explorer shows and selects the active file. */
   "explorer.autoReveal": boolean;
+  /** File nesting (VS Code's explorer.fileNesting): generated and lock files under their file. */
+  "explorer.fileNesting.enabled": boolean;
+  /** Git blame after the current line (VS Code's git.blame.editorDecoration.enabled). */
+  "git.blame.editorDecoration.enabled": boolean;
+  /** Git blame of the current line in the status bar. */
+  "git.blame.statusBarItem.enabled": boolean;
   /** Screen reader mode for the editor. */
   "editor.accessibilitySupport": "auto" | "on" | "off";
+  /** Sounds for errors, failures and stops (VS Code's accessibility signals): with the screen reader ("auto"), always or never. */
+  "accessibility.signals": "auto" | "on" | "off";
   /** Whole-window zoom: 0 is 100 %, each step is 20 % (VS Code's window.zoomLevel). */
   "window.zoomLevel": number;
   /** User keybindings: command id → key ("mod+shift+k"; "" removes the key). Edited in Keyboard Shortcuts. */
@@ -133,7 +161,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   "workbench.colorTheme": "dark-modern",
-  "workbench.iconTheme": "vs-seti",
+  "workbench.iconTheme": "vs-seti-folders",
   "editor.fontSize": 14,
   "editor.fontFamily": "",
   "editor.tabSize": 4,
@@ -148,13 +176,25 @@ export const DEFAULT_SETTINGS: Settings = {
   "editor.formatOnSave": false,
   "files.autoSave": "afterDelay",
   "files.autoSaveDelay": 1000,
+  "files.hotExit": "onExit",
   "terminal.integrated.fontSize": 13,
   "terminal.integrated.defaultProfile": "",
+  "terminal.integrated.fontFamily": "",
+  "terminal.integrated.lineHeight": 1,
+  "terminal.integrated.shellIntegration.enabled": true,
+  "terminal.integrated.tmcodePrompt": "auto",
+  "terminal.integrated.stickyScroll.enabled": true,
+  "terminal.integrated.gpuAcceleration": "auto",
+  "terminal.integrated.minimumContrastRatio": 4.5,
   "workbench.reduceMotion": false,
+  locale: "en",
+  "workbench.panel.defaultLocation": "bottom",
+  "workbench.editor.centeredLayout": false,
   "update.mode": "default",
   "projects.autoSave": "assignments",
   "projects.presence": true,
   "projects.folder": "",
+  "projects.askLocation": true,
   "projects.phpLocation": "ask",
   "livePreview.updateOn": "onType",
   "livePreview.followActiveFile": false,
@@ -164,7 +204,11 @@ export const DEFAULT_SETTINGS: Settings = {
   "search.useIgnoreFiles": true,
   "explorer.compactFolders": true,
   "explorer.autoReveal": true,
+  "explorer.fileNesting.enabled": false,
+  "git.blame.editorDecoration.enabled": false,
+  "git.blame.statusBarItem.enabled": true,
   "editor.accessibilitySupport": "auto",
+  "accessibility.signals": "auto",
   "window.zoomLevel": 0,
   "keybindings.user": {},
   "workbench.activityBar.visible": true,
@@ -197,12 +241,14 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /** One-time changes to saved settings, by id (kept in the saved UI state once applied). */
-export const SETTINGS_MIGRATIONS = ["iconTheme.vs-seti"] as const;
+export const SETTINGS_MIGRATIONS = ["iconTheme.vs-seti", "iconTheme.coloured-folders"] as const;
 
 /**
  * Applies the migrations not applied yet. "iconTheme.vs-seti": 0.13 made VS
  * Code's Seti the default file icon theme; users still on the old default
  * ("tmcode") move with it once, and can pick TMCode Glyphs again after.
+ * "iconTheme.coloured-folders": 0.24 made Seti with coloured folders the
+ * default; users on plain Seti (the old default) move with it once.
  */
 export function migrateSettings(saved: Partial<Settings> | undefined, done: readonly string[] | undefined): { settings: Partial<Settings>; done: string[] } {
   const settings = { ...(saved ?? {}) };
@@ -210,6 +256,10 @@ export function migrateSettings(saved: Partial<Settings> | undefined, done: read
   if (!applied.has("iconTheme.vs-seti")) {
     if (settings["workbench.iconTheme"] === "tmcode") settings["workbench.iconTheme"] = "vs-seti";
     applied.add("iconTheme.vs-seti");
+  }
+  if (!applied.has("iconTheme.coloured-folders")) {
+    if (settings["workbench.iconTheme"] === "vs-seti") settings["workbench.iconTheme"] = "vs-seti-folders";
+    applied.add("iconTheme.coloured-folders");
   }
   return { settings, done: [...applied] };
 }
@@ -252,6 +302,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Specifies the file icon theme used in the workbench, or 'None' to not show any file icons.",
         type: "enum",
         options: [
+          { value: "vs-seti-folders", label: "Seti with Coloured Folders (TMCode)" },
           { value: "vs-seti", label: "Seti (Visual Studio Code)" },
           { value: "vs-minimal", label: "Minimal (Visual Studio Code)" },
           { value: "tmcode", label: "TMCode Glyphs" },
@@ -259,6 +310,28 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         ],
         dynamicOptions: "iconThemes",
       },
+      {
+        key: "locale",
+        label: "Display Language",
+        description: "The language of TMCode's menus, views and settings. Your code and Task Mentor's words are not translated.",
+        type: "enum",
+        options: [
+          { value: "en", label: "English" },
+          { value: "fr", label: "Français (French)" },
+        ],
+      },
+      {
+        key: "workbench.panel.defaultLocation",
+        label: "Panel: Position",
+        description: "Where the Panel (Terminal, Problems, Output…) sits: below the editor, or beside it.",
+        type: "enum",
+        options: [
+          { value: "bottom", label: "Bottom" },
+          { value: "left", label: "Left" },
+          { value: "right", label: "Right" },
+        ],
+      },
+      { key: "workbench.editor.centeredLayout", label: "Centered Layout", description: "Keep the editor in the middle of a wide window, with space on both sides.", type: "boolean" },
       {
         key: "workbench.reduceMotion",
         label: "Reduce Motion",
@@ -409,6 +482,17 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "off", label: "off" },
           { value: "afterDelay", label: "afterDelay" },
           { value: "onFocusChange", label: "onFocusChange" },
+          { value: "onWindowChange", label: "onWindowChange" },
+        ],
+      },
+      {
+        key: "files.hotExit",
+        label: "Hot Exit",
+        description: "Quitting with unsaved files keeps them for next time instead of asking to save. They also come back after a crash.",
+        type: "enum",
+        options: [
+          { value: "onExit", label: "onExit" },
+          { value: "off", label: "off" },
         ],
       },
       {
@@ -468,6 +552,12 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Where new projects are created, assignments' included. Empty: the TMCode Projects folder in your home folder. Projects: Move This Project… moves one that already exists.",
         type: "string",
         placeholder: "~/TMCode Projects",
+      },
+      {
+        key: "projects.askLocation",
+        label: "Projects: Ask Where to Save",
+        description: "When you start an assignment or open a project for the first time, ask where its folder goes (anywhere on this computer, or the folder open now). Off: always the Projects Folder.",
+        type: "boolean",
       },
       {
         key: "projects.phpLocation",
@@ -578,6 +668,38 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         options: [{ value: "", label: "Automatic (the system's shell)" }],
         dynamicOptions: "terminalProfiles",
       },
+      { key: "terminal.integrated.fontFamily", label: "Font Family", description: "The terminal's font. Empty uses the editor's font.", type: "string", placeholder: "Menlo, Consolas, monospace" },
+      { key: "terminal.integrated.lineHeight", label: "Line Height", description: "Line height of the terminal, a multiple of the font size.", type: "number", min: 1, max: 3 },
+      {
+        key: "terminal.integrated.shellIntegration.enabled",
+        label: "Shell Integration",
+        description: "Marks each command in zsh, bash and fish: a dot shows whether it worked, ⌘↑/⌘↓ (Ctrl+↑/↓) jump between commands. Applies to new terminals.",
+        type: "boolean",
+      },
+      {
+        key: "terminal.integrated.tmcodePrompt",
+        label: "Coloured Prompt",
+        description: "TMCode's coloured prompt (user, folder, git branch, ✗ after a failed command) in zsh and bash. Applies to new terminals.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "When the shell's prompt has no colours" },
+          { value: "on", label: "Always" },
+          { value: "off", label: "Never" },
+        ],
+      },
+      { key: "terminal.integrated.stickyScroll.enabled", label: "Sticky Scroll", description: "Keeps the running command at the top of the terminal while its output scrolls.", type: "boolean" },
+      {
+        key: "terminal.integrated.gpuAcceleration",
+        label: "GPU Acceleration",
+        description: "Draws the terminal with the GPU (sharper, faster). Turn off if text looks wrong.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "Auto" },
+          { value: "on", label: "On" },
+          { value: "off", label: "Off" },
+        ],
+      },
+      { key: "terminal.integrated.minimumContrastRatio", label: "Minimum Contrast Ratio", description: "Text colours are adjusted to reach this contrast (1 = never adjust, 4.5 = readable, 21 = black and white).", type: "number", min: 1, max: 21 },
     ],
   },
   {
@@ -588,6 +710,24 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       { key: "search.useIgnoreFiles", label: "Search: Use Ignore Files", description: "Search skips files that .gitignore ignores.", type: "boolean" },
       { key: "explorer.compactFolders", label: "Explorer: Compact Folders", description: "Show a folder that holds only one folder on a single row.", type: "boolean" },
       { key: "explorer.autoReveal", label: "Explorer: Auto Reveal", description: "Show and select the active file in the Explorer.", type: "boolean" },
+      {
+        key: "git.blame.statusBarItem.enabled",
+        label: "Git: Blame in the Status Bar",
+        description: "Show who last changed the current line, and when, in the status bar.",
+        type: "boolean",
+      },
+      {
+        key: "git.blame.editorDecoration.enabled",
+        label: "Git: Blame After the Line",
+        description: "Show who last changed the current line, when and why, after the line in the editor.",
+        type: "boolean",
+      },
+      {
+        key: "explorer.fileNesting.enabled",
+        label: "Explorer: File Nesting",
+        description: "Show related files under their file: package-lock.json under package.json, app.js under app.ts, and so on.",
+        type: "boolean",
+      },
     ],
   },
   {
@@ -602,6 +742,17 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "auto", label: "auto (detect a screen reader)" },
           { value: "on", label: "on" },
           { value: "off", label: "off" },
+        ],
+      },
+      {
+        key: "accessibility.signals",
+        label: "Accessibility Signals",
+        description: "Short sounds when the cursor reaches a line with an error, a terminal command or a task fails or finishes, or the debugger stops.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "With the screen reader" },
+          { value: "on", label: "Always" },
+          { value: "off", label: "Never" },
         ],
       },
       { key: "window.zoomLevel", label: "Window: Zoom Level", description: "Zoom the whole window. 0 is 100 %, each step is 20 %.", type: "number", min: -5, max: 8 },

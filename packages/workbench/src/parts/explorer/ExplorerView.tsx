@@ -36,7 +36,7 @@ import { copyEntries, copyPathsInto, cutEntries, duplicateEntry, pasteEntries, u
 import { recordCreated, recordMove, undoFileOp } from "./fileUndo";
 import { terminalAllowed } from "@tmcode/protocol";
 import { useSearchUi } from "../search/SearchView";
-import { rangeBetween, rowLabel, topLevelPaths, typeAheadMatch, visibleChildren, visibleRows, type Row } from "./explorerModel";
+import { DEFAULT_NESTING, findRows, rangeBetween, rowLabel, topLevelPaths, typeAheadMatch, visibleChildren, visibleRows, type Row } from "./explorerModel";
 import { importBrowserFiles, importPaths } from "./importFiles";
 import type { DirEntry } from "../../platform/types";
 // ── git ──
@@ -63,13 +63,82 @@ function useExclude() {
   return useMemo(() => globMatcher(pattern ?? ""), [pattern]);
 }
 
-/** Flattens the expanded tree into visible rows (keyboard navigation works on this list). */
+/** Find in the Explorer (⌥⌘F / Ctrl+Alt+F): the query while the find box is open. */
+export const useExplorerFind = create<{ query: string | null }>(() => ({ query: null }));
+
+/** Flattens the expanded tree into visible rows (keyboard navigation works on this list); while finding, the matches. */
 function useRows(): Row[] {
   const dirs = useWorkbench((s) => s.dirs);
   const expanded = useWorkbench((s) => s.expanded);
   const compact = useWorkbench((s) => s.settings["explorer.compactFolders"] ?? true);
+  const nesting = useWorkbench((s) => !!s.settings["explorer.fileNesting.enabled"]);
+  const query = useExplorerFind((s) => s.query);
   const exclude = useExclude();
-  return useMemo(() => visibleRows(dirs, expanded, { exclude, compact }), [dirs, expanded, exclude, compact]);
+  return useMemo(
+    () => (query ? findRows(dirs, exclude, query) : visibleRows(dirs, expanded, { exclude, compact, ...(nesting ? { nesting: DEFAULT_NESTING } : {}) })),
+    [dirs, expanded, exclude, compact, nesting, query],
+  );
+}
+
+/** Every folder of the project read once, so Find in the Explorer sees the whole tree (bounded). */
+async function loadAllFolders(limit = 400) {
+  const exclude = globMatcher(useWorkbench.getState().settings["files.exclude"] ?? "");
+  const skip = new Set(["node_modules", ".git", "dist", "build", "target", ".venv", "venv", "__pycache__", ".next", "out"]);
+  const queue = [""];
+  let read = 0;
+  while (queue.length && read < limit) {
+    const dir = queue.shift()!;
+    if (!useWorkbench.getState().dirs[dir]) {
+      await loadDir(dir);
+      read++;
+    }
+    for (const e of useWorkbench.getState().dirs[dir] ?? []) if (e.kind === "dir" && !skip.has(e.name) && !exclude(e.path)) queue.push(e.path);
+  }
+}
+
+/** Opens the Explorer's find box (the command and ⌥⌘F). */
+export function openExplorerFind() {
+  if (useExplorerFind.getState().query === null) useExplorerFind.setState({ query: "" });
+  void loadAllFolders();
+  setTimeout(() => document.querySelector<HTMLInputElement>('[data-testid="explorer-find"] input')?.focus(), 0);
+}
+
+function ExplorerFind({ rows, onOpen }: { rows: Row[]; onOpen: (row: Row) => void }) {
+  const query = useExplorerFind((s) => s.query) ?? "";
+  const close = () => {
+    useExplorerFind.setState({ query: null });
+    document.querySelector<HTMLElement>(".tm-explorer")?.focus();
+  };
+  const files = rows.filter((r) => r.match);
+  return (
+    <div className="tm-explorer-find" data-testid="explorer-find">
+      <div className="tm-input-box">
+        <Codicon name="search" />
+        <input
+          className="tm-input"
+          aria-label="Find in the Explorer"
+          placeholder="Type to find files"
+          value={query}
+          autoFocus
+          onChange={(e) => useExplorerFind.setState({ query: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            } else if (e.key === "Enter" && files[0]) {
+              e.preventDefault();
+              onOpen(files[0]);
+            } else if (e.key === "ArrowDown" && rows[0]) {
+              e.preventDefault();
+              document.querySelector<HTMLElement>(`.tm-explorer [data-path="${CSS.escape(rows[0].entry.path)}"]`)?.focus();
+            }
+          }}
+        />
+        <span className="tm-explorer-find-count">{query.trim() ? (files.length ? `${files.length} found` : "No results") : ""}</span>
+        <ActionButton icon="close" label="Close (Escape)" onClick={close} />
+      </div>
+    </div>
+  );
 }
 
 /** Expands a folder and, with compact folders, every single-folder child below it (one click for src/main/java). */
@@ -262,6 +331,7 @@ export function ExplorerView() {
   const cut = useFileClipboard((s) => (s?.mode === "cut" ? s.paths : null));
   const os = getPlatform().os;
   const [collapsed, setCollapsed] = useState(false);
+  const findOpen = useExplorerFind((s) => s.query !== null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const suppressClick = useRef(false);
   // Edit › Cut / Copy / Paste from the menu bar (macOS) arrive as DOM clipboard events, not keys:
@@ -613,6 +683,15 @@ export function ExplorerView() {
     const paths = selected.has(entry.path) ? topLevelPaths([...selected]) : [entry.path];
     const start = { x: e.clientX, y: e.clientY };
     let ghost: HTMLDivElement | null = null;
+    // Outside the Explorer, a place that takes files (TMCode AI's chat: data-drop-files).
+    let dropZone: HTMLElement | null = null;
+    const zoneAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-drop-files]") ?? null;
+    const setZone = (z: HTMLElement | null) => {
+      if (z === dropZone) return;
+      dropZone?.removeAttribute("data-drag-over");
+      dropZone = z;
+      dropZone?.setAttribute("data-drag-over", "");
+    };
     const folderAtPoint = (x: number, y: number): string | null => {
       const el = document.elementFromPoint(x, y) as HTMLElement | null;
       if (!el?.closest(".tm-explorer")) return null;
@@ -626,6 +705,7 @@ export function ExplorerView() {
       window.removeEventListener("keydown", key, true);
       ghost?.remove();
       setDropTarget(null);
+      setZone(null);
     };
     const move = (ev: PointerEvent) => {
       if (!ghost) {
@@ -639,10 +719,18 @@ export function ExplorerView() {
       ghost.style.transform = `translate(${ev.clientX + 12}px, ${ev.clientY + 8}px)`;
       ghost.classList.toggle("is-copy", copyModifier(ev));
       setDropTarget(folderAtPoint(ev.clientX, ev.clientY));
+      setZone(zoneAt(ev.clientX, ev.clientY));
     };
     const up = (ev: PointerEvent) => {
       const dragged = !!ghost;
+      const zone = dragged ? zoneAt(ev.clientX, ev.clientY) : null;
       cleanup();
+      if (zone) {
+        suppressClick.current = true;
+        setTimeout(() => (suppressClick.current = false), 0);
+        zone.dispatchEvent(new CustomEvent("tmcode:drop-paths", { detail: paths }));
+        return;
+      }
       if (!dragged) return;
       suppressClick.current = true;
       setTimeout(() => (suppressClick.current = false), 0);
@@ -735,7 +823,8 @@ export function ExplorerView() {
   for (const row of rows) {
     const { entry, depth } = row;
     const isDir = entry.kind === "dir";
-    const open = isDir && !!expanded[entry.path];
+    const finding = useExplorerFind.getState().query !== null && !!useExplorerFind.getState().query?.trim();
+    const open = (isDir && (finding || !!expanded[entry.path])) || (!!row.nested && !!expanded[entry.path]);
     if (edit?.mode === "rename" && edit.target === entry.path) {
       out.push(
         <InlineNameInput
@@ -766,7 +855,7 @@ export function ExplorerView() {
           data-kind={entry.kind}
           role="treeitem"
           aria-level={depth + 1}
-          aria-expanded={isDir ? open : undefined}
+          aria-expanded={isDir || row.nested ? open : undefined}
           aria-selected={isSelected}
           className={[
             "tm-list-row",
@@ -798,7 +887,23 @@ export function ExplorerView() {
           {Array.from({ length: depth }, (_, i) => (
             <span key={i} className="tm-indent-guide" style={{ left: 8 + i * 8 + 7 }} />
           ))}
-          <span className="tm-twistie">{isDir && <Codicon name={open ? "chevron-down" : "chevron-right"} />}</span>
+          <span
+            className="tm-twistie"
+            onClick={
+              row.nested
+                ? (e) => {
+                    // A file with nested files: the twistie opens them, the name opens the file.
+                    e.stopPropagation();
+                    const next = { ...useWorkbench.getState().expanded };
+                    if (next[entry.path]) delete next[entry.path];
+                    else next[entry.path] = true;
+                    useWorkbench.setState({ expanded: next });
+                  }
+                : undefined
+            }
+          >
+            {(isDir || row.nested) && <Codicon name={open ? "chevron-down" : "chevron-right"} />}
+          </span>
           {isDir ? <FolderIcon open={open} name={entry.name} /> : <FileIcon path={entry.path} />}
           <span className="tm-tree-label" title={row.chain ? rowLabel(row) : undefined}>
             {row.chain
@@ -808,7 +913,15 @@ export function ExplorerView() {
                     {c.name}
                   </span>
                 ))
-              : entry.name}
+              : row.match
+                ? (
+                    <>
+                      {entry.name.slice(0, row.match[0])}
+                      <mark className="tm-tree-match">{entry.name.slice(row.match[0], row.match[1])}</mark>
+                      {entry.name.slice(row.match[1])}
+                    </>
+                  )
+                : entry.name}
           </span>
           {isDirty && <span className="tm-dirty-dot" title="Unsaved changes" />}
           {decoration && !isDir && <span className={`tm-decoration-badge is-${decoration}`}>{problems.filter((p) => p.path === entry.path && p.severity === decoration).length}</span>}
@@ -842,10 +955,12 @@ export function ExplorerView() {
         <div className="tm-pane-actions" onClick={(e) => e.stopPropagation()}>
           <ActionButton icon="new-file" label={`New File... (${kb("explorer.newFile")})`} onClick={() => executeCommand("explorer.newFile")} />
           <ActionButton icon="new-folder" label="New Folder..." onClick={() => executeCommand("explorer.newFolder")} />
+          <ActionButton icon="search" label={`Find in Explorer (${kb("list.find")})`} onClick={() => openExplorerFind()} />
           <ActionButton icon="refresh" label="Refresh Explorer" onClick={() => executeCommand("workbench.files.action.refreshFilesExplorer")} />
           <ActionButton icon="collapse-all" label="Collapse Folders in Explorer" onClick={() => executeCommand("workbench.files.action.collapseExplorerFolders")} />
         </div>
       </div>
+      {!collapsed && findOpen && <ExplorerFind rows={rows} onOpen={(r) => activate(r, true)} />}
       {!collapsed && (
         <div
           ref={treeRef}

@@ -4,7 +4,7 @@ import { adjacentEditor, changeStarts, editorIdsToTheRight, moveWithinGroup, nex
 import { recentItems } from "./recentLogic";
 import { KeybindingResolver, registerCommand } from "./registry";
 import { parseUserSnippets, snippetPreview } from "../snippets/snippetLogic";
-import { defaultBuildTask } from "../tasks/buildTask";
+import { defaultTaskOf, parseTasksJson, relativeCwd, resolveVariables } from "../tasks/tasksJson";
 import { recordToasts, visibleToasts } from "../state/notificationCenter";
 
 const plain: KeyContext = { inEditor: false, inInput: false, inTerminal: false, devtools: false };
@@ -160,6 +160,11 @@ describe("user snippets", () => {
 });
 
 describe("Run Build Task", () => {
+  const ctx = { workspaceFolder: "/home/ada/proj", file: "", env: () => undefined, inputs: {} };
+  const build = (json: string, os: "mac" | "windows" | "linux") => {
+    const t = defaultTaskOf(parseTasksJson(json, os).tasks, "build");
+    return t && { label: t.label, command: t.command, cwd: relativeCwd(resolveVariables(t.cwd, ctx), ctx.workspaceFolder) };
+  };
   it("runs the default build task with its arguments and folder", () => {
     const json = `{
       "version": "2.0.0",
@@ -171,16 +176,16 @@ describe("Run Build Task", () => {
         { "label": "other build", "command": "make", "group": "build" }
       ]
     }`;
-    expect(defaultBuildTask(json, "linux")).toEqual({ label: "build", command: 'gcc -o "my app" main.c', cwd: "src" });
+    expect(build(json, "linux")).toEqual({ label: "build", command: 'gcc -o "my app" main.c', cwd: "src" });
   });
   it("takes the only build task, npm scripts and per-OS commands", () => {
-    expect(defaultBuildTask(`{"tasks":[{"label":"b","command":"make","group":"build","windows":{"command":"nmake"}}]}`, "windows")?.command).toBe("nmake");
-    expect(defaultBuildTask(`{"tasks":[{"type":"npm","script":"build","group":"build"}]}`, "mac")).toEqual({ label: "npm: build", command: "npm run build", cwd: "" });
+    expect(build(`{"tasks":[{"label":"b","command":"make","group":"build","windows":{"command":"nmake"}}]}`, "windows")?.command).toBe("nmake");
+    expect(build(`{"tasks":[{"type":"npm","script":"build","group":"build"}]}`, "mac")).toEqual({ label: "npm: build", command: "npm run build", cwd: "" });
   });
-  it("is null without one", () => {
-    expect(defaultBuildTask(`{"tasks":[{"label":"a","command":"x","group":"build"},{"label":"b","command":"y","group":"build"}]}`, "mac")).toBeNull();
-    expect(defaultBuildTask("not json", "mac")).toBeNull();
-    expect(defaultBuildTask(`{"tasks":[{"label":"t","command":"x","options":{"cwd":"../out"},"group":{"kind":"build","isDefault":true}}]}`, "mac")?.cwd).toBe("");
+  it("is null without one; a folder outside the project is refused", () => {
+    expect(build(`{"tasks":[{"label":"a","command":"x","group":"build"},{"label":"b","command":"y","group":"build"}]}`, "mac")).toBeNull();
+    expect(build("not json", "mac")).toBeNull();
+    expect(build(`{"tasks":[{"label":"t","command":"x","options":{"cwd":"../out"},"group":{"kind":"build","isDefault":true}}]}`, "mac")?.cwd).toBeNull();
   });
 });
 

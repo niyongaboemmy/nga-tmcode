@@ -11,8 +11,6 @@ import { useMaximizedGroup } from "../state/editorMaximize";
 import { clearAllNotifications, showNotificationCenter, toggleDoNotDisturb, useNotificationCenter } from "../state/notificationCenter";
 import { groupOrder, neighbour, reconcile } from "../state/layout";
 import { activeTerminal } from "../terminal/active";
-import { runInTerminal } from "../tasks/service";
-import { defaultBuildTask } from "../tasks/buildTask";
 import { configureUserSnippets, insertSnippet, userSnippetsAllowed } from "../snippets/userSnippets";
 import { listFiles } from "../parts/search/search";
 import { showQuickPick } from "../widgets/QuickPick";
@@ -42,6 +40,7 @@ import {
   updateSetting,
   useWorkbench,
   type EditorGroup,
+  togglePanel,
 } from "../state/store";
 
 /**
@@ -263,15 +262,9 @@ function focusTerminal() {
 // ───────────── tasks ─────────────
 
 async function runBuildTask() {
-  const fs = getPlatform().fs;
-  const text = await fs.readFile(".vscode/tasks.json").catch(() => null);
-  const task = text ? defaultBuildTask(text, getPlatform().os) : null;
-  if (task) {
-    const { ensureTrusted } = await import("../trust/trust");
-    if (!(await ensureTrusted("Tasks"))) return;
-    runInTerminal(task.command, { cwd: task.cwd, name: task.label });
-    return;
-  }
+  // tasks.json's default build task, with its dependencies and problem matchers.
+  const { runDefaultTask } = await import("../tasks/runner");
+  if (await runDefaultTask("build")) return;
   // No build task: the Run hub's run target (VS Code would offer to configure one).
   const run = getCommand("tmcode.runProject");
   if (run && isEnabled(run)) executeCommand(run.id);
@@ -309,6 +302,54 @@ export function registerVsCodeCommands() {
     win: "mod+alt+o",
     enabled: () => !inExam(),
     run: pickRecent,
+  });
+  // ── windows (desktop): another TMCode window is its own process with its own layout ──
+  const canOpenWindow = () => !!getPlatform().newWindow && !inExam();
+  registerCommand({
+    id: "workbench.action.newWindow",
+    title: "New Window",
+    category: "File",
+    keybinding: "mod+shift+n",
+    enabled: canOpenWindow,
+    run: () => void getPlatform().newWindow?.().catch((e) => notify("error", String((e as Error)?.message ?? e))),
+  });
+  registerCommand({
+    id: "workbench.action.openFolderInNewWindow",
+    title: "Open Folder in New Window...",
+    category: "File",
+    enabled: () => canOpenWindow() && !!getPlatform().account?.pickBase,
+    run: async () => {
+      const path = await getPlatform().account?.pickBase?.("Open a Folder in a New Window");
+      if (path) await getPlatform().newWindow?.(path).catch((e) => notify("error", String((e as Error)?.message ?? e)));
+    },
+  });
+  registerCommand({
+    id: "workbench.action.openRecentInNewWindow",
+    title: "Open Recent in New Window...",
+    category: "File",
+    enabled: () => canOpenWindow() && get().recent.length > 0,
+    run: async () => {
+      const pick = await showQuickPick({ placeholder: "Select a folder to open in a new window", items: get().recent.map((r) => ({ id: r.root, label: r.name, description: r.root, icon: "folder" })) });
+      if (pick) await getPlatform().newWindow?.(pick.id).catch((e) => notify("error", String((e as Error)?.message ?? e)));
+    },
+  });
+  // ── layout ──
+  for (const where of ["Left", "Right", "Bottom"] as const) {
+    registerCommand({
+      id: `workbench.action.positionPanel${where}`,
+      title: `Move Panel ${where}`,
+      category: "View",
+      run: () => {
+        updateSetting("workbench.panel.defaultLocation", where.toLowerCase() as "left" | "right" | "bottom");
+        if (!get().panelVisible) togglePanel();
+      },
+    });
+  }
+  registerCommand({
+    id: "workbench.action.toggleCenteredLayout",
+    title: "Toggle Centered Layout",
+    category: "View",
+    run: () => updateSetting("workbench.editor.centeredLayout", !get().settings["workbench.editor.centeredLayout"]),
   });
   registerCommand({ id: "workbench.action.clearRecentFiles", title: "Clear Recently Opened...", category: "File", enabled: () => !inExam(), run: clearRecentlyOpened });
   registerCommand({
@@ -500,6 +541,23 @@ export function registerVsCodeCommands() {
 
   // ── tasks and terminal ──
   registerCommand({ id: "workbench.action.tasks.build", title: "Run Build Task", category: "Tasks", keybinding: "mod+shift+b", enabled: () => hasWorkspace() && terminalAllowed(), run: runBuildTask });
+  registerCommand({
+    id: "workbench.action.tasks.test",
+    title: "Run Test Task",
+    category: "Tasks",
+    enabled: () => hasWorkspace() && terminalAllowed(),
+    run: async () => {
+      const { runDefaultTask } = await import("../tasks/runner");
+      if (!(await runDefaultTask("test"))) notify("info", 'No test task to run. Add one with "group": "test" to .vscode/tasks.json.');
+    },
+  });
+  registerCommand({
+    id: "workbench.action.tasks.configureTaskRunner",
+    title: "Configure Task",
+    category: "Tasks",
+    enabled: hasWorkspace,
+    run: async () => (await import("../tasks/service")).configureTasks(),
+  });
   registerCommand({
     id: "workbench.action.terminal.clear",
     title: "Clear",

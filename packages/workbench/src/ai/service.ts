@@ -20,6 +20,8 @@ export interface AiModel {
   label: string;
   provider: string;
   providerLabel: string;
+  /** Reads images (Task Mentor 2026-10-31 and later; older servers don't say, and images aren't offered). */
+  vision?: boolean;
 }
 
 export interface AiStatus {
@@ -138,6 +140,22 @@ export function effectiveMode(mode: string = useAi.getState().mode, status: AiSt
   if (tier === "free" || !status) return mode;
   if (tier === "premium") return status.tiers?.premium && status.premium_models?.some((m) => m.id === mode) ? mode : "free";
   return status.tiers?.byok ? mode : "free";
+}
+
+/**
+ * Can the AI that answers in `mode` read images? Free: one of OpenRouter's free models can (the
+ * server sends image questions only to those); Auto: any model can; one model, premium: that
+ * model; own key: the server decides. False with an older Task Mentor (no `vision` flags).
+ */
+export function aiReadsImages(mode: string = useAi.getState().mode, status: AiStatus | null = useAi.getState().status): boolean {
+  if (!status) return false;
+  const m = effectiveMode(mode, status);
+  const models = status.models ?? [];
+  if (m === "free") return models.some((x) => x.provider === "openrouter" && x.vision);
+  if (m === "auto") return models.some((x) => x.vision);
+  if (m.startsWith("premium:")) return !!status.premium_models?.find((x) => x.id === m)?.vision;
+  if (m.startsWith("byok:")) return models.some((x) => x.vision !== undefined);
+  return !!models.find((x) => x.id === m)?.vision;
 }
 
 /** `mode` (and `byok`) for a request body: own keys are read from the keychain now. */
@@ -287,9 +305,12 @@ export async function refreshAiStatus() {
   }
 }
 
+/** A question with images: its text and the images (data: URLs), as OpenAI's content parts. */
+export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatTurn {
   role: "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 }
 
 /** A message of an agent's conversation (tool calls and their results included). */

@@ -1,4 +1,5 @@
 import type { OsKind } from "../platform/types";
+import { resolveRules, ruleHost, rulesStartWith, useKeybindingRules } from "./keybindingRules";
 
 /**
  * Commands drive everything: the palette, menus, keybindings and buttons all
@@ -221,11 +222,16 @@ export class KeybindingResolver {
     const bindings = allCommands()
       .map((cmd) => ({ cmd, kb: dispatchKeybindingFor(cmd, this.os) }))
       .filter((b): b is { cmd: Command; kb: string } => !!b.kb);
+    // keybindings.json first: its rules win over the defaults, and can remove them.
+    const rules = useKeybindingRules.getState().rules;
+    const ctx = rules.length ? ruleHost.context(e.target) : () => undefined;
 
     if (this.pendingChord) {
       const full = `${this.pendingChord} ${c}`;
       this.clearPending();
-      const hit = bindings.find((b) => b.kb.split(" ").map((k) => canonical(k, this.os)).join(" ") === full && keyApplies(b.cmd));
+      const byRule = resolveRules(rules, full, ctx);
+      if (byRule.run && ruleHost.run(byRule.run)) return "executed";
+      const hit = bindings.find((b) => b.kb.split(" ").map((k) => canonical(k, this.os)).join(" ") === full && keyApplies(b.cmd) && !byRule.removed.has(b.cmd.id));
       if (hit) {
         executeCommand(hit.cmd.id);
         return "executed";
@@ -233,12 +239,14 @@ export class KeybindingResolver {
       return "chord"; // swallow the unknown second key, as VS Code does
     }
 
-    const direct = bindings.find((b) => !b.kb.includes(" ") && canonical(b.kb, this.os) === c && keyApplies(b.cmd));
+    const byRule = resolveRules(rules, c, ctx);
+    if (byRule.run && ruleHost.run(byRule.run)) return "executed";
+    const direct = bindings.find((b) => !b.kb.includes(" ") && canonical(b.kb, this.os) === c && keyApplies(b.cmd) && !byRule.removed.has(b.cmd.id));
     if (direct) {
       executeCommand(direct.cmd.id);
       return "executed";
     }
-    if (bindings.some((b) => b.kb.includes(" ") && canonical(b.kb.split(" ")[0], this.os) === c)) {
+    if (rulesStartWith(rules, c) || bindings.some((b) => b.kb.includes(" ") && canonical(b.kb.split(" ")[0], this.os) === c)) {
       this.pendingChord = c;
       this.onChordPending(formatKeybinding(c, this.os));
       this.pendingTimer = setTimeout(() => this.clearPending(), 3000);

@@ -6,6 +6,7 @@ import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { asAiError, chat, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
+import { attachmentChips, attachmentText, type Attachment } from "./attachments";
 
 /**
  * TMCode AI's conversation, as Claude Code's: one place for the question, the answer and, in the
@@ -57,6 +58,8 @@ export interface Message {
   checkpoint?: { files: string[]; undone?: boolean };
   /** The mode it was asked in. */
   mode?: ChatMode;
+  /** Images attached to a question (data: URLs), shown as thumbnails. */
+  images?: string[];
 }
 
 interface ChatState {
@@ -86,6 +89,8 @@ export interface ContextOptions {
   problems: boolean;
   /** Files @-mentioned in the prompt: their text goes along. */
   mentions?: string[];
+  /** Files attached with the paperclip, dropped or pasted (ai/attachments.ts). */
+  attachments?: Attachment[];
 }
 
 export async function gatherContext(opts: ContextOptions): Promise<{ context: ChatContext; chips: string[] }> {
@@ -122,6 +127,9 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
     extra.push(`File ${m}:\n\`\`\`\n${text.slice(0, 30_000)}\n\`\`\``);
     chips.push(m.slice(m.lastIndexOf("/") + 1));
   }
+  const attached = attachmentText(opts.attachments ?? []);
+  if (attached) extra.push(attached);
+  chips.push(...attachmentChips(opts.attachments ?? []));
   if (extra.length) context.task = [context.task, ...extra].filter(Boolean).join("\n\n");
   // A teacher reviewing a submission: Task Mentor answers as a grading assistant (staff only).
   const grading = gradingTools.chatContext?.() ?? null;
@@ -155,7 +163,8 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
   if (ref) question = `About your earlier answer:\n> ${ref.excerpt.replace(/\n/g, "\n> ")}\n\n${question}`;
   const { context, chips } = await gatherContext(opts);
   const prior = priorTurns();
-  const user: Message = { id: ++seq, role: "user", content: text.trim(), chips: ref ? ["earlier answer", ...chips] : chips, mode };
+  const images = (opts.attachments ?? []).flatMap((a) => (a.kind === "image" && a.image ? [a.image] : []));
+  const user: Message = { id: ++seq, role: "user", content: text.trim(), chips: ref ? ["earlier answer", ...chips] : chips, mode, ...(images.length ? { images } : {}) };
   const answer: Message = { id: ++seq, role: "assistant", content: "", streaming: true, mode, ...(mode !== "chat" ? { steps: [] } : {}) };
   useChat.setState((s) => ({ messages: [...s.messages, user, answer], busy: true, history: [...s.history.filter((h) => h !== text.trim()), text.trim()].slice(-50), reference: null }));
   stopFlag.cancelled = false;
@@ -164,12 +173,14 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
     action: "chat",
     path: context.file,
     text: `Asked TMCode AI${mode === "chat" ? "" : ` (${MODES.find((m) => m.id === mode)!.label})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
-    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode },
+    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
     actor: { type: "you" },
     ai: { by: "TMCode AI", how: mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
   });
-  if (mode === "chat") return answerOnce(answer.id, [...prior, { role: "user", content: question }], context);
-  return runAgent(answer.id, mode, [...prior, { role: "user", content: question }], context);
+  // Images go with this question only (earlier turns are sent as text).
+  const turn: WireMessage = { role: "user", content: images.length ? [{ type: "text", text: question }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))] : question };
+  if (mode === "chat") return answerOnce(answer.id, [...prior, turn], context);
+  return runAgent(answer.id, mode, [...prior, turn], context);
 }
 
 /** One streamed request; resolves with its text and tool calls. */

@@ -11,8 +11,9 @@ async function fresh(page: Page) {
     if (sessionStorage.getItem("tmcode:e2e-seeded")) return;
     sessionStorage.setItem("tmcode:e2e-seeded", "1");
     localStorage.clear();
-    // No auto save: the edits stay unsaved. Folder B is a second project with its own main.py.
-    localStorage.setItem("tmcode:ui", JSON.stringify({ settings: { "files.autoSave": "off" }, recent: [{ name: "folder-b", root: b }] }));
+    // No auto save: the edits stay unsaved (and no hot exit: quitting asks; hot-exit.spec covers it on).
+    // Folder B is a second project with its own main.py.
+    localStorage.setItem("tmcode:ui", JSON.stringify({ settings: { "files.autoSave": "off", "files.hotExit": "off" }, recent: [{ name: "folder-b", root: b }] }));
     localStorage.setItem(`tmcode:mock-folder:${b}`, JSON.stringify({ "main.py": "print('folder B')\n", "b-only.txt": "B\n" }));
   }, B);
   await page.goto("/");
@@ -88,7 +89,7 @@ test("Save writes A's file before switching, and never into B", async ({ page })
   await expect(editor(page)).toContainText("# saved in A");
 });
 
-test("the quit guard asks about unsaved files: Cancel keeps TMCode open, Don't Save quits", async ({ page }) => {
+test("with Hot Exit off, the quit guard asks about unsaved files: Cancel keeps TMCode open, Don't Save quits", async ({ page }) => {
   await fresh(page);
   expect(await page.evaluate(() => (window as unknown as { __TMCODE_DEBUG__: { beforeQuit: () => Promise<boolean> } }).__TMCODE_DEBUG__.beforeQuit())).toBe(true);
   await editMainPy(page, "# not saved yet");

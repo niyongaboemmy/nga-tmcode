@@ -3,7 +3,7 @@ import { msg } from "../messages/catalog";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRowNav } from "./rowNav";
 import { executeCommand, formatKeybinding } from "../commands/registry";
-import { getPlatform, openContextMenu, useWorkbench } from "../state/store";
+import { getPlatform, notify, openContextMenu, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { changeCount } from "./plan";
@@ -56,6 +56,14 @@ function ago(iso: string | null | undefined) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
+/** A project in another TMCode window: its folder on this computer when known, else a new window to open it in. */
+async function openProjectInNewWindow(projectId: number) {
+  const folders = (await getPlatform().store.get<Record<string, string>>("projects.folders").catch(() => undefined)) ?? {};
+  const path = folders[String(projectId)];
+  if (!path) return notify("info", "Open this project here once; after that it can open in a new window.");
+  await getPlatform().newWindow?.(path).catch((e) => notify("error", String((e as Error)?.message ?? e)));
+}
+
 export function ProjectRow({ p, current }: { p: Project; current: boolean }) {
   const online = p.presence?.online;
   const status = p.status ?? "draft";
@@ -82,6 +90,7 @@ export function ProjectRow({ p, current }: { p: Project; current: boolean }) {
         e.preventDefault();
         openContextMenu(e.clientX, e.clientY, [
           { kind: "item", label: p.assignment ? "Continue" : "Open", run: () => (p.assignment ? void startAssignment(p.assignment.id) : void openProject(p.id)) },
+          ...(getPlatform().newWindow ? [{ kind: "item" as const, label: "Open in New Window", run: () => void openProjectInNewWindow(p.id) }] : []),
           { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor({ kind: "project", id: p.id }) },
           ...(p.assignment ? [{ kind: "item" as const, label: "Show Assignment Brief", run: () => showAssignment(p.assignment!.id) }] : []),
           ...(current ? [{ kind: "separator" as const }, { kind: "item" as const, label: "Disconnect This Folder…", run: () => executeCommand("projects.disconnect") }] : []),

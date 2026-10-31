@@ -47,3 +47,11 @@ declare module "monaco-editor/platform/keybinding/common/keybinding.js" {
 declare module "monaco-editor/editor/browser/editorExtensions.js" {
   export const EditorExtensionsRegistry: { getEditorActions(): { id: string; label: string; alias?: string }[] };
 }
+
+/** Word (.docx) to HTML for the document viewer (parts/editor/DocumentEditor.tsx); no typings shipped. */
+declare module "mammoth" {
+  const mammoth: {
+    convertToHtml(input: { arrayBuffer: ArrayBuffer }): Promise<{ value: string; messages: { type: string; message: string }[] }>;
+  };
+  export default mammoth;
+}

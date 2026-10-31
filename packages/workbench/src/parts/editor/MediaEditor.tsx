@@ -4,6 +4,7 @@ import { getPlatform } from "../../state/store";
 import { extname } from "../../util/paths";
 import { ActionButton, Codicon } from "../../widgets/icons";
 import { SkeletonCard } from "../../widgets/Skeleton";
+import { isDocumentFile } from "./documentPreview";
 
 const MIME: Record<string, string> = {
   png: "image/png",
@@ -28,10 +29,10 @@ export function mimeFor(path: string): string | null {
   return MIME[extname(path).toLowerCase()] ?? null;
 }
 
-/** Files shown by the media viewer instead of the text editor (SVG stays text, with a preview beside it). */
+/** Files shown by a viewer instead of the text editor: media, PDF and Word (SVG stays text, with a preview beside it). */
 export function isMediaFile(path: string): boolean {
   const m = mimeFor(path);
-  return !!m && m !== "image/svg+xml";
+  return (!!m && m !== "image/svg+xml") || isDocumentFile(path);
 }
 
 function utf8ToBase64(text: string) {

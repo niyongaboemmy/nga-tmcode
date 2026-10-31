@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { msg } from "../messages/catalog";
 import { create } from "zustand";
-import { notify, openContextMenu, revealView, useWorkbench } from "../state/store";
+import { getPlatform, notify, openContextMenu, revealView, useWorkbench } from "../state/store";
 import { ActionButton, Codicon } from "../widgets/icons";
 import { SkeletonRows } from "../widgets/Skeleton";
 import { deriveStatus, type StatusView } from "./status";
-import { dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, studentStatus, useAssignments, type AssignmentSummary } from "./assignments";
+import { connectFolderToAssignment, dueLabel, groupAssignments, handedInLate, isOpenWorkspaceOf, refreshAssignments, refreshIfStale, showAssignment, startAssignment, studentStatus, useAssignments, type AssignmentSummary } from "./assignments";
 import { projectsSupported, refreshProjects, signIn, useProjects } from "./service";
 import { startQuizPractical } from "./matching";
 import { showQuizPractical } from "./quizPractical";
@@ -80,17 +80,34 @@ function StateChip({ a, view }: { a: AssignmentSummary; view: StatusView }) {
   if (status === "submitted")
     return (
       <>
-        <span className="tm-chip tm-status-chip is-submitted">Submitted</span>
+        <span className="tm-chip tm-status-chip is-submitted" title={a.my?.submitted_at ? `Submitted ${new Date(a.my.submitted_at).toLocaleString()}` : "Submitted"}>
+          <Codicon name="check" /> Submitted
+        </span>
         {late}
       </>
     );
+  // Not handed in: said in so many words (a student must never wonder whether it went in).
+  const notSubmitted = (
+    <span className="tm-chip is-warning tm-chip--not-submitted" data-testid="assignment-not-submitted-chip" title="Your teacher can't see this work until you submit it">
+      <Codicon name="circle-large-outline" /> Not submitted
+    </span>
+  );
   if (status === "returned")
     return (
-      <span className="tm-chip is-warning" data-testid="assignment-returned-chip" title={`Returned by your teacher${a.my?.returned_message ? `: ${a.my.returned_message}` : ""}`}>
-        Returned
-      </span>
+      <>
+        <span className="tm-chip is-warning" data-testid="assignment-returned-chip" title={`Returned by your teacher${a.my?.returned_message ? `: ${a.my.returned_message}` : ""}`}>
+          Returned
+        </span>
+        {notSubmitted}
+      </>
     );
-  if (status === "in_progress") return <span className="tm-chip tm-status-chip is-draft">In progress</span>;
+  if (status === "in_progress")
+    return (
+      <>
+        <span className="tm-chip tm-status-chip is-draft">In progress</span>
+        {notSubmitted}
+      </>
+    );
   return null;
 }
 
@@ -149,6 +166,11 @@ function AssignmentRow({ a, teaching, urgent }: { a: AssignmentSummary; teaching
         openContextMenu(e.clientX, e.clientY, [
           { kind: "item", label: "Show Brief", run: () => showAssignment(a.id) },
           ...(!teaching && (started || !a.read_only) ? [{ kind: "item" as const, label: started ? "Continue" : "Start", run: () => void startAssignment(a.id) }] : []),
+          // A folder open here that isn't anyone's work yet: make it this assignment's.
+          ...(!teaching && !a.read_only && useWorkbench.getState().workspace && !useProjects.getState().binding && ["not_started", "in_progress", "returned"].includes(view.status)
+            ? [{ kind: "item" as const, label: "Use the Open Folder for This…", run: () => void connectFolderToAssignment(a.id) }]
+            : []),
+          ...(!teaching && started && getPlatform().newWindow ? [{ kind: "item" as const, label: "Open in New Window", run: () => void openAssignmentInNewWindow(a) }] : []),
           ...(teaching ? [{ kind: "item" as const, label: "Grade Submissions", run: () => openGrading(keyOf("assignment", a.id, null)) }] : []),
           { kind: "separator" },
           { kind: "item", label: "Open in Task Mentor", run: () => openInTaskMentor({ kind: "assignment", id: a.id }) },
@@ -368,6 +390,33 @@ const inGroup = (a: AssignmentSummary, g: AssignmentGroup) => {
   return g === "returned" ? s === "returned" : g === "graded" ? s === "graded" : s === "not_started" || s === "in_progress" || s === "returned";
 };
 
+/** The folder open now isn't connected to anything: say so, and offer to make it an assignment's work. */
+function LooseFolderHint() {
+  const ws = useWorkbench((s) => s.workspace);
+  const sync = useProjects((s) => s.sync);
+  const practice = useWorkbench((s) => s.policy.mode === "practice");
+  if (!ws || sync !== "unbound" || !practice) return null;
+  return (
+    <div className="tm-assignments-loose" role="note" data-testid="assignments-loose-folder">
+      <Codicon name="folder" />
+      <span>
+        <b>{ws.name}</b> isn't connected to an assignment, so it can't be submitted.
+      </span>
+      <button type="button" className="tm-button tm-button--small" onClick={() => void connectFolderToAssignment()} data-testid="assignments-connect-folder">
+        Connect…
+      </button>
+    </div>
+  );
+}
+
+/** A started assignment in another TMCode window (its folder on this computer, when known). */
+async function openAssignmentInNewWindow(a: AssignmentSummary) {
+  const folders = (await getPlatform().store.get<Record<string, string>>("projects.folders").catch(() => undefined)) ?? {};
+  const path = a.my?.project_id ? folders[String(a.my.project_id)] : undefined;
+  if (!path) return notify("info", `Continue "${a.title}" in this window once; after that it can open in a new window.`);
+  await getPlatform().newWindow?.(path).catch((e) => notify("error", String((e as Error)?.message ?? e)));
+}
+
 export function AssignmentsView() {
   const account = useProjects((s) => s.account);
   const group = useAssignmentsGroup((s) => s.group);
@@ -488,6 +537,7 @@ export function AssignmentsView() {
       ) : (
         error && <p className="tm-error-text">{error}</p>
       )}
+      {!!student?.length && <LooseFolderHint />}
       {student === null && !error ? (
         <SkeletonRows rows={4} label="Loading assignments" />
       ) : nothing ? (

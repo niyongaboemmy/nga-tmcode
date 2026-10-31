@@ -44,7 +44,7 @@ interface Rev {
   created_at: string;
 }
 
-export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string): Promise<string> }): AccountHost {
+export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string, base?: string): Promise<string> }): AccountHost {
   const code = createFakeCodeRunner();
   // TMCode AI and the activity log endpoints (memoryAi.ts).
   const ai = memoryAi();
@@ -306,6 +306,18 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     const p = url.pathname.replace(/^\/api\/tmcode/, "");
     if (p.startsWith("/code/")) return code.route(req.method, p.slice("/code".length), (req.json ?? {}) as Record<string, unknown>);
     if (p.startsWith("/ai/")) return ai.route(req.method, p.slice("/ai".length), (req.json ?? {}) as Record<string, unknown>);
+    // Settings Sync: one document, kept in localStorage so a test can play "another computer" (tmcode:mock-settings-sync).
+    if (p === "/settings-sync") {
+      const KEY = "tmcode:mock-settings-sync";
+      const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as { data: unknown; updated_at: string } | null;
+      if (req.method === "GET") return { status: 200, body: saved ?? { data: null, updated_at: null } };
+      if (req.method === "DELETE") return localStorage.removeItem(KEY), { status: 204, body: null };
+      const body = (req.json ?? {}) as { data?: unknown; base?: string | null };
+      if (saved && body.base !== undefined && body.base !== saved.updated_at) return { status: 409, body: { error_code: "CONFLICT", message: "Your settings changed on another computer.", updated_at: saved.updated_at } };
+      const updated_at = new Date(Math.max(Date.now(), saved ? Date.parse(saved.updated_at) + 1 : 0)).toISOString();
+      localStorage.setItem(KEY, JSON.stringify({ data: body.data, updated_at }));
+      return { status: 200, body: { updated_at } };
+    }
     if ((p.match(/^\/projects\/(\d+)\/activity$/)) && req.method === "POST") {
       const pid = Number(p.split("/")[2]);
       const list = activityLog.get(pid) ?? [];
@@ -884,9 +896,20 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
         await fs.writeFile(path, text);
       });
     },
-    async newFolder(name) {
+    async newFolder(name, base) {
       if (!folders) throw new Error("New folders need the TMCode desktop app.");
-      return folders.newFolder(name);
+      return folders.newFolder(name, base);
     },
+    // e2e only: localStorage "tmcode:mock-pick-base" stands in for the desktop's folder picker.
+    ...(typeof localStorage !== "undefined" && localStorage.getItem("tmcode:mock-pick-base") !== null
+      ? {
+          async pickBase() {
+            return localStorage.getItem("tmcode:mock-pick-base") || null;
+          },
+          async defaultBase() {
+            return "~/TMCode Projects";
+          },
+        }
+      : {}),
   };
 }

@@ -2,10 +2,12 @@ import { registerCommand } from "../commands/registry";
 import { terminalAllowed } from "@tmcode/protocol";
 import { getPlatform, openContextMenu, openSpecialEditor, showPanel, updateSetting, useWorkbench, type ContextMenuItem } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
-import { terminalAction, useTerminalPanel } from "../parts/panel/TerminalView";
+import { terminalAction, terminalCommandAction, useTerminalPanel } from "../parts/panel/TerminalView";
 import { loadTerminalProfiles } from "./profiles";
 
 const allowed = () => !!getPlatform().terminal && terminalAllowed(useWorkbench.getState().policy);
+const terminalFocused = () => !!(document.activeElement as HTMLElement | null)?.closest?.(".xterm");
+const hasTerminal = () => allowed() && useTerminalPanel.getState().count > 0;
 
 /** A new terminal with a chosen shell (the ⌄ menu, "Create New Terminal (With Profile)"). */
 export function newTerminal(profile?: string) {
@@ -52,6 +54,11 @@ export function registerTerminalCommands() {
     run: () => (showPanel("terminal"), terminalAction("rename")),
   });
   registerCommand({ id: "workbench.action.terminal.kill", title: "Kill the Active Terminal Instance", category: "Terminal", enabled: () => allowed() && useTerminalPanel.getState().count > 0, run: () => terminalAction("kill") });
+  // Shell integration: commands the shell marked (terminal/shellIntegration.ts).
+  registerCommand({ id: "workbench.action.terminal.scrollToPreviousCommand", title: "Scroll To Previous Command", category: "Terminal", keybinding: "mod+up", when: terminalFocused, enabled: hasTerminal, run: () => terminalCommandAction("previous") });
+  registerCommand({ id: "workbench.action.terminal.scrollToNextCommand", title: "Scroll To Next Command", category: "Terminal", keybinding: "mod+down", when: terminalFocused, enabled: hasTerminal, run: () => terminalCommandAction("next") });
+  registerCommand({ id: "workbench.action.terminal.copyLastCommandOutput", title: "Copy Last Command Output", category: "Terminal", enabled: hasTerminal, run: () => terminalCommandAction("copyLastOutput") });
+  registerCommand({ id: "workbench.action.terminal.copyLastCommand", title: "Copy Last Command", category: "Terminal", enabled: hasTerminal, run: () => terminalCommandAction("copyLastCommand") });
   registerCommand({ id: "workbench.action.terminal.selectDefaultShell", title: "Select Default Profile", category: "Terminal", enabled: allowed, run: () => void selectDefaultProfile() });
   registerCommand({
     id: "workbench.action.terminal.newWithProfile",

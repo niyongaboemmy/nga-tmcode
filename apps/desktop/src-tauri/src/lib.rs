@@ -15,6 +15,7 @@ mod lsp;
 mod netcoredbg;
 mod phpdebug;
 mod account;
+mod ai_attach;
 mod ai_keys;
 mod ai_tools;
 mod api;
@@ -29,6 +30,7 @@ mod github;
 mod console;
 mod preview;
 mod pty;
+mod shell_integration;
 mod runner;
 mod toolchains;
 mod updates;
@@ -68,6 +70,10 @@ pub const WORKBENCH: &str = "workbench";
 struct AppInfo {
     version: &'static str,
     os: &'static str,
+    /// A window opened with New Window (its own process): it keeps its own UI state.
+    secondary: bool,
+    /// This process's id (a secondary window's store is named after it).
+    pid: u32,
     /// Debug builds only: a folder to open and whether to run the self-test
     /// (`TMCODE_DEV_WORKSPACE`, `TMCODE_DEV_SELFTEST=1`), for checks inside the
     /// real WKWebView / WebView2 where nobody can click.
@@ -124,7 +130,26 @@ fn app_info() -> AppInfo {
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
         devtools: cfg!(debug_assertions),
+        secondary: is_secondary_window(),
+        pid: std::process::id(),
     }
+}
+
+/// `--new-window`: started by New Window; not the single instance that `tmcode <path>` and links reach.
+fn is_secondary_window() -> bool {
+    std::env::args().any(|a| a == "--new-window")
+}
+
+/// File › New Window (and Open in New Window): another TMCode window, as its own process.
+#[tauri::command]
+fn window_new(path: Option<String>) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("--new-window");
+    if let Some(p) = path.filter(|p| !p.is_empty() && !p.starts_with('-')) {
+        cmd.arg(p);
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| format!("Could not open a new window: {e}"))
 }
 
 /// Everything the workbench page started that a new page can't talk to any more:
@@ -267,14 +292,23 @@ fn build_main_window(app: &mut App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Crash recovery: a panic lands in TMCode's log (the workbench restores unsaved files on the next start).
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("TMCode crashed: {info}");
+        default_hook(info);
+    }));
     let builder = tauri::Builder::default();
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(|app| menus::build(app))
         .on_menu_event(|app, event| menus::on_menu_event(app, event.id().as_ref()));
-    let app = builder
-        // Must be first: a second launch (or a tmcode:// link) focuses the running window.
-        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+    // Must be first: a second launch (or a tmcode:// link) focuses the running window.
+    // A New Window process is not that instance (it would hand itself to the first one).
+    let builder = if is_secondary_window() {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             if let Some(w) = app.get_window(WINDOW) {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
@@ -284,6 +318,8 @@ pub fn run() {
                 let _ = app.emit_to(tauri::EventTarget::webview(WORKBENCH), "open-path", path);
             }
         }))
+    };
+    let app = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -299,6 +335,19 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_http::init())
         .manage(workspace::Workspace::default())
+        .manage(ai_attach::Granted::default())
+        // Files dropped on the window may be attached to a TMCode AI question (ai_attach.rs).
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                window.state::<ai_attach::Granted>().grant(paths.iter().cloned());
+            }
+        })
+        // The app's webview is a child webview of its window: drops arrive here too.
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                webview.state::<ai_attach::Granted>().grant(paths.iter().cloned());
+            }
+        })
         .manage(pty::Terminals::default())
         .manage(toolchains::Toolchains::default())
         .manage(runner::Runs::default())
@@ -341,6 +390,15 @@ pub fn run() {
             workspace::ws_remove,
             workspace::ws_trash,
             workspace::ws_import,
+            window_new,
+            git::git_blame,
+            git::git_graph,
+            workspace::ws_search_files,
+            debug::debug_processes,
+            workspace::ws_read_file_anyway,
+            ai_attach::attach_pick,
+            ai_attach::attach_clipboard,
+            ai_attach::attach_read,
             workspace::ws_file_encoding,
             workspace::ws_reopen_with_encoding,
             workspace::ws_set_encoding,

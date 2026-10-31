@@ -82,19 +82,21 @@ describe("smart editor options under the exam policy", () => {
 });
 
 describe("default icon theme migration", () => {
-  it("moves users on the old default to Seti, once", () => {
+  it("moves users on an old default to Seti with coloured folders, once", () => {
     const first = migrateSettings({ "workbench.iconTheme": "tmcode", "editor.fontSize": 15 }, undefined);
-    expect(first.settings["workbench.iconTheme"]).toBe("vs-seti");
+    expect(first.settings["workbench.iconTheme"]).toBe("vs-seti-folders");
     expect(first.settings["editor.fontSize"]).toBe(15);
-    expect(first.done).toContain("iconTheme.vs-seti");
-    // Picking TMCode Glyphs again afterwards sticks.
+    expect(first.done).toEqual(expect.arrayContaining(["iconTheme.vs-seti", "iconTheme.coloured-folders"]));
+    expect(migrateSettings({ "workbench.iconTheme": "vs-seti" }, ["iconTheme.vs-seti"]).settings["workbench.iconTheme"]).toBe("vs-seti-folders");
+    // Picking TMCode Glyphs or plain Seti again afterwards sticks.
     const again = migrateSettings({ "workbench.iconTheme": "tmcode" }, first.done);
     expect(again.settings["workbench.iconTheme"]).toBe("tmcode");
+    expect(migrateSettings({ "workbench.iconTheme": "vs-seti" }, first.done).settings["workbench.iconTheme"]).toBe("vs-seti");
   });
-  it("leaves other choices alone and new users get Seti", () => {
+  it("leaves other choices alone and new users get Seti with coloured folders", () => {
     expect(migrateSettings({ "workbench.iconTheme": "none" }, []).settings["workbench.iconTheme"]).toBe("none");
     expect(migrateSettings({ "workbench.iconTheme": "ext:pkief.material-icon-theme:material-icon-theme" }, []).settings["workbench.iconTheme"]).toContain("material");
     expect(migrateSettings(undefined, undefined).settings["workbench.iconTheme"]).toBeUndefined();
-    expect(DEFAULT_SETTINGS["workbench.iconTheme"]).toBe("vs-seti");
+    expect(DEFAULT_SETTINGS["workbench.iconTheme"]).toBe("vs-seti-folders");
   });
 });

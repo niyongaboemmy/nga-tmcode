@@ -1,4 +1,5 @@
 import { RpcConnection, activationEventsOf, type ExtensionDescription, type InitData, type RpcMessage, type TextEditDTO } from "@tmcode/exthost";
+import { forgetExtScmTests } from "./extScmTests";
 import { tabsSnapshot } from "./tabsSync";
 import { clearVirtualSchemes } from "./virtualDocs";
 import { monaco, setupMonaco } from "../monaco/setup";
@@ -175,6 +176,8 @@ function setRuntime(kind: HostKind, exts: InstalledExtension[]) {
 }
 
 function cleanup(kind: HostKind) {
+  // Its source controls and tests go with it.
+  forgetExtScmTests(kind);
   disposeProviders(kind);
   disposeViewsOf(kind);
   clearDiagnosticsOf(kind);

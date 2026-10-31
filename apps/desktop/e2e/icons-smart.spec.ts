@@ -11,13 +11,16 @@ const externalWrite = (page: Page, path: string, content: string) =>
 const row = (page: Page, path: string) => page.locator(`.tm-explorer [data-path="${path}"]`);
 const icon = (page: Page, path: string) => row(page, path).locator("[data-icon]");
 
-async function boot(page: Page, settings: Record<string, unknown> = {}) {
-  await page.addInitScript((s) => {
-    if (sessionStorage.getItem("tmcode:e2e-seeded")) return;
-    localStorage.clear();
-    if (Object.keys(s).length) localStorage.setItem("tmcode:ui", JSON.stringify({ settings: s }));
-    sessionStorage.setItem("tmcode:e2e-seeded", "1");
-  }, settings);
+async function boot(page: Page, settings: Record<string, unknown> = {}, migrations?: string[]) {
+  await page.addInitScript(
+    ([s, m]) => {
+      if (sessionStorage.getItem("tmcode:e2e-seeded")) return;
+      localStorage.clear();
+      if (Object.keys(s).length) localStorage.setItem("tmcode:ui", JSON.stringify({ settings: s, ...(m ? { migrations: m } : {}) }));
+      sessionStorage.setItem("tmcode:e2e-seeded", "1");
+    },
+    [settings, migrations] as const,
+  );
   await page.goto("/");
   await expect(page.locator(".tm-explorer")).toBeVisible();
   await expect(row(page, "main.py")).toBeVisible();
@@ -29,7 +32,7 @@ async function openPalette(page: Page, text: string) {
 }
 
 for (const theme of ["dark-modern", "light-modern"] as const) {
-  test(`Explorer shows Seti icons with Seti colours (${theme})`, async ({ page }) => {
+  test(`Explorer shows Seti icons with Seti colours and coloured folders (${theme})`, async ({ page }) => {
     await boot(page, { "workbench.colorTheme": theme });
     await externalWrite(page, "package.json", '{ "name": "demo" }\n');
     await externalWrite(page, "Dockerfile", "FROM python:3.12\n");
@@ -38,17 +41,21 @@ for (const theme of ["dark-modern", "light-modern"] as const) {
     const expected: Record<string, string> = { "main.py": "_python", "package.json": "_json", "README.md": "_info", Dockerfile: "_docker" };
     for (const [path, id] of Object.entries(expected)) {
       const el = icon(page, path);
-      await expect(el).toHaveAttribute("data-icon-theme", "vs-seti");
+      await expect(el).toHaveAttribute("data-icon-theme", "vs-seti-folders");
       await expect(el).toHaveAttribute("data-icon", light ? `${id}_light` : id);
     }
     // Seti's own font and colours: Python is #519aba on dark, #498ba7 on light.
     const style = await icon(page, "main.py").evaluate((el) => ({ font: getComputedStyle(el).fontFamily, color: getComputedStyle(el).color }));
     expect(style.font).toContain("tm-icons-vs-seti");
     expect(style.color).toBe(light ? "rgb(73, 139, 167)" : "rgb(81, 154, 186)");
-    expect(await page.evaluate(() => document.fonts.check("16px tm-icons-vs-seti"))).toBe(true);
-    // Folders: no icon, only the twistie (as VS Code with Seti).
-    await expect(row(page, "web").locator("[data-icon]")).toHaveCount(0);
-    await expect(row(page, "web").locator(".codicon-folder, .tm-folder-icon")).toHaveCount(0);
+    expect(await page.evaluate(() => document.fonts.check("16px tm-icons-vs-seti-folders"))).toBe(true);
+    // Folders: a coloured folder icon beside the twistie; opening it shows the open folder.
+    const folder = row(page, "web").locator("[data-icon]");
+    await expect(folder).toHaveAttribute("data-icon", /^_tm_folder_/);
+    await expect(folder).toHaveJSProperty("tagName", "IMG");
+    const closedIcon = await folder.getAttribute("data-icon");
+    await row(page, "web").click();
+    await expect(row(page, "web").locator("[data-icon]")).toHaveAttribute("data-icon", `${closedIcon}_open`);
     // Tabs, breadcrumbs and Quick Open use the same theme.
     await row(page, "main.py").dblclick();
     await expect(page.locator(".tm-tab [data-icon]").first()).toHaveAttribute("data-icon", light ? "_python_light" : "_python");
@@ -59,13 +66,21 @@ for (const theme of ["dark-modern", "light-modern"] as const) {
   });
 }
 
-test("the file icon theme picker lists Seti, Minimal, TMCode Glyphs and None", async ({ page }) => {
+test("plain Seti, as in VS Code: folders have no icon, only the twistie", async ({ page }) => {
+  // Picked after the move to coloured folders: it stays.
+  await boot(page, { "workbench.iconTheme": "vs-seti" }, ["iconTheme.vs-seti", "iconTheme.coloured-folders"]);
+  await expect(icon(page, "main.py")).toHaveAttribute("data-icon-theme", "vs-seti");
+  await expect(row(page, "web").locator("[data-icon]")).toHaveCount(0);
+  await expect(row(page, "web").locator(".codicon-folder, .tm-folder-icon")).toHaveCount(0);
+});
+
+test("the file icon theme picker lists Seti with Coloured Folders, Seti, Minimal, TMCode Glyphs and None", async ({ page }) => {
   await boot(page);
   await openPalette(page, "File Icon Theme");
   await expect(page.locator(".tm-qi-item.is-focused")).toContainText("File Icon Theme");
   await page.keyboard.press("Enter");
   const items = page.locator(".tm-qi-item .tm-qi-label");
-  for (const label of ["Seti (Visual Studio Code)", "Minimal (Visual Studio Code)", "TMCode Glyphs", "None"]) await expect(items.filter({ hasText: label })).toHaveCount(1);
+  for (const label of ["Seti with Coloured Folders (TMCode)", "Seti (Visual Studio Code)", "Minimal (Visual Studio Code)", "TMCode Glyphs", "None"]) await expect(items.filter({ hasText: label })).toHaveCount(1);
   // Minimal: a generic file icon for everything.
   await page.keyboard.type("Minimal");
   await page.keyboard.press("Enter");
@@ -73,9 +88,9 @@ test("the file icon theme picker lists Seti, Minimal, TMCode Glyphs and None", a
   await expect(icon(page, "main.py")).toHaveClass(/codicon-file/);
 });
 
-test("users on the old default icon theme move to Seti once", async ({ page }) => {
+test("users on an old default icon theme move to Seti with coloured folders once", async ({ page }) => {
   await boot(page, { "workbench.iconTheme": "tmcode" });
-  await expect(icon(page, "main.py")).toHaveAttribute("data-icon-theme", "vs-seti");
+  await expect(icon(page, "main.py")).toHaveAttribute("data-icon-theme", "vs-seti-folders");
 });
 
 test("linked editing renames the closing tag", async ({ page }) => {
