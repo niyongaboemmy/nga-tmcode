@@ -3,6 +3,7 @@ import setiText from "./seti/vs-seti-icon-theme.json?raw";
 import { parseJsonc } from "../textmate/jsonc";
 import { allIconThemes, BUILTIN_ICON_THEMES, DEFAULT_ICON_THEME, MINIMAL_ICON_THEME, resolveIcon, setIconLanguageResolver, type IconThemeDocument } from "./iconThemes";
 import { iconLanguageId } from "./iconLanguages";
+import { withColouredFolders } from "./folderIcons";
 
 const seti = parseJsonc<IconThemeDocument>(setiText);
 
@@ -115,10 +116,24 @@ describe("Seti (Visual Studio Code)", () => {
 });
 
 describe("built-in icon themes", () => {
-  it("lists Seti (the default), Minimal, TMCode Glyphs and None", () => {
-    expect(BUILTIN_ICON_THEMES.map((t) => t.label)).toEqual(["Seti (Visual Studio Code)", "Minimal (Visual Studio Code)", "TMCode Glyphs", "None"]);
-    expect(DEFAULT_ICON_THEME).toBe("vs-seti");
-    expect(allIconThemes()[0].id).toBe("vs-seti");
+  it("lists Seti with coloured folders (the default), Seti, Minimal, TMCode Glyphs and None", () => {
+    expect(BUILTIN_ICON_THEMES.map((t) => t.label)).toEqual(["Seti with Coloured Folders (TMCode)", "Seti (Visual Studio Code)", "Minimal (Visual Studio Code)", "TMCode Glyphs", "None"]);
+    expect(DEFAULT_ICON_THEME).toBe("vs-seti-folders");
+    expect(allIconThemes()[0].id).toBe("vs-seti-folders");
+  });
+
+  it("Seti with coloured folders: Seti's file icons, a coloured icon on every folder", () => {
+    const doc = withColouredFolders(seti);
+    expect(resolveIcon(doc, "main.py", "file")).toBe(resolveIcon(seti, "main.py", "file"));
+    const src = resolveIcon(doc, "src", "folder");
+    const srcOpen = resolveIcon(doc, "src", "folder", { expanded: true });
+    expect(src).toMatch(/^_tm_folder_\d+$/);
+    expect(srcOpen).toBe(`${src}_open`);
+    expect(resolveIcon(doc, "Tests", "folder")).not.toBe(src);
+    expect(resolveIcon(doc, "anything-else", "folder")).toBe("_tm_folder_default");
+    expect(doc.iconDefinitions?.[src!]?.iconPath).toMatch(/^data:image\/svg\+xml/);
+    // Seti itself is unchanged.
+    expect(resolveIcon(seti, "src", "folder")).toBeUndefined();
   });
 
   it("Minimal: one generic file icon, no folders", () => {

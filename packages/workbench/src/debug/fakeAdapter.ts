@@ -660,6 +660,13 @@ export function createSimulatedDebugHost(readFile: (path: string) => Promise<str
   return {
     note: "Simulated Python debugger (browser build): straight-line code only. The desktop app debugs Python, JavaScript, TypeScript and C/C++ for real.",
     kinds: ["python"],
+    // A few processes to pick from (Attach to Process in the browser build).
+    async processes() {
+      return [
+        { pid: 4242, name: "node", command: "node server.js --inspect" },
+        { pid: 5151, name: "python3", command: "python3 -m debugpy --listen 5678 app.py" },
+      ];
+    },
     async probe(kind) {
       return kind === "python"
         ? { available: true, install: null, detail: "simulated", message: null }

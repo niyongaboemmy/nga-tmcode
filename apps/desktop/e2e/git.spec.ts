@@ -176,7 +176,8 @@ test("sync pushes with a progress notification", async ({ page }) => {
   await expect(page.locator(".tm-toast [role=progressbar]")).toHaveCount(0);
   // Every git command goes to the Git output channel.
   await palette(page, "Git: Show Git Output");
-  await expect(page.locator(".tm-panel")).toContainText("[Git] > git sync --progress");
+  // The channel and the line are separate elements (spaced by CSS).
+  await expect(page.locator(".tm-panel")).toContainText(/\[Git\]\s*> git sync --progress/);
 });
 
 test("clone a repository from a URL", async ({ page }) => {

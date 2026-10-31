@@ -1,4 +1,5 @@
 import spec from "./menus.json";
+import { tr, useLocale } from "../messages/i18n";
 import type { NativeMenuItemState, OsKind } from "../platform/types";
 import { executeCommand, formatKeybinding, getCommand, isEnabled, keybindingFor, registerCommand } from "./registry";
 import { toAccelerator } from "./keybindingLogic";
@@ -57,7 +58,7 @@ export function menuItems(menu: MenuSpec, os: OsKind, beforeRun?: () => void): C
     if (!cmd) continue;
     out.push({
       kind: "item",
-      label: e.label,
+      label: tr(e.label),
       keybinding: formatKeybinding(menuKeybinding(e, os), os),
       disabled: !isEnabled(cmd),
       run: () => {
@@ -80,7 +81,7 @@ export function nativeMenuState(os: OsKind): NativeMenuItemState[] {
       if (!e || e.native === "never" || seen.has(e.command)) continue;
       const cmd = getCommand(e.command);
       const accel = e.accel !== undefined ? e.accel || null : toAccelerator(menuKeybinding(e, os));
-      seen.set(e.command, { id: e.command, text: e.label, enabled: !!cmd && isEnabled(cmd), accel });
+      seen.set(e.command, { id: e.command, text: tr(e.label), enabled: !!cmd && isEnabled(cmd), accel });
     }
   }
   return [...seen.values()];
@@ -107,6 +108,8 @@ export function wireNativeMenus() {
   };
   push();
   useWorkbench.subscribe(schedule);
+  // The display language changes the items' words.
+  useLocale.subscribe(schedule);
   // Focus decides Undo/Find targets; runs and debug sessions change Stop/Restart.
   window.addEventListener("focusin", schedule);
   window.addEventListener("focus", schedule);

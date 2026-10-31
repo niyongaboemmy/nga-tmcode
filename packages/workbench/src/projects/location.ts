@@ -148,3 +148,54 @@ export async function moveOpenProject() {
     notify("error", `Could not move the project: ${(e as Error).message ?? e}`);
   }
 }
+
+/** Where a project's folder goes: a base folder (`undefined`: the Projects Folder), or the folder open now. */
+export type ProjectLocation = { kind: "new"; base: string | undefined } | { kind: "current" };
+
+const LAST_BASE = "projects.lastBase";
+
+/**
+ * Start / Open: where should this project's folder go? Asks (Settings › Projects: Ask Where to Save):
+ * - the folder open now, when it isn't connected to anything yet (work started outside TMCode);
+ * - the place used last time, the Projects Folder, a PHP web server's folder;
+ * - Choose a Folder… anywhere on this computer.
+ * Null: cancelled.
+ */
+export async function chooseProjectLocation(opts: { name: string; language?: string | null; templateId?: string | null; currentFolder?: { name: string; root: string } | null }): Promise<ProjectLocation | null> {
+  const host = getPlatform().account;
+  // Asked only where any folder can be picked (the desktop app); otherwise the Projects Folder, as before.
+  const ask = settings()["projects.askLocation"] !== false && !!host?.pickBase;
+  if (!ask) {
+    const base = await chooseBase(opts);
+    return base === null ? null : { kind: "new", base };
+  }
+  const store = getPlatform().store;
+  const last = await store.get<string>(LAST_BASE).catch(() => undefined);
+  const folder = projectsFolder();
+  const defaultPath = folder ?? (await host?.defaultBase?.().catch(() => undefined)) ?? "~/TMCode Projects";
+  const php = wantsWebServer(opts);
+  const servers = php ? await webRoots() : [];
+  const pick = await showQuickPick({
+    title: `Where should "${opts.name}" be saved on this computer?`,
+    placeholder: "Pick a place for the project's folder. You can move it later (Projects: Move This Project…).",
+    items: [
+      ...(opts.currentFolder
+        ? [{ id: "current", label: `Use the Open Folder "${opts.currentFolder.name}"`, description: opts.currentFolder.root, detail: "Your files there become this project (the teacher's starter files are added beside them)", icon: "folder-active", separator: "the folder open now" }]
+        : []),
+      ...(last && last !== defaultPath ? [{ id: "last", label: "Where You Saved Last Time", description: last, icon: "history", separator: opts.currentFolder ? "a new folder" : undefined }] : []),
+      { id: "default", label: "Projects Folder", description: defaultPath, detail: "Where TMCode keeps your projects", icon: "folder", separator: !last || last === defaultPath ? (opts.currentFolder ? "a new folder" : undefined) : undefined },
+      ...servers.map((r, i) => ({ id: `root:${i}`, label: `${r.server} web folder`, description: r.path, detail: `Served by ${r.server} at ${r.url}/…`, icon: "server" })),
+      ...(host?.pickBase ? [{ id: "pick", label: "Choose a Folder…", detail: "Anywhere on this computer: Documents, Desktop, a USB drive…", icon: "folder-opened" }] : []),
+    ],
+  });
+  if (!pick) return null;
+  if (pick.id === "current") return { kind: "current" };
+  let base: string | undefined | null;
+  if (pick.id === "last") base = last;
+  else if (pick.id === "default") base = folder;
+  else if (pick.id === "pick") base = (await host!.pickBase!(`Where should "${opts.name}" be saved?`)) ?? null;
+  else base = servers[Number(pick.id.slice(5))]?.path;
+  if (base === null) return null;
+  if (base) await store.set(LAST_BASE, base).catch(() => undefined);
+  return { kind: "new", base };
+}

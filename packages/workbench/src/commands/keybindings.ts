@@ -3,7 +3,7 @@ import { IKeybindingService } from "monaco-editor/platform/keybinding/common/key
 import { EditorExtensionsRegistry } from "monaco-editor/editor/browser/editorExtensions.js";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { inExam } from "../exam/state";
-import { getPlatform, notify, updateSetting, useWorkbench } from "../state/store";
+import { activeFilePath, getPlatform, notify, updateSetting, useWorkbench } from "../state/store";
 import type { OsKind } from "../platform/types";
 import {
   allCommands,
@@ -16,6 +16,8 @@ import {
   userKeybindings,
 } from "./registry";
 import { monacoLabelToChord, sanitizeOverrides, withOverride } from "./keybindingLogic";
+import { ruleHost, setKeybindingsText } from "./keybindingRules";
+import { codeEditorFor } from "../monaco/editors";
 
 /**
  * User keybindings (V9): overrides live in the "keybindings.user" setting,
@@ -206,6 +208,7 @@ export function wireKeybindings() {
     applyMonacoRules(overrides);
   };
   apply(useWorkbench.getState().settings["keybindings.user"]);
+  wireKeybindingsJson();
   let last = useWorkbench.getState().settings["keybindings.user"];
   useWorkbench.subscribe((s) => {
     const next = s.settings["keybindings.user"];
@@ -213,6 +216,65 @@ export function wireKeybindings() {
     last = next;
     apply(next);
   });
+}
+
+/** The store key of keybindings.json's text. */
+export const KEYBINDINGS_JSON_KEY = "keybindings.json";
+
+/** keybindings.json: its rules' commands run here, and `when` sees the focus and the active file. */
+function wireKeybindingsJson() {
+  ruleHost.run = (rule) => {
+    // Not during exams: the shortcuts stay as the exam set them.
+    if (keybindingsLockedReason()) return false;
+    if (getCommand(rule.command)) return executeCommand(rule.command);
+    // A Monaco action (editor.action.*): on the active editor.
+    const ed = codeEditorFor(useWorkbench.getState().activeGroup);
+    if (!ed) return false;
+    ed.focus();
+    ed.trigger("keyboard", rule.command, rule.args ?? null);
+    return true;
+  };
+  ruleHost.context = (target) => {
+    const el = target instanceof HTMLElement ? target : null;
+    const inMonaco = !!el?.closest(".monaco-editor");
+    const inTerminal = !!el?.closest(".xterm");
+    const inInput = !inMonaco && !inTerminal && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || !!el?.isContentEditable);
+    const s = useWorkbench.getState();
+    const path = activeFilePath(s) ?? "";
+    const model = codeEditorFor(s.activeGroup)?.getModel();
+    const values: Record<string, unknown> = {
+      editorTextFocus: inMonaco,
+      editorFocus: inMonaco,
+      textInputFocus: inMonaco || inInput,
+      inputFocus: inInput,
+      terminalFocus: inTerminal,
+      filesExplorerFocus: !!el?.closest(".tm-explorer"),
+      explorerViewletFocus: !!el?.closest(".tm-explorer"),
+      sideBarFocus: !!el?.closest(".tm-sidebar"),
+      panelFocus: !!el?.closest(".tm-panel"),
+      editorLangId: model?.getLanguageId() ?? "",
+      resourceFilename: path.split("/").pop() ?? "",
+      resourceExtname: path.includes(".") ? path.slice(path.lastIndexOf(".")) : "",
+      resourcePath: path,
+      isMac: os() === "mac",
+      isWindows: os() === "windows",
+      isLinux: os() === "linux",
+      editorHasSelection: inMonaco && !(codeEditorFor(s.activeGroup)?.getSelection()?.isEmpty() ?? true),
+    };
+    return (key: string) => values[key];
+  };
+  const store = getPlatform().store;
+  void store
+    .get<string>(KEYBINDINGS_JSON_KEY)
+    .then((text) => typeof text === "string" && setKeybindingsText(text, os()))
+    .catch(() => undefined);
+}
+
+/** Saves keybindings.json's text and applies its rules. */
+export function saveKeybindingsText(text: string) {
+  const parsed = setKeybindingsText(text, os());
+  void getPlatform().store.set(KEYBINDINGS_JSON_KEY, text).catch(() => undefined);
+  return parsed;
 }
 
 /** Why the keybindings can't be changed right now (null: they can). */

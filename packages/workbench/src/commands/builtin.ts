@@ -135,6 +135,17 @@ export function registerBuiltinCommands() {
   });
   registerCommand({ id: "workbench.files.action.refreshFilesExplorer", title: "Refresh Explorer", category: "File", enabled: hasWorkspace, run: refreshExplorer });
   registerCommand({ id: "workbench.files.action.collapseExplorerFolders", title: "Collapse Folders in Explorer", category: "View", run: collapseAll });
+  // Find in the Explorer (VS Code's list.find on the Explorer): ⌥⌘F / Ctrl+Alt+F with the Explorer focused.
+  registerCommand({
+    id: "list.find",
+    title: "Find in Explorer",
+    category: "Explorer",
+    mac: "mod+alt+f",
+    keybinding: "ctrl+alt+f",
+    when: () => !!(document.activeElement as HTMLElement | null)?.closest?.(".tm-explorer, .tm-explorer-find"),
+    enabled: () => !!useWorkbench.getState().workspace,
+    run: () => void import("../parts/explorer/ExplorerView").then((m) => m.openExplorerFind()),
+  });
 
   // ── Go / quick input ──
   registerCommand({ id: "workbench.action.showCommands", title: "Show All Commands", category: "View", keybinding: "mod+shift+p", run: () => openQuickInput("commands") });
@@ -283,6 +294,32 @@ export function registerBuiltinCommands() {
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });
   registerCommand({ id: "workbench.action.keybindingsReference", title: "Open Keyboard Shortcuts", category: "Preferences", keybinding: "mod+k mod+s", run: () => openSpecialEditor("shortcuts") });
+  registerCommand({
+    id: "workbench.action.openIssueReporter",
+    title: "Report a Problem...",
+    category: "Help",
+    run: () => void import("../help/reportIssue").then((m) => m.openReport()),
+  });
+  registerCommand({
+    id: "editor.action.accessibleView",
+    title: "Open Accessible View",
+    category: "Accessibility",
+    keybinding: "alt+f2",
+    run: () => void import("../accessibility/AccessibleView").then((m) => m.openAccessibleView()),
+  });
+  registerCommand({
+    id: "workbench.action.configureLocale",
+    title: "Configure Display Language",
+    category: "Preferences",
+    run: async () => {
+      const { LOCALES } = await import("../messages/i18n");
+      const { showQuickPick } = await import("../widgets/QuickPick");
+      const current = useWorkbench.getState().settings.locale;
+      const pick = await showQuickPick({ placeholder: "Select Display Language", items: LOCALES.map((l) => ({ id: l.id, label: l.native, description: l.id === current ? "current" : l.label })) });
+      if (pick) updateSetting("locale", pick.id as "en" | "fr");
+    },
+  });
+  registerCommand({ id: "workbench.action.openGlobalKeybindingsFile", title: "Open Keyboard Shortcuts (JSON)", category: "Preferences", run: () => openSpecialEditor("keybindingsJson") });
   registerCommand({ id: "workbench.action.openWelcome", title: "Home", category: "Help", run: () => openSpecialEditor("welcome") });
   registerCommand({ id: "workbench.action.showAbout", title: "About", category: "Help", run: showAbout });
   registerCommand({ id: "update.checkForUpdates", title: "Check for Updates...", category: "Help", enabled: updatesSupported, run: () => checkForUpdates({ manual: true }) });

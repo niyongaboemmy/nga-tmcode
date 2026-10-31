@@ -9,6 +9,7 @@ import { gitHost, scheduleRefresh, showGitError, useGit } from "./gitService";
 
 const ACCEPT = "_tmcode.merge.accept";
 const COMPARE = "_tmcode.merge.compare";
+const MERGE_EDITOR = "tmcode.conflict.mergeEditor";
 
 /** Replaces a document's text as one undoable edit, keeping each editor's cursor and scroll. */
 function replaceText(model: monaco.editor.ITextModel, text: string) {
@@ -60,6 +61,7 @@ function wireConflicts() {
     if (model) acceptConflict(model, start, choice);
   });
   monaco.editor.registerCommand(COMPARE, (_a, path: string, start: number) => compareConflict(path, start));
+  monaco.editor.registerCommand(MERGE_EDITOR, (_a, path: string) => void import("./MergeEditor").then((m) => m.openMergeEditor(path)));
   const changed = new monaco.Emitter<monaco.languages.CodeLensProvider>();
   const provider: monaco.languages.CodeLensProvider = {
     onDidChange: changed.event,
@@ -75,6 +77,7 @@ function wireConflicts() {
           { range, command: { id: ACCEPT, title: "Accept Incoming Change", arguments: [uri, c.start, "incoming"] } },
           { range, command: { id: ACCEPT, title: "Accept Both Changes", arguments: [uri, c.start, "both"] } },
           { range, command: { id: COMPARE, title: "Compare Changes", arguments: [path, c.start] } },
+          { range, command: { id: MERGE_EDITOR, title: "Resolve in Merge Editor", arguments: [path] } },
         ];
       });
       return { lenses, dispose() {} };
@@ -243,6 +246,16 @@ export function registerScmExtras() {
     run: () => {
       const t = cursorTarget();
       if (t) void hunkAction(t.path, t.line, "unstage");
+    },
+  });
+  registerCommand({
+    id: "merge-conflict.openMergeEditor",
+    title: "Resolve in Merge Editor",
+    category: "Merge Conflict",
+    enabled: () => !!conflictModel(),
+    run: () => {
+      const m = conflictModel();
+      if (m) void import("./MergeEditor").then((x) => x.openMergeEditor(pathOfUri(m.uri)));
     },
   });
   const conflictModel = () => {

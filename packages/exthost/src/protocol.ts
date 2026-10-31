@@ -412,3 +412,52 @@ export interface WebviewCreateDTO {
   preserveFocus?: boolean;
   iconPath?: IconDTO;
 }
+
+// ───────────── extension source control (scm.createSourceControl) and testing (tests.createTestController) ─────────────
+
+export interface ScmResourceDTO {
+  /** Workspace path ("" when outside the folder), else the URI. */
+  path: string;
+  uri: string;
+  tooltip?: string;
+  strikeThrough?: boolean;
+  faded?: boolean;
+  /** Clicking it (a cached command). */
+  command?: CommandDTO;
+}
+
+export interface ScmGroupDTO {
+  id: string;
+  label: string;
+  hideWhenEmpty: boolean;
+  resources: ScmResourceDTO[];
+}
+
+export interface ScmProviderDTO {
+  id: string;
+  label: string;
+  rootPath: string;
+  count?: number;
+  input: { value: string; placeholder: string; visible: boolean; enabled: boolean };
+  acceptInputCommand?: CommandDTO;
+  groups: ScmGroupDTO[];
+}
+
+export interface TestItemDTO {
+  id: string;
+  label: string;
+  description?: string;
+  /** Workspace path of its file, and its 0-based line. */
+  path?: string;
+  line?: number;
+  children: TestItemDTO[];
+}
+
+export interface TestControllerDTO {
+  id: string;
+  label: string;
+  canRun: boolean;
+  items: TestItemDTO[];
+}
+
+export type TestStateDTO = "queued" | "running" | "passed" | "failed" | "errored" | "skipped";

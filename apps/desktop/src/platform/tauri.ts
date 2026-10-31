@@ -42,6 +42,7 @@ function createDebugHost(): DebugHost {
   return {
     kinds: ["python", "node", "native", "java", "go", "dart", "flutter", "ruby", "dotnet", "php"],
     probe: (kind) => invoke<DebugProbe>("debug_probe", { kind }),
+    processes: () => invoke<{ pid: number; name: string; command: string }[]>("debug_processes"),
     async install(what, onEvent) {
       const channel = new Channel<DebugInstallEvent>();
       channel.onmessage = onEvent;
@@ -118,6 +119,21 @@ export let devOptions: DevOptions = { workspace: null, selftest: false, selftest
 /** Folder or file passed on the command line (`tmcode ~/project`). */
 export let launchPath: string | null = null;
 
+/**
+ * A New Window keeps its own UI state (layout, open editors, backups) in its own
+ * store, so two windows never write over each other's; it starts with the main
+ * window's settings, recent folders and sign-ins.
+ */
+async function secondaryStore(pid: number): Promise<LazyStore> {
+  const main = new LazyStore("settings.json", { defaults: {}, autoSave: false });
+  const own = new LazyStore(`window-${pid}.json`, { defaults: {}, autoSave: 200 });
+  for (const [key, value] of await main.entries().catch(() => [] as [string, unknown][])) {
+    if (/^(backups:|editors:|session:)/.test(key)) continue;
+    await own.set(key, value);
+  }
+  return own;
+}
+
 export async function createTauriPlatform(): Promise<Platform> {
   const info = await invoke<{
     version: string;
@@ -133,12 +149,15 @@ export async function createTauriPlatform(): Promise<Platform> {
     open_path: string | null;
     /** Debug builds: developer tools may open (Toggle Developer Tools). */
     devtools?: boolean;
+    /** A New Window process (lib.rs window_new). */
+    secondary?: boolean;
+    pid?: number;
   }>("app_info");
   devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, selftestExthost: !!info.dev_selftest_exthost, selftestExtensions: !!info.dev_selftest_extensions, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;
-  const store = new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
+  const store = info.secondary ? await secondaryStore(info.pid ?? 0) : new LazyStore("settings.json", { defaults: {}, autoSave: 200 });
   const win = getCurrentWindow();
   let zoom = 1;
 
@@ -155,6 +174,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     openFile: () => invoke("ws_open_file"),
     openPath: (path) => invoke("ws_open_path", { path }),
     reveal: (path) => invoke("ws_reveal", { path }),
+    newWindow: (path) => invoke("window_new", { path: path ?? null }),
     openExternal: (url) => invoke("open_external", { url }),
     portFree: (port) => invoke<boolean>("proc_port_free", { port }),
     clipboard: {
@@ -191,6 +211,8 @@ export async function createTauriPlatform(): Promise<Platform> {
       readDir: (path) => invoke<DirEntry[]>("ws_read_dir", { path }),
       readFile: (path) => invoke<string>("ws_read_file", { path }),
       readBase64: (path) => invoke<string>("ws_read_base64", { path }),
+      readFileAnyway: (path) => invoke<string>("ws_read_file_anyway", { path }),
+      searchFiles: (files, q) => invoke<string[]>("ws_search_files", { files, pattern: q.pattern, isRegex: q.isRegex, matchCase: q.matchCase, wholeWord: q.wholeWord }),
       writeFile: (path, content) => invoke("ws_write_file", { path, content }),
       createFile: (path) => invoke("ws_create_file", { path }),
       createDir: (path) => invoke("ws_create_dir", { path }),
@@ -205,10 +227,10 @@ export async function createTauriPlatform(): Promise<Platform> {
       importPaths: (sources, dest, overwrite) => invoke<{ imported: string[]; conflicts: string[] }>("ws_import", { sources, dest, overwrite }),
     },
     terminal: {
-      async spawn({ cols, rows, cwd, profile, env, onData, onExit }): Promise<TerminalSession> {
+      async spawn({ cols, rows, cwd, profile, env, shellIntegration, onData, onExit }): Promise<TerminalSession> {
         const channel = new Channel<PtyEvent>();
         channel.onmessage = (e) => (e.type === "data" ? onData(e.data) : onExit(e.code));
-        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, env: env?.length ? env : null, onEvent: channel });
+        const id = await invoke<number>("pty_spawn", { cols, rows, cwd: cwd || null, profile: profile || null, env: env?.length ? env : null, shellIntegration: shellIntegration ?? null, onEvent: channel });
         return {
           write: (data) => void invoke("pty_write", { id, data }).catch(() => {}),
           resize: (c, r) => void invoke("pty_resize", { id, cols: c, rows: r }).catch(() => {}),
@@ -323,6 +345,11 @@ export async function createTauriPlatform(): Promise<Platform> {
         un?.();
       };
     },
+    attachments: {
+      pick: () => invoke<string[]>("attach_pick"),
+      clipboard: () => invoke<string[]>("attach_clipboard"),
+      read: (path) => invoke("attach_read", { path }),
+    },
     onFileDrop(cb) {
       let un: (() => void) | null = null;
       let stopped = false;
@@ -405,6 +432,8 @@ function createTauriGit(): GitHost {
     show: (path, rev) => invoke("git_show", { path, rev }),
     showAt: (path, commit) => invoke("git_show", { path, rev: commit }),
     fileLog: (path, limit) => invoke("git_file_log", { path, limit }),
+    blame: (path) => invoke("git_blame", { path }),
+    graph: (limit) => invoke("git_graph", { limit }),
     stageContent: (path, content) => invoke("git_stage_content", { path, content }),
     stage: (paths) => invoke("git_stage", { paths }),
     unstage: (paths) => invoke("git_unstage", { paths }),

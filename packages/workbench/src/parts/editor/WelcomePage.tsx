@@ -356,6 +356,7 @@ export function WelcomePage() {
               <HomeLink icon="folder-opened" label="Open Folder..." command="workbench.action.files.openFolder" kb="mod+o" />
               <HomeLink icon="new-folder" label="New Project from Starter..." command="workbench.action.newProjectFromTemplate" />
               <HomeLink icon="new-file" label="New File..." command="explorer.newFile" kb="mod+alt+n" />
+              {getPlatform().newWindow && <HomeLink icon="empty-window" label="New Window" command="workbench.action.newWindow" kb="mod+shift+n" />}
             </section>
             <section>
               <h2>Recent</h2>

@@ -4801,7 +4801,8 @@ kbd,
   height: 100%;
   min-height: 0;
 }
-.tm-explorer-stack > :first-child {
+/* The files take the room; Open Editors, Outline and Timeline (.tm-timeline) only their own height. */
+.tm-explorer-stack > .tm-pane:not(.tm-timeline) {
   flex: 1;
   min-height: 0;
 }
@@ -11327,4 +11328,827 @@ button.tm-setting-badge {
   flex-direction: column;
   gap: 3px;
   font-size: 12px;
+}
+
+/* ───────────── Terminal shell integration (VS Code's command decorations, sticky scroll) ───────────── */
+.xterm .xterm-decoration-container .xterm-decoration.tm-term-cmd {
+  /* xterm sizes it to the prompt's first cell; the mark sits in the margin to its left. */
+  pointer-events: none;
+  overflow: visible;
+}
+.tm-term-cmd-mark {
+  position: absolute;
+  top: 0;
+  left: -17px;
+  width: 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px !important;
+  cursor: pointer;
+  pointer-events: auto;
+  color: var(--term-cmd-default);
+}
+.tm-term-cmd-mark.is-success {
+  color: var(--term-cmd-success);
+}
+.tm-term-cmd-mark.is-error {
+  color: var(--term-cmd-error);
+  font-size: 16px !important;
+}
+.tm-term-cmd-mark:hover {
+  filter: brightness(1.3);
+}
+.tm-term-sticky {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  gap: 0;
+  padding: 4px 0 3px 20px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--term-sticky-bg);
+  box-shadow: 0 3px 6px -4px var(--shadow);
+  color: var(--foreground);
+  font: inherit;
+  text-align: left;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.tm-term-sticky:hover {
+  background: color-mix(in srgb, var(--term-sticky-bg) 85%, var(--foreground));
+}
+.tm-term-sticky-prompt {
+  color: var(--description);
+}
+
+/* ───────────── TMCode AI attachments (paperclip, paste, drop) ───────────── */
+.tm-chat {
+  position: relative;
+}
+.tm-chat-drop {
+  position: absolute;
+  inset: 6px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--focus-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sidebar-bg) 88%, var(--focus-border));
+  color: var(--foreground);
+  pointer-events: none;
+}
+.tm-chat-drop .codicon {
+  font-size: 28px !important;
+  color: var(--focus-border);
+}
+.tm-chat-attach {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+.tm-chat-attach:hover {
+  background: var(--toolbar-hover-bg, rgba(128, 128, 128, 0.18));
+  color: var(--foreground);
+}
+.tm-chat-attachment {
+  max-width: 100%;
+  gap: 4px;
+}
+.tm-chat-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.tm-chat-attachment-size {
+  color: var(--description);
+  font-size: 11px;
+}
+.tm-chat-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  margin-left: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--description);
+  cursor: pointer;
+}
+.tm-chat-attachment-remove:hover {
+  color: var(--foreground);
+}
+.tm-chat-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: cover;
+}
+.tm-chat-attach-error {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 2px 0 6px;
+  color: var(--warning-fg, #cca700);
+  font-size: 12px;
+}
+.tm-chat-q-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.tm-chat-q-image {
+  max-width: 140px;
+  max-height: 100px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+/* ───────────── Binary files, hex viewer, large-file mode ───────────── */
+.tm-editor-binary {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--editor-bg);
+  color: var(--foreground);
+  text-align: center;
+}
+.tm-editor-binary p {
+  max-width: 460px;
+  margin: 0;
+}
+.tm-editor-binary-actions {
+  display: flex;
+  gap: 8px;
+}
+.tm-editor-hex {
+  position: absolute;
+  inset: 0;
+  background: var(--editor-bg);
+}
+.tm-hex {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: var(--font-mono, Menlo, Consolas, monospace);
+  font-size: 12px;
+}
+.tm-hex-head {
+  padding: 4px 16px;
+  color: var(--description);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+}
+.tm-hex-body {
+  flex: 1;
+  overflow: auto;
+}
+.tm-hex-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 20px;
+  padding: 0 16px;
+  align-items: center;
+  white-space: pre;
+}
+.tm-hex-offset {
+  color: var(--description);
+}
+.tm-hex-ascii {
+  color: var(--editor-fg);
+  opacity: 0.8;
+}
+.tm-hex-error {
+  padding: 24px;
+}
+.tm-editor-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  background: var(--notification-bg, var(--sidebar-bg));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+/* ───────────── Open Editors ───────────── */
+.tm-open-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 4px;
+  height: 22px;
+  cursor: pointer;
+}
+.tm-open-editor.is-active {
+  background: var(--list-inactive-selection-bg, rgba(128, 128, 128, 0.18));
+}
+.tm-open-editor-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--icon);
+  visibility: hidden;
+  cursor: pointer;
+}
+.tm-open-editor-close.is-dirty,
+.tm-open-editor:hover .tm-open-editor-close,
+.tm-open-editor.is-active .tm-open-editor-close {
+  visibility: visible;
+}
+.tm-open-editor-close.is-dirty .codicon {
+  font-size: 10px !important;
+}
+.tm-open-editor:hover .tm-open-editor-close.is-dirty .codicon-circle-filled::before {
+  content: "\ea76";
+}
+.tm-open-editor-name {
+  white-space: nowrap;
+}
+.tm-open-editor-dir {
+  color: var(--description);
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-open-editors-group {
+  padding: 4px 12px 2px;
+  color: var(--description);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.tm-open-editors-badge {
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: 11px;
+}
+.tm-chat[data-drag-over]::after {
+  content: "Drop to attach to your question";
+  position: absolute;
+  inset: 6px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--focus-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sidebar-bg) 88%, var(--focus-border));
+  color: var(--foreground);
+  pointer-events: none;
+}
+
+/* ───────────── Find in the Explorer ───────────── */
+.tm-explorer-find {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-explorer-find .tm-input-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+}
+.tm-explorer-find .tm-input {
+  flex: 1;
+  min-width: 0;
+}
+.tm-explorer-find-count {
+  color: var(--description);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tm-tree-match {
+  background: var(--find-match-bg, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  border-radius: 2px;
+}
+.tm-inline-blame {
+  color: var(--description);
+  opacity: 0.8;
+  font-style: italic;
+}
+.tm-graph-lanes {
+  flex: none;
+  margin-left: -4px;
+  stroke-width: 2;
+}
+
+/* ───────────── Merge editor ───────────── */
+.tm-merge-editor {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  padding-bottom: 24px;
+}
+.tm-merge-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--editor-bg);
+  border-bottom: 1px solid var(--border);
+}
+.tm-merge-title {
+  font-weight: 600;
+}
+.tm-merge-count {
+  color: var(--description);
+}
+.tm-merge-spacer {
+  flex: 1;
+}
+.tm-merge-conflict {
+  margin: 14px 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tm-merge-conflict.is-resolved {
+  border-color: color-mix(in srgb, var(--term-cmd-success) 60%, var(--border));
+}
+.tm-merge-conflict-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--sidebar-bg);
+  font-weight: 600;
+}
+.tm-merge-chosen {
+  margin-left: auto;
+  color: var(--term-cmd-success);
+  font-weight: normal;
+}
+.tm-merge-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.tm-merge-side + .tm-merge-side {
+  border-left: 1px solid var(--border);
+}
+.tm-merge-side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-merge-side.is-current .tm-merge-side-head {
+  background: rgba(64, 200, 174, 0.12);
+}
+.tm-merge-side.is-incoming .tm-merge-side-head {
+  background: rgba(64, 166, 255, 0.12);
+}
+.tm-merge-side.is-chosen {
+  box-shadow: inset 3px 0 0 var(--term-cmd-success);
+}
+.tm-merge-editor pre {
+  margin: 0;
+  padding: 6px 10px;
+  font-family: var(--font-mono, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tm-merge-result {
+  border-top: 1px solid var(--border);
+}
+.tm-search-open-editor {
+  margin-left: 6px;
+}
+
+/* Centered Layout: the editor in the middle of a wide window. */
+.tm-editor-area.is-centered {
+  padding: 0 max(0px, calc((100% - 1100px) / 2));
+}
+
+/* ───────────── Extensions' source controls and tests ───────────── */
+.tm-ext-scm-input {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px 6px;
+}
+.tm-ext-scm-input .tm-input {
+  flex: 1;
+  min-width: 0;
+}
+.tm-ext-scm-group {
+  padding: 4px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--sidebar-title-fg);
+}
+.tm-scm-row.is-faded {
+  opacity: 0.6;
+}
+.tm-scm-name.is-deleted {
+  text-decoration: line-through;
+}
+.tm-ext-test {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+.tm-ext-test-label {
+  cursor: pointer;
+}
+.tm-ext-test-icon.is-passed {
+  color: var(--term-cmd-success);
+}
+.tm-ext-test-icon.is-failed,
+.tm-ext-test-icon.is-errored {
+  color: var(--term-cmd-error);
+}
+.tm-ext-test .tm-action-button {
+  margin-left: auto;
+  visibility: hidden;
+}
+.tm-ext-test:hover .tm-action-button {
+  visibility: visible;
+}
+.tm-ext-test-message {
+  margin: 0 12px 4px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--term-cmd-error);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* ───────────── Accessible View ───────────── */
+.tm-accessible-view {
+  position: fixed;
+  inset: 12% 18%;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--widget-border);
+  border-radius: 8px;
+  background: var(--editor-bg);
+  box-shadow: 0 8px 32px var(--shadow);
+}
+.tm-accessible-view-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-accessible-view textarea {
+  flex: 1;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--editor-fg);
+  font-family: var(--font-mono, Menlo, Consolas, monospace);
+  font-size: 13px;
+}
+
+/* An open folder that isn't connected to an assignment (Assignments view). */
+.tm-assignments-loose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 10px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--warning-fg, #cca700) 50%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning-fg, #cca700) 8%, transparent);
+  font-size: 12px;
+}
+.tm-assignments-loose span {
+  flex: 1;
+}
+
+/* The editor area: the assignment banner above the editor groups. */
+.tm-editor-area--stack {
+  flex-direction: column;
+}
+.tm-editor-area-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+.tm-assignment-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  flex: none;
+}
+.tm-assignment-banner.is-warning {
+  background: color-mix(in srgb, #e5a000 18%, var(--editor-bg));
+  border-bottom-color: color-mix(in srgb, #e5a000 55%, var(--border));
+}
+.tm-assignment-banner.is-warning > .codicon {
+  color: #e5a000;
+}
+.tm-assignment-banner.is-success {
+  background: color-mix(in srgb, #2ea043 16%, var(--editor-bg));
+}
+.tm-assignment-banner.is-success > .codicon {
+  color: #2ea043;
+}
+.tm-assignment-banner.is-info {
+  background: color-mix(in srgb, var(--focus-border) 14%, var(--editor-bg));
+}
+.tm-assignment-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.tm-assignment-banner-title {
+  font-weight: 600;
+}
+.tm-assignment-banner-close {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+.tm-chip--not-submitted .codicon {
+  font-size: 10px !important;
+}
+.tm-status-student.is-in_progress,
+.tm-status-student.is-returned {
+  color: #f0b429;
+  font-weight: 600;
+}
+
+/* ── Edit / Preview above Markdown and CSV files (GitHub's tabs) ── */
+.tm-viewmode-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--editor-bg);
+  flex: none;
+}
+.tm-viewmode-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--description);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tm-viewmode-tab:hover {
+  color: var(--foreground);
+}
+.tm-viewmode-tab[aria-checked="true"] {
+  border-color: var(--border);
+  border-bottom-color: var(--editor-bg);
+  background: var(--editor-bg);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.tm-viewmode-tab:focus-visible {
+  outline: 1px solid var(--focus-border, var(--accent));
+  outline-offset: -1px;
+}
+.tm-viewmode-hint {
+  margin-left: auto;
+  padding-bottom: 6px;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-markdown-preview.is-inline {
+  position: absolute;
+  inset: 0;
+}
+
+/* GitHub-like Markdown: heading anchors, task lists, tables. */
+.tm-md-github h1,
+.tm-md-github h2,
+.tm-md-github h3,
+.tm-md-github h4 {
+  position: relative;
+  margin: 24px 0 16px;
+}
+.tm-md-github h1 {
+  font-size: 2em;
+}
+.tm-md-github h2 {
+  font-size: 1.5em;
+}
+.tm-md-github h3 {
+  font-size: 1.25em;
+}
+.tm-md-anchor::before {
+  content: "#";
+}
+.tm-md-anchor {
+  position: absolute;
+  left: -1.1em;
+  padding-right: 4px;
+  color: var(--description) !important;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.tm-md-github :is(h1, h2, h3, h4, h5, h6):hover .tm-md-anchor,
+.tm-md-anchor:focus-visible {
+  opacity: 1;
+}
+.tm-md-github .tm-task-list {
+  padding-left: 4px;
+  list-style: none;
+}
+.tm-md-github .tm-task-item input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tm-md-github table th {
+  font-weight: 600;
+}
+.tm-md-github table tr:nth-child(2n) td {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.tm-md-github hr {
+  height: 3px;
+  border: 0;
+  background: var(--border);
+}
+
+/* ── Documents: PDF pages and Word ── */
+.tm-document,
+.tm-csv-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--editor-bg);
+}
+.tm-document-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 16px 48px;
+}
+.tm-document-stage.is-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: color-mix(in srgb, var(--foreground) 7%, var(--editor-bg));
+}
+.tm-document-stage:focus-visible {
+  outline: none;
+}
+.tm-pdf-page {
+  flex: none;
+  background: #fff;
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.25),
+    0 6px 18px rgb(0 0 0 / 0.12);
+}
+.tm-pdf-page canvas {
+  display: block;
+}
+.tm-document-pages {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--description);
+  font-variant-numeric: tabular-nums;
+}
+.tm-document-stage.is-docx {
+  background: color-mix(in srgb, var(--foreground) 7%, var(--editor-bg));
+}
+.tm-docx-page.tm-markdown-body {
+  max-width: 816px;
+  min-height: 1056px;
+  padding: 72px 80px;
+  background: #fff;
+  color: #1f2328;
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.25),
+    0 6px 18px rgb(0 0 0 / 0.12);
+}
+.tm-docx-page table td,
+.tm-docx-page table th {
+  border: 1px solid #d0d7de;
+  padding: 4px 8px;
+}
+.tm-document-error {
+  flex-direction: column;
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .tm-docx-page.tm-markdown-body {
+    padding: 32px 20px;
+    min-height: 0;
+  }
+}
+
+/* ── CSV / TSV table ── */
+.tm-csv-filter {
+  width: 220px;
+}
+.tm-csv-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.tm-csv-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.tm-csv-table th,
+.tm-csv-table td {
+  max-width: 360px;
+  padding: 3px 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.tm-csv-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--foreground) 8%, var(--editor-bg));
+  font-weight: 600;
+}
+.tm-csv-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.tm-csv-n {
+  color: var(--description);
+  text-align: right !important;
+  user-select: none;
+}
+.tm-csv-table thead .tm-csv-n {
+  left: 0;
+  z-index: 2;
 }

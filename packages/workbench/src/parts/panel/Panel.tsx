@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { tr, useLocale } from "../../messages/i18n";
 import { ProblemsView } from "./ProblemsView";
 import { clearOutput, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
 import { ActionButton, Codicon } from "../../widgets/icons";
@@ -112,6 +113,7 @@ function useTabOverflow(active: string) {
 }
 
 export function Panel() {
+  useLocale((s) => s.locale);
   const active = useWorkbench((s) => s.activePanel);
   const maximized = useWorkbench((s) => s.panelMaximized);
   const problemCount = useWorkbench((s) => s.problems.filter((p) => p.severity !== "info").length);
@@ -158,7 +160,7 @@ export function Panel() {
               className={`tm-panel-tab ${current === t.id ? "is-active" : ""}`}
               onClick={() => showPanel(t.id)}
             >
-              {t.label}
+              {tr(t.label)}
               {t.badge ? <span className="tm-badge tm-badge--accent">{t.badge}</span> : null}
               {/* AI use today: a quiet mark, not an unread count. */}
               {t.ai ? (

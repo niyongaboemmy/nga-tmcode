@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -168,35 +168,26 @@ fn system_profiles() -> Vec<Profile> {
 }
 
 /// The shell to start: the profile asked for when it is installed (never an
-/// arbitrary path from the webview), else the system's default.
-fn shell_command(requested: Option<&str>) -> (CommandBuilder, String) {
+/// arbitrary path from the webview), else the system's default. Returns the
+/// program, its arguments, the tab name and the profile id.
+fn chosen_shell(requested: Option<&str>) -> (String, Vec<String>, String, String) {
     let profiles = system_profiles();
     let chosen = requested
         .and_then(|id| profiles.iter().find(|p| p.id == id))
         .or_else(|| profiles.iter().find(|p| p.is_default))
         .or_else(|| profiles.first());
     match chosen {
-        Some(p) => {
-            let mut cmd = CommandBuilder::new(&p.path);
-            for a in &p.args {
-                cmd.arg(a);
-            }
-            (cmd, p.name.clone())
-        }
+        Some(p) => (p.path.clone(), p.args.clone(), p.name.clone(), p.id.clone()),
         None => {
             #[cfg(windows)]
             {
-                let mut cmd = CommandBuilder::new("powershell.exe");
-                cmd.arg("-NoLogo");
-                (cmd, "PowerShell".into())
+                ("powershell.exe".into(), vec!["-NoLogo".into()], "PowerShell".into(), "powershell".into())
             }
             #[cfg(not(windows))]
             {
                 let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
                 let name = Path::new(&shell).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "sh".into());
-                let mut cmd = CommandBuilder::new(shell);
-                cmd.arg("-l");
-                (cmd, name)
+                (shell, vec!["-l".into()], name.clone(), name)
             }
         }
     }
@@ -248,6 +239,7 @@ fn apply_env_mutation(m: &EnvMutation, current: Option<String>) -> Option<String
 
 #[tauri::command]
 pub fn pty_spawn(
+    app: tauri::AppHandle,
     ws: State<'_, Workspace>,
     terms: State<'_, Terminals>,
     cols: u16,
@@ -255,12 +247,26 @@ pub fn pty_spawn(
     cwd: Option<String>,
     profile: Option<String>,
     env: Option<Vec<EnvMutation>>,
+    shell_integration: Option<crate::shell_integration::Request>,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
     let pty = native_pty_system()
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
-    let (mut cmd, shell_name) = shell_command(profile.as_deref());
+    let (program, args, shell_name, shell_id) = chosen_shell(profile.as_deref());
+    // Shell integration (OSC 633): the scripts live in the app's data folder.
+    let injection = shell_integration.as_ref().and_then(|req| {
+        let dir = app.path().app_data_dir().ok()?.join("shell-integration");
+        if let Err(e) = crate::shell_integration::write_scripts(&dir) {
+            log::warn!("terminal: shell integration not written: {e}");
+            return None;
+        }
+        crate::shell_integration::inject(&shell_id, &args, req, &dir, &|k| std::env::var(k).ok())
+    });
+    let mut cmd = CommandBuilder::new(&program);
+    for a in injection.as_ref().map(|i| &i.args).unwrap_or(&args) {
+        cmd.arg(a);
+    }
     if let Ok(root) = ws.root() {
         // Tasks run in a project subfolder (client/, server/…); it must stay inside the workspace.
         let dir = match cwd.as_deref().filter(|c| !c.is_empty()) {
@@ -275,6 +281,9 @@ pub fn pty_spawn(
     // Colour output by default (ls, grep, git) — like VS Code's integrated terminal.
     cmd.env("CLICOLOR", "1");
     cmd.env("LANG", std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into()));
+    for (k, v) in injection.map(|i| i.env).unwrap_or_default() {
+        cmd.env(k, v);
+    }
     // Extensions' environmentVariableCollection (and a terminal's own env), as VS Code applies them.
     for m in env.unwrap_or_default() {
         if let Some(v) = apply_env_mutation(&m, std::env::var(&m.name).ok()) {

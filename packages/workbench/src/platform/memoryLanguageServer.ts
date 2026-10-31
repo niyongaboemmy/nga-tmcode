@@ -77,7 +77,9 @@ function fakePyright(fs: Fs, send: (m: unknown) => void, emit: (e: LanguageServe
       case "initialize":
         root = String((m.params as { rootUri?: string }).rootUri ?? root).replace(/\/$/, "");
         send({ jsonrpc: "2.0", method: "window/logMessage", params: { type: 3, message: "Pyright test double ready" } });
-        return reply(m.id, { capabilities: { textDocumentSync: 1, definitionProvider: true, hoverProvider: true } });
+        return reply(m.id, {
+          capabilities: { textDocumentSync: 1, definitionProvider: true, hoverProvider: true, codeActionProvider: { codeActionKinds: ["quickfix"] }, documentFormattingProvider: true, inlayHintProvider: true },
+        });
       case "textDocument/didOpen":
         docs.set(m.params!.textDocument!.uri, m.params!.textDocument!.text ?? "");
         return diagnose(m.params!.textDocument!.uri, m.params!.textDocument!.text ?? "");
@@ -106,6 +108,33 @@ function fakePyright(fs: Fs, send: (m: unknown) => void, emit: (e: LanguageServe
       case "textDocument/hover": {
         const word = wordAt(docs.get(m.params!.textDocument!.uri) ?? "", m.params!.position!);
         return reply(m.id, word ? { contents: { kind: "markdown", value: `\`\`\`python\n(name) ${word}\n\`\`\`` } } : null);
+      }
+      // A quick fix for its one diagnostic: remove the undefined name's line.
+      case "textDocument/codeAction": {
+        const uri = m.params!.textDocument!.uri;
+        const lines = (docs.get(uri) ?? "").split("\n");
+        const line = lines.findIndex((l) => l.includes("undefined_thing"));
+        if (line < 0) return reply(m.id, []);
+        return reply(m.id, [{ title: "Remove 'undefined_thing'", kind: "quickfix", isPreferred: true, edit: { changes: { [uri]: [{ range: { start: { line, character: 0 }, end: { line: line + 1, character: 0 } }, newText: "" } ] } } }]);
+      }
+      // Formatting: spaces around "=" in simple assignments, no trailing spaces.
+      case "textDocument/formatting": {
+        const text = docs.get(m.params!.textDocument!.uri) ?? "";
+        const lines = text.split("\n");
+        const formatted = lines.map((l) => l.replace(/^(\s*\w+)\s*=\s*(?!=)/, "$1 = ").replace(/\s+$/, "")).join("\n");
+        if (formatted === text) return reply(m.id, []);
+        return reply(m.id, [{ range: { start: { line: 0, character: 0 }, end: { line: lines.length, character: 0 } }, newText: formatted }]);
+      }
+      // Type hints after simple number assignments ("count = 3" → ": int").
+      case "textDocument/inlayHint": {
+        const lines = (docs.get(m.params!.textDocument!.uri) ?? "").split("\n");
+        return reply(
+          m.id,
+          lines.flatMap((l, i) => {
+            const hit = /^(\s*)(\w+)\s*=\s*\d+\s*$/.exec(l);
+            return hit ? [{ position: { line: i, character: hit[1].length + hit[2].length }, label: ": int", kind: 1, paddingLeft: false }] : [];
+          }),
+        );
       }
       case "shutdown":
         return reply(m.id, null);

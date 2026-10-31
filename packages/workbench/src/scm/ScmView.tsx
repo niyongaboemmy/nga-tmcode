@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { layoutGraph, LANE_COLORS, type GraphRow } from "./graphLayout";
+import type { GraphCommit } from "../platform/types";
 import { executeCommand } from "../commands/registry";
 import { getPlatform, openContextMenu, openFile, revealView, select, toggleDir, useWorkbench, type ContextMenuItem } from "../state/store";
 import { basename, dirname } from "../util/paths";
 import { ActionButton, Codicon, FileIcon } from "../widgets/icons";
 import {
   GIT_DOWNLOAD_URL,
+  gitHost,
   commit,
   discard,
   initRepository,
@@ -367,8 +370,48 @@ function relative(ts: number) {
   return new Date(ts * 1000).toLocaleDateString();
 }
 
+const ROW_H = 22;
+const LANE_W = 12;
+
+/** The lanes of one graph row: lines passing through, the commit's dot, lines to its parents. */
+function GraphLanes({ row, width }: { row: GraphRow; width: number }) {
+  const x = (i: number) => 8 + i * LANE_W;
+  const color = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
+  const mid = ROW_H / 2;
+  const lines: React.ReactNode[] = [];
+  row.before.forEach((h, i) => {
+    if (h === null) return;
+    // Into the dot when it was waiting for this commit, else straight on (or over to where it continues).
+    if (h === row.commit.hash) lines.push(<line key={`in${i}`} x1={x(i)} y1={0} x2={x(row.col)} y2={mid} stroke={color(i)} />);
+    else {
+      const to = row.after.indexOf(h);
+      lines.push(<line key={`pass${i}`} x1={x(i)} y1={0} x2={x(to < 0 ? i : to)} y2={ROW_H} stroke={color(i)} />);
+    }
+  });
+  row.parentCols.forEach((p, k) => lines.push(<line key={`out${k}`} x1={x(row.col)} y1={mid} x2={x(p)} y2={ROW_H} stroke={color(p)} />));
+  return (
+    <svg className="tm-graph-lanes" width={width} height={ROW_H} aria-hidden>
+      {lines}
+      <circle cx={x(row.col)} cy={mid} r={row.commit.parents.length > 1 ? 4.5 : 3.5} fill={row.commit.parents.length > 1 ? "var(--sidebar-bg)" : color(row.col)} stroke={color(row.col)} strokeWidth={2} />
+    </svg>
+  );
+}
+
 function CommitsPane({ commits }: { commits: { hash: string; short: string; author: string; date: number; refs: string; subject: string }[] }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [graph, setGraph] = useState<GraphCommit[] | null>(null);
+  // Every branch with its parents, when the host can tell (else the current branch's commits in a line).
+  useEffect(() => {
+    let alive = true;
+    void gitHost()
+      ?.graph?.(200)
+      .then((g) => alive && setGraph(g), () => alive && setGraph(null));
+    return () => {
+      alive = false;
+    };
+  }, [commits]);
+  const rows = useMemo(() => layoutGraph(graph ?? commits.map((c, i) => ({ ...c, parents: commits[i + 1] ? [commits[i + 1].hash] : [] }))), [graph, commits]);
+  const width = 8 + Math.max(1, ...rows.map((r) => Math.max(r.before.length, r.after.length, r.col + 1))) * LANE_W;
   return (
     <div className="tm-scm-section is-graph" data-section="graph">
       <div
@@ -380,7 +423,7 @@ function CommitsPane({ commits }: { commits: { hash: string; short: string; auth
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setCollapsed(!collapsed)}
       >
         <Codicon name={collapsed ? "chevron-right" : "chevron-down"} />
-        <span className="tm-scm-section-title">Commits</span>
+        <span className="tm-scm-section-title">Graph</span>
         <span className="tm-scm-section-actions" onClick={(e) => e.stopPropagation()}>
           <ActionButton icon="repo-fetch" label="Fetch" onClick={() => executeCommand("git.fetch")} />
           <ActionButton icon="repo-pull" label="Pull" onClick={() => executeCommand("git.pull")} />
@@ -388,26 +431,29 @@ function CommitsPane({ commits }: { commits: { hash: string; short: string; auth
         </span>
       </div>
       {!collapsed && (
-        <div role="list" aria-label="Recent commits">
-          {commits.length === 0 && <div className="tm-view-hint">No commits yet.</div>}
-          {commits.map((c) => (
-            <div key={c.hash} role="listitem" className="tm-list-row tm-scm-commit-row" title={`${c.short} ${c.subject}\n${c.author}, ${new Date(c.date * 1000).toLocaleString()}`}>
-              <Codicon name="git-commit" className="tm-scm-commit-icon" />
-              <span className="tm-scm-name">{c.subject}</span>
-              {c.refs
-                .split(", ")
-                .filter((r) => r && r !== "HEAD")
-                .slice(0, 2)
-                .map((r) => (
-                  <span key={r} className="tm-scm-ref">
-                    {r.replace("HEAD -> ", "")}
-                  </span>
-                ))}
-              <span className="tm-scm-folder">
-                {c.author} · {relative(c.date)}
-              </span>
-            </div>
-          ))}
+        <div role="list" aria-label="Commit graph" data-testid="scm-graph">
+          {rows.length === 0 && <div className="tm-view-hint">No commits yet.</div>}
+          {rows.map((r) => {
+            const c = r.commit;
+            return (
+              <div key={c.hash} role="listitem" className="tm-list-row tm-scm-commit-row" title={`${c.short} ${c.subject}\n${c.author}, ${new Date(c.date * 1000).toLocaleString()}`}>
+                <GraphLanes row={r} width={width} />
+                <span className="tm-scm-name">{c.subject}</span>
+                {c.refs
+                  .split(", ")
+                  .filter((ref) => ref && ref !== "HEAD")
+                  .slice(0, 2)
+                  .map((ref) => (
+                    <span key={ref} className="tm-scm-ref">
+                      {ref.replace("HEAD -> ", "")}
+                    </span>
+                  ))}
+                <span className="tm-scm-folder">
+                  {c.author} · {relative(c.date)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

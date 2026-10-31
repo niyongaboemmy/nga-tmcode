@@ -105,3 +105,14 @@ export function resolveAll(text: string, choice: ConflictChoice): string {
 export function hasConflictMarkers(text: string) {
   return /^<{7}(\s|$)/m.test(text) && /^={7}$/m.test(text) && /^>{7}(\s|$)/m.test(text);
 }
+
+/** The text with the conflicts chosen so far resolved (index → choice); unchosen ones keep their markers. */
+export function applyChoices(text: string, choices: Record<number, ConflictChoice | undefined>): string {
+  const conflicts = parseConflicts(text);
+  let out = text;
+  for (let i = conflicts.length - 1; i >= 0; i--) {
+    const choice = choices[i];
+    if (choice) out = resolveConflict(out, conflicts[i], choice);
+  }
+  return out;
+}

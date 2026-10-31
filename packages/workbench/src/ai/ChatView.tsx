@@ -14,7 +14,9 @@ import { AiExtensions } from "./AiExtensions";
 import { useAiGate } from "./gate";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { approveStep, ask, MODES, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
-import { effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
+import { aiReadsImages, effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
+import { scaleImage } from "./imageScale";
+import { addAttachments, ATTACH_LIMITS, formatSize, fromAttachedFile, fromBrowserFile, pastedAttachment, textAttachment, type Attachment } from "./attachments";
 
 /**
  * TMCode AI's panel (secondary side bar), modelled on Claude Code's: pick a mode (Chat, Manual,
@@ -412,6 +414,32 @@ function ModeMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Why files can't be attached now, or null. */
+function attachRefusal(): string | null {
+  if (useWorkbench.getState().policy.mode !== "practice") return "You can't attach files during an exam.";
+  return null;
+}
+
+
+/** Workspace files dragged from the Explorer onto the chat. */
+async function workspaceAttachments(paths: string[]): Promise<(Attachment | string)[]> {
+  const fs = getPlatform().fs;
+  return Promise.all(
+    paths.map(async (p) => {
+      const text = await fs.readFile(p).catch(() => null);
+      if (text === null) return `${p.slice(p.lastIndexOf("/") + 1)} could not be read (a folder or a binary file).`;
+      return textAttachment(p.slice(p.lastIndexOf("/") + 1), text, text.length, p);
+    }),
+  );
+}
+
+/** Files from the desktop (dialog, drop, clipboard): read by ai_attach.rs. */
+async function desktopAttachments(paths: string[]): Promise<(Attachment | string)[]> {
+  const host = getPlatform().attachments;
+  if (!host) return [];
+  return Promise.all(paths.map((p) => host.read(p).then(fromAttachedFile, (e) => String((e as Error)?.message ?? e))));
+}
+
 /** "@app" → the project's files whose path matches, for @-mentions. */
 let fileCache: { at: number; files: string[] } | null = null;
 async function projectFiles(): Promise<string[]> {
@@ -443,6 +471,56 @@ export function ChatView() {
   const [modesOpen, setModesOpen] = useState(false);
   const [mentions, setMentions] = useState<string[]>([]);
   const [suggest, setSuggest] = useState<{ query: string; items: string[]; index: number } | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const attachedRef = useRef(attachments);
+  attachedRef.current = attachments;
+
+  const attach = async (load: () => Promise<(Attachment | string)[]>) => {
+    const refusal = attachRefusal();
+    if (refusal) return setAttachError(refusal);
+    const reads = aiReadsImages();
+    const items = await Promise.all(
+      (await load()).map(async (a) => {
+        if (typeof a === "string" || a.kind !== "image" || !a.image) return a;
+        if (!reads) return `${a.name}: the AI answering now can't read images. Pick Auto or a model that reads images, or attach code and text files.`;
+        const scaled = await scaleImage(a.image);
+        return { ...a, image: scaled.dataUrl, size: scaled.size };
+      }),
+    );
+    const { list, errors } = addAttachments(attachedRef.current, items);
+    setAttachments(list);
+    setAttachError(errors.length ? errors.join(" ") : null);
+    input.current?.focus();
+  };
+
+  // Files dragged from the Explorer (a pointer drag, not an HTML one) arrive as workspace paths.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const onPaths = (e: Event) => void attach(() => workspaceAttachments((e as CustomEvent<string[]>).detail ?? []));
+    el.addEventListener("tmcode:drop-paths", onPaths);
+    return () => el.removeEventListener("tmcode:drop-paths", onPaths);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root.current]);
+
+  // Desktop: files dropped from Finder / File Explorer arrive as paths (the HTML drop gets none).
+  useEffect(() => {
+    const platform = getPlatform();
+    if (!platform.onFileDrop || !platform.attachments) return;
+    const over = (x: number, y: number) => !!root.current && !!document.elementFromPoint(x, y)?.closest(".tm-chat") && root.current.contains(document.elementFromPoint(x, y));
+    return platform.onFileDrop((e) => {
+      if (e.type === "leave") return setDropping(false);
+      const inside = over(e.x, e.y);
+      if (e.type === "over") return setDropping(inside);
+      setDropping(false);
+      if (inside && e.paths.length) void attach(() => desktopAttachments(e.paths));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const historyAt = useRef<number | null>(null);
   const file = useWorkbench((s) => {
     const g = s.groups.find((x) => x.id === s.activeGroup);
@@ -503,14 +581,61 @@ export function ChatView() {
     );
   }
 
-  const send = (q = text) => {
-    if (!q.trim() || busy) return;
+  const send = (typed = text) => {
+    const files = attachments;
+    // Attachments alone are a question too.
+    const q = typed.trim() || (files.length ? `Look at the attached file${files.length === 1 ? "" : "s"}.` : "");
+    if (!q || busy) return;
     const used = mentions.filter((m) => q.includes(`@${m}`));
     setText("");
     setMentions([]);
     setSuggest(null);
+    setAttachments([]);
+    setAttachError(null);
     historyAt.current = null;
-    void ask(q, { file: withFile, problems: withProblems, mentions: used });
+    void ask(q, { file: withFile, problems: withProblems, mentions: used, attachments: files });
+  };
+
+  const pickFiles = () => {
+    const host = getPlatform().attachments;
+    if (host) void attach(async () => desktopAttachments(await host.pick()));
+    else fileInput.current?.click();
+  };
+
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const data = e.clipboardData;
+    const files = [...data.files];
+    const host = getPlatform().attachments;
+    const hasFiles = files.length > 0 || data.types.includes("Files") || data.types.includes("text/uri-list");
+    if (hasFiles) {
+      e.preventDefault();
+      // A screenshot or an image copied from a page comes as a File; files copied in Finder as paths.
+      if (files.length && (files.every((f) => f.type.startsWith("image/")) || !host)) void attach(() => Promise.all(files.map(fromBrowserFile)));
+      else if (host) void attach(async () => desktopAttachments(await host.clipboard()));
+      return;
+    }
+    const pasted = data.getData("text/plain");
+    if (pasted.length > ATTACH_LIMITS.pasteChars) {
+      e.preventDefault();
+      void attach(async () => [pastedAttachment(pasted, attachedRef.current)]);
+    }
+  };
+
+  const dragHasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("application/x-tmcode-path");
+  const onDrop = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    setDropping(false);
+    let paths: string[] = [];
+    try {
+      paths = JSON.parse(e.dataTransfer.getData("application/x-tmcode-paths") || "[]");
+    } catch {
+      paths = [];
+    }
+    if (!paths.length) paths = [e.dataTransfer.getData("application/x-tmcode-path")].filter(Boolean);
+    if (paths.length) return void attach(() => workspaceAttachments(paths));
+    const files = [...e.dataTransfer.files];
+    if (files.length) void attach(() => Promise.all(files.map(fromBrowserFile)));
   };
 
   const cycleMode = () => {
@@ -544,7 +669,28 @@ export function ChatView() {
   const current = MODES.find((m) => m.id === agentMode) ?? MODES[1];
 
   return (
-    <div className="tm-chat" data-testid="tmcode-ai-chat">
+    <div
+      ref={root}
+      className={`tm-chat ${dropping ? "is-dropping" : ""}`}
+      data-testid="tmcode-ai-chat"
+      data-drop-files=""
+      onDragOver={(e) => {
+        if (!dragHasFiles(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!dropping) setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+      }}
+      onDrop={onDrop}
+    >
+      {dropping && (
+        <div className="tm-chat-drop" data-testid="ai-drop-zone">
+          <Codicon name="cloud-upload" />
+          <span>Drop files to attach them to your question</span>
+        </div>
+      )}
       <div className="tm-chat-head">
         <div className="tm-chat-agent-wrap">
           <button type="button" className="tm-chat-agent-mode" onClick={() => setModesOpen(!modesOpen)} title={current.detail} data-testid="ai-agent-mode" aria-haspopup="menu" aria-expanded={modesOpen}>
@@ -596,6 +742,13 @@ export function ChatView() {
         {messages.map((m) =>
           m.role === "user" ? (
             <div key={m.id} className="tm-chat-q">
+              {!!m.images?.length && (
+                <div className="tm-chat-q-images">
+                  {m.images.map((src, i) => (
+                    <img key={i} src={src} alt={`Attached image ${i + 1}`} className="tm-chat-q-image" data-testid="ai-question-image" />
+                  ))}
+                </div>
+              )}
               <div className="tm-chat-q-text">{m.content}</div>
               <div className="tm-chat-q-foot">
                 {m.mode && m.mode !== "chat" && <span className="tm-chat-chip is-mode">{MODES.find((x) => x.id === m.mode)?.label}</span>}
@@ -638,7 +791,22 @@ export function ChatView() {
               <Codicon name="mention" /> {m.slice(m.lastIndexOf("/") + 1)}
             </span>
           ))}
+          {attachments.map((a) => (
+            <span key={a.id} className={`tm-chat-chip is-on tm-chat-attachment is-${a.kind}`} data-testid="ai-attachment" title={`${a.origin || a.name} · ${formatSize(a.size)}${a.truncated ? " · only the start is sent" : ""}`}>
+              {a.kind === "image" && a.image ? <img src={a.image} alt="" className="tm-chat-thumb" /> : <Codicon name={a.kind === "pasted" ? "note" : "file-code"} />}
+              <span className="tm-chat-attachment-name">{a.name}</span>
+              <span className="tm-chat-attachment-size">{formatSize(a.size)}</span>
+              <button type="button" className="tm-chat-attachment-remove" aria-label={`Remove ${a.name}`} onClick={() => setAttachments((l) => l.filter((x) => x.id !== a.id))}>
+                <Codicon name="close" />
+              </button>
+            </span>
+          ))}
         </div>
+        {attachError && (
+          <div className="tm-chat-attach-error" role="alert" data-testid="ai-attach-error">
+            <Codicon name="warning" /> {attachError}
+          </div>
+        )}
         <div className="tm-chat-input">
           {suggest && (
             <div className="tm-chat-suggest" role="listbox" data-testid="ai-mentions">
@@ -655,6 +823,7 @@ export function ChatView() {
             rows={1}
             placeholder={agentMode === "chat" ? (file ? `Ask about ${file.slice(file.lastIndexOf("/") + 1)}…` : "Ask TMCode AI…") : "Describe a change or a fix… (@ adds a file)"}
             aria-label="Ask TMCode AI"
+            onPaste={onPaste}
             onChange={(e) => {
               setText(e.target.value);
               historyAt.current = null;
@@ -705,18 +874,33 @@ export function ChatView() {
             }}
             data-testid="ai-input"
           />
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            data-testid="ai-attach-input"
+            onChange={(e) => {
+              const files = [...(e.currentTarget.files ?? [])];
+              e.currentTarget.value = "";
+              if (files.length) void attach(() => Promise.all(files.map(fromBrowserFile)));
+            }}
+          />
+          <button type="button" className="tm-chat-attach" onClick={pickFiles} title="Attach files (or paste / drop them here)" aria-label="Attach files" data-testid="ai-attach">
+            <Codicon name="attach" />
+          </button>
           {busy ? (
             <button type="button" className="tm-chat-send is-stop" onClick={stopAnswer} title="Stop" aria-label="Stop" data-testid="ai-stop">
               <Codicon name="debug-stop" />
             </button>
           ) : (
-            <button type="button" className="tm-chat-send" onClick={() => send()} disabled={!text.trim()} title="Send (Enter)" aria-label="Send" data-testid="ai-send">
+            <button type="button" className="tm-chat-send" onClick={() => send()} disabled={!text.trim() && !attachments.length} title="Send (Enter)" aria-label="Send" data-testid="ai-send">
               <Codicon name="send" />
             </button>
           )}
         </div>
         <div className="tm-chat-hint">
-          Enter to send · Shift+Enter new line · ⇧Tab mode · @ file · ↑ earlier prompts
+          Enter to send · Shift+Enter new line · ⇧Tab mode · @ file · paste or drop files · ↑ earlier prompts
         </div>
       </div>
     </div>

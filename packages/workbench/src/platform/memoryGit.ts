@@ -141,6 +141,21 @@ export function createMemoryGit(fs: FileSystem, seed: Record<string, string>, op
       const c = commits.find((x) => x.hash.startsWith(commit));
       return (c && snapshots.get(c.hash)?.get(path)) ?? null;
     },
+    // Each line goes to the oldest commit whose version of the file has it.
+    async blame(path) {
+      if (!repo) return [];
+      const text = snapshots.get(commits[0]?.hash ?? "")?.get(path);
+      if (text === undefined) return [];
+      const oldestFirst = [...commits].reverse();
+      return text.split("\n").map((line, i) => {
+        const c = oldestFirst.find((x) => snapshots.get(x.hash)?.get(path)?.split("\n").includes(line)) ?? commits[0];
+        return { line: i + 1, hash: c.hash, author: c.author, date: c.date, summary: c.subject };
+      });
+    },
+    async graph(limit) {
+      if (!repo) return [];
+      return commits.slice(0, limit).map((c, i) => ({ hash: c.hash, short: c.short, parents: commits[i + 1] ? [commits[i + 1].hash] : [], author: c.author, date: c.date, refs: c.refs, subject: c.subject }));
+    },
     async fileLog(path, limit) {
       if (!repo) return [];
       // Commits where the file differs from the commit before (or first appears).

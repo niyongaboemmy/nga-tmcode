@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { parseJsonc } from "../textmate/jsonc";
 import { resolveRelative } from "../textmate/themeData";
 import { iconLanguageId } from "./iconLanguages";
+import { withColouredFolders } from "./folderIcons";
 
 /**
  * File icon themes (VS Code's `iconThemes` contribution): the explorer, tabs,
@@ -10,9 +11,10 @@ import { iconLanguageId } from "./iconLanguages";
  * lazily, one icon at a time, and are cached as data: URLs (the CSP allows
  * images and fonts from data: only).
  *
- * Built in: VS Code's own Seti theme (the default; vendored in ./seti with its
- * MIT licences, see THIRD_PARTY_NOTICES.md) and Minimal, TMCode's older
- * colour badges ("TMCode Glyphs"), and None.
+ * Built in: Seti with coloured folders (the default: VS Code's Seti file icons
+ * plus TMCode's folder icons, ./folderIcons.ts), VS Code's own Seti theme
+ * (vendored in ./seti with its MIT licences, see THIRD_PARTY_NOTICES.md) and
+ * Minimal, TMCode's older colour badges ("TMCode Glyphs"), and None.
  */
 
 export interface IconDefinition {
@@ -59,8 +61,11 @@ export interface IconThemeEntry {
   builtin?: { load(): Promise<IconThemeDocument>; fontUrl?(fontPath: string): Promise<string | undefined> };
 }
 
-/** VS Code's default file icon theme, and TMCode's. */
-export const DEFAULT_ICON_THEME = "vs-seti";
+/** TMCode's default file icon theme: Seti's file icons with coloured folders. */
+export const DEFAULT_ICON_THEME = "vs-seti-folders";
+
+const loadSeti = async () => parseJsonc<IconThemeDocument>((await import("./seti/vs-seti-icon-theme.json?raw")).default);
+const setiFont = async (p: string) => (/seti\.woff$/.test(p) ? (await import("./seti/seti.woff?url")).default : undefined);
 
 /** VS Code's "Minimal": one generic file icon, no folder icons. */
 export const MINIMAL_ICON_THEME: IconThemeDocument = {
@@ -70,20 +75,22 @@ export const MINIMAL_ICON_THEME: IconThemeDocument = {
 
 export const BUILTIN_ICON_THEMES: IconThemeEntry[] = [
   {
+    id: "vs-seti-folders",
+    label: "Seti with Coloured Folders (TMCode)",
+    builtin: { load: async () => withColouredFolders(await loadSeti()), fontUrl: setiFont },
+  },
+  {
     id: "vs-seti",
     label: "Seti (Visual Studio Code)",
-    builtin: {
-      // Separate chunks, fetched once when the theme is first applied.
-      load: async () => parseJsonc<IconThemeDocument>((await import("./seti/vs-seti-icon-theme.json?raw")).default),
-      fontUrl: async (p) => (/seti\.woff$/.test(p) ? (await import("./seti/seti.woff?url")).default : undefined),
-    },
+    // Separate chunks, fetched once when the theme is first applied.
+    builtin: { load: loadSeti, fontUrl: setiFont },
   },
   { id: "vs-minimal", label: "Minimal (Visual Studio Code)", builtin: { load: async () => MINIMAL_ICON_THEME } },
   { id: "tmcode", label: "TMCode Glyphs" },
   { id: "none", label: "None" },
 ];
 /** TMCode's colour badges: also what shows if a theme fails to load. */
-const GLYPHS = BUILTIN_ICON_THEMES[2];
+const GLYPHS = BUILTIN_ICON_THEMES.find((t) => t.id === "tmcode")!;
 
 let extensionIconThemes: IconThemeEntry[] = [];
 
@@ -240,6 +247,8 @@ function mimeOf(path: string) {
 /** Data URL of an icon definition's image, or undefined while it loads (then the store's `assets` bumps). */
 export function iconImage(active: ActiveIconTheme, defId: string): string | null | undefined {
   const def = active.doc?.iconDefinitions?.[defId];
+  // Built-in themes inline their images.
+  if (def?.iconPath?.startsWith("data:")) return def.iconPath;
   if (!def?.iconPath || !active.entry.read || !active.entry.path) return null;
   const key = `${active.entry.id}|${defId}`;
   if (images.has(key)) return images.get(key);
@@ -324,7 +333,7 @@ const builtinDocs = new Map<string, IconThemeDocument>();
 /** Loads and activates an icon theme; unknown ids (an uninstalled extension's) fall back to the default, Seti. */
 export async function applyIconTheme(id: string) {
   const seq = ++applySeq;
-  const entry = allIconThemes().find((t) => t.id === id) ?? BUILTIN_ICON_THEMES[0];
+  const entry = allIconThemes().find((t) => t.id === id) ?? BUILTIN_ICON_THEMES.find((t) => t.id === DEFAULT_ICON_THEME)!;
   let doc: IconThemeDocument | null = null;
   if (entry.builtin || (entry.read && entry.path)) {
     try {

@@ -1012,6 +1012,122 @@ pub async fn git_log(app: AppHandle, limit: u32) -> Result<Vec<Commit>, String> 
     .await
 }
 
+/// One line of `git blame`: who last changed it, when, in which commit.
+#[derive(Serialize, Debug, PartialEq, Clone)]
+pub struct BlameLine {
+    pub line: u32,
+    pub hash: String,
+    pub author: String,
+    pub date: i64,
+    pub summary: String,
+}
+
+/// `git blame --porcelain` → one entry per line. Pure.
+pub fn parse_blame(text: &str) -> Vec<BlameLine> {
+    let mut out = Vec::new();
+    let mut known: std::collections::HashMap<String, (String, i64, String)> = std::collections::HashMap::new();
+    let mut cur: Option<(String, u32)> = None;
+    let (mut author, mut date, mut summary) = (String::new(), 0i64, String::new());
+    for l in text.lines() {
+        // The line's own text follows its header, after a tab.
+        if l.starts_with('\t') {
+            if let Some((hash, line)) = cur.take() {
+                let info = known.entry(hash.clone()).or_insert_with(|| (author.clone(), date, summary.clone())).clone();
+                out.push(BlameLine { line, hash, author: info.0, date: info.1, summary: info.2 });
+            }
+            continue;
+        }
+        let mut parts = l.split(' ');
+        let first = parts.next().unwrap_or("");
+        if first.len() == 40 && first.chars().all(|c| c.is_ascii_hexdigit()) {
+            let final_line: u32 = parts.nth(1).and_then(|n| n.parse().ok()).unwrap_or(0);
+            cur = Some((first.to_string(), final_line));
+            if let Some(info) = known.get(first) {
+                author = info.0.clone();
+                date = info.1;
+                summary = info.2.clone();
+            } else {
+                author.clear();
+                summary.clear();
+                date = 0;
+            }
+        } else if let Some(v) = l.strip_prefix("author ") {
+            author = v.to_string();
+        } else if let Some(v) = l.strip_prefix("author-time ") {
+            date = v.parse().unwrap_or(0);
+        } else if let Some(v) = l.strip_prefix("summary ") {
+            summary = v.to_string();
+        }
+    }
+    out
+}
+
+/// Who changed each line of a file last (the inline blame and the status bar).
+#[tauri::command]
+pub async fn git_blame(app: AppHandle, path: String) -> Result<Vec<BlameLine>, String> {
+    blocking(move || {
+        check_rel_path(&path)?;
+        if local(&app, &["rev-parse", "--verify", "-q", "HEAD"]).is_err() {
+            return Ok(Vec::new());
+        }
+        match local(&app, &["blame", "--porcelain", "--", &path]) {
+            Ok(out) => Ok(parse_blame(&text(&out))),
+            // An untracked or new file has no history.
+            Err(_) => Ok(Vec::new()),
+        }
+    })
+    .await
+}
+
+/// A commit of the graph: with its parents, every branch's.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct GraphCommit {
+    pub hash: String,
+    pub short: String,
+    pub parents: Vec<String>,
+    pub author: String,
+    pub date: i64,
+    pub refs: String,
+    pub subject: String,
+}
+
+pub const GRAPH_FORMAT: &str = "%H%x1f%h%x1f%P%x1f%an%x1f%at%x1f%D%x1f%s%x1e";
+
+pub fn parse_graph(text: &str) -> Vec<GraphCommit> {
+    text.split('\x1e')
+        .filter_map(|rec| {
+            let f: Vec<&str> = rec.trim_start_matches('\n').split('\x1f').collect();
+            if f.len() < 7 {
+                return None;
+            }
+            Some(GraphCommit {
+                hash: f[0].into(),
+                short: f[1].into(),
+                parents: f[2].split_whitespace().map(String::from).collect(),
+                author: f[3].into(),
+                date: f[4].parse().unwrap_or(0),
+                refs: f[5].into(),
+                subject: f[6].into(),
+            })
+        })
+        .collect()
+}
+
+/// The commit graph of every branch, newest first (the Source Control Graph).
+#[tauri::command]
+pub async fn git_graph(app: AppHandle, limit: u32) -> Result<Vec<GraphCommit>, String> {
+    blocking(move || {
+        if local(&app, &["rev-parse", "--verify", "-q", "HEAD"]).is_err() {
+            return Ok(Vec::new());
+        }
+        let n = format!("-n{}", limit.clamp(1, 1000));
+        let format = format!("--format={GRAPH_FORMAT}");
+        let out = local(&app, &["log", "--all", "--topo-order", &n, &format])?;
+        Ok(parse_graph(&text(&out)))
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn git_init(app: AppHandle) -> Result<(), String> {
     blocking(move || local(&app, &["init", "-q"]).map(|_| ())).await
@@ -1285,6 +1401,27 @@ pub fn git_open_url(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parses_blame_and_the_graph() {
+        let h1 = "a".repeat(40);
+        let h2 = "b".repeat(40);
+        let blame = format!(
+            "{h1} 1 1 2\nauthor Ada\nauthor-time 1700000000\nsummary First commit\nfilename x.py\n\tline one\n{h1} 2 2\n\tline two\n{h2} 3 3 1\nauthor Not Committed Yet\nauthor-time 1800000000\nsummary Version of x.py from x.py\n\tline three\n"
+        );
+        let lines = super::parse_blame(&blame);
+        assert_eq!(lines.len(), 3);
+        assert_eq!((lines[0].line, lines[0].author.as_str(), lines[0].date), (1, "Ada", 1700000000));
+        assert_eq!((lines[1].line, lines[1].summary.as_str()), (2, "First commit"));
+        assert_eq!((lines[2].hash.as_str(), lines[2].author.as_str()), (h2.as_str(), "Not Committed Yet"));
+
+        let graph = format!("{h1}\x1fa1\x1f{h2} {h1}\x1fAda\x1f1700000000\x1fHEAD -> main\x1fMerge\x1e\n{h2}\x1fb2\x1f\x1fAda\x1f1690000000\x1f\x1fStart\x1e");
+        let g = super::parse_graph(&graph);
+        assert_eq!(g.len(), 2);
+        assert_eq!(g[0].parents, vec![h2.clone(), h1.clone()]);
+        assert!(g[1].parents.is_empty());
+        assert_eq!(g[0].refs, "HEAD -> main");
+    }
+
     use super::*;
 
     #[test]

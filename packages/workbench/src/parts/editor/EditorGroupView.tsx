@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { KeybindingsJsonEditor } from "./KeybindingsJsonEditor";
+import { MergeEditor } from "../../scm/MergeEditor";
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import {
@@ -39,6 +41,9 @@ import { BrowserEditor } from "./BrowserEditor";
 import { HistoryDiffEditor } from "../../history/HistoryDiffEditor";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
+import { DocumentEditor } from "./DocumentEditor";
+import { CsvPreview } from "./CsvPreview";
+import { isDocumentFile, previewKind, setViewMode, useViewMode } from "./documentPreview";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
 import { ExtensionTitleActions } from "../../exthost/ui";
 // ── git ──
@@ -162,8 +167,10 @@ export function titleOf(e: EditorInput): string {
   if (e.kind === "historyDiff" && e.source === "conflict") return `${basename(e.path)}: Current ↔ Incoming`;
   if (e.kind === "historyDiff") return `${basename(e.path)} (${new Date(e.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) ↔ Current`;
   if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
+  if (e.kind === "merge") return `${basename(e.path)} (Merging)`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "settingsJson") return "settings.json";
+  if (e.kind === "keybindingsJson") return "keybindings.json";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   if (e.kind === "extension") return extensionTitle(e.extensionId);
   if (e.kind === "webview") return webviewTitle(e.handle);
@@ -177,7 +184,7 @@ export function titleOf(e: EditorInput): string {
 }
 
 function iconOf(e: EditorInput) {
-  if (e.kind === "file" || e.kind === "gitDiff") return <FileIcon path={e.path} />;
+  if (e.kind === "file" || e.kind === "gitDiff" || e.kind === "merge") return <FileIcon path={e.path} />;
   if (e.kind === "historyDiff") return <Codicon name={e.source === "git" ? "git-commit" : e.source ? "diff" : "history"} className="tm-tab-codicon" />;
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
@@ -186,7 +193,7 @@ function iconOf(e: EditorInput) {
   if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
   if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "webview") return <WebviewTabIcon handle={e.handle} />;
-  if (e.kind === "settingsJson") return <Codicon name="json" className="tm-tab-codicon" />;
+  if (e.kind === "settingsJson" || e.kind === "keybindingsJson") return <Codicon name="json" className="tm-tab-codicon" />;
   if (e.kind === "snippets") return <Codicon name="symbol-snippet" className="tm-tab-codicon" />;
   if (e.kind === "assignment") return <Codicon name="mortar-board" className="tm-tab-codicon" />;
   if (e.kind === "grading") return <Codicon name="tasklist" className="tm-tab-codicon" />;
@@ -209,7 +216,7 @@ function descriptions(editors: EditorInput[]) {
     if ((names.get(titleOf(e)) ?? 0) < 2) return "";
     if (e.kind === "file") return dirname(e.path) || ".";
     if (e.kind === "preview") return e.root || ".";
-    if (e.kind === "gitDiff") return dirname(e.path) || ".";
+    if (e.kind === "gitDiff" || e.kind === "merge") return dirname(e.path) || ".";
     return "";
   };
 }
@@ -367,6 +374,9 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
   const pointerZone = pointerOver && "zone" in pointerOver ? pointerOver.zone : null;
   const tabsRef = useRef<HTMLDivElement>(null);
   const active = group.editors.find((e) => e.id === group.activeId) ?? null;
+  const activePreview = active?.kind === "file" ? previewKind(active.path) : null;
+  const viewMode = useViewMode((s) => (active?.kind === "file" ? (s.modes[active.path] ?? "edit") : "edit"));
+  const previewing = !!activePreview && viewMode === "preview";
   const isActiveGroup = activeGroup === group.id;
   const describe = descriptions(group.editors);
 
@@ -601,6 +611,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         </div>
       )}
       {breadcrumbs && active?.kind === "file" && !active.path.startsWith("tmcode-untitled:") && <Breadcrumbs path={active.path} groupId={group.id} />}
+      {activePreview && active?.kind === "file" && <ViewModeBar path={active.path} mode={viewMode} kind={activePreview} />}
       <div
         className="tm-editor-content"
         onDragOver={(e) => {
@@ -617,16 +628,18 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {(dropOn ?? pointerZone) && <div className={`tm-editor-drop is-${dropOn ?? pointerZone}`} data-testid="editor-drop-overlay" aria-hidden />}
         {/* Keep Monaco mounted while switching between files of this group. */}
         {group.editors.some((e) => e.kind === "file" && !isMediaFile(e.path)) && (
-          <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path)}>
+          <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path) || previewing}>
             <CodeEditor groupId={group.id} path={active?.kind === "file" && !isMediaFile(active.path) ? active.path : lastFile(group)} />
           </div>
         )}
-        {active?.kind === "file" && isMediaFile(active.path) && <MediaEditor key={active.path} path={active.path} />}
+        {previewing && active?.kind === "file" && (previewKind(active.path) === "csv" ? <CsvPreview key={active.path} path={active.path} /> : <MarkdownEditor key={active.path} input={{ kind: "markdown", id: `inline:${active.path}`, path: active.path, preview: false }} inline />)}
+        {active?.kind === "file" && isMediaFile(active.path) && (isDocumentFile(active.path) ? <DocumentEditor key={active.path} path={active.path} /> : <MediaEditor key={active.path} path={active.path} />)}
         {active?.kind === "image" && <MediaEditor key={active.id} path={active.path} />}
         {active?.kind === "markdown" && <MarkdownEditor key={active.id} input={active} />}
         {active?.kind === "browser" && <BrowserEditor key={active.id} input={active} />}
         {active?.kind === "settings" && <SettingsEditor />}
         {active?.kind === "settingsJson" && <SettingsJsonEditor />}
+        {active?.kind === "keybindingsJson" && <KeybindingsJsonEditor />}
         {active?.kind === "snippets" && <SnippetsEditor key={active.id} input={active} />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}
@@ -641,9 +654,27 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "logic" && <LogicEditor key={active.id} input={active} />}
         {active?.kind === "api" && <ApiTester key={active.id} />}
         {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
+        {active?.kind === "merge" && <MergeEditor key={active.id} path={active.path} id={active.id} groupId={group.id} />}
         {!active && <Watermark />}
       </div>
     </section>
+  );
+}
+
+/** Edit (the default) or Preview above a Markdown or CSV file, as GitHub shows them. */
+function ViewModeBar({ path, mode, kind }: { path: string; mode: "edit" | "preview"; kind: "markdown" | "csv" }) {
+  const tab = (m: "edit" | "preview", icon: string, label: string) => (
+    <button type="button" role="radio" aria-checked={mode === m} className="tm-viewmode-tab" onClick={() => setViewMode(path, m)} data-testid={`viewmode-${m}`}>
+      <Codicon name={icon} />
+      {label}
+    </button>
+  );
+  return (
+    <div className="tm-viewmode-bar" role="radiogroup" aria-label="Edit or preview" data-testid="viewmode-bar" data-mode={mode}>
+      {tab("edit", "edit", "Edit")}
+      {tab("preview", kind === "csv" ? "table" : "open-preview", "Preview")}
+      {mode === "preview" && kind === "markdown" && <span className="tm-viewmode-hint">Tick a task box to update the file.</span>}
+    </div>
   );
 }
 

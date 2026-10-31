@@ -1,8 +1,10 @@
-import { getPlatform, notify, showPanel, useWorkbench } from "../state/store";
+import { getPlatform, notify, openFile, refreshExplorer, showPanel, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { MANIFESTS, detectTasks, type Task } from "./detect";
 import { terminalAllowed } from "@tmcode/protocol";
 import { ensureTrusted } from "../trust/trust";
+import { readTasksFile, runUserTask } from "./runner";
+import { extensionTasks, toUserTask } from "./extensionTasks";
 
 const SKIP = new Set(["node_modules", ".git", "dist", "build", "target", ".venv", "venv", "__pycache__", ".next", "out"]);
 
@@ -52,27 +54,85 @@ export async function pickAndRunTask() {
     notify("info", "Tasks run in the integrated terminal, which is not available here.");
     return;
   }
-  const tasks = await workspaceTasks();
-  if (!tasks.length) {
-    notify("info", "No tasks were found. TMCode detects npm/yarn/pnpm scripts, Maven, Gradle, Make, Cargo, Go, Django and .NET projects.");
+  const [tasks, file, fromExtensions] = await Promise.all([workspaceTasks(), readTasksFile(), extensionTasks()]);
+  if (!tasks.length && !file.tasks.length && !fromExtensions.length) {
+    notify("info", "No tasks were found. TMCode detects npm/yarn/pnpm scripts, Maven, Gradle, Make, Cargo, Go, Django and .NET projects, and runs the tasks in .vscode/tasks.json.", [
+      { label: "Configure Tasks", run: () => void configureTasks() },
+    ]);
     return;
   }
+  // tasks.json's own tasks come first, as in VS Code.
+  const own = file.tasks.map((t) => `tasks.json:${t.label}`);
   const recentTasks = recent.map((l) => tasks.find((t) => t.label === l)).filter((t): t is Task => !!t);
   const ordered = [...recentTasks, ...tasks.filter((t) => !recentTasks.includes(t))];
   const groupOf = (t: Task, i: number) => (i < recentTasks.length ? "recently used tasks" : `${t.source} tasks`);
   const choice = await showQuickPick({
     placeholder: "Select the task to run",
     matchOnDescription: true,
-    items: ordered.map((t, i) => ({
-      id: t.label,
-      label: t.label,
-      description: t.detail ?? t.command,
-      icon: t.icon,
-      separator: i === 0 || groupOf(t, i) !== groupOf(ordered[i - 1], i - 1) ? groupOf(t, i) : undefined,
-    })),
+    items: [
+      ...file.tasks.map((t, i) => ({
+        id: own[i],
+        label: t.label,
+        description: t.detail ?? (t.command || `runs ${t.dependsOn.join(", ")}`),
+        icon: t.group.kind === "build" ? "package" : t.group.kind === "test" ? "beaker" : t.isBackground ? "eye" : "tools",
+        separator: i === 0 ? "tasks.json" : undefined,
+      })),
+      ...fromExtensions.map((t, i) => ({
+        id: `extension:${i}`,
+        label: t.label,
+        description: t.detail ?? t.command,
+        icon: t.group === "build" ? "package" : t.group === "test" ? "beaker" : "extensions",
+        separator: i === 0 || t.source !== fromExtensions[i - 1].source ? `${t.source} tasks` : undefined,
+      })),
+      ...ordered.map((t, i) => ({
+        id: t.label,
+        label: t.label,
+        description: t.detail ?? t.command,
+        icon: t.icon,
+        separator: i === 0 || groupOf(t, i) !== groupOf(ordered[i - 1], i - 1) ? groupOf(t, i) : undefined,
+      })),
+    ],
   });
+  if (choice?.id.startsWith("extension:")) {
+    const t = toUserTask(fromExtensions[Number(choice.id.slice("extension:".length))]);
+    await runUserTask(t.label, { tasks: [t], inputs: [] });
+    return;
+  }
+  if (choice?.id.startsWith("tasks.json:")) {
+    await runUserTask(choice.id.slice("tasks.json:".length), file);
+    return;
+  }
   const task = tasks.find((t) => t.label === choice?.id);
   if (!task) return;
   recent.splice(0, recent.length, task.label, ...recent.filter((l) => l !== task.label).slice(0, 4));
   await runTask(task);
+}
+
+const TASKS_TEMPLATE = `{
+  // Tasks TMCode runs from Terminal › Run Task… (and ⇧⌘B for the default build task).
+  // See https://go.microsoft.com/fwlink/?LinkId=733558 for the format.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "echo Build my project",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}
+`;
+
+/** Tasks: Configure Task: opens .vscode/tasks.json, creating it from a template first. */
+export async function configureTasks() {
+  const fs = getPlatform().fs;
+  if (!useWorkbench.getState().workspace) return;
+  const exists = await fs.readFile(".vscode/tasks.json").then(() => true, () => false);
+  if (!exists) {
+    await fs.createDir(".vscode").catch(() => undefined);
+    await fs.writeFile(".vscode/tasks.json", TASKS_TEMPLATE);
+    await refreshExplorer();
+  }
+  openFile(".vscode/tasks.json", { pinned: true });
 }

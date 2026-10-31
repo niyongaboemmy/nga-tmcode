@@ -23,10 +23,10 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// packages/java-dap/src/main.ts
+// ../../packages/java-dap/src/main.ts
 var import_node_util = require("node:util");
 
-// packages/java-dap/src/dap.ts
+// ../../packages/java-dap/src/dap.ts
 var DapReader = class {
   constructor(onMessage) {
     this.onMessage = onMessage;
@@ -63,14 +63,14 @@ function encodeMessage(m) {
 `, "ascii"), json]);
 }
 
-// packages/java-dap/src/session.ts
+// ../../packages/java-dap/src/session.ts
 var import_node_child_process = require("node:child_process");
 var fs = __toESM(require("node:fs"), 1);
 var net2 = __toESM(require("node:net"), 1);
 var path = __toESM(require("node:path"), 1);
 var import_node_string_decoder = require("node:string_decoder");
 
-// packages/java-dap/src/expr.ts
+// ../../packages/java-dap/src/expr.ts
 var EvalError = class extends Error {
 };
 var NULL = { k: "obj", id: 0n, tag: 76 };
@@ -400,7 +400,7 @@ function formatPrim(p, quoteChars = true) {
   }
 }
 
-// packages/java-dap/src/jdwp/packet.ts
+// ../../packages/java-dap/src/jdwp/packet.ts
 var DEFAULT_ID_SIZES = { field: 8, method: 8, object: 8, refType: 8, frame: 8 };
 var Tag = {
   ARRAY: 91,
@@ -661,7 +661,7 @@ var Reader = class {
   }
 };
 
-// packages/java-dap/src/jdwp/connection.ts
+// ../../packages/java-dap/src/jdwp/connection.ts
 var import_node_events = require("node:events");
 var net = __toESM(require("node:net"), 1);
 var HANDSHAKE = "JDWP-Handshake";
@@ -817,7 +817,7 @@ function handshake(host, port) {
   });
 }
 
-// packages/java-dap/src/jdwp/vm.ts
+// ../../packages/java-dap/src/jdwp/vm.ts
 var EventKind = {
   SINGLE_STEP: 1,
   BREAKPOINT: 2,
@@ -1221,7 +1221,7 @@ function parseEventSet(r) {
   return { suspendPolicy, events };
 }
 
-// packages/java-dap/src/evaluator.ts
+// ../../packages/java-dap/src/evaluator.ts
 var BOXES = {
   "Ljava/lang/Integer;": "I",
   "Ljava/lang/Long;": "J",
@@ -1633,7 +1633,7 @@ function describe(n) {
   }
 }
 
-// packages/java-dap/src/values.ts
+// ../../packages/java-dap/src/values.ts
 var Handles = class {
   byKey = /* @__PURE__ */ new Map();
   items = /* @__PURE__ */ new Map();
@@ -1936,7 +1936,7 @@ var Inspector = class {
   }
 };
 
-// packages/java-dap/src/session.ts
+// ../../packages/java-dap/src/session.ts
 var LIBRARY_PATTERNS = ["java.*", "javax.*", "jdk.*", "sun.*", "com.sun.*", "kotlin.*"];
 var LIBRARY_SIGNATURES = ["Ljava/", "Ljavax/", "Ljdk/", "Lsun/", "Lcom/sun/", "Lkotlin/"];
 var isLibrary = (sig) => LIBRARY_SIGNATURES.some((p) => sig.startsWith(p));
@@ -2904,7 +2904,7 @@ function freePort() {
   });
 }
 
-// packages/java-dap/src/main.ts
+// ../../packages/java-dap/src/main.ts
 var toStderr = (...args) => void process.stderr.write((0, import_node_util.format)(...args) + "\n");
 console.log = toStderr;
 console.info = toStderr;

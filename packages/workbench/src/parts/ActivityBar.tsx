@@ -1,4 +1,5 @@
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../commands/registry";
+import { tr, useLocale } from "../messages/i18n";
 import { whenFor } from "../exthost/views/model";
 import { msg } from "../messages/catalog";
 import { getPlatform, openContextMenu, showView, useWorkbench, type ViewId } from "../state/store";
@@ -44,6 +45,7 @@ const GRADING_VIEW = { id: "grading" as ViewId, icon: "tasklist", label: "Gradin
 const EXTENSIONS_VIEW = { id: "extensions" as ViewId, icon: "extensions", label: "Extensions", command: "workbench.view.extensions" };
 
 export function ActivityBar() {
+  useLocale((s) => s.locale);
   const activeView = useWorkbench((s) => s.activeView);
   const sidebarVisible = useWorkbench((s) => s.sidebarVisible);
   const dirtyCount = useWorkbench((s) => Object.keys(s.dirty).length);
@@ -124,7 +126,7 @@ export function ActivityBar() {
     const cmd = getCommand(v.command);
     const kb = cmd ? formatKeybinding(keybindingFor(cmd, os), os) : "";
     // Plain words in the student layout: "Files", "Run".
-    const name = simple ? (v.id === "explorer" ? "Files" : v.id === "debug" ? "Run" : v.label) : v.label;
+    const name = tr(simple ? (v.id === "explorer" ? "Files" : v.id === "debug" ? "Run" : v.label) : v.label);
     return kb ? `${name} (${kb})` : name;
   };
 

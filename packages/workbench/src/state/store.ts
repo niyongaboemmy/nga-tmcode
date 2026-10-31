@@ -8,7 +8,7 @@ import { isExamRoot } from "../exam/roots";
 import { MAX_GROUPS, groupOrder as groupOrderOf, leaf, mapGroups, neighbour, readSavedLayout, reconcile as reconcileTree, removeNode, serializeLayout, splitNode, type GridNode, type SplitDirection } from "./layout";
 import { editorMemento } from "./viewStates";
 import { lifetimeOf, ownerOnScreen, withPolicy, type NotifyKind, type NotifyOptions } from "./notifications";
-import { resolveSettings, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
+import { resolveSettings, WORKSPACE_SETTINGS_FILE, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
 export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | "grading" | `ext:${string}`;
@@ -22,6 +22,8 @@ type EditorInputBase =
   | { kind: "settings"; id: "settings"; preview: false }
   /** The user settings.json (parts/editor/SettingsJsonEditor). */
   | { kind: "settingsJson"; id: "settingsJson"; preview: false }
+  /** The user's keybindings.json (parts/editor/KeybindingsJsonEditor). */
+  | { kind: "keybindingsJson"; id: "keybindingsJson"; preview: false }
   | { kind: "welcome"; id: "welcome"; preview: false }
   | { kind: "shortcuts"; id: "shortcuts"; preview: false }
   /**
@@ -40,6 +42,8 @@ type EditorInputBase =
   | { kind: "image"; id: string; path: string; preview: false }
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
+  /** The merge editor for a file with conflict markers (scm/MergeEditor). */
+  | { kind: "merge"; id: string; path: string; preview: false }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
   | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict" | "saved" | "file" | "extension"; label?: string }
   /** A language's user snippets file (snippets/SnippetsEditor). */
@@ -449,7 +453,15 @@ export async function setWorkspace(ws: { name: string; root: string }): Promise<
   log("Workspace", `Opened ${ws.name}`);
   restoringLayout = true;
   await restoreEditors(ws.root).finally(() => (restoringLayout = false));
+  for (const l of openedListeners) await Promise.resolve(l(ws.root)).catch(() => undefined);
   return true;
+}
+
+const openedListeners = new Set<(root: string) => void | Promise<void>>();
+/** Fires once a folder is open and its editors are restored (hot exit restores unsaved files then). */
+export function onWorkspaceOpened(l: (root: string) => void | Promise<void>) {
+  openedListeners.add(l);
+  return () => openedListeners.delete(l);
 }
 
 const workspaceListeners = new Set<() => void>();
@@ -576,7 +588,21 @@ export async function openFileDialog(): Promise<boolean> {
   });
   if (!ws) return false;
   if (get().workspace?.root !== ws.root && !(await setWorkspace(ws))) return false;
+  if (ws.file && (await openedWorkspaceFile(ws.root, ws.file))) return true;
   if (ws.file) openFile(ws.file, { pinned: true });
+  return true;
+}
+
+/** A .code-workspace file: open its folders (state/workspaceFile.ts) instead of editing it. */
+async function openedWorkspaceFile(root: string, file: string): Promise<boolean> {
+  if (!/\.code-workspace$/i.test(file)) return false;
+  const text = await getPlatform()
+    .fs.readFile(file)
+    .catch(() => null);
+  if (text === null) return false;
+  const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+  const { openWorkspaceFile } = await import("./workspaceFile");
+  await openWorkspaceFile(`${root.replace(/[\\/]+$/, "")}${sep}${file.replace(/\//g, sep)}`, text);
   return true;
 }
 
@@ -596,6 +622,7 @@ export async function openPathFromOs(path: string): Promise<boolean> {
   try {
     const ws = await p.openPath(path);
     if (get().workspace?.root !== ws.root && !(await setWorkspace(ws))) return false;
+    if (ws.file && (await openedWorkspaceFile(ws.root, ws.file))) return true;
     if (ws.file) openFile(ws.file, { pinned: true });
     return true;
   } catch (e) {
@@ -1058,7 +1085,7 @@ export function updateTest(id: string, patch: Partial<TestItem>) {
   set({ tests: { ...t, items: t.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) } });
 }
 
-export function openSpecialEditor(kind: "settings" | "settingsJson" | "welcome" | "shortcuts") {
+export function openSpecialEditor(kind: "settings" | "settingsJson" | "keybindingsJson" | "welcome" | "shortcuts") {
   // Home always opens in the first group (the widest, the code's), never in a brief's column.
   const groupId = kind === "welcome" ? (get().groups[0]?.id ?? get().activeGroup) : get().activeGroup;
   if (kind === "welcome" && get().activeGroup !== groupId) set({ activeGroup: groupId });
@@ -1361,6 +1388,33 @@ export function applyUserSettingsJson(parsed: { values: Partial<Settings>; langu
   for (const k of locked) if (k in current) (next as unknown as Record<string, unknown>)[k] = current[k as SettingKey];
   set({ userSettings: next, settings: effective(next), languageSettings: parsed.languages, otherSettings: parsed.other });
   persist();
+}
+
+/**
+ * The Settings editor's Workspace tab: sets (or with undefined, removes) a key in the
+ * folder's .vscode/settings.json, keeping its comments. Not in exams.
+ */
+export async function setWorkspaceSetting(key: SettingKey, value: unknown) {
+  const s = get();
+  if (!s.workspace || s.policy.mode !== "practice" || isExamRoot(s.workspace.root)) {
+    notify("warning", "This folder's settings can't be changed now.");
+    return;
+  }
+  const fs = getPlatform().fs;
+  const text = await fs.readFile(WORKSPACE_SETTINGS_FILE).catch(() => "");
+  const { setJsonProperty } = await import("./jsonEdit");
+  const next = setJsonProperty(text, key, value);
+  if (next === text) return;
+  try {
+    if (!text) await fs.createDir(".vscode").catch(() => undefined);
+    await fs.writeFile(WORKSPACE_SETTINGS_FILE, next);
+  } catch (e) {
+    notify("error", `Could not save ${WORKSPACE_SETTINGS_FILE}: ${String((e as Error)?.message ?? e)}`);
+    return;
+  }
+  setWorkspaceSettingsText(next);
+  // A new .vscode folder shows in the Explorer.
+  if (!text) void refreshExplorer().catch(() => undefined);
 }
 
 let workspaceSettingsText: string | null = null;

@@ -108,3 +108,35 @@ test("Python: the Pyright download offer, then its errors and F12 into another f
   await expect(page.locator(".tm-tab.is-active")).toContainText("helpers.py", { timeout: 10_000 });
   await expect(editorText(page)).toContainText("return text.upper()");
 });
+
+test("Python: a quick fix from the server, Format Document, and type hints inline", async ({ page }) => {
+  await page.addInitScript(() => ((window as unknown as { __TMCODE_FAKE_LSP__: boolean }).__TMCODE_FAKE_LSP__ = true));
+  await page.goto("/");
+  await expect(page.locator(".tm-explorer")).toBeVisible();
+  await externalWrite(page, "pyfix/app.py", "count=3\nprint(count)   \nundefined_thing\n");
+  await page.locator('.tm-explorer [data-path="pyfix"]').click();
+  await page.locator('.tm-explorer [data-path="pyfix/app.py"]').dblclick();
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  await expect(page.getByText("Pyright is ready.")).toBeVisible();
+  await expect(page.locator(".monaco-editor .squiggly-warning, .monaco-editor .squiggly-error").first()).toBeVisible({ timeout: 10_000 });
+
+  // Inlay hint after "count".
+  await expect(page.locator(".monaco-editor")).toContainText(": int", { timeout: 10_000 });
+
+  // ⌘. on the undefined name: the server's quick fix removes the line.
+  await editorText(page).click();
+  await page.keyboard.press((await editorMod(page)) === "Meta" ? "Meta+ArrowDown" : "Control+End");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Home");
+  await page.keyboard.press(`${await editorMod(page)}+Period`);
+  await page.locator(".action-widget").getByText("Remove 'undefined_thing'").click();
+  await expect(editorText(page)).not.toContainText("undefined_thing");
+
+  // Format Document: the server's formatting.
+  await page.keyboard.press("F1");
+  await page.keyboard.type("Format Document");
+  await expect(page.locator(".tm-qi-item.is-focused")).toContainText("Format Document");
+  await page.keyboard.press("Enter");
+  // (The inlay hint shows between the name and " = 3" on screen.)
+  await expect(editorText(page)).toContainText(/count(:\sint)?\s=\s3/);
+});

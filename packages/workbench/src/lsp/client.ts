@@ -3,6 +3,7 @@ import { ensureDocument, onDocumentSaved, pathOfUri, uriFor } from "../monaco/do
 import { completionKind } from "../exthost/languageBridge";
 import { beginActivity } from "../state/activity";
 import { log, notify } from "../state/store";
+import { registerWorkspaceSymbolProvider, type WorkspaceSymbol } from "../commands/symbols";
 import { isCancellation, RpcConnection, type RpcTransport } from "./jsonrpc";
 import { configurationSection } from "./manifest";
 import { fileUri, pathOfFileUri, rootUri } from "./uri";
@@ -11,7 +12,9 @@ import { fileUri, pathOfFileUri, rootUri } from "./uri";
  * A Language Server Protocol client for Monaco: keeps the server's view of
  * TMCode's documents in sync and turns its answers into Monaco providers
  * (completion, hover, signature help, definition, references, highlights,
- * symbols, rename) and markers. Used for the built-in servers (Pyright).
+ * symbols, rename, code actions and quick fixes, formatting, inlay hints,
+ * code lens, semantic tokens, folding, selection ranges, document links,
+ * workspace symbols) and markers. Used for the built-in servers (Pyright).
  */
 
 // ───────────────────────── LSP shapes (the parts used) ─────────────────────────
@@ -85,6 +88,42 @@ interface LspSymbolInformation {
   containerName?: string;
   location: LspLocation;
 }
+
+export interface LspCommand {
+  title: string;
+  command: string;
+  arguments?: unknown[];
+}
+export interface LspCodeAction {
+  title: string;
+  kind?: string;
+  diagnostics?: LspDiagnostic[];
+  isPreferred?: boolean;
+  disabled?: { reason: string };
+  edit?: LspWorkspaceEdit;
+  command?: LspCommand;
+  data?: unknown;
+}
+export interface LspInlayHint {
+  position: LspPosition;
+  label: string | { value: string; tooltip?: string | MarkupContent }[];
+  kind?: number;
+  tooltip?: string | MarkupContent;
+  paddingLeft?: boolean;
+  paddingRight?: boolean;
+}
+interface LspCodeLens {
+  range: LspRange;
+  command?: LspCommand;
+  data?: unknown;
+}
+
+/** The semantic token types and modifiers TMCode understands (LSP's standard set). */
+export const SEMANTIC_TOKEN_TYPES = [
+  "namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property", "enumMember",
+  "event", "function", "method", "macro", "keyword", "modifier", "comment", "string", "number", "regexp", "operator", "decorator",
+];
+export const SEMANTIC_TOKEN_MODIFIERS = ["declaration", "definition", "readonly", "static", "deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary"];
 
 // ───────────────────────── conversions ─────────────────────────
 
@@ -165,6 +204,58 @@ export function toDocumentSymbols(result: (LspDocumentSymbol | LspSymbolInformat
   );
 }
 
+/** An inlay hint's label: plain text, or its parts joined. */
+export function inlayLabel(label: LspInlayHint["label"]): string {
+  return typeof label === "string" ? label : label.map((p) => p.value).join("");
+}
+
+/** LSP InlayHintKind (1 Type, 2 Parameter) → Monaco's (1 Type, 2 Parameter). */
+export function toInlayHint(h: LspInlayHint): monaco.languages.InlayHint {
+  const tooltip = toMarkdown(h.tooltip)[0];
+  return {
+    label: inlayLabel(h.label),
+    position: { lineNumber: h.position.line + 1, column: h.position.character + 1 },
+    kind: h.kind === 1 ? monaco.languages.InlayHintKind.Type : h.kind === 2 ? monaco.languages.InlayHintKind.Parameter : undefined,
+    tooltip,
+    paddingLeft: h.paddingLeft,
+    paddingRight: h.paddingRight,
+  };
+}
+
+/** LSP selection ranges (each with its parent) → Monaco's lists, innermost first. */
+export function toSelectionRanges(list: ({ range: LspRange; parent?: unknown } | null)[] | null): monaco.languages.SelectionRange[][] {
+  return (list ?? []).map((r) => {
+    const out: monaco.languages.SelectionRange[] = [];
+    let cur = r as { range: LspRange; parent?: unknown } | undefined | null;
+    while (cur) {
+      out.push({ range: toMonacoRange(cur.range) });
+      cur = cur.parent as typeof cur;
+    }
+    return out;
+  });
+}
+
+/** LSP folding ranges (0-based lines) → Monaco's (1-based), with region/comment/imports kinds. */
+export function toFoldingRanges(list: { startLine: number; endLine: number; kind?: string }[] | null): monaco.languages.FoldingRange[] {
+  return (list ?? []).map((r) => ({
+    start: r.startLine + 1,
+    end: r.endLine + 1,
+    kind: r.kind === "comment" ? monaco.languages.FoldingRangeKind.Comment : r.kind === "imports" ? monaco.languages.FoldingRangeKind.Imports : r.kind === "region" ? monaco.languages.FoldingRangeKind.Region : undefined,
+  }));
+}
+
+/** Diagnostics sent back with a code action request: the server's own markers in that range. */
+export function markersAsDiagnostics(markers: monaco.editor.IMarker[]): LspDiagnostic[] {
+  const severity: Record<number, number> = { 8: 1, 4: 2, 2: 3, 1: 4 };
+  return markers.map((m) => ({
+    range: { start: { line: m.startLineNumber - 1, character: m.startColumn - 1 }, end: { line: m.endLineNumber - 1, character: m.endColumn - 1 } },
+    severity: severity[m.severity] ?? 1,
+    message: m.message,
+    source: m.source,
+    code: typeof m.code === "string" ? m.code : m.code?.value,
+  }));
+}
+
 /** The text edits of a WorkspaceEdit by document URI (file creates/renames are not applied). */
 export function workspaceEditChanges(edit: LspWorkspaceEdit | null): Map<string, LspTextEdit[]> {
   const out = new Map<string, LspTextEdit[]>();
@@ -193,6 +284,8 @@ export interface ClientOptions {
 /** Results naming more files than this don't get models loaded for them. */
 const MAX_LOADED_FILES = 200;
 
+let clientSeq = 0;
+
 export class LanguageClient {
   readonly rpc: RpcConnection;
   private disposables: monaco.IDisposable[] = [];
@@ -202,12 +295,16 @@ export class LanguageClient {
   private stopped = false;
   /** Paths with markers from this server. */
   private marked = new Set<string>();
+  private refresh = { inlay: new monaco.Emitter<void>(), lens: new monaco.Emitter<void>(), tokens: new monaco.Emitter<void>() };
+  /** Monaco command that runs a server command (code actions and code lenses name them). */
+  readonly commandId: string;
 
   constructor(
     readonly options: ClientOptions,
     transport: RpcTransport,
   ) {
     this.rpc = new RpcConnection(transport);
+    this.commandId = `tmcode.lsp.${options.id}.${++clientSeq}.executeCommand`;
     this.rpc.onUnhandled = (m) => log(options.label, `Ignored ${m} from the server.`);
   }
 
@@ -235,6 +332,10 @@ export class LanguageClient {
     rpc.onRequest("client/registerCapability", () => null);
     rpc.onRequest("client/unregisterCapability", () => null);
     rpc.onRequest("window/workDoneProgress/create", () => null);
+    // The server's results changed (a file saved elsewhere): Monaco asks again.
+    rpc.onRequest("workspace/inlayHint/refresh", () => (this.refresh.inlay.fire(), null));
+    rpc.onRequest("workspace/codeLens/refresh", () => (this.refresh.lens.fire(), null));
+    rpc.onRequest("workspace/semanticTokens/refresh", () => (this.refresh.tokens.fire(), null));
     rpc.onRequest("workspace/applyEdit", async (p) => ({ applied: await this.applyWorkspaceEdit((p as { edit: LspWorkspaceEdit }).edit) }));
     rpc.onRequest("window/showMessageRequest", (p) => {
       const m = p as { type: number; message: string };
@@ -263,7 +364,18 @@ export class LanguageClient {
       workspaceFolders: [{ uri: rootUri(options.root), name: options.root.split(/[\\/]/).pop() ?? "folder" }],
       initializationOptions: {},
       capabilities: {
-        workspace: { configuration: true, workspaceFolders: true, applyEdit: true, workspaceEdit: { documentChanges: true }, didChangeConfiguration: { dynamicRegistration: true } },
+        workspace: {
+          configuration: true,
+          workspaceFolders: true,
+          applyEdit: true,
+          workspaceEdit: { documentChanges: true },
+          didChangeConfiguration: { dynamicRegistration: true },
+          executeCommand: {},
+          symbol: { symbolKind: { valueSet: Array.from({ length: 26 }, (_, i) => i + 1) } },
+          inlayHint: { refreshSupport: true },
+          codeLens: { refreshSupport: true },
+          semanticTokens: { refreshSupport: true },
+        },
         window: { workDoneProgress: true, showMessage: {} },
         textDocument: {
           synchronization: { didSave: true, dynamicRegistration: true },
@@ -281,6 +393,28 @@ export class LanguageClient {
           documentHighlight: {},
           documentSymbol: { hierarchicalDocumentSymbolSupport: true, symbolKind: { valueSet: Array.from({ length: 26 }, (_, i) => i + 1) } },
           rename: { prepareSupport: true },
+          codeAction: {
+            codeActionLiteralSupport: { codeActionKind: { valueSet: ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source", "source.organizeImports", "source.fixAll"] } },
+            isPreferredSupport: true,
+            disabledSupport: true,
+            dataSupport: true,
+            resolveSupport: { properties: ["edit"] },
+          },
+          formatting: {},
+          rangeFormatting: {},
+          inlayHint: {},
+          codeLens: {},
+          foldingRange: { lineFoldingOnly: true },
+          selectionRange: {},
+          documentLink: { tooltipSupport: true },
+          semanticTokens: {
+            requests: { full: true, range: false },
+            tokenTypes: SEMANTIC_TOKEN_TYPES,
+            tokenModifiers: SEMANTIC_TOKEN_MODIFIERS,
+            formats: ["relative"],
+            overlappingTokenSupport: false,
+            multilineTokenSupport: false,
+          },
         },
       },
     });
@@ -289,6 +423,7 @@ export class LanguageClient {
     rpc.notify("workspace/didChangeConfiguration", { settings: options.settings });
     this.wireDocuments();
     this.registerProviders();
+    this.registerMoreProviders();
   }
 
   // ── documents ──
@@ -433,6 +568,98 @@ export class LanguageClient {
     return this.toMonacoEdit(await this.ask<LspWorkspaceEdit>("textDocument/rename", { ...this.doc(model, position), newName }, token));
   }
 
+  /** Code actions and quick fixes for a range, with this server's markers there. */
+  async provideCodeActions(model: monaco.editor.ITextModel, range: monaco.IRange, only?: string, token?: monaco.CancellationToken): Promise<monaco.languages.CodeAction[]> {
+    const markers = monaco.editor.getModelMarkers({ resource: model.uri, owner: this.options.id }).filter((m) => monaco.Range.areIntersectingOrTouching(m, range));
+    const res = await this.ask<(LspCodeAction | LspCommand)[]>(
+      "textDocument/codeAction",
+      { ...this.doc(model), range: { start: toLspPosition({ lineNumber: range.startLineNumber, column: range.startColumn }), end: toLspPosition({ lineNumber: range.endLineNumber, column: range.endColumn }) }, context: { diagnostics: markersAsDiagnostics(markers), ...(only ? { only: [only] } : {}), triggerKind: 1 } },
+      token,
+    );
+    const out: monaco.languages.CodeAction[] = [];
+    for (const a of res ?? []) {
+      // A bare Command (older servers).
+      if (typeof (a as LspCommand).command === "string") {
+        const c = a as LspCommand;
+        out.push({ title: c.title, command: { id: this.commandId, title: c.title, arguments: [c] } });
+        continue;
+      }
+      const action = a as LspCodeAction;
+      out.push(Object.assign(
+        {
+          title: action.title,
+          kind: action.kind,
+          isPreferred: action.isPreferred,
+          disabled: action.disabled?.reason,
+          diagnostics: action.diagnostics?.length ? markers.filter((m) => action.diagnostics!.some((d) => d.message === m.message)) : undefined,
+          edit: action.edit ? await this.toMonacoEdit(action.edit) : undefined,
+          command: action.command ? { id: this.commandId, title: action.command.title, arguments: [action.command] } : undefined,
+        },
+        { __lsp: action },
+      ));
+    }
+    return out;
+  }
+
+  /** A code action's edit, asked for when it is picked (servers that resolve lazily). */
+  async resolveCodeAction(action: monaco.languages.CodeAction, token?: monaco.CancellationToken): Promise<monaco.languages.CodeAction> {
+    const lsp = (action as { __lsp?: LspCodeAction }).__lsp;
+    if (!lsp || action.edit) return action;
+    const r = await this.ask<LspCodeAction>("codeAction/resolve", lsp, token);
+    return r?.edit ? { ...action, edit: await this.toMonacoEdit(r.edit) } : action;
+  }
+
+  async provideFormatting(model: monaco.editor.ITextModel, options: monaco.languages.FormattingOptions, range?: monaco.IRange, token?: monaco.CancellationToken): Promise<monaco.languages.TextEdit[]> {
+    const lspOptions = { tabSize: options.tabSize, insertSpaces: options.insertSpaces, trimTrailingWhitespace: true, insertFinalNewline: true };
+    const edits = range
+      ? await this.ask<LspTextEdit[]>("textDocument/rangeFormatting", { ...this.doc(model), range: { start: toLspPosition({ lineNumber: range.startLineNumber, column: range.startColumn }), end: toLspPosition({ lineNumber: range.endLineNumber, column: range.endColumn }) }, options: lspOptions }, token)
+      : await this.ask<LspTextEdit[]>("textDocument/formatting", { ...this.doc(model), options: lspOptions }, token);
+    return (edits ?? []).map((e) => ({ range: toMonacoRange(e.range), text: e.newText }));
+  }
+
+  async provideInlayHints(model: monaco.editor.ITextModel, range: monaco.IRange, token?: monaco.CancellationToken): Promise<monaco.languages.InlayHint[]> {
+    const res = await this.ask<LspInlayHint[]>(
+      "textDocument/inlayHint",
+      { ...this.doc(model), range: { start: toLspPosition({ lineNumber: range.startLineNumber, column: range.startColumn }), end: toLspPosition({ lineNumber: range.endLineNumber, column: range.endColumn }) } },
+      token,
+    );
+    return (res ?? []).map(toInlayHint);
+  }
+
+  async provideCodeLenses(model: monaco.editor.ITextModel, token?: monaco.CancellationToken): Promise<monaco.languages.CodeLens[]> {
+    const res = await this.ask<LspCodeLens[]>("textDocument/codeLens", this.doc(model), token);
+    return (res ?? []).map((l) => Object.assign({ range: toMonacoRange(l.range), command: l.command ? { id: this.commandId, title: l.command.title, arguments: [l.command] } : undefined }, { __lsp: l }));
+  }
+
+  async resolveCodeLens(lens: monaco.languages.CodeLens, token?: monaco.CancellationToken): Promise<monaco.languages.CodeLens> {
+    const lsp = (lens as { __lsp?: LspCodeLens }).__lsp;
+    if (!lsp || lens.command) return lens;
+    const r = await this.ask<LspCodeLens>("codeLens/resolve", lsp, token);
+    return r?.command ? { ...lens, command: { id: this.commandId, title: r.command.title, arguments: [r.command] } } : lens;
+  }
+
+  async provideSemanticTokens(model: monaco.editor.ITextModel, token?: monaco.CancellationToken): Promise<monaco.languages.SemanticTokens | null> {
+    const r = await this.ask<{ resultId?: string; data: number[] }>("textDocument/semanticTokens/full", this.doc(model), token);
+    return r ? { resultId: r.resultId, data: new Uint32Array(r.data) } : null;
+  }
+
+  async provideWorkspaceSymbols(query: string): Promise<WorkspaceSymbol[]> {
+    const res = await this.ask<LspSymbolInformation[]>("workspace/symbol", { query });
+    const out: WorkspaceSymbol[] = [];
+    for (const s of res ?? []) {
+      if (!s.location?.uri) continue;
+      const path = this.pathOf(s.location.uri);
+      if (path === null || path === "") continue;
+      out.push({ name: s.name, kind: toSymbolKind(s.kind), path, line: s.location.range.start.line + 1, column: s.location.range.start.character + 1, container: s.containerName });
+    }
+    return out;
+  }
+
+  /** Runs a command the server named (from a code action or a code lens). */
+  async executeCommand(command: LspCommand) {
+    await this.ask("workspace/executeCommand", { command: command.command, arguments: command.arguments ?? [] });
+  }
+
   private registerProviders() {
     const L = monaco.languages;
     const caps = this.capabilities as Record<string, { triggerCharacters?: string[]; retriggerCharacters?: string[]; resolveProvider?: boolean; prepareProvider?: boolean } | boolean | undefined>;
@@ -556,6 +783,91 @@ export class LanguageClient {
             : undefined,
         }),
       );
+    }
+  }
+
+  private registerMoreProviders() {
+    const L = monaco.languages;
+    const caps = this.capabilities as Record<string, unknown>;
+    const has = (k: string) => !!caps[k];
+    const sel = this.options.languages.map((language) => ({ language, scheme: "tmcode" }));
+    const reg = (d: monaco.IDisposable) => this.disposables.push(d);
+    const label = this.options.label;
+
+    reg(monaco.editor.registerCommand(this.commandId, (_accessor, command: LspCommand) => void this.executeCommand(command)));
+
+    if (has("codeActionProvider")) {
+      const cp = caps.codeActionProvider as { codeActionKinds?: string[]; resolveProvider?: boolean } | boolean;
+      reg(
+        L.registerCodeActionProvider(
+          sel,
+          {
+            provideCodeActions: async (model, range, context, token) => ({ actions: await this.provideCodeActions(model, range, context.only, token), dispose() {} }),
+            resolveCodeAction: typeof cp === "object" && cp.resolveProvider ? (action, token) => this.resolveCodeAction(action, token) : undefined,
+          },
+          typeof cp === "object" && cp.codeActionKinds ? { providedCodeActionKinds: cp.codeActionKinds } : undefined,
+        ),
+      );
+    }
+    if (has("documentFormattingProvider")) {
+      reg(L.registerDocumentFormattingEditProvider(sel, { displayName: label, provideDocumentFormattingEdits: (m, o, t) => this.provideFormatting(m, o, undefined, t) }));
+    }
+    if (has("documentRangeFormattingProvider")) {
+      reg(L.registerDocumentRangeFormattingEditProvider(sel, { displayName: label, provideDocumentRangeFormattingEdits: (m, r, o, t) => this.provideFormatting(m, o, r, t) }));
+    }
+    if (has("inlayHintProvider")) {
+      reg(L.registerInlayHintsProvider(sel, { displayName: label, onDidChangeInlayHints: this.refresh.inlay.event, provideInlayHints: async (m, r, t) => ({ hints: await this.provideInlayHints(m, r, t), dispose() {} }) }));
+    }
+    if (has("codeLensProvider")) {
+      const resolve = !!(caps.codeLensProvider as { resolveProvider?: boolean }).resolveProvider;
+      reg(
+        L.registerCodeLensProvider(sel, {
+          onDidChange: this.refresh.lens.event as unknown as monaco.IEvent<monaco.languages.CodeLensProvider>,
+          provideCodeLenses: async (m, t) => ({ lenses: await this.provideCodeLenses(m, t), dispose() {} }),
+          resolveCodeLens: resolve ? (_m, lens, t) => this.resolveCodeLens(lens, t) : undefined,
+        }),
+      );
+    }
+    const st = caps.semanticTokensProvider as { legend?: monaco.languages.SemanticTokensLegend; full?: boolean | object } | undefined;
+    if (st?.legend && st.full) {
+      reg(
+        L.registerDocumentSemanticTokensProvider(sel, {
+          onDidChange: this.refresh.tokens.event,
+          getLegend: () => st.legend!,
+          provideDocumentSemanticTokens: (m, _last, t) => this.provideSemanticTokens(m, t),
+          releaseDocumentSemanticTokens: () => {},
+        }),
+      );
+    }
+    if (has("foldingRangeProvider")) {
+      reg(L.registerFoldingRangeProvider(sel, { provideFoldingRanges: async (m, _c, t) => toFoldingRanges(await this.ask("textDocument/foldingRange", this.doc(m), t)) }));
+    }
+    if (has("selectionRangeProvider")) {
+      reg(
+        L.registerSelectionRangeProvider(sel, {
+          provideSelectionRanges: async (m, positions, t) => toSelectionRanges(await this.ask("textDocument/selectionRange", { ...this.doc(m), positions: positions.map(toLspPosition) }, t)),
+        }),
+      );
+    }
+    if (has("documentLinkProvider")) {
+      reg(
+        L.registerLinkProvider(sel, {
+          provideLinks: async (m, t) => {
+            const links = (await this.ask<{ range: LspRange; target?: string; tooltip?: string }[]>("textDocument/documentLink", this.doc(m), t)) ?? [];
+            return {
+              links: links.map((l) => {
+                // A link to a file in the folder opens it in TMCode.
+                const path = l.target ? this.pathOf(l.target) : null;
+                return { range: toMonacoRange(l.range), url: path ? uriFor(path).toString() : l.target, tooltip: l.tooltip };
+              }),
+            };
+          },
+        }),
+      );
+    }
+    if (has("workspaceSymbolProvider")) {
+      const off = registerWorkspaceSymbolProvider((q) => this.provideWorkspaceSymbols(q));
+      reg({ dispose: () => void off() });
     }
   }
 
