@@ -11,6 +11,7 @@ const MONACO_TO_VSCODE: Record<string, string> = {
   shell: "shellscript",
   sh: "shellscript",
   "objective-c": "objective-c",
+  sol: "solidity",
 };
 
 const BY_EXTENSION: Record<string, string> = {

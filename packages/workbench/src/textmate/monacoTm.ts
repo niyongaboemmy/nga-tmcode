@@ -121,8 +121,8 @@ export function installTextmate() {
   // Monaco's JSON mode brings its own tokenizer; the textmate one replaces it.
   const json = monaco.json.jsonDefaults;
   json.setModeConfiguration({ ...json.modeConfiguration, tokens: false });
-  const known = new Set(monaco.languages.getLanguages().map((l) => l.id));
-  for (const l of EXTRA_LANGUAGES) if (!known.has(l.id)) monaco.languages.register(l);
+  // New languages, and file names added to Monaco's own (a second registration of a known id merges into it).
+  for (const l of EXTRA_LANGUAGES) monaco.languages.register(l);
   for (const lang of tmLanguages()) registerFactory(lang);
   setEditorThemeSink((theme, id) => {
     activeTheme = theme;

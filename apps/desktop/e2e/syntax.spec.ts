@@ -90,3 +90,22 @@ test("Dark+ recolours the workbench like VS Code", async ({ page }) => {
   await expect(page.locator(".monaco-editor .monaco-editor-background").first()).toHaveCSS("background-color", rgb("#1E1E1E"));
   expect(await tokenColor(page, "def")).toBe(rgb("#569CD6"));
 });
+
+test(".env.local is Dotenv: comments, keys and values each get their own colour", async ({ page }) => {
+  await page.goto("/");
+  await row(page, "web").click({ button: "right" });
+  await page.locator(".tm-menu-item", { hasText: "New File..." }).click();
+  await page.locator(".tm-inline-input").fill(".env.local");
+  await page.keyboard.press("Enter");
+  await expect(row(page, "web/.env.local")).toBeVisible();
+  await page.locator(".monaco-editor .view-lines").first().click();
+  await page.keyboard.insertText('#Database\nDB_HOST=localhost\nDB_PORT=5432\nDEBUG=true\nAPI_URL="https://${DB_HOST}/api"\n');
+  await waitForColour(page, "localhost", "#CE9178");
+  // Spaces render as non-breaking spaces, so the comment has none.
+  expect(await tokenColor(page, "#Database")).toBe(rgb("#6A9955"));
+  expect(await tokenColor(page, "DB_PORT")).toBe(rgb("#9CDCFE"));
+  expect(await tokenColor(page, "5432")).toBe(rgb("#B5CEA8"));
+  expect(await tokenColor(page, "true")).toBe(rgb("#569CD6"));
+  expect(await tokenColor(page, "${")).toBe(rgb("#569CD6"));
+  await expect(page.locator(".tm-statusbar")).toContainText("Dotenv");
+});

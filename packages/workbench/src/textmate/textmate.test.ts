@@ -90,6 +90,11 @@ describe("theme data", () => {
   });
 });
 
+/** Scopes that upstream grammars include but no grammar package ships (Shiki leaves them uncoloured too). */
+const UNSHIPPED = new Set(
+  "source.regexp source.asm source.x86 source.x86_64 source.arm source.openesql source.js.regexp source.c++ source.js.jquery source.sassdoc text.elixir text.html.javadoc text.json source.lean4.markdown text.html.markdown.source.gfm.apib text.html.asciidoc text.python.console source.gitconfig text.md source.gfm source.raku text.xml.svg source.vbnet source.dosbatch source.lisp source.pug source.fs source.postscript source.dts source.kconfig text.slim source.srs source.agda text.html.markdown.math source.twig source.yang text.plain source.scss source.postcss source.less text.tex.markdown_latex_combined source.asy source.cpp.embedded.latex source.asymptote source.dot".split(" "),
+);
+
 /** Real vscode-textmate + Oniguruma wasm + bundled grammars and VS Code's Dark Modern theme. */
 describe("textmate engine", () => {
   const wasm = async () => {
@@ -158,6 +163,97 @@ describe("textmate engine", () => {
     // The PHP inside <?php … ?> and <?= … ?> as PHP.
     expect(c["$total"] ?? c["total"]).toBe("#9CDCFE");
     expect(c["count"]).toBe("#DCDCAA");
+  });
+
+  it("colours .env files: comments, keys, values, numbers, booleans, quotes and interpolation all differ", async () => {
+    const env = [
+      "# Database settings",
+      "export DB_HOST=localhost",
+      "DB_PORT=5432",
+      "DEBUG=true",
+      'API_URL="https://${DB_HOST}:8080/api\\n"   # trailing note',
+      "SECRET='p@ss$word'",
+      "EMPTY=",
+    ];
+    const c = await colours("source.dotenv", "dark-modern", env);
+    expect(c["# Database settings"]).toBe("#6A9955 comment");
+    expect(c["# trailing note"]).toBe("#6A9955 comment");
+    expect(c["export"]).toBe("#569CD6");
+    expect(c["DB_PORT"]).toBe("#9CDCFE");
+    expect(c["localhost"]).toBe("#CE9178 string");
+    expect(c["5432"]).toBe("#B5CEA8");
+    expect(c["true"]).toBe("#569CD6");
+    expect(c['"https://']).toBe("#CE9178 string");
+    expect(c["${"]).toBe("#569CD6 string");
+    expect(c["DB_HOST"]).toBe("#9CDCFE string"); // inside "…${DB_HOST}…"
+    expect(c["API_URL"]).toBe("#9CDCFE");
+    expect(c["\\n"]).toBe("#D7BA7D string");
+    expect(c["'p@ss$word'"]).toBe("#CE9178 string");
+    // Key, value and comment never share a colour, in the light theme too.
+    const light = await colours("source.dotenv", "light-modern", env);
+    expect(new Set([light["# Database settings"], light["DB_PORT"], light["localhost"]]).size).toBe(3);
+  });
+
+  it("colours ignore files, requirements.txt, go.mod and crontab", async () => {
+    const ignore = await colours("source.ignore", "dark-modern", ["# build output", "dist/", "*.log", "!keep.log"]);
+    expect(ignore["# build output"]).toBe("#6A9955 comment");
+    expect(ignore["dist/"]).toBe("#CE9178 string");
+    expect(ignore["*"]).toBe("#569CD6");
+    expect(ignore["!"]).toBe("#C586C0");
+    const req = await colours("source.pip-requirements", "dark-modern", ["# pinned", "requests[socks]>=2.31,<3 ; python_version >= \"3.9\"", "-r base.txt"]);
+    expect(req["# pinned"]).toBe("#6A9955 comment");
+    expect(req["requests"]).toBe("#4EC9B0");
+    expect(req["2.31"]).toBe("#B5CEA8");
+    expect(req["python_version"]).toBe("#9CDCFE");
+    expect(req["-r"]).toBe("#569CD6");
+    const mod = await colours("source.gomod", "dark-modern", ["module example.com/app", "go 1.22", "require golang.org/x/net v0.24.0 // indirect"]);
+    expect(mod["module"]).toBe("#569CD6");
+    expect(mod["golang.org/x/net"]).toBe("#4EC9B0");
+    expect(mod["v0.24.0"]).toBe("#B5CEA8");
+    expect(mod["// indirect"]).toBe("#6A9955 comment");
+    const cron = await colours("source.crontab", "dark-modern", ["MAILTO=ops@example.com", "*/5 * * * * /usr/bin/backup --quiet", "@daily echo hi"]);
+    expect(cron["MAILTO"]).toBe("#9CDCFE");
+    expect(cron["5"]).toBe("#B5CEA8");
+    expect(cron["@daily"]).toBe("#569CD6");
+    expect(cron["echo"]).toBe("#DCDCAA");
+    expect(cron["/usr/bin/backup"]).toBe("#DCDCAA");
+  });
+
+  it("every language resolves to a grammar that tokenizes, and every grammar it embeds is bundled", async () => {
+    const { grammarFor, scopeForLanguage, tmLanguages } = await import("./grammars");
+    const engine = new TextmateEngine(await loadTextmateLibs(wasm));
+    engine.setTheme(rawThemeOf(await BUILTIN_THEMES.find((t) => t.id === "dark-modern")!.load()) as never);
+    const sample = ['# comment // comment -- comment ; comment', 'name = "value" + 42 <tag attr="x">{x}</tag>', "  if (x) { return f(1, 'two'); }"];
+    const scopes = new Set(tmLanguages().map((l) => scopeForLanguage(l)!));
+    expect(scopes.size).toBeGreaterThan(150);
+    for (const scope of scopes) {
+      const grammar = await engine.grammar(scope);
+      expect(grammar, scope).toBeTruthy();
+      let state = engine.initialState;
+      for (const line of sample) state = engine.tokenizeLine(grammar!, line, state).endState;
+    }
+    expect(engine.errors).toEqual([]);
+    // Embedded grammars (`include: "source.x"`) reachable from any language, minus scopes no grammar
+    // package ships (upstream grammars reference them; that code just stays uncoloured, as in Shiki).
+    const missing = new Set<string>();
+    const seen = new Set<string>();
+    const queue = [...scopes];
+    while (queue.length) {
+      const scope = queue.pop()!;
+      if (seen.has(scope)) continue;
+      seen.add(scope);
+      const def = grammarFor(scope);
+      if (!def) {
+        missing.add(scope);
+        continue;
+      }
+      const src = await def.load();
+      JSON.stringify(src.kind === "object" ? src.value : {}, (k, v) => {
+        if (k === "include" && typeof v === "string" && !v.startsWith("#") && !v.startsWith("$")) queue.push(v.split("#")[0]);
+        return v;
+      });
+    }
+    expect([...missing].filter((s) => !UNSHIPPED.has(s)).sort()).toEqual([]);
   });
 
   it("uses the light palette for Light Modern", async () => {
