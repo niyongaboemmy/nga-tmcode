@@ -11389,16 +11389,29 @@ button.tm-setting-badge {
 }
 
 /* ───────────── TMCode AI in the terminal (⌘I, "# words", Fix with AI) ───────────── */
-.tm-term-ai {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  z-index: 12;
+/* The terminal and its AI box share the space: the box docks under the terminal, which refits above it. */
+.tm-terminal-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  width: min(720px, calc(100% - 24px));
-  max-height: calc(100% - 24px);
-  transform: translateX(-50%);
+  container: tm-terminal / size;
+}
+.tm-terminal-main > .tm-terminal-area {
+  min-height: 72px;
+}
+.tm-term-ai {
+  position: relative;
+  z-index: 12;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100% - 16px));
+  /* Up to what leaves the terminal its last few lines (.tm-terminal-area keeps 72px). */
+  max-height: max(140px, calc(100% - 88px));
+  margin: 0 auto 8px;
   border: 1px solid color-mix(in srgb, var(--ai) 45%, var(--widget-border, var(--border)));
   border-radius: 12px;
   background: color-mix(in srgb, var(--widget-bg, var(--editor-bg)) 92%, var(--ai));
@@ -11430,7 +11443,32 @@ button.tm-setting-badge {
 @keyframes tm-term-ai-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px) scale(0.98);
+    transform: translateY(8px) scale(0.98);
+  }
+}
+/* A short panel: the essentials only (examples on one scrolling row, no tip or key hints). */
+@container tm-terminal (max-height: 320px) {
+  .tm-terminal-main .tm-term-ai-tip,
+  .tm-terminal-main .tm-term-ai-foot,
+  .tm-terminal-main .tm-term-ai[data-phase="done"] .tm-term-ai-request {
+    display: none;
+  }
+  .tm-terminal-main > .tm-terminal-area {
+    min-height: 48px;
+  }
+  .tm-terminal-main .tm-term-ai {
+    max-height: calc(100% - 56px);
+  }
+  .tm-term-ai-examples {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tm-term-ai-example {
+    flex: none;
+  }
+  .tm-term-ai-head {
+    padding-block: 6px 4px;
   }
 }
 @keyframes tm-term-ai-flow {
@@ -11480,8 +11518,11 @@ button.tm-setting-badge {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  padding: 0 12px;
+  padding: 0 12px 2px;
   overflow: auto;
+}
+.tm-term-ai-body > * {
+  flex: none;
 }
 .tm-term-ai-body:empty {
   display: none;
@@ -12587,4 +12628,11 @@ button.tm-setting-badge {
 .tm-ai-key-model.is-on {
   border-color: var(--ai);
   background: color-mix(in srgb, var(--ai) 15%, transparent);
+}
+.tm-ai-account-using {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ai) 16%, transparent);
+  color: var(--foreground);
+  font-size: 11px;
 }

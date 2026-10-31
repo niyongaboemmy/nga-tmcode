@@ -292,10 +292,10 @@ export async function createTauriPlatform(): Promise<Platform> {
       delete: (provider) => invoke("ai_key_delete", { provider }),
     },
     proc: {
-      run: async (command, cwd, onEvent) => {
+      run: async (command, cwd, onEvent, opts) => {
         const channel = new Channel<ProcEvent>();
         channel.onmessage = onEvent;
-        return invoke<number>("proc_run", { command, cwd: cwd || null, onEvent: channel });
+        return invoke<number>("proc_run", { command, cwd: cwd || null, stdin: opts?.stdin ?? null, onEvent: channel });
       },
       kill: (id) => invoke("proc_kill", { id }),
     },
