@@ -623,29 +623,32 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const groupsInOrder = [...new Set(instances.map((i) => i.group))];
   return (
     <div className="tm-terminal" hidden={!visible}>
-      <div ref={area} className="tm-terminal-area">
-        {shown.map((inst) => (
-          <div
-            key={inst.id}
-            className={`tm-terminal-pane ${inst.id === activeId && shown.length > 1 ? "is-active" : ""}`}
-            onMouseDown={() => inst.id !== activeId && setActiveId(inst.id)}
-          >
+      {/* The AI box docks under the terminal (which shrinks and refits), so the output it's about stays in view. */}
+      <div className="tm-terminal-main">
+        <div ref={area} className="tm-terminal-area">
+          {shown.map((inst) => (
             <div
-              ref={(el) => {
-                if (el) hosts.current.set(inst.id, el);
-                else hosts.current.delete(inst.id);
-              }}
-              className="tm-terminal-host"
-              data-testid={inst.id === activeId ? "integrated-terminal" : "integrated-terminal-split"}
-              aria-label={`Terminal ${labelOf(inst)}`}
-            />
-            {!started.has(inst.id) && <ShellStarting />}
-            {sticky && <StickyCommand inst={inst} />}
-          </div>
-        ))}
+              key={inst.id}
+              className={`tm-terminal-pane ${inst.id === activeId && shown.length > 1 ? "is-active" : ""}`}
+              onMouseDown={() => inst.id !== activeId && setActiveId(inst.id)}
+            >
+              <div
+                ref={(el) => {
+                  if (el) hosts.current.set(inst.id, el);
+                  else hosts.current.delete(inst.id);
+                }}
+                className="tm-terminal-host"
+                data-testid={inst.id === activeId ? "integrated-terminal" : "integrated-terminal-split"}
+                aria-label={`Terminal ${labelOf(inst)}`}
+              />
+              {!started.has(inst.id) && <ShellStarting />}
+              {sticky && <StickyCommand inst={inst} />}
+            </div>
+          ))}
+        </div>
+        {aiOn && <TerminalAi />}
       </div>
       {finding && active && <TerminalFind key={active.id} inst={active} onClose={() => setFinding(false)} />}
-      {aiOn && <TerminalAi />}
       {aiOn && suggestFixes && aiGate.chat && !aiOpen && failed && failed.id === activeId && (
         <FixHint
           command={failed.command}

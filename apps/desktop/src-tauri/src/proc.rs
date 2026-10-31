@@ -1,7 +1,8 @@
 //! One-shot commands with their output captured, for the Testing view's
 //! framework runs (pytest, mvn test, go test -json …): the command runs in
 //! the user's login shell (so PATH matches their terminal), inside the open
-//! folder, and streams stdout/stderr back. Refused in exam folders.
+//! folder, and streams stdout/stderr back. Refused in exam folders. TMCode AI's Claude Code
+//! answers (ai/claudeCode.ts) run here too, with the question on stdin (never on the command line).
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -57,7 +58,7 @@ pub(crate) fn shell_command(command: &str) -> Command {
 }
 
 #[tauri::command]
-pub fn proc_run(app: AppHandle, ws: State<'_, Workspace>, procs: State<'_, Procs>, command: String, cwd: Option<String>, on_event: Channel<ProcEvent>) -> Result<u32, String> {
+pub fn proc_run(app: AppHandle, ws: State<'_, Workspace>, procs: State<'_, Procs>, command: String, cwd: Option<String>, stdin: Option<String>, on_event: Channel<ProcEvent>) -> Result<u32, String> {
     if crate::debug::in_exam(&app, &ws) {
         return Err("Running commands is turned off during exams.".into());
     }
@@ -65,7 +66,7 @@ pub fn proc_run(app: AppHandle, ws: State<'_, Workspace>, procs: State<'_, Procs
     let dir = resolve_cwd(&root, cwd.as_deref())?;
     let mut c = shell_command(&command);
     c.current_dir(&dir)
-        .stdin(Stdio::null())
+        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("CI", "1")
@@ -89,6 +90,13 @@ pub fn proc_run(app: AppHandle, ws: State<'_, Workspace>, procs: State<'_, Procs
     crate::ai_tools::apply_command(&mut c);
     let mut child = c.spawn().map_err(|e| format!("Could not start the command: {e}"))?;
     crate::ai_tools::watch(Some(child.id()));
+    if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        // Written on its own thread (a big input must not wait for the output to be read); EOF on drop.
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = pipe.write_all(text.as_bytes());
+        });
+    }
     let id = procs.next.fetch_add(1, Ordering::Relaxed) + 1;
     procs.trees.lock().unwrap().insert(id, Tree::of(child.id()));
     log::info!("proc {id}: {command} (in {})", dir.display());

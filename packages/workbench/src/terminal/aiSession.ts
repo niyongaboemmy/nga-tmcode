@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { recordActivity } from "../activity/log";
+import { CLIS, cliOf, isCliProvider } from "../ai/aiClis";
 import { aiGate } from "../ai/gate";
 import { AiRequestError, asAiError, chat, modeLabel, effectiveMode, useAi, type WireMessage } from "../ai/service";
 import type { OsKind } from "../platform/types";
@@ -180,7 +181,7 @@ export async function askTerminalAi(kind: TerminalAiKind, request: string) {
       done: (d) => {
         cancelStream = null;
         const parsed = parseTerminalAnswer(raw);
-        if (!parsed.commands.length && !parsed.explanation && !parsed.question) return fail(new AiRequestError("EMPTY", "TMCode AI sent an empty answer. Try again, or pick another model."));
+        if (!parsed.commands.length && !parsed.explanation && !parsed.question) return fail(new AiRequestError("EMPTY", `${isCliProvider(d.provider) ? d.provider : "TMCode AI"} sent an empty answer. Try again, or pick another model.`));
         useTerminalAi.setState({
           phase: "done",
           answer: { ...parsed, commands: toCards(parsed) },
@@ -190,10 +191,10 @@ export async function askTerminalAi(kind: TerminalAiKind, request: string) {
         recordActivity({
           kind: "ai",
           action: "terminal-ask",
-          text: `Asked TMCode AI in the terminal: ${shown.length > 100 ? `${shown.slice(0, 97)}…` : shown}`,
+          text: `Asked ${isCliProvider(d.provider) ? d.provider : "TMCode AI"} in the terminal: ${shown.length > 100 ? `${shown.slice(0, 97)}…` : shown}`,
           data: { kind, commands: parsed.commands.length },
           actor: { type: "you" },
-          ai: { by: "TMCode AI", how: kind === "fix" ? "fix for a failed command" : kind === "explain" ? "explained a command" : "terminal commands from plain words", model: d.model },
+          ai: { by: isCliProvider(d.provider) ? d.provider : "TMCode AI", how: kind === "fix" ? "fix for a failed command" : kind === "explain" ? "explained a command" : "terminal commands from plain words", model: d.model },
         });
       },
       error: fail,
@@ -218,13 +219,15 @@ export function applyCard(card: CommandCard, how: "run" | "insert", insertText: 
   else host.type(how === "run" ? `${insertText}\r` : insertText);
   if (how === "run") {
     const model = useTerminalAi.getState().by ?? undefined;
+    const cli = cliOf(effectiveMode());
+    const cliLabel = cli ? CLIS[cli].label : null;
     recordActivity({
       kind: "ai",
       action: "terminal-run",
-      text: `Ran a command TMCode AI suggested: ${card.command.length > 120 ? `${card.command.slice(0, 117)}…` : card.command}`,
+      text: `Ran a command ${cliLabel ?? "TMCode AI"} suggested: ${card.command.length > 120 ? `${card.command.slice(0, 117)}…` : card.command}`,
       data: { command: card.command.slice(0, 500), risk: card.risk },
       actor: { type: "you" },
-      ai: { by: "TMCode AI", how: "terminal command suggested, run by the student", model },
+      ai: { by: cliLabel ?? "TMCode AI", how: "terminal command suggested, run by the student", model },
     });
   }
   closeTerminalAi(true);

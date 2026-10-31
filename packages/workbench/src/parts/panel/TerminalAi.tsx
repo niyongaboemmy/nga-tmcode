@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { CommandChip } from "../../activity/ActivityView";
-import { pickMode, openAiKeysSettings } from "../../ai/ChatView";
+import { CliFixes, pickMode, openAiKeysSettings } from "../../ai/ChatView";
+import { CLIS, cliOf, detectCli } from "../../ai/aiClis";
 import { useAiGate } from "../../ai/gate";
-import { refreshAiStatus, setAiMode, useAi } from "../../ai/service";
+import { effectiveMode, refreshAiStatus, setAiMode, useAi } from "../../ai/service";
 import { getPlatform, notify } from "../../state/store";
 import { Codicon } from "../../widgets/icons";
 import { insertableText } from "../../terminal/ai";
@@ -37,6 +38,8 @@ export function TerminalAi() {
   useEffect(() => {
     if (!s.open) return;
     if (!useAi.getState().status) void refreshAiStatus();
+    const cli = cliOf(useAi.getState().mode);
+    if (cli) void detectCli(cli);
     requestAnimationFrame(() => input.current?.focus());
   }, [s.open, s.focusSeq]);
   useEffect(() => {
@@ -106,7 +109,9 @@ export function TerminalAi() {
 
   const code = s.error?.code ?? "";
   const paidError = ["PREMIUM_REQUIRED", "PREMIUM_QUOTA", "BYOK_REJECTED", "BYOK_MISSING", "BYOK_DISABLED", "BYOK_KEY_REQUIRED", "MODEL_UNKNOWN"].includes(code);
-  const title = s.kind === "fix" ? "Fix with TMCode AI" : s.kind === "explain" ? "Explain with TMCode AI" : "Ask TMCode AI";
+  const cli = cliOf(effectiveMode(mode, status));
+  const who = cli ? CLIS[cli].label : "TMCode AI";
+  const title = s.kind === "fix" ? `Fix with ${who}` : s.kind === "explain" ? `Explain with ${who}` : `Ask ${who}`;
   const placeholder = !gate.chat ? "TMCode AI is off" : s.answer ? "Ask a follow-up to refine… (e.g. only in the src folder)" : "Say what you want to do, in your own words…";
 
   return (
@@ -123,12 +128,18 @@ export function TerminalAi() {
         <span className="tm-term-ai-title">
           <Codicon name="sparkle" /> {title}
         </span>
-        <button type="button" className="tm-chat-mode tm-term-ai-model" onClick={() => void pickMode()} title="Which AI answers (Free, Auto, Premium or your own key)" data-testid="terminal-ai-model">
-          <Codicon name={mode === "auto" ? "sparkle" : mode === "free" ? "gift" : mode.startsWith("premium:") ? "star-full" : mode.startsWith("byok:") ? "key" : "circuit-board"} />
+        <button type="button" className="tm-chat-mode tm-term-ai-model" onClick={() => void pickMode()} title="Which AI answers (Free, Auto, Premium, your Claude, ChatGPT or Gemini account, or your own key)" data-testid="terminal-ai-model">
+          <Codicon name={cli ? "terminal" : mode === "auto" ? "sparkle" : mode === "free" ? "gift" : mode.startsWith("premium:") ? "star-full" : mode.startsWith("byok:") ? "key" : "circuit-board"} />
           <span>{currentModelLabel()}</span>
           <Codicon name="chevron-down" />
         </button>
-        {status?.you.chat && <span className="tm-term-ai-quota">{Math.max(0, status.you.chat.limit - status.you.chat.used)} left today</span>}
+        {cli ? (
+          <span className="tm-term-ai-quota" title={`${who} answers with your own ${CLIS[cli].account} account: no TMCode AI allowance is used.`}>
+            your {CLIS[cli].account} account
+          </span>
+        ) : (
+          status?.you.chat && <span className="tm-term-ai-quota">{Math.max(0, status.you.chat.limit - status.you.chat.used)} left today</span>
+        )}
         <span className="tm-chat-spacer" />
         {(s.answer || s.error) && (
           <button type="button" className="tm-chat-icon" title="New question" onClick={() => (setText(""), resetTerminalAi())} data-testid="terminal-ai-new">
@@ -244,6 +255,7 @@ export function TerminalAi() {
                   Your API keys
                 </button>
               )}
+              <CliFixes code={code} cli={s.error.reason} retry={() => void askTerminalAi(s.kind, s.kind === "ask" ? s.request : "")} />
               {["OFFLINE", "INTERRUPTED", "EMPTY", "FAILED", "PROVIDER_FAILED", "PROVIDER_QUOTA", "USER_QUOTA"].includes(code) && (
                 <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => void askTerminalAi(s.kind, s.kind === "ask" ? s.request : "")}>
                   Try Again
@@ -262,7 +274,7 @@ export function TerminalAi() {
           value={text}
           disabled={!gate.chat}
           placeholder={placeholder}
-          aria-label="Ask TMCode AI about the terminal"
+          aria-label={`Ask ${who} about the terminal`}
           spellCheck={false}
           onChange={(e) => {
             setText(e.target.value);

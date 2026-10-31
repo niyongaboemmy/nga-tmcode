@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { getPlatform, notify } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { aiKeysSupported, BYOK_PROVIDERS, KEY_PAGES, keyShapeWarning, loadAiKeys, providerLabel, removeAiKey, saveAiKey, setCustomModels, useAiKeys, verifyAiKey, type KeyCheck } from "./keys";
+import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli, openCliPlans, signInCli, signOutCli, useAiClis, type CliId } from "./aiClis";
+import { useAiGate } from "./gate";
 import { refreshAiStatus, setAiMode, useAi } from "./service";
 
 /**
@@ -9,7 +11,7 @@ import { refreshAiStatus, setAiMode, useAi } from "./service";
  * ai/keys.ts) and extra model ids. Shown only where Task Mentor accepts own keys (`tiers.byok`).
  */
 
-const WORDS = "tmcode ai api keys key byok own provider openai anthropic gemini openrouter groq deepseek premium model";
+const WORDS = "tmcode ai api keys key byok own provider openai anthropic gemini openrouter groq deepseek premium model accounts account claude code chatgpt codex google sign in login plan cli";
 
 export function aiKeysMatch(query: string) {
   return !query || query.toLowerCase().split(/\s+/).every((w) => WORDS.includes(w));
@@ -151,6 +153,89 @@ function ProviderRow({ id, label, suggested }: { id: string; label: string; sugg
   );
 }
 
+const CLI_STATE: Record<string, string> = { unknown: "Not checked", checking: "Checking…", ready: "Signed in", missing: "Not installed", "signed-out": "Not signed in", unavailable: "Can't check" };
+
+/** One AI CLI (ai/aiClis.ts): its state on this computer and what the user can do with their account. */
+function CliAccountRow({ id }: { id: CliId }) {
+  const spec = CLIS[id];
+  const info = useAiClis((s) => s[id]);
+  const mode = useAi((s) => s.mode);
+  const using = cliOf(mode) === id;
+  return (
+    <div className="tm-ai-key-row tm-ai-account" data-testid="ai-account-row" data-cli={id} data-state={info.state}>
+      <div className="tm-ai-key-head">
+        <strong>{spec.label}</strong>
+        <span className={`tm-ai-key-state ${info.state === "ready" ? "is-saved" : ""}`} data-testid="ai-account-state">
+          {info.state === "ready" && <Codicon name="pass-filled" />} {CLI_STATE[info.state]}
+          {info.state === "ready" && info.account ? ` · ${info.account}` : ""}
+          {info.version ? ` · v${info.version}` : ""}
+        </span>
+        <span className="tm-ai-key-actions">
+          {info.state === "missing" && (
+            <button type="button" className="tm-button tm-button--small" onClick={() => installCli(id)} data-testid="ai-account-install" title={spec.install}>
+              <Codicon name="cloud-download" /> Install
+            </button>
+          )}
+          {info.state === "signed-out" && (
+            <button type="button" className="tm-button tm-button--small" onClick={() => signInCli(id)} data-testid="ai-account-signin">
+              <Codicon name="account" /> Sign In with {spec.account}
+            </button>
+          )}
+          {info.state === "ready" && !using && (
+            <button type="button" className="tm-button tm-button--small tm-button--secondary" onClick={() => setAiMode(`cli:${id}`)} data-testid="ai-account-use">
+              Use for TMCode AI
+            </button>
+          )}
+          {info.state === "ready" && using && <span className="tm-ai-account-using">In use</span>}
+          {info.state === "ready" && spec.signOut && (
+            <button type="button" className="tm-link-button" onClick={() => (using && setAiMode("free"), signOutCli(id))} data-testid="ai-account-signout">
+              Sign Out
+            </button>
+          )}
+          {info.state === "ready" && !spec.signOut && (
+            <button type="button" className="tm-link-button" onClick={() => signInCli(id)} title={`Opens ${spec.label}: use its /auth command to switch account`}>
+              Switch Account
+            </button>
+          )}
+          <button type="button" className="tm-link-button" onClick={() => openCliPlans(id)} title={`Free or paid: see and change your ${spec.account} plan`}>
+            Your Plan
+          </button>
+          <button type="button" className="tm-chat-icon" title="Check again" aria-label={`Check ${spec.label} again`} onClick={() => void detectCli(id, true)}>
+            <Codicon name="refresh" />
+          </button>
+        </span>
+      </div>
+      {info.state === "unavailable" && info.detail && <p className="tm-muted">{info.detail}</p>}
+    </div>
+  );
+}
+
+/**
+ * Settings › TMCode AI › Your AI accounts: Claude Code, ChatGPT (Codex) and Gemini CLI signed in
+ * with the user's own accounts, to answer TMCode AI without copying code into a browser tab.
+ */
+function AiAccounts() {
+  const gate = useAiGate();
+  useEffect(() => {
+    if (getPlatform().proc) void detectAllClis();
+  }, []);
+  let body;
+  if (!getPlatform().proc) body = <p className="tm-muted">Your AI accounts need the TMCode desktop app (the AI companies' coding tools run on your computer).</p>;
+  else if (!gate.thirdParty) body = <p className="tm-muted" data-testid="ai-accounts-blocked">{cliBlocked()}</p>;
+  else body = CLI_IDS.map((id) => <CliAccountRow key={id} id={id} />);
+  return (
+    <div className="tm-setting" data-testid="ai-accounts">
+      <div className="tm-setting-title">
+        <strong>Your AI accounts</strong>
+      </div>
+      <div className="tm-setting-description">
+        Sign in to Claude Code, ChatGPT (Codex) or Gemini with your own account, free or paid, and TMCode AI answers with it: in the chat, in the terminal, and in agent modes (which open it in the terminal). Each runs on this computer with your account and plan; nothing is copied into a browser. Your school&apos;s AI rules still apply, and what each one does is in your activity log.
+      </div>
+      <div className="tm-setting-control tm-ai-keys">{body}</div>
+    </div>
+  );
+}
+
 export function AiKeysSettingsSection({ query }: { query: string }) {
   const status = useAi((s) => s.status);
   const loaded = useAiKeys((s) => s.loaded);
@@ -190,6 +275,7 @@ export function AiKeysSettingsSection({ query }: { query: string }) {
           </div>
         </div>
       )}
+      <AiAccounts />
       <div className="tm-setting">
         <div className="tm-setting-title">
           <strong>Your API keys</strong>

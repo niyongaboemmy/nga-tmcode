@@ -831,7 +831,7 @@ export interface HttpHost {
 export type ProcEvent = { type: "stdout"; data: string } | { type: "stderr"; data: string } | { type: "exit"; code: number | null };
 
 export interface ProcHost {
-  /** Runs `command` in the login shell, in `cwd` (workspace-relative); returns an id for `kill`. */
-  run(command: string, cwd: string, onEvent: (e: ProcEvent) => void): Promise<number>;
+  /** Runs `command` in the login shell, in `cwd` (workspace-relative); returns an id for `kill`. `stdin`: written to it, then closed. */
+  run(command: string, cwd: string, onEvent: (e: ProcEvent) => void, opts?: { stdin?: string }): Promise<number>;
   kill(id: number): Promise<void>;
 }
