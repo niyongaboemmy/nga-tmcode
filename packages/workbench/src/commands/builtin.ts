@@ -294,6 +294,7 @@ export function registerBuiltinCommands() {
   // ── Preferences / help ──
   registerCommand({ id: "workbench.action.openSettings", title: "Open Settings", category: "Preferences", keybinding: "mod+,", run: () => openSpecialEditor("settings") });
   registerCommand({ id: "workbench.action.keybindingsReference", title: "Open Keyboard Shortcuts", category: "Preferences", keybinding: "mod+k mod+s", run: () => openSpecialEditor("shortcuts") });
+  registerCommand({ id: "workbench.action.openGlobalKeybindingsFile", title: "Open Keyboard Shortcuts (JSON)", category: "Preferences", run: () => openSpecialEditor("keybindingsJson") });
   registerCommand({ id: "workbench.action.openWelcome", title: "Home", category: "Help", run: () => openSpecialEditor("welcome") });
   registerCommand({ id: "workbench.action.showAbout", title: "About", category: "Help", run: showAbout });
   registerCommand({ id: "update.checkForUpdates", title: "Check for Updates...", category: "Help", enabled: updatesSupported, run: () => checkForUpdates({ manual: true }) });

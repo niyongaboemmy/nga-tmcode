@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { KeybindingsJsonEditor } from "./KeybindingsJsonEditor";
 import { MergeEditor } from "../../scm/MergeEditor";
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
@@ -166,6 +167,7 @@ export function titleOf(e: EditorInput): string {
   if (e.kind === "merge") return `${basename(e.path)} (Merging)`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "settingsJson") return "settings.json";
+  if (e.kind === "keybindingsJson") return "keybindings.json";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
   if (e.kind === "extension") return extensionTitle(e.extensionId);
   if (e.kind === "webview") return webviewTitle(e.handle);
@@ -188,7 +190,7 @@ function iconOf(e: EditorInput) {
   if (e.kind === "browser") return <Codicon name="globe" className="tm-tab-codicon" />;
   if (e.kind === "markdown" || e.kind === "image") return <Codicon name="open-preview" className="tm-tab-codicon" />;
   if (e.kind === "webview") return <WebviewTabIcon handle={e.handle} />;
-  if (e.kind === "settingsJson") return <Codicon name="json" className="tm-tab-codicon" />;
+  if (e.kind === "settingsJson" || e.kind === "keybindingsJson") return <Codicon name="json" className="tm-tab-codicon" />;
   if (e.kind === "snippets") return <Codicon name="symbol-snippet" className="tm-tab-codicon" />;
   if (e.kind === "assignment") return <Codicon name="mortar-board" className="tm-tab-codicon" />;
   if (e.kind === "grading") return <Codicon name="tasklist" className="tm-tab-codicon" />;
@@ -629,6 +631,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "browser" && <BrowserEditor key={active.id} input={active} />}
         {active?.kind === "settings" && <SettingsEditor />}
         {active?.kind === "settingsJson" && <SettingsJsonEditor />}
+        {active?.kind === "keybindingsJson" && <KeybindingsJsonEditor />}
         {active?.kind === "snippets" && <SnippetsEditor key={active.id} input={active} />}
         {active?.kind === "welcome" && <WelcomePage />}
         {active?.kind === "shortcuts" && <ShortcutsEditor />}

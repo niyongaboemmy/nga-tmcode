@@ -19,6 +19,8 @@ import type { SyncState } from "../projects/types";
 import { useGit, useGitAllowed } from "../scm/gitService";
 import { blameText, useBlame } from "../scm/blame";
 import { switchWorkspaceFolder, useWorkspaceFile } from "../state/workspaceFile";
+import { DEFAULT_PROFILE, useProfiles } from "../state/profiles";
+import { useSettingsSync } from "../state/settingsSync";
 import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
 import { useIsTeacher, useRoleChecking } from "../state/role";
@@ -198,6 +200,28 @@ function LanguageItem({ language }: { language: string | null }) {
   );
 }
 
+/** The profile in use, when it isn't Default (click: switch). */
+function ProfileItem() {
+  const active = useProfiles((s) => s.active);
+  if (active === DEFAULT_PROFILE) return null;
+  return (
+    <Item title="Switch Profile" onClick={() => executeCommand("workbench.profiles.actions.switchProfile")}>
+      <Codicon name="account" /> {active}
+    </Item>
+  );
+}
+
+/** Settings Sync: on, syncing, or a problem (click: sync now). */
+function SyncItem() {
+  const { enabled, status } = useSettingsSync();
+  if (!enabled) return null;
+  return (
+    <Item className="tm-prio-low" title={status === "error" ? "Settings Sync had a problem. Click to try again." : "Settings Sync is on. Click to sync now."} onClick={() => executeCommand("workbench.userDataSync.actions.syncNow")}>
+      <Codicon name={status === "syncing" ? "sync~spin" : status === "error" ? "sync-ignored" : "sync"} />
+    </Item>
+  );
+}
+
 /** A .code-workspace file's folders: the open one, and a click to switch (state/workspaceFile.ts). */
 function WorkspaceFolderItem() {
   const folders = useWorkspaceFile((s) => s.folders);
@@ -259,6 +283,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <span>{MODE_LABEL[mode]}</span>
         </Item>
         {!simple && <GitItems />}
+        <ProfileItem />
         <WorkspaceFolderItem />
         <ProjectStatus />
         <SyncStatus />
@@ -277,6 +302,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
         {chord && <Item title="Waiting for second key of chord">({chord}) was pressed. Waiting for second key of chord...</Item>}
       </div>
       <div className="tm-status-right">
+        <SyncItem />
         <BlameItem />
         {hasFile && (
           <>

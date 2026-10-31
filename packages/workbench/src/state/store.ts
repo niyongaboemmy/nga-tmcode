@@ -8,7 +8,7 @@ import { isExamRoot } from "../exam/roots";
 import { MAX_GROUPS, groupOrder as groupOrderOf, leaf, mapGroups, neighbour, readSavedLayout, reconcile as reconcileTree, removeNode, serializeLayout, splitNode, type GridNode, type SplitDirection } from "./layout";
 import { editorMemento } from "./viewStates";
 import { lifetimeOf, ownerOnScreen, withPolicy, type NotifyKind, type NotifyOptions } from "./notifications";
-import { resolveSettings, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
+import { resolveSettings, WORKSPACE_SETTINGS_FILE, workspaceOverlay, type LanguageOverrides, type WorkspaceOverlay } from "./settingsJson";
 
 /** `ext:<id>`: a view container contributed by an extension (exthost/views). */
 export type ViewId = "explorer" | "search" | "testing" | "task" | "scm" | "debug" | "extensions" | "projects" | "assignments" | "grading" | `ext:${string}`;
@@ -22,6 +22,8 @@ type EditorInputBase =
   | { kind: "settings"; id: "settings"; preview: false }
   /** The user settings.json (parts/editor/SettingsJsonEditor). */
   | { kind: "settingsJson"; id: "settingsJson"; preview: false }
+  /** The user's keybindings.json (parts/editor/KeybindingsJsonEditor). */
+  | { kind: "keybindingsJson"; id: "keybindingsJson"; preview: false }
   | { kind: "welcome"; id: "welcome"; preview: false }
   | { kind: "shortcuts"; id: "shortcuts"; preview: false }
   /**
@@ -1083,7 +1085,7 @@ export function updateTest(id: string, patch: Partial<TestItem>) {
   set({ tests: { ...t, items: t.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) } });
 }
 
-export function openSpecialEditor(kind: "settings" | "settingsJson" | "welcome" | "shortcuts") {
+export function openSpecialEditor(kind: "settings" | "settingsJson" | "keybindingsJson" | "welcome" | "shortcuts") {
   // Home always opens in the first group (the widest, the code's), never in a brief's column.
   const groupId = kind === "welcome" ? (get().groups[0]?.id ?? get().activeGroup) : get().activeGroup;
   if (kind === "welcome" && get().activeGroup !== groupId) set({ activeGroup: groupId });
@@ -1386,6 +1388,33 @@ export function applyUserSettingsJson(parsed: { values: Partial<Settings>; langu
   for (const k of locked) if (k in current) (next as unknown as Record<string, unknown>)[k] = current[k as SettingKey];
   set({ userSettings: next, settings: effective(next), languageSettings: parsed.languages, otherSettings: parsed.other });
   persist();
+}
+
+/**
+ * The Settings editor's Workspace tab: sets (or with undefined, removes) a key in the
+ * folder's .vscode/settings.json, keeping its comments. Not in exams.
+ */
+export async function setWorkspaceSetting(key: SettingKey, value: unknown) {
+  const s = get();
+  if (!s.workspace || s.policy.mode !== "practice" || isExamRoot(s.workspace.root)) {
+    notify("warning", "This folder's settings can't be changed now.");
+    return;
+  }
+  const fs = getPlatform().fs;
+  const text = await fs.readFile(WORKSPACE_SETTINGS_FILE).catch(() => "");
+  const { setJsonProperty } = await import("./jsonEdit");
+  const next = setJsonProperty(text, key, value);
+  if (next === text) return;
+  try {
+    if (!text) await fs.createDir(".vscode").catch(() => undefined);
+    await fs.writeFile(WORKSPACE_SETTINGS_FILE, next);
+  } catch (e) {
+    notify("error", `Could not save ${WORKSPACE_SETTINGS_FILE}: ${String((e as Error)?.message ?? e)}`);
+    return;
+  }
+  setWorkspaceSettingsText(next);
+  // A new .vscode folder shows in the Explorer.
+  if (!text) void refreshExplorer().catch(() => undefined);
 }
 
 let workspaceSettingsText: string | null = null;

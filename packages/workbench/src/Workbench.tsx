@@ -31,6 +31,8 @@ import { wireBackups } from "./state/backups";
 import { wireTaskRunner } from "./tasks/runner";
 import { wireBlame } from "./scm/blame";
 import { wireWorkspaceFile } from "./state/workspaceFile";
+import { wireProfiles } from "./state/profiles";
+import { wireSettingsSync } from "./state/settingsSync";
 import { wireRunServices } from "./run/wire";
 import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
@@ -132,6 +134,8 @@ export function Workbench() {
     wireTaskRunner();
     wireBlame();
     wireWorkspaceFile();
+    wireProfiles();
+    wireSettingsSync();
     wireSmartEditor();
     wireRunServices();
     wireScm();
