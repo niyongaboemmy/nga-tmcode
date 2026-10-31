@@ -21,6 +21,11 @@ async function fresh(page: Page) {
   });
   await page.reload();
   await expect(page.locator(".tm-statusbar")).toBeVisible();
+  // Signed in on a first run the side bar may move to Assignments: a key press keeps it on the Explorer.
+  await page.keyboard.press("F1");
+  await page.keyboard.type("View: Show Explorer");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".tm-explorer")).toBeVisible();
   await externalWrite(page, "js/app.js", "console.log('hi');\n");
   if (!(await row(page, "js/app.js").isVisible())) await row(page, "js").click();
   await row(page, "js/app.js").click();

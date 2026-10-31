@@ -53,7 +53,8 @@ test("the Assignments view lists practicals by state with a to-do badge", async 
   const button = page.locator('.tm-activity[aria-label^="Assignments"]');
   // One number (guided plan I): two assignments and the quiz practical to do.
   await expect(button.locator(".tm-activity-badge")).toHaveText("3", { timeout: 10_000 });
-  await button.click();
+  // The command, not the icon: clicking the active icon hides the side bar (a first run may already show Assignments).
+  await command(page, "View: Show Assignments");
   const view = page.getByTestId("assignments-view");
   await expect(view.locator(".tm-pane-title", { hasText: "To Do" })).toBeVisible();
   // Sorted by due date: the overdue case study first, with its lateness in red.
