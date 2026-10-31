@@ -9,6 +9,7 @@ describe("previews", () => {
     expect(previewKind("README.md")).toBe("markdown");
     expect(previewKind("data.tsv")).toBe("csv");
     expect(previewKind("main.py")).toBeNull();
+    expect(previewKind("backups/dump.SQL")).toBe("sql");
   });
 
   it("ticks the n-th task box, skipping code blocks", () => {

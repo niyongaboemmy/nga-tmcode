@@ -154,6 +154,11 @@ export interface Platform {
   newWindow?(path?: string): Promise<void>;
   /** Shows a workspace path in Finder / File Explorer. */
   reveal?(path: string): Promise<void>;
+  /**
+   * Desktop: saves an export (a diagram as PNG or PDF) where the user picks in a native Save dialog; the chosen path,
+   * or null when cancelled. Absent in the browser, where the workbench downloads the file instead.
+   */
+  saveFileAs?(fileName: string, data: Uint8Array, filter: { name: string; extensions: string[] }): Promise<string | null>;
   /** Changes made outside TMCode (workspace-relative paths). Returns an unsubscribe. */
   watch?(onChange: (paths: string[]) => void): () => void;
   /** Signed in-app updates (desktop). */
