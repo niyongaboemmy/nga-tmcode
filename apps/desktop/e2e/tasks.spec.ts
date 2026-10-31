@@ -6,10 +6,6 @@ import { expect, test, type Page } from "@playwright/test";
  * folder-open tasks after the student allows them, and Configure Task.
  */
 
-type Debug = { externalWrite(path: string, content: string): Promise<void> };
-const externalWrite = (page: Page, path: string, content: string) =>
-  page.evaluate(([p, c]) => (window as unknown as { __TMCODE_DEBUG__: Debug }).__TMCODE_DEBUG__.externalWrite(p, c), [path, content]);
-
 const TASKS = JSON.stringify({
   version: "2.0.0",
   tasks: [
