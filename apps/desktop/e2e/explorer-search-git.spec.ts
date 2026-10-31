@@ -80,13 +80,16 @@ test("an Explorer file dragged onto TMCode AI's chat is attached", async ({ page
   await boot(page, { signedIn: true });
   // Signed in, the side bar starts on Assignments: show the Explorer, then the chat (which takes the focus).
   // (The signed-in start may switch to Assignments once the account loads: show the Explorer until it stays.)
+  // On a slow machine that switch can come after the chat opens, so both must hold together.
+  const chat = page.getByTestId("tmcode-ai-chat");
   await expect(async () => {
     await palette(page, "View: Show Explorer");
     await expect(row(page, "main.py")).toBeVisible({ timeout: 1500 });
-  }).toPass({ timeout: 15_000 });
-  await palette(page, "TMCode AI: Ask TMCode AI");
-  const chat = page.getByTestId("tmcode-ai-chat");
-  await expect(chat).toBeVisible();
+    await palette(page, "TMCode AI: Ask TMCode AI");
+    await expect(chat).toBeVisible({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    await expect(row(page, "main.py")).toBeVisible({ timeout: 500 });
+  }).toPass({ timeout: 30_000 });
   const from = (await row(page, "main.py").boundingBox())!;
   const to = (await chat.boundingBox())!;
   await page.mouse.move(from.x + 20, from.y + from.height / 2);
