@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.3.0 — 2026-10-31
+
+**TMCode 1.3: your Claude, ChatGPT and Gemini accounts answer right in the editor.** Sign in once to Claude Code, ChatGPT (Codex) or Gemini CLI with your own account, free or paid, and TMCode AI answers with it: in the chat, in the terminal's AI, and in agent modes. No more copying code into a browser tab and back. And `.sql` files now preview as an interactive database diagram, with every table, key and relationship, exportable as PNG, PDF or SVG. The terminal's AI box now sits under the terminal instead of covering it, and the model menu always shows every choice.
+
+### Your AI accounts
+
+- **Pick one in "Which AI answers"** (the model menu in the chat and in the terminal's AI box). The new **Your AI accounts** section lists:
+  - **Claude Code** with your Claude account (Free, Pro, Max or an API key): its default model, Sonnet, Haiku or Opus;
+  - **ChatGPT (Codex)** with your ChatGPT account (or an OpenAI API key);
+  - **Gemini CLI** with your Google account (or a Gemini API key): Auto, Pro, Flash or Flash-Lite;
+  - any other model name you type.
+- **It answers with your account and your plan.** No TMCode AI allowance is used. When your plan's limit is reached, TMCode says so and offers **Your Plan** (to upgrade) or **Use Free AI and Retry**.
+- **In the chat (Chat mode)** and **in the terminal** (⌘I, `# words`, Fix with AI) it answers read-only: it can't run commands or change files. Your question goes to it on its input, never on a command line.
+- **In agent modes** (Manual, Edit automatically, Plan, Auto) it works on your project in a terminal, in its own matching permission mode, and asks there before it acts:
+  - Claude Code: manual, acceptEdits, plan, auto;
+  - Codex: read-only or workspace-write sandbox, asking on request;
+  - Gemini CLI: default, auto_edit, plan.
+- **Sign in, sign out, install, in one click.** The menu offers **Install…** when one isn't on your computer and **Sign In…** when it isn't signed in. Each runs in a terminal you can watch; signing in opens the company's own sign-in page in your browser.
+- **Settings › TMCode AI › Your AI accounts** shows each one's state: signed in as whom and on which plan, the version. Buttons: Sign In, Sign Out (or Switch Account for Gemini), Use for TMCode AI, Your Plan, Check Again.
+- **Your school stays in charge.** They are third-party AI tools: they work only where your school allows those (Task Mentor's AI settings, separately for students and staff), never in exams, and TMCode blocks the programs themselves when the school says no. Every question, agent task and command run is in the Activity log with the AI named (Claude Code, ChatGPT (Codex), Gemini CLI), where teachers see it.
+
+### The terminal's AI box
+
+- **It docks under the terminal.** The terminal shrinks above it instead of being covered, so the command you're asking about stays in view.
+- **Short panels:** the examples fit on one row and the tips step aside, so nothing is cut off. In a very short panel the terminal keeps its last lines and the answer scrolls.
+
+### The model menu
+
+- **Every choice, every time.** The menu used to show only Free and Auto when it opened before Task Mentor had answered. It now waits for the answer (a moment, with a placeholder), shows the free models, premium models, your AI accounts and your keys, and offers **Try again** if Task Mentor can't be reached.
+- **Add Your Own API Key…** is there whenever your school allows own keys, including when the list couldn't load.
+
+### Database diagrams for .sql files
+
+Open a schema or a database dump (mysqldump, phpMyAdmin, pg_dump, SQLite), click **Preview** above it, and TMCode draws every table, view and foreign key, like MySQL Workbench's EER diagram. Drag tables around, search, click one for all its details, and export the whole diagram as PNG, PDF or SVG.
+
+- **Edit | Preview** above every `.sql` file, as Markdown and CSV files already have. Edit stays the default.
+- **Each table is a card:** its name, how many columns, the table comment, and each column with its type.
+  - a key for the primary key, an arrow for a foreign key, a filled diamond for NOT NULL and an empty one for nullable;
+  - small badges: **UQ** unique · **IX** indexed · **AI** auto-increment · **DF** default · **GC** generated.
+  - Hover a column for everything about it (default, ON UPDATE, comment…).
+- **Views** are cards of their own (marked VIEW), with dotted lines to the tables they read.
+- **Relationship lines** go from the foreign key column to the column it references, with crow's-foot ends:
+  - a crow's foot means many, a bar means one, a ring means optional;
+  - a dashed line is a nullable foreign key; a foreign key that is also unique (or the primary key) is one-to-one.
+- **Automatic layout:** referenced tables sit left of the tables that reference them, crossings are kept low, and a table referenced by many (like `users`) doesn't make one endless column. Tables without relationships are grouped at the end.
+
+### The diagram: moving around
+
+- **Pan:** drag the background or scroll. **Zoom:** pinch, ⌘/Ctrl + scroll, the − / + buttons, or the − + 0 keys. **Fit to Screen** shows everything.
+- **Zoomed far out**, columns become bars and table names grow so you can still read the map.
+- **Drag tables** to arrange them. TMCode remembers where you put them for each file; **Reset Layout** goes back to the automatic one.
+- **Find a table or column:** matching tables stand out; Enter goes to each in turn.
+- **Keys Only** hides every column that isn't a key, for big schemas (on by default above 80 tables).
+- **A minimap** in the corner shows where you are; click or drag it to move.
+
+### The diagram: details
+
+- **Click a table** to light it up with its neighbours and open its details beside the diagram: every column (type, NULL / NOT NULL, default, auto-increment, enum values, check, comment), keys and indexes, the foreign keys it has and the ones that point to it, with their ON DELETE / ON UPDATE rules. Click a linked table to go there.
+- **Click a line** for that relationship: the columns on both sides, its cardinality in words and its rules.
+- **Line N** links go to the CREATE statement in the editor.
+
+### The diagram: export
+
+- **PNG, PDF or SVG** of the whole diagram, not just what's on screen, in the current theme's colours.
+- On the desktop app, a Save dialog asks where; in the browser the file downloads.
+
+### The diagram: what it reads
+
+- `CREATE TABLE` with backticked, double-quoted or [bracketed] names, schema-qualified names (`public.orders`), comments, inline and table-level `PRIMARY KEY` / `UNIQUE` / `FOREIGN KEY … REFERENCES … ON DELETE / ON UPDATE`, `CONSTRAINT` names, `CHECK`, `DEFAULT`, `NOT NULL`, `AUTO_INCREMENT` / `SERIAL` / `IDENTITY` / `GENERATED`, `KEY` / `INDEX` / `FULLTEXT` lines, `ENUM` and `SET`, column and table `COMMENT`s.
+- `ALTER TABLE … ADD` (constraints, keys, columns), `MODIFY` / `CHANGE`, `ALTER COLUMN … SET NOT NULL / DEFAULT`, `DROP`; `CREATE INDEX`; `CREATE VIEW` (also mysqldump's views inside `/*!50001 … */`) and materialized views; PostgreSQL `CREATE TYPE … AS ENUM` and `COMMENT ON`.
+- **Big dumps are fine:** `INSERT` and `COPY` data, triggers and functions are stepped over without being read, so a dump of tens of MB is drawn in about a second while the window stays responsive.
+- **Nothing hidden:** what couldn't be read (a broken statement, a foreign key to a table that isn't in the file) is listed under **N skipped**, with a link to its line. A file without `CREATE TABLE` says so.
+
+### All changes
+
+- Release notes: the schema diagram goes in 1.3.0
+- Merge main: keep the closing brace both sides shared
+- Preview .sql files as an interactive database schema diagram
+- Your Claude, ChatGPT and Gemini accounts answer TMCode AI; terminal AI box docks under the terminal (1.3.0)
+
 ## 1.2.0 — 2026-10-31
 
 **TMCode 1.2: ask the terminal in your own words, easier own API keys, and colours for every kind of file.** Forgot a command? Press ⌘I (Ctrl+I) in the terminal, or type `#` and what you want at the prompt, and TMCode AI answers with the commands to run. When a command fails, Fix with AI explains why and gives the corrected one. Nothing runs until you click, and dangerous commands ask twice. Your own API keys are now tested when you add them, and `.env` files (and about 200 other file types) finally have colours.
