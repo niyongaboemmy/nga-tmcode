@@ -78,6 +78,7 @@ const FR: Record<string, string> = {
   "New Terminal": "Nouveau terminal",
   "New Text File": "Nouveau fichier texte",
   "New Window": "Nouvelle fenêtre",
+  "Open Folder in New Window...": "Ouvrir un dossier dans une nouvelle fenêtre...",
   "Next Change": "Modification suivante",
   "Next Editor": "Éditeur suivant",
   "Next Problem": "Problème suivant",

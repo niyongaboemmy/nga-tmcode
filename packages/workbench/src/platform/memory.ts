@@ -57,6 +57,17 @@ export class MemoryFileSystem implements FileSystem {
     return content;
   }
 
+  /** Contents as base64. A seeded binary file (NUL bytes, or a PDF) is a string of byte values 0–255; text is UTF-8. */
+  async readBase64(path: string) {
+    const content = this.files.get(path);
+    if (content === undefined) throw new Error(`File '${path}' does not exist`);
+    if ((content.includes("\u0000") || content.startsWith("%PDF-")) && /^[\u0000-\u00ff]*$/.test(content)) return btoa(content);
+    const bytes = new TextEncoder().encode(content);
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
+
   async readFileAnyway(path: string) {
     const content = this.files.get(path);
     if (content === undefined) throw new Error(`File '${path}' does not exist`);
@@ -148,6 +159,10 @@ export class SwitchableFileSystem implements FileSystem {
   }
   readFileAnyway(p: string) {
     return this.target.readFileAnyway ? this.target.readFileAnyway(p) : this.target.readFile(p);
+  }
+  readBase64(p: string) {
+    if (!this.target.readBase64) throw new Error("Previewing binary files needs the TMCode desktop app.");
+    return this.target.readBase64(p);
   }
   writeFile(p: string, c: string) {
     return this.target.writeFile(p, c);
@@ -515,8 +530,9 @@ export function createMemoryPlatform(seed: Record<string, string> = DEMO_PROJECT
     // Dev server / e2e only: an NGA account and Task Mentor projects in memory.
     ...(import.meta.env?.DEV ? {
           account: createMemoryAccountHost(fs, {
-            async newFolder(name) {
-              let root = `memory://folders/${name}`;
+            async newFolder(name, base) {
+              const parent = base ? `memory://${base.replace(/^\/+|\/+$/g, "")}` : "memory://folders";
+              let root = `${parent}/${name}`;
               for (let i = 2; folders.has(root); i++) root = `memory://folders/${name}-${i}`;
               folders.set(root, new MemoryFileSystem({}));
               return root;

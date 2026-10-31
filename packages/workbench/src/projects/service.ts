@@ -1,4 +1,5 @@
 import { beginActivity, track } from "../state/activity";
+import { isExamRoot } from "../exam/roots";
 import { internally, recordActivity } from "../activity/log";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
@@ -743,12 +744,12 @@ export async function offerSaveBeforeSwitch(nextName: string, nextProjectId?: nu
 async function openProjectNow(projectId: number, opts: { folderName?: string; language?: string | null } = {}): Promise<boolean> {
   if (!projectsSupported()) return false;
   if (!(await requireSignIn({ label: opts.folderName ? "your project" : "the project", run: () => openProject(projectId, opts) }))) return false;
-  // Unsaved files first (Cancel keeps the open folder), not after cloning or downloading.
-  if (!(await confirmLeaveWorkspace())) return false;
   const store = getPlatform().store;
   const folders = (await store.get<Record<string, string>>(FOLDERS_KEY)) ?? {};
   const known = folders[String(projectId)];
   if (known) {
+    // Unsaved files first (Cancel keeps the open folder).
+    if (!(await confirmLeaveWorkspace())) return false;
     try {
       await (getPlatform().openPath ? openPathFromOs(known) : openRecent(known));
       if (useWorkbench.getState().workspace?.root === known) {
@@ -765,10 +766,20 @@ async function openProjectNow(projectId: number, opts: { folderName?: string; la
   }
   const { project } = await api<{ project: Project }>("GET", `/projects/${projectId}`);
   const host = getPlatform().account!;
-  // A new folder: where it goes (the Projects Folder; for PHP work, maybe the web server's folder).
-  const { chooseBase } = await import("./location");
-  const base = await chooseBase({ name: project.name, language: opts.language ?? project.language ?? null });
-  if (base === null) return false;
+  // Where it goes: anywhere the student picks, or the folder open now when it isn't connected to anything.
+  const ws = useWorkbench.getState().workspace;
+  const loose = !!ws && !get().binding && project.kind === "tm" && useWorkbench.getState().policy.mode === "practice" && !isExamRoot(ws.root);
+  const { chooseProjectLocation } = await import("./location");
+  const where = await chooseProjectLocation({ name: opts.folderName ?? project.name, language: opts.language ?? project.language ?? null, currentFolder: loose ? ws : null });
+  if (!where) return false;
+  if (where.kind === "current") {
+    await adoptOpenFolder(project);
+    void showBriefOfCurrent(projectId);
+    return true;
+  }
+  // Unsaved files first (Cancel keeps the open folder), not after cloning or downloading.
+  if (!(await confirmLeaveWorkspace())) return false;
+  const base = where.base;
   if (project.kind === "github") {
     const git = getPlatform().git;
     if (!git || !project.repo_url) {
@@ -800,6 +811,33 @@ async function openProjectNow(projectId: number, opts: { folderName?: string; la
   await bindWorkspace();
   void showBriefOfCurrent(projectId);
   return true;
+}
+
+/**
+ * The folder open now becomes `project`'s working copy: the project's files that aren't here
+ * (a teacher's starter files) come down, this folder's files go up; a file both have with
+ * different content is a conflict to resolve (Compare, keep mine or theirs).
+ */
+export async function adoptOpenFolder(project: Project) {
+  await connectFolder(project);
+  await pullFromTaskMentorNow({ quiet: true });
+  await recheck();
+  if (get().sync === "conflict") return notifyConflicts(get().plan?.conflicts ?? []);
+  if (get().sync === "local-changes" || get().sync === "both") await saveToTaskMentorNow({ message: "Files from the open folder", quiet: true }).catch(() => null);
+  notify("info", `This folder is now your work for "${project.assignment?.title ?? project.name}". Save as you go, then Submit.`);
+}
+
+/**
+ * The open folder replaces what `project` has in Task Mentor: the next save sends this folder as it is
+ * (files only in Task Mentor are removed there).
+ */
+export async function replaceWithOpenFolder(project: Project) {
+  const { head, files } = await headManifest(project.id);
+  await writeBinding({ project_id: project.id, tm_api: get().account?.tm_api ?? "", kind: project.kind, name: project.name, base_revision_id: head?.id ?? null, base: files });
+  await rememberFolder(project.id);
+  await recheck();
+  await saveToTaskMentorNow({ message: "Replaced with the open folder", quiet: true }).catch(() => null);
+  notify("info", `"${project.assignment?.title ?? project.name}" now has this folder's files. Save as you go, then Submit.`);
 }
 
 /** Projects: Move This Project… — every remembered project at the old folder now lives at the new one. */

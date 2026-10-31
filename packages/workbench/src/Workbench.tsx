@@ -1,4 +1,5 @@
 import { useActivity } from "./state/activity";
+import { AssignmentBanner } from "./projects/AssignmentBanner";
 import { wireErrorCapture } from "./help/reportIssue";
 import { AccessibleView } from "./accessibility/AccessibleView";
 import { wireSignals } from "./accessibility/signals";
@@ -340,9 +341,12 @@ export function Workbench() {
                   </Allotment.Pane>
                 )}
                 <Allotment.Pane minSize={120} visible={!panelMaximized}>
-                  <main className={`tm-editor-area ${centered ? "is-centered" : ""}`} aria-label="Editor">
-                    <EditorArea />
-                    <DebugToolbar />
+                  <main className={`tm-editor-area tm-editor-area--stack ${centered ? "is-centered" : ""}`} aria-label="Editor">
+                    <AssignmentBanner />
+                    <div className="tm-editor-area-body">
+                      <EditorArea />
+                      <DebugToolbar />
+                    </div>
                   </main>
                 </Allotment.Pane>
                 {panelLocation !== "left" && (

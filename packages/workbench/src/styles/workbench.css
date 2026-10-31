@@ -11853,3 +11853,298 @@ button.tm-setting-badge {
   font-family: var(--font-mono, Menlo, Consolas, monospace);
   font-size: 13px;
 }
+
+/* An open folder that isn't connected to an assignment (Assignments view). */
+.tm-assignments-loose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 10px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--warning-fg, #cca700) 50%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning-fg, #cca700) 8%, transparent);
+  font-size: 12px;
+}
+.tm-assignments-loose span {
+  flex: 1;
+}
+
+/* The editor area: the assignment banner above the editor groups. */
+.tm-editor-area--stack {
+  flex-direction: column;
+}
+.tm-editor-area-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+.tm-assignment-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  flex: none;
+}
+.tm-assignment-banner.is-warning {
+  background: color-mix(in srgb, #e5a000 18%, var(--editor-bg));
+  border-bottom-color: color-mix(in srgb, #e5a000 55%, var(--border));
+}
+.tm-assignment-banner.is-warning > .codicon {
+  color: #e5a000;
+}
+.tm-assignment-banner.is-success {
+  background: color-mix(in srgb, #2ea043 16%, var(--editor-bg));
+}
+.tm-assignment-banner.is-success > .codicon {
+  color: #2ea043;
+}
+.tm-assignment-banner.is-info {
+  background: color-mix(in srgb, var(--focus-border) 14%, var(--editor-bg));
+}
+.tm-assignment-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.tm-assignment-banner-title {
+  font-weight: 600;
+}
+.tm-assignment-banner-close {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--icon);
+  cursor: pointer;
+}
+.tm-chip--not-submitted .codicon {
+  font-size: 10px !important;
+}
+.tm-status-student.is-in_progress,
+.tm-status-student.is-returned {
+  color: #f0b429;
+  font-weight: 600;
+}
+
+/* ── Edit / Preview above Markdown and CSV files (GitHub's tabs) ── */
+.tm-viewmode-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--editor-bg);
+  flex: none;
+}
+.tm-viewmode-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--description);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tm-viewmode-tab:hover {
+  color: var(--foreground);
+}
+.tm-viewmode-tab.is-active {
+  border-color: var(--border);
+  border-bottom-color: var(--editor-bg);
+  background: var(--editor-bg);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.tm-viewmode-tab:focus-visible {
+  outline: 1px solid var(--focus-border, var(--accent));
+  outline-offset: -1px;
+}
+.tm-viewmode-hint {
+  margin-left: auto;
+  padding-bottom: 6px;
+  font-size: 11px;
+  color: var(--description);
+}
+.tm-markdown-preview.is-inline {
+  position: absolute;
+  inset: 0;
+}
+
+/* GitHub-like Markdown: heading anchors, task lists, tables. */
+.tm-md-github h1,
+.tm-md-github h2,
+.tm-md-github h3,
+.tm-md-github h4 {
+  position: relative;
+  margin: 24px 0 16px;
+}
+.tm-md-github h1 {
+  font-size: 2em;
+}
+.tm-md-github h2 {
+  font-size: 1.5em;
+}
+.tm-md-github h3 {
+  font-size: 1.25em;
+}
+.tm-md-anchor {
+  position: absolute;
+  left: -1.1em;
+  padding-right: 4px;
+  color: var(--description) !important;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.tm-md-github :is(h1, h2, h3, h4, h5, h6):hover .tm-md-anchor,
+.tm-md-anchor:focus-visible {
+  opacity: 1;
+}
+.tm-md-github .tm-task-list {
+  padding-left: 4px;
+  list-style: none;
+}
+.tm-md-github .tm-task-item input[type="checkbox"] {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tm-md-github table th {
+  font-weight: 600;
+}
+.tm-md-github table tr:nth-child(2n) td {
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.tm-md-github hr {
+  height: 3px;
+  border: 0;
+  background: var(--border);
+}
+
+/* ── Documents: PDF pages and Word ── */
+.tm-document,
+.tm-csv-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--editor-bg);
+}
+.tm-document-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 16px 48px;
+}
+.tm-document-stage.is-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: color-mix(in srgb, var(--foreground) 7%, var(--editor-bg));
+}
+.tm-document-stage:focus-visible {
+  outline: none;
+}
+.tm-pdf-page {
+  flex: none;
+  background: #fff;
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.25),
+    0 6px 18px rgb(0 0 0 / 0.12);
+}
+.tm-pdf-page canvas {
+  display: block;
+}
+.tm-document-pages {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--description);
+  font-variant-numeric: tabular-nums;
+}
+.tm-document-stage.is-docx {
+  background: color-mix(in srgb, var(--foreground) 7%, var(--editor-bg));
+}
+.tm-docx-page.tm-markdown-body {
+  max-width: 816px;
+  min-height: 1056px;
+  padding: 72px 80px;
+  background: #fff;
+  color: #1f2328;
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.25),
+    0 6px 18px rgb(0 0 0 / 0.12);
+}
+.tm-docx-page table td,
+.tm-docx-page table th {
+  border: 1px solid #d0d7de;
+  padding: 4px 8px;
+}
+.tm-document-error {
+  flex-direction: column;
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .tm-docx-page.tm-markdown-body {
+    padding: 32px 20px;
+    min-height: 0;
+  }
+}
+
+/* ── CSV / TSV table ── */
+.tm-csv-filter {
+  width: 220px;
+}
+.tm-csv-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.tm-csv-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.tm-csv-table th,
+.tm-csv-table td {
+  max-width: 360px;
+  padding: 3px 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.tm-csv-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--foreground) 8%, var(--editor-bg));
+  font-weight: 600;
+}
+.tm-csv-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.tm-csv-n {
+  color: var(--description);
+  text-align: right !important;
+  user-select: none;
+}
+.tm-csv-table thead .tm-csv-n {
+  left: 0;
+  z-index: 2;
+}

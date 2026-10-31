@@ -1,8 +1,9 @@
 import { track } from "../state/activity";
+import { registerQuitGuard } from "../state/quit";
 import { msg } from "../messages/catalog";
 import { create } from "zustand";
 import { inExam } from "../exam/state";
-import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, useWorkbench } from "../state/store";
+import { activateEditor, focusGroup, getPlatform, notify, openEditorInput, openFile, revealView, showDialog, useWorkbench } from "../state/store";
 import { showQuickPick } from "../widgets/QuickPick";
 import { api, notifyError, offerSaveBeforeSwitch, openProject, projectsSupported, refreshProjects, saveToTaskMentor, signIn, signedIn, submitLink, useProjects, TmError } from "./service";
 import { confirmSubmit, explainSubmitError, notifySubmitted } from "./submitFlow";
@@ -202,6 +203,128 @@ export function wireAssignments() {
   setInterval(() => signedIn() && void refreshAssignments(), 5 * 60_000);
   // Back from Task Mentor (where a teacher just published one): the list catches up.
   if (typeof window !== "undefined") window.addEventListener("focus", () => void refreshIfStale(20_000));
+  // Quitting with an assignment that isn't handed in, due soon or late: a last reminder.
+  registerQuitGuard(remindUnsubmitted);
+  // A folder opened on its own (work started outside TMCode): offer to make it an assignment's work.
+  let offeredFor: string | null = null;
+  useProjects.subscribe((s) => {
+    const root = useWorkbench.getState().workspace?.root ?? null;
+    if (s.sync !== "unbound" || !root || root === offeredFor || !signedIn()) return;
+    offeredFor = root;
+    setTimeout(() => void offerConnectFolder(root), 1200);
+  });
+}
+
+/** The open assignment isn't submitted and is due within two days (or late): offer to submit before quitting. */
+async function remindUnsubmitted(): Promise<boolean> {
+  const p = useProjects.getState().current;
+  const a = p?.assignment ? get().student?.find((x) => x.id === p.assignment!.id) : undefined;
+  if (!a || !p || inExam()) return true;
+  const status = resolveStatus(a, p).status;
+  if (status !== "in_progress" && status !== "returned") return true;
+  const due = a.due_date ? Date.parse(a.due_date) : NaN;
+  if (!Number.isFinite(due) || due - Date.now() > 48 * 3600_000) return true;
+  const late = due < Date.now();
+  const choice = await showDialog({
+    severity: "warning",
+    message: `"${a.title}" isn't submitted.`,
+    detail: `${late ? "It was due" : "It's due"} ${new Date(due).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}. Your teacher can't see your work until you submit it.`,
+    buttons: [
+      { id: "submit", label: "Submit Now", primary: true },
+      { id: "quit", label: "Quit Without Submitting" },
+      { id: "cancel", label: "Cancel" },
+    ],
+    cancelId: "cancel",
+  });
+  if (choice === "submit") void submitAssignment(a.id);
+  return choice === "quit";
+}
+
+/** Assignments a folder can become the work for: the student's, still taking work, not handed in. */
+export function connectableAssignments(list: AssignmentSummary[] | null): AssignmentSummary[] {
+  return (list ?? []).filter((a) => {
+    const st = studentStatus(a);
+    return st === "not_started" || st === "in_progress" || st === "returned";
+  });
+}
+
+const OFFER_KEY = (root: string) => `assignments.connectOffer:${root}`;
+
+async function offerConnectFolder(root: string) {
+  const s = useWorkbench.getState();
+  if (s.workspace?.root !== root || s.policy.mode !== "practice" || inExam() || useProjects.getState().sync !== "unbound") return;
+  if (!connectableAssignments(get().student).length) return;
+  const store = getPlatform().store;
+  if (await store.get<boolean>(OFFER_KEY(root)).catch(() => false)) return;
+  notify("info", `Is "${s.workspace.name}" your work for an assignment? Connect it, and you can save it to Task Mentor and submit it from here.`, [
+    { label: "Connect to an Assignment…", run: () => void connectFolderToAssignment() },
+    { label: "Not an Assignment", run: () => void store.set(OFFER_KEY(root), true) },
+  ]);
+}
+
+/**
+ * Projects: Connect This Folder to an Assignment… — the folder open now becomes an assignment's work.
+ * Not started: the assignment starts with this folder (the teacher's starter files added beside yours).
+ * Started already: replace that project with this folder, or open the project you have.
+ */
+export async function connectFolderToAssignment(presetId?: number) {
+  if (inExam()) return notify("info", msg("start.examFirst"));
+  if (!signedIn()) return void signIn();
+  const ws = useWorkbench.getState().workspace;
+  if (!ws) return notify("info", "Open the folder with your work first (File › Open Folder…).");
+  if (useProjects.getState().binding) return notify("info", `This folder is already connected to "${useProjects.getState().binding!.name}". Projects: Disconnect This Folder first to connect it to something else.`);
+  if (!get().student) await refreshAssignments();
+  const list = connectableAssignments(get().student);
+  if (!list.length) return notify("info", "You have no assignments waiting for work. Finished ones are in the Assignments view.");
+  let a = presetId ? list.find((x) => x.id === presetId) : undefined;
+  if (!a) {
+    const pick = await showQuickPick({
+      title: `Connect "${ws.name}" to an assignment`,
+      placeholder: "Which assignment is this folder's work for?",
+      matchOnDescription: true,
+      items: list.map((x) => ({
+        id: String(x.id),
+        label: x.title,
+        description: [x.course_name, STATUS_LABEL[studentStatus(x)]].filter(Boolean).join(" · "),
+        detail: x.my?.project_id ? "You already have a project for it: you can replace it with this folder" : "Starts it with this folder",
+        icon: x.my?.project_id ? "cloud" : "notebook",
+      })),
+    });
+    a = pick ? list.find((x) => String(x.id) === pick.id) : undefined;
+  }
+  if (!a) return;
+  setBusy(a.id, "starting");
+  try {
+    const { adoptOpenFolder, replaceWithOpenFolder } = await import("./service");
+    if (a.my?.project_id) {
+      const choice = await showDialog({
+        severity: "warning",
+        message: `"${a.title}" already has your project in Task Mentor.`,
+        detail: `Replace it with the files of "${ws.name}", or Continue with the project you already have? Replacing keeps Task Mentor's earlier versions in its history.`,
+        buttons: [
+          { id: "replace", label: "Replace with This Folder", primary: true },
+          { id: "open", label: "Continue" },
+          { id: "cancel", label: "Cancel" },
+        ],
+        cancelId: "cancel",
+      });
+      if (choice === "open") return void startAssignment(a.id);
+      if (choice !== "replace") return;
+      const { project } = await api<{ project: Project }>("GET", `/projects/${a.my.project_id}`);
+      await replaceWithOpenFolder(project);
+    } else {
+      const { project } = await api<{ project: Project; created: boolean }>("POST", `/assignments/${a.id}/start`, {});
+      await adoptOpenFolder(project);
+    }
+    markJourney("first-start");
+    showAssignment(a.id, { toSide: true });
+    void refreshAssignments();
+    void refreshProjects();
+  } catch (e) {
+    notifyError(e);
+  } finally {
+    setBusy(a.id, undefined);
+  }
 }
 
 /** Refreshes unless the lists are fresher than `maxAgeMs` (opening the view, focusing the window). */

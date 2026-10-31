@@ -65,6 +65,8 @@ export interface Settings {
   "projects.presence": boolean;
   /** Where new projects are created ("" = ~/TMCode Projects). */
   "projects.folder": string;
+  /** Start / Open ask where a new project's folder goes (else: the Projects Folder). */
+  "projects.askLocation": boolean;
   /**
    * PHP websites: "ask" (default) offers the computer's web server folder (XAMPP/MAMP/WAMP htdocs) when
    * there is one; "webServer" always uses it; "projectsFolder" keeps them with the other projects
@@ -192,6 +194,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "projects.autoSave": "assignments",
   "projects.presence": true,
   "projects.folder": "",
+  "projects.askLocation": true,
   "projects.phpLocation": "ask",
   "livePreview.updateOn": "onType",
   "livePreview.followActiveFile": false,
@@ -549,6 +552,12 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         description: "Where new projects are created, assignments' included. Empty: the TMCode Projects folder in your home folder. Projects: Move This Project… moves one that already exists.",
         type: "string",
         placeholder: "~/TMCode Projects",
+      },
+      {
+        key: "projects.askLocation",
+        label: "Projects: Ask Where to Save",
+        description: "When you start an assignment or open a project for the first time, ask where its folder goes (anywhere on this computer, or the folder open now). Off: always the Projects Folder.",
+        type: "boolean",
       },
       {
         key: "projects.phpLocation",

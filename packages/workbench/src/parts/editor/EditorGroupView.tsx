@@ -41,6 +41,9 @@ import { BrowserEditor } from "./BrowserEditor";
 import { HistoryDiffEditor } from "../../history/HistoryDiffEditor";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MediaEditor, isMediaFile } from "./MediaEditor";
+import { DocumentEditor } from "./DocumentEditor";
+import { CsvPreview } from "./CsvPreview";
+import { isDocumentFile, previewKind, setViewMode, useViewMode } from "./documentPreview";
 import { ExtensionEditor, extensionTitle } from "../extensions/ExtensionEditor";
 import { ExtensionTitleActions } from "../../exthost/ui";
 // ── git ──
@@ -371,6 +374,9 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
   const pointerZone = pointerOver && "zone" in pointerOver ? pointerOver.zone : null;
   const tabsRef = useRef<HTMLDivElement>(null);
   const active = group.editors.find((e) => e.id === group.activeId) ?? null;
+  const activePreview = active?.kind === "file" ? previewKind(active.path) : null;
+  const viewMode = useViewMode((s) => (active?.kind === "file" ? (s.modes[active.path] ?? "edit") : "edit"));
+  const previewing = !!activePreview && viewMode === "preview";
   const isActiveGroup = activeGroup === group.id;
   const describe = descriptions(group.editors);
 
@@ -605,6 +611,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         </div>
       )}
       {breadcrumbs && active?.kind === "file" && !active.path.startsWith("tmcode-untitled:") && <Breadcrumbs path={active.path} groupId={group.id} />}
+      {activePreview && active?.kind === "file" && <ViewModeBar path={active.path} mode={viewMode} kind={activePreview} />}
       <div
         className="tm-editor-content"
         onDragOver={(e) => {
@@ -621,11 +628,12 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {(dropOn ?? pointerZone) && <div className={`tm-editor-drop is-${dropOn ?? pointerZone}`} data-testid="editor-drop-overlay" aria-hidden />}
         {/* Keep Monaco mounted while switching between files of this group. */}
         {group.editors.some((e) => e.kind === "file" && !isMediaFile(e.path)) && (
-          <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path)}>
+          <div className="tm-editor-slot" hidden={active?.kind !== "file" || isMediaFile(active.path) || previewing}>
             <CodeEditor groupId={group.id} path={active?.kind === "file" && !isMediaFile(active.path) ? active.path : lastFile(group)} />
           </div>
         )}
-        {active?.kind === "file" && isMediaFile(active.path) && <MediaEditor key={active.path} path={active.path} />}
+        {previewing && active?.kind === "file" && (previewKind(active.path) === "csv" ? <CsvPreview key={active.path} path={active.path} /> : <MarkdownEditor key={active.path} input={{ kind: "markdown", id: `inline:${active.path}`, path: active.path, preview: false }} inline />)}
+        {active?.kind === "file" && isMediaFile(active.path) && (isDocumentFile(active.path) ? <DocumentEditor key={active.path} path={active.path} /> : <MediaEditor key={active.path} path={active.path} />)}
         {active?.kind === "image" && <MediaEditor key={active.id} path={active.path} />}
         {active?.kind === "markdown" && <MarkdownEditor key={active.id} input={active} />}
         {active?.kind === "browser" && <BrowserEditor key={active.id} input={active} />}
@@ -650,6 +658,23 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {!active && <Watermark />}
       </div>
     </section>
+  );
+}
+
+/** Edit (the default) or Preview above a Markdown or CSV file, as GitHub shows them. */
+function ViewModeBar({ path, mode, kind }: { path: string; mode: "edit" | "preview"; kind: "markdown" | "csv" }) {
+  const tab = (m: "edit" | "preview", icon: string, label: string) => (
+    <button type="button" role="tab" aria-selected={mode === m} className={`tm-viewmode-tab ${mode === m ? "is-active" : ""}`} onClick={() => setViewMode(path, m)} data-testid={`viewmode-${m}`}>
+      <Codicon name={icon} />
+      {label}
+    </button>
+  );
+  return (
+    <div className="tm-viewmode-bar" role="tablist" aria-label="Edit or preview" data-testid="viewmode-bar" data-mode={mode}>
+      {tab("edit", "edit", "Edit")}
+      {tab("preview", kind === "csv" ? "table" : "open-preview", "Preview")}
+      {mode === "preview" && kind === "markdown" && <span className="tm-viewmode-hint">Tick a task box to update the file.</span>}
+    </div>
   );
 }
 

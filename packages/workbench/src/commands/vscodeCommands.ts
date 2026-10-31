@@ -314,6 +314,16 @@ export function registerVsCodeCommands() {
     run: () => void getPlatform().newWindow?.().catch((e) => notify("error", String((e as Error)?.message ?? e))),
   });
   registerCommand({
+    id: "workbench.action.openFolderInNewWindow",
+    title: "Open Folder in New Window...",
+    category: "File",
+    enabled: () => canOpenWindow() && !!getPlatform().account?.pickBase,
+    run: async () => {
+      const path = await getPlatform().account?.pickBase?.("Open a Folder in a New Window");
+      if (path) await getPlatform().newWindow?.(path).catch((e) => notify("error", String((e as Error)?.message ?? e)));
+    },
+  });
+  registerCommand({
     id: "workbench.action.openRecentInNewWindow",
     title: "Open Recent in New Window...",
     category: "File",

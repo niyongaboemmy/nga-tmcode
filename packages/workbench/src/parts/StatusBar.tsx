@@ -153,8 +153,8 @@ function ProjectStatus() {
     >
       <Codicon name={SYNC_ICON[state]} className={busy ? "codicon-modifier-spin" : ""} />
       {view && (
-        <span className="tm-status-student" data-testid="project-student-status" data-status={view.status}>
-          {view.syncing ? "Updating…" : STUDENT_STATUS_LABEL[view.status]} ·
+        <span className={`tm-status-student is-${view.status}`} data-testid="project-student-status" data-status={view.status}>
+          {view.syncing ? "Updating…" : view.status === "in_progress" || view.status === "returned" ? `${STUDENT_STATUS_LABEL[view.status]}: not submitted` : view.status === "submitted" ? "✓ Submitted" : STUDENT_STATUS_LABEL[view.status]} ·
         </span>
       )}
       <span data-testid="project-status" data-state={state}>

@@ -44,7 +44,7 @@ interface Rev {
   created_at: string;
 }
 
-export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string): Promise<string> }): AccountHost {
+export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(name: string, base?: string): Promise<string> }): AccountHost {
   const code = createFakeCodeRunner();
   // TMCode AI and the activity log endpoints (memoryAi.ts).
   const ai = memoryAi();
@@ -896,9 +896,20 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
         await fs.writeFile(path, text);
       });
     },
-    async newFolder(name) {
+    async newFolder(name, base) {
       if (!folders) throw new Error("New folders need the TMCode desktop app.");
-      return folders.newFolder(name);
+      return folders.newFolder(name, base);
     },
+    // e2e only: localStorage "tmcode:mock-pick-base" stands in for the desktop's folder picker.
+    ...(typeof localStorage !== "undefined" && localStorage.getItem("tmcode:mock-pick-base") !== null
+      ? {
+          async pickBase() {
+            return localStorage.getItem("tmcode:mock-pick-base") || null;
+          },
+          async defaultBase() {
+            return "~/TMCode Projects";
+          },
+        }
+      : {}),
   };
 }
