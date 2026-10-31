@@ -58,6 +58,8 @@ export interface Message {
   checkpoint?: { files: string[]; undone?: boolean };
   /** The mode it was asked in. */
   mode?: ChatMode;
+  /** Images attached to a question (data: URLs), shown as thumbnails. */
+  images?: string[];
 }
 
 interface ChatState {
@@ -161,7 +163,8 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
   if (ref) question = `About your earlier answer:\n> ${ref.excerpt.replace(/\n/g, "\n> ")}\n\n${question}`;
   const { context, chips } = await gatherContext(opts);
   const prior = priorTurns();
-  const user: Message = { id: ++seq, role: "user", content: text.trim(), chips: ref ? ["earlier answer", ...chips] : chips, mode };
+  const images = (opts.attachments ?? []).flatMap((a) => (a.kind === "image" && a.image ? [a.image] : []));
+  const user: Message = { id: ++seq, role: "user", content: text.trim(), chips: ref ? ["earlier answer", ...chips] : chips, mode, ...(images.length ? { images } : {}) };
   const answer: Message = { id: ++seq, role: "assistant", content: "", streaming: true, mode, ...(mode !== "chat" ? { steps: [] } : {}) };
   useChat.setState((s) => ({ messages: [...s.messages, user, answer], busy: true, history: [...s.history.filter((h) => h !== text.trim()), text.trim()].slice(-50), reference: null }));
   stopFlag.cancelled = false;
@@ -174,8 +177,10 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
     actor: { type: "you" },
     ai: { by: "TMCode AI", how: mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
   });
-  if (mode === "chat") return answerOnce(answer.id, [...prior, { role: "user", content: question }], context);
-  return runAgent(answer.id, mode, [...prior, { role: "user", content: question }], context);
+  // Images go with this question only (earlier turns are sent as text).
+  const turn: WireMessage = { role: "user", content: images.length ? [{ type: "text", text: question }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))] : question };
+  if (mode === "chat") return answerOnce(answer.id, [...prior, turn], context);
+  return runAgent(answer.id, mode, [...prior, turn], context);
 }
 
 /** One streamed request; resolves with its text and tool calls. */

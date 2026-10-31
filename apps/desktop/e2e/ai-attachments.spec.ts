@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
  * TMCode AI attachments, as in Claude Code: the paperclip, long pasted text
  * as a "Pasted text" chip, files dropped on the chat (from the OS or the
  * Explorer). Their text goes along with the question; the chips can be
- * removed; images wait for a model that can read them.
+ * removed; images go to a model that can read them.
  */
 
 type Debug = { externalWrite(path: string, content: string): Promise<void> };
@@ -76,21 +76,46 @@ test("long pasted text becomes a chip; a file alone is a question too", async ({
   await expect.poll(() => lastTask(page)).toContain("Pasted text #1:\n```\nTraceback line 0");
 });
 
-test("files dropped on the chat attach; images wait for a model that reads them", async ({ page }) => {
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const drop = (page: Page, files: { name: string; type: string; base64?: string; body?: string }[]) =>
+  page.evaluate((list) => {
+    const target = document.querySelector('[data-testid="tmcode-ai-chat"]')!;
+    const data = new DataTransfer();
+    for (const f of list) {
+      const bytes = f.base64 ? Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0)) : new TextEncoder().encode(f.body ?? "");
+      data.items.add(new File([bytes], f.name, { type: f.type }));
+    }
+    target.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
+    target.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+  }, files);
+
+test("files and images dropped on the chat attach; the image goes to a model that reads it", async ({ page }) => {
   await openChat(page);
-  const drop = (files: { name: string; type: string; body: string }[]) =>
-    page.evaluate((list) => {
-      const target = document.querySelector('[data-testid="tmcode-ai-chat"]')!;
-      const data = new DataTransfer();
-      for (const f of list) data.items.add(new File([f.body], f.name, { type: f.type }));
-      target.dispatchEvent(new DragEvent("dragover", { dataTransfer: data, bubbles: true, cancelable: true }));
-      target.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
-    }, files);
-  await drop([{ name: "index.html", type: "text/html", body: "<h1>Hi</h1>" }]);
+  await drop(page, [{ name: "index.html", type: "text/html", body: "<h1>Hi</h1>" }]);
   await expect(chips(page)).toContainText("index.html");
-  await drop([{ name: "shot.png", type: "image/png", body: "\x89PNG" }]);
-  await expect(page.getByTestId("ai-attach-error")).toContainText("can't read images");
-  await expect(chips(page)).toHaveCount(1);
+  await drop(page, [{ name: "shot.png", type: "image/png", base64: PNG }]);
+  await expect(chips(page)).toHaveCount(2);
+  await expect(chips(page).last().locator("img.tm-chat-thumb")).toBeVisible();
+
+  await page.getByTestId("ai-input").fill("What is wrong on this page?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("ai-question-image")).toHaveCount(1);
+  await expect(page.locator(".tm-chat-answer").last()).toContainText("I can see 1 image", { timeout: 10_000 });
+  const body = (await mock(page, "m.lastAiChatBody()")) as { messages: { role: string; content: unknown }[] };
+  const last = body.messages[body.messages.length - 1].content as { type: string; text?: string; image_url?: { url: string } }[];
+  expect(last[0]).toEqual({ type: "text", text: "What is wrong on this page?" });
+  expect(last[1].image_url?.url).toMatch(/^data:image\/(png|jpeg);base64,/);
+});
+
+test("a model that can't read images refuses them, with a way out", async ({ page }) => {
+  await openChat(page);
+  await page.getByTestId("ai-mode").click();
+  await page.keyboard.type("gpt-oss");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("ai-mode")).toContainText("gpt-oss");
+  await drop(page, [{ name: "shot.png", type: "image/png", base64: PNG }]);
+  await expect(page.getByTestId("ai-attach-error")).toContainText("can't read images. Pick Auto");
+  await expect(chips(page)).toHaveCount(0);
 });
 
 test("an Explorer file dragged onto the chat attaches the workspace file", async ({ page }) => {
@@ -114,4 +139,18 @@ test("no more than five attachments", async ({ page }) => {
   await page.getByTestId("ai-attach-input").setInputFiles(Array.from({ length: 6 }, (_, i) => ({ name: `f${i}.txt`, mimeType: "text/plain", buffer: Buffer.from(`file ${i}`) })));
   await expect(chips(page)).toHaveCount(5);
   await expect(page.getByTestId("ai-attach-error")).toContainText("up to 5 files");
+});
+
+test("a pasted screenshot attaches as an image", async ({ page }) => {
+  await openChat(page);
+  await page.getByTestId("ai-input").focus();
+  await page.evaluate((b64) => {
+    const el = document.querySelector<HTMLTextAreaElement>('[data-testid="ai-input"]')!;
+    const data = new DataTransfer();
+    data.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], "", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG);
+  await expect(chips(page)).toHaveCount(1);
+  await expect(chips(page)).toContainText("image.png");
+  await expect(chips(page).locator("img.tm-chat-thumb")).toBeVisible();
 });

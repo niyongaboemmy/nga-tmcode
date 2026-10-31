@@ -11468,3 +11468,16 @@ button.tm-setting-badge {
   color: var(--warning-fg, #cca700);
   font-size: 12px;
 }
+.tm-chat-q-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.tm-chat-q-image {
+  max-width: 140px;
+  max-height: 100px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}

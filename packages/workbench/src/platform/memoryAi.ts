@@ -81,8 +81,9 @@ export function memoryAi() {
           { id: "auto", label: "Auto", detail: "Picks a free AI that still has requests left today." },
         ],
         models: [
-          { id: "openrouter/nvidia/nemotron-3-super-120b-a12b:free", label: "nvidia/nemotron-3-super-120b-a12b", provider: "openrouter", providerLabel: "OpenRouter (free models)" },
-          { id: "groq/openai/gpt-oss-20b", label: "openai/gpt-oss-20b", provider: "groq", providerLabel: "Groq (free tier)" },
+          { id: "openrouter/nvidia/nemotron-3-super-120b-a12b:free", label: "nvidia/nemotron-3-super-120b-a12b", provider: "openrouter", providerLabel: "OpenRouter (free models)", vision: false },
+          { id: "openrouter/google/gemma-3-27b-it:free", label: "google/gemma-3-27b-it", provider: "openrouter", providerLabel: "OpenRouter (free models)", vision: true },
+          { id: "groq/openai/gpt-oss-20b", label: "openai/gpt-oss-20b", provider: "groq", providerLabel: "Groq (free tier)", vision: false },
         ],
         you: { chat: { used, limit: CHAT_LIMIT }, complete: { used: completes, limit: 200 } },
         pools: { openrouter: { label: "OpenRouter (free models)", used: 4, limit: 50, remaining: 46 }, groq: { label: "Groq (free tier)", used: 0, limit: 1000, remaining: 1000 } },
@@ -111,6 +112,8 @@ export function memoryAi() {
   }
 
   function answer(question: string, context: Record<string, unknown>): string {
+    const seen = /\n\[(\d+) images?\]$/.exec(question);
+    if (seen) return `I can see ${seen[1]} image${seen[1] === "1" ? "" : "s"}. The screenshot shows an error message on the page.`;
     const file = typeof context.file === "string" ? context.file : null;
     const name = file ? file.slice(file.lastIndexOf("/") + 1) : null;
     const code = typeof context.selection === "string" ? context.selection : typeof context.fileText === "string" ? context.fileText : "";
@@ -133,7 +136,12 @@ export function memoryAi() {
         const mode = String(body.mode ?? "free");
         if (mode.startsWith("premium:") && !mockTiers()?.premium) return { status: 403, body: { code: "PREMIUM_REQUIRED", message: "Premium AI isn't turned on for your account." } };
         if (mode.startsWith("byok:") && (body.byok as { key?: string } | undefined)?.key === "bad") return { status: 400, body: { code: "BYOK_REJECTED", message: "The provider refused the key (401 Unauthorized)." } };
-        const messages = (body.messages as { role: string; content: string }[]) ?? [];
+        const raw = (body.messages as { role: string; content: string | { type: string; text?: string }[] }[]) ?? [];
+        // Questions with images (content parts): the text, and how many images came.
+        const images = raw.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter((p) => p.type === "image_url").length : 0), 0);
+        if (images && /^groq\/|nemotron/.test(mode)) return { status: 400, body: { code: "NO_VISION", message: "The AI available now can't read images." } };
+        const messages = raw.map((m) => ({ ...m, content: Array.isArray(m.content) ? m.content.map((p) => p.text ?? "").join("") : m.content })) as { role: string; content: string }[];
+        if (images) messages[messages.length - 1].content += `\n[${images} image${images === 1 ? "" : "s"}]`;
         const id = `job-${++seq}`;
         const agent = body.agent as { mode: string; step: number } | undefined;
         jobs.set(id, { mode: String(body.mode ?? "free"), question: messages.filter((m) => m.role === "user").pop()?.content ?? "", context: (body.context as Record<string, unknown>) ?? {}, agent, messages: messages as unknown as Wire[] });

@@ -14,7 +14,8 @@ import { AiExtensions } from "./AiExtensions";
 import { useAiGate } from "./gate";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { approveStep, ask, MODES, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
-import { effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
+import { aiReadsImages, effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
+import { scaleImage } from "./imageScale";
 import { addAttachments, ATTACH_LIMITS, formatSize, fromAttachedFile, fromBrowserFile, pastedAttachment, textAttachment, type Attachment } from "./attachments";
 
 /**
@@ -419,10 +420,6 @@ function attachRefusal(): string | null {
   return null;
 }
 
-/** Can the AI that answers read images? (Phase 2: vision models.) */
-function imagesAccepted(): boolean {
-  return false;
-}
 
 /** Workspace files dragged from the Explorer onto the chat. */
 async function workspaceAttachments(paths: string[]): Promise<(Attachment | string)[]> {
@@ -485,8 +482,14 @@ export function ChatView() {
   const attach = async (load: () => Promise<(Attachment | string)[]>) => {
     const refusal = attachRefusal();
     if (refusal) return setAttachError(refusal);
-    const items = (await load()).map((a) =>
-      typeof a !== "string" && a.kind === "image" && !imagesAccepted() ? `${a.name}: the AI answering now can't read images. Attach code or text files.` : a,
+    const reads = aiReadsImages();
+    const items = await Promise.all(
+      (await load()).map(async (a) => {
+        if (typeof a === "string" || a.kind !== "image" || !a.image) return a;
+        if (!reads) return `${a.name}: the AI answering now can't read images. Pick Auto or a model that reads images, or attach code and text files.`;
+        const scaled = await scaleImage(a.image);
+        return { ...a, image: scaled.dataUrl, size: scaled.size };
+      }),
     );
     const { list, errors } = addAttachments(attachedRef.current, items);
     setAttachments(list);
@@ -728,6 +731,13 @@ export function ChatView() {
         {messages.map((m) =>
           m.role === "user" ? (
             <div key={m.id} className="tm-chat-q">
+              {!!m.images?.length && (
+                <div className="tm-chat-q-images">
+                  {m.images.map((src, i) => (
+                    <img key={i} src={src} alt={`Attached image ${i + 1}`} className="tm-chat-q-image" data-testid="ai-question-image" />
+                  ))}
+                </div>
+              )}
               <div className="tm-chat-q-text">{m.content}</div>
               <div className="tm-chat-q-foot">
                 {m.mode && m.mode !== "chat" && <span className="tm-chat-chip is-mode">{MODES.find((x) => x.id === m.mode)?.label}</span>}
