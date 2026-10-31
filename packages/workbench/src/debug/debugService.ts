@@ -287,12 +287,26 @@ export function selectConfiguration(name: string | null) {
   persist();
 }
 
+/**
+ * Extensions' debug configuration providers (debug.registerDebugConfigurationProvider), set by the
+ * extension host bridge: their starting points for Add Configuration, and their last word on a
+ * configuration before it starts (null: the extension stopped the launch).
+ */
+export const extensionDebugConfigs: {
+  provide: () => Promise<LaunchConfig[]>;
+  resolve: (config: LaunchConfig) => Promise<LaunchConfig | null>;
+} = { provide: async () => [], resolve: async (c) => c };
+
 export async function addConfiguration() {
   if (!useWorkbench.getState().workspace) return notify("info", "Open a folder to create a launch.json file.");
   const kind = debugKindForPath(activeFilePath());
   const order = (t: (typeof TEMPLATES)[number]) => (adapterKindFor(t.config.type) === kind ? 0 : 1);
+  const fromExtensions = await Promise.race([extensionDebugConfigs.provide().catch(() => [] as LaunchConfig[]), new Promise<LaunchConfig[]>((r) => setTimeout(() => r([]), 2000))]);
   const tpl = await pickValue(
-    [...TEMPLATES].sort((a, b) => order(a) - order(b)).map((t) => ({ label: t.label, description: t.description, value: t })),
+    [
+      ...[...TEMPLATES].sort((a, b) => order(a) - order(b)).map((t) => ({ label: t.label, description: t.description, value: t })),
+      ...fromExtensions.filter((c) => c.name && c.type).map((c) => ({ label: c.name, description: `from an extension (${c.type})`, value: { label: c.name, description: "", config: c } })),
+    ],
     { placeholder: "Select a debug configuration to add" },
   );
   if (!tpl) return;
@@ -917,6 +931,10 @@ export async function startDebugging(cfg?: LaunchConfig | null, opts: StartOptio
     );
     return false;
   }
+  // An extension's provider may adjust it, or stop the launch.
+  const byExtension = await Promise.race([extensionDebugConfigs.resolve(config).catch(() => config), new Promise<LaunchConfig | null>((r) => setTimeout(() => r(config), 3000))]);
+  if (!byExtension) return false;
+  config = byExtension;
   // "Attach to Process": the student picks the running program.
   if (usesPickProcess(config)) {
     const list = (await host.processes?.().catch(() => [])) ?? [];

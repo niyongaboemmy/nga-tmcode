@@ -5,6 +5,7 @@ import { ActionButton } from "../widgets/icons";
 import { ExplorerView } from "./explorer/ExplorerView";
 import { SearchView } from "./search/SearchView";
 import { TestingView } from "./testing/TestingView";
+import { ExtensionScm, ExtensionTests } from "../exthost/extScmTests";
 import { TaskView } from "../exam/ExamViews";
 // ── git ──
 import { ScmTitleActions, ScmView } from "../scm/ScmView";
@@ -138,6 +139,7 @@ export function SideBar() {
         ) : view === "scm" ? (
           <WithExtViews container="scm">
             <ScmView />
+            <ExtensionScm />
           </WithExtViews>
         ) : view === "debug" ? (
           <WithExtViews container="debug">
@@ -156,6 +158,7 @@ export function SideBar() {
         ) : (
           <WithExtViews container="testing">
             <TestingView />
+            <ExtensionTests />
           </WithExtViews>
         )}
       </div>

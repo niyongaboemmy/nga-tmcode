@@ -2567,182 +2567,6 @@ var TaskService = class {
   }
 };
 
-// packages/exthost/src/activation.ts
-var list = (v) => Array.isArray(v) ? v.filter((x) => !!x && typeof x === "object") : [];
-function activationEventsOf(manifest) {
-  const out = /* @__PURE__ */ new Set();
-  if (Array.isArray(manifest.activationEvents)) {
-    for (const e of manifest.activationEvents) if (typeof e === "string" && e) out.add(e);
-  }
-  const c = manifest.contributes ?? {};
-  for (const cmd of list(c.commands)) if (typeof cmd.command === "string") out.add(`onCommand:${cmd.command}`);
-  for (const lang of list(c.languages)) if (typeof lang.id === "string") out.add(`onLanguage:${lang.id}`);
-  if (c.views && typeof c.views === "object") {
-    for (const views of Object.values(c.views)) for (const v of list(views)) if (typeof v.id === "string") out.add(`onView:${v.id}`);
-  }
-  return [...out];
-}
-function matchesActivationEvent(events, event) {
-  if (events.includes(event)) return true;
-  if (event.startsWith("onLanguage:") && events.includes("onLanguage")) return true;
-  return false;
-}
-var STARTUP_EVENTS = ["*", "onStartupFinished"];
-function workspaceContainsPatterns(events) {
-  return events.filter((e) => e.startsWith("workspaceContains:")).map((e) => e.slice("workspaceContains:".length)).filter(Boolean);
-}
-
-// packages/exthost/src/configuration.ts
-var isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-function typeDefault(type) {
-  const t = Array.isArray(type) ? type[0] : type;
-  switch (t) {
-    case "boolean":
-      return false;
-    case "number":
-    case "integer":
-      return 0;
-    case "string":
-      return "";
-    case "array":
-      return [];
-    case "object":
-      return {};
-    default:
-      return null;
-  }
-}
-function configurationProperties(contributes, fallbackTitle, localize = (s) => typeof s === "string" ? s : "") {
-  const c = isObj(contributes) ? contributes.configuration : void 0;
-  const blocks = Array.isArray(c) ? c : c ? [c] : [];
-  const out = [];
-  for (const block of blocks) {
-    if (!isObj(block) || !isObj(block.properties)) continue;
-    const title = localize(block.title) || fallbackTitle;
-    for (const [key, raw] of Object.entries(block.properties)) {
-      if (!isObj(raw)) continue;
-      out.push({
-        key,
-        title,
-        type: raw.type,
-        default: "default" in raw ? raw.default : typeDefault(raw.type),
-        description: localize(raw.description) || void 0,
-        markdownDescription: localize(raw.markdownDescription) || void 0,
-        enum: Array.isArray(raw.enum) ? raw.enum : void 0,
-        enumDescriptions: Array.isArray(raw.enumDescriptions) ? raw.enumDescriptions.map((d) => localize(d)) : Array.isArray(raw.markdownEnumDescriptions) ? raw.markdownEnumDescriptions.map((d) => localize(d)) : void 0,
-        minimum: typeof raw.minimum === "number" ? raw.minimum : void 0,
-        maximum: typeof raw.maximum === "number" ? raw.maximum : void 0,
-        order: typeof raw.order === "number" ? raw.order : void 0,
-        deprecationMessage: typeof raw.deprecationMessage === "string" ? raw.deprecationMessage : typeof raw.markdownDeprecationMessage === "string" ? raw.markdownDeprecationMessage : void 0,
-        scope: typeof raw.scope === "string" ? raw.scope : void 0
-      });
-    }
-  }
-  return out;
-}
-function configurationDefaults(contributes) {
-  const d = isObj(contributes) && isObj(contributes.configurationDefaults) ? contributes.configurationDefaults : {};
-  return { ...d };
-}
-function deepMerge(base, over) {
-  if (!isObj(base) || !isObj(over)) return over === void 0 ? base : over;
-  const out = { ...base };
-  for (const [k, v] of Object.entries(over)) out[k] = deepMerge(base[k], v);
-  return out;
-}
-function deepClone(v) {
-  return v === void 0 ? v : JSON.parse(JSON.stringify(v));
-}
-function nest(flat) {
-  const root = {};
-  for (const key of Object.keys(flat).sort((a, b) => a.length - b.length)) {
-    if (key.startsWith("[")) continue;
-    const parts = key.split(".");
-    let node = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const p = parts[i];
-      if (!isObj(node[p])) node[p] = {};
-      node = node[p];
-    }
-    const last = parts[parts.length - 1];
-    node[last] = deepMerge(node[last], deepClone(flat[key]));
-  }
-  return root;
-}
-function lookup(tree, section) {
-  if (!section) return tree;
-  let node = tree;
-  for (const p of section.split(".")) {
-    if (!isObj(node)) return void 0;
-    node = node[p];
-  }
-  return node;
-}
-var ConfigurationModel = class {
-  constructor(defaults, user) {
-    this.defaults = defaults;
-    this.user = user;
-    this.#rebuild();
-  }
-  defaults;
-  user;
-  #defaultsTree = {};
-  #userTree = {};
-  #merged = {};
-  #langCache = /* @__PURE__ */ new Map();
-  #rebuild() {
-    this.#defaultsTree = nest(this.defaults);
-    this.#userTree = nest(this.user);
-    this.#merged = deepMerge(this.#defaultsTree, this.#userTree);
-    this.#langCache.clear();
-  }
-  setDefaults(defaults) {
-    this.defaults = defaults;
-    this.#rebuild();
-  }
-  setUser(user) {
-    this.user = user;
-    this.#rebuild();
-  }
-  get userValues() {
-    return this.user;
-  }
-  #forLanguage(languageId) {
-    if (!languageId) return this.#merged;
-    const key = `[${languageId}]`;
-    let hit = this.#langCache.get(languageId);
-    if (!hit) {
-      const d = isObj(this.defaults[key]) ? nest(this.defaults[key]) : {};
-      const u = isObj(this.user[key]) ? nest(this.user[key]) : {};
-      hit = deepMerge(deepMerge(this.#merged, d), u);
-      this.#langCache.set(languageId, hit);
-    }
-    return hit;
-  }
-  /** The value at a full dotted key. */
-  getValue(key, languageId) {
-    return deepClone(lookup(this.#forLanguage(languageId), key));
-  }
-  inspect(key, languageId) {
-    const def = lookup(this.#defaultsTree, key);
-    const glob = lookup(this.#userTree, key);
-    const out = { key, defaultValue: deepClone(def), globalValue: deepClone(glob) };
-    if (languageId) {
-      const k = `[${languageId}]`;
-      if (isObj(this.defaults[k])) out.defaultLanguageValue = deepClone(lookup(nest(this.defaults[k]), key));
-      if (isObj(this.user[k])) out.globalLanguageValue = deepClone(lookup(nest(this.user[k]), key));
-      out.languageIds = [languageId];
-    }
-    return out;
-  }
-};
-function affects(changedKeys, section) {
-  return changedKeys.some((k) => {
-    const key = k.replace(/^\[[^\]]+\]\.?/, "");
-    return !key || key === section || key.startsWith(section + ".") || section.startsWith(key + ".");
-  });
-}
-
 // packages/exthost/src/host/convert.ts
 var range = {
   from(r) {
@@ -2959,6 +2783,566 @@ function selector(sel) {
     }
   }
   return out;
+}
+
+// packages/exthost/src/host/scm.ts
+var ScmService = class {
+  constructor(rpc, paths, cache2) {
+    this.rpc = rpc;
+    this.paths = paths;
+    this.cache = cache2;
+    rpc.register("$scmInput", ([handle, value]) => {
+      const c = this.#controls.get(Number(handle));
+      if (c) {
+        c.input.value = String(value);
+        c.input.onChange.fire(c.input.value);
+      }
+      return null;
+    });
+  }
+  rpc;
+  paths;
+  cache;
+  #seq = 0;
+  #controls = /* @__PURE__ */ new Map();
+  #pending = /* @__PURE__ */ new Set();
+  #timer = null;
+  #changed(handle) {
+    this.#pending.add(handle);
+    if (this.#timer) return;
+    this.#timer = setTimeout(() => {
+      this.#timer = null;
+      for (const h of this.#pending) {
+        const c = this.#controls.get(h);
+        if (c) void this.rpc.request("$main.scm", ["upsert", h, c.dto()]).catch(() => void 0);
+      }
+      this.#pending.clear();
+    }, 30);
+  }
+  create(id, label, rootUri) {
+    const handle = ++this.#seq;
+    const changed = () => this.#changed(handle);
+    const groups = [];
+    const onChange = new EventEmitter();
+    const input = {
+      value: "",
+      placeholder: "",
+      visible: true,
+      enabled: true,
+      onChange
+    };
+    let count;
+    let acceptInputCommand;
+    const self = this;
+    const dto = () => ({
+      id,
+      label,
+      rootPath: rootUri ? this.paths.toPath(rootUri) ?? "" : "",
+      ...count !== void 0 ? { count } : {},
+      input: { value: input.value, placeholder: input.placeholder, visible: input.visible, enabled: input.enabled },
+      ...acceptInputCommand ? { acceptInputCommand: command(acceptInputCommand, self.cache) } : {},
+      groups: groups.map(
+        (g) => ({
+          id: g.id,
+          label: g.label,
+          hideWhenEmpty: g.hideWhenEmpty,
+          resources: g.resourceStates.map((r) => ({
+            path: this.paths.toPath(r.resourceUri) ?? "",
+            uri: r.resourceUri.toString(),
+            ...r.decorations?.tooltip ? { tooltip: String(r.decorations.tooltip) } : {},
+            ...r.decorations?.strikeThrough ? { strikeThrough: true } : {},
+            ...r.decorations?.faded ? { faded: true } : {},
+            ...r.command ? { command: command(r.command, self.cache) } : {}
+          }))
+        })
+      )
+    });
+    this.#controls.set(handle, { input, dto });
+    changed();
+    const inputBox = {
+      get value() {
+        return input.value;
+      },
+      set value(v) {
+        input.value = String(v ?? "");
+        changed();
+      },
+      get placeholder() {
+        return input.placeholder;
+      },
+      set placeholder(v) {
+        input.placeholder = String(v ?? "");
+        changed();
+      },
+      get visible() {
+        return input.visible;
+      },
+      set visible(v) {
+        input.visible = !!v;
+        changed();
+      },
+      get enabled() {
+        return input.enabled;
+      },
+      set enabled(v) {
+        input.enabled = !!v;
+        changed();
+      },
+      validateInput: void 0,
+      onDidChange: onChange.event
+    };
+    return {
+      id,
+      label,
+      rootUri,
+      inputBox,
+      get count() {
+        return count;
+      },
+      set count(v) {
+        count = v;
+        changed();
+      },
+      quickDiffProvider: void 0,
+      commitTemplate: void 0,
+      get acceptInputCommand() {
+        return acceptInputCommand;
+      },
+      set acceptInputCommand(v) {
+        acceptInputCommand = v;
+        changed();
+      },
+      statusBarCommands: void 0,
+      createResourceGroup(groupId, groupLabel) {
+        const g = { id: groupId, label: groupLabel, hideWhenEmpty: false, resourceStates: [] };
+        groups.push(g);
+        changed();
+        return {
+          id: groupId,
+          get label() {
+            return g.label;
+          },
+          set label(v) {
+            g.label = v;
+            changed();
+          },
+          get hideWhenEmpty() {
+            return g.hideWhenEmpty;
+          },
+          set hideWhenEmpty(v) {
+            g.hideWhenEmpty = !!v;
+            changed();
+          },
+          get resourceStates() {
+            return g.resourceStates;
+          },
+          set resourceStates(v) {
+            g.resourceStates = Array.isArray(v) ? v : [];
+            changed();
+          },
+          dispose() {
+            const i = groups.indexOf(g);
+            if (i >= 0) groups.splice(i, 1);
+            changed();
+          }
+        };
+      },
+      dispose: () => {
+        this.#controls.delete(handle);
+        void this.rpc.request("$main.scm", ["remove", handle]).catch(() => void 0);
+      }
+    };
+  }
+  /** The workbench's view of a control (tests). */
+  dto(handle) {
+    return this.#controls.get(handle)?.dto();
+  }
+};
+
+// packages/exthost/src/host/testing.ts
+var Collection = class {
+  constructor(owner, changed) {
+    this.owner = owner;
+    this.changed = changed;
+  }
+  owner;
+  changed;
+  #items = /* @__PURE__ */ new Map();
+  get size() {
+    return this.#items.size;
+  }
+  add(item) {
+    item.parent = this.owner;
+    this.#items.set(item.id, item);
+    this.changed();
+  }
+  delete(id) {
+    this.#items.delete(id);
+    this.changed();
+  }
+  replace(items) {
+    this.#items.clear();
+    for (const i of items) {
+      i.parent = this.owner;
+      this.#items.set(i.id, i);
+    }
+    this.changed();
+  }
+  get(id) {
+    return this.#items.get(id);
+  }
+  forEach(fn) {
+    for (const i of this.#items.values()) fn(i, this);
+  }
+  [Symbol.iterator]() {
+    return [...this.#items.entries()][Symbol.iterator]();
+  }
+  values() {
+    return [...this.#items.values()];
+  }
+};
+var TestingService = class {
+  constructor(rpc, paths) {
+    this.rpc = rpc;
+    this.paths = paths;
+    rpc.register("$runTests", ([handle, ids]) => this.run(Number(handle), Array.isArray(ids) ? ids.map(String) : null));
+  }
+  rpc;
+  paths;
+  #seq = 0;
+  #controllers = /* @__PURE__ */ new Map();
+  #timers = /* @__PURE__ */ new Map();
+  #dto(handle) {
+    const c = this.#controllers.get(handle);
+    if (!c) return null;
+    const conv = (i) => ({
+      id: i.id,
+      label: i.label,
+      ...i.description ? { description: i.description } : {},
+      ...i.uri ? { path: this.paths.toPath(i.uri) ?? void 0 } : {},
+      ...i.range ? { line: i.range.start.line } : {},
+      children: i.children.values().map(conv)
+    });
+    return { id: c.id, label: c.label, canRun: c.profiles.some((p) => p.kind === 1), items: c.root.values().map(conv) };
+  }
+  #changed(handle) {
+    if (this.#timers.has(handle)) return;
+    this.#timers.set(
+      handle,
+      setTimeout(() => {
+        this.#timers.delete(handle);
+        const dto = this.#dto(handle);
+        if (dto) void this.rpc.request("$main.tests", ["upsert", handle, dto]).catch(() => void 0);
+      }, 50)
+    );
+  }
+  /** Every item of a controller, by id. */
+  #find(handle, id) {
+    const walk = (col) => {
+      for (const i of col.values()) {
+        if (i.id === id) return i;
+        const hit = walk(i.children);
+        if (hit) return hit;
+      }
+      return void 0;
+    };
+    const c = this.#controllers.get(handle);
+    return c ? walk(c.root) : void 0;
+  }
+  async run(handle, ids) {
+    const c = this.#controllers.get(handle);
+    const profile = c?.profiles.find((p) => p.kind === 1 && p.isDefault) ?? c?.profiles.find((p) => p.kind === 1);
+    if (!c || !profile) return false;
+    const include = ids ? ids.map((id) => this.#find(handle, id)).filter((i) => !!i) : void 0;
+    const token = new CancellationTokenSource().token;
+    await Promise.resolve(profile.run(new TestRunRequest(include, void 0, profile), token));
+    return true;
+  }
+  create(id, label) {
+    const handle = ++this.#seq;
+    const changed = () => this.#changed(handle);
+    const root = new Collection(void 0, changed);
+    const entry = { id, label, root, profiles: [] };
+    this.#controllers.set(handle, entry);
+    changed();
+    const rpc = this.rpc;
+    const report = (item, state, message, duration) => void rpc.request("$main.testState", [handle, item.id, state, message === void 0 ? null : messageText(message), duration ?? null]).catch(() => void 0);
+    return {
+      id,
+      label,
+      items: root,
+      createTestItem(itemId, itemLabel, uri) {
+        const item = { id: itemId, label: itemLabel, uri, children: void 0, canResolveChildren: false, busy: false, tags: [] };
+        item.children = new Collection(item, changed);
+        return new Proxy(item, {
+          set(t, p, v) {
+            t[p] = v;
+            if (p === "label" || p === "range" || p === "description" || p === "uri") changed();
+            return true;
+          }
+        });
+      },
+      createRunProfile(profileLabel, kind, runHandler, isDefault = false) {
+        const p = { label: profileLabel, kind, isDefault, run: runHandler, configureHandler: void 0, tag: void 0, supportsContinuousRun: false, dispose: () => entry.profiles.splice(entry.profiles.indexOf(p), 1) };
+        entry.profiles.push(p);
+        changed();
+        return p;
+      },
+      createTestRun(_request, name) {
+        void rpc.request("$main.testRun", [handle, "start", name ?? label]).catch(() => void 0);
+        return {
+          name,
+          token: new CancellationTokenSource().token,
+          isPersisted: true,
+          enqueued: (i) => report(i, "queued"),
+          started: (i) => report(i, "running"),
+          passed: (i, duration) => report(i, "passed", void 0, duration),
+          failed: (i, message, duration) => report(i, "failed", message, duration),
+          errored: (i, message, duration) => report(i, "errored", message, duration),
+          skipped: (i) => report(i, "skipped"),
+          appendOutput: (text) => void rpc.request("$main.testRun", [handle, "output", String(text)]).catch(() => void 0),
+          addCoverage: () => void 0,
+          end: () => void rpc.request("$main.testRun", [handle, "end"]).catch(() => void 0)
+        };
+      },
+      resolveHandler: void 0,
+      refreshHandler: void 0,
+      invalidateTestResults: () => void 0,
+      dispose: () => {
+        this.#controllers.delete(handle);
+        void rpc.request("$main.tests", ["remove", handle]).catch(() => void 0);
+      }
+    };
+  }
+};
+function messageText(m) {
+  const one = (x) => {
+    if (typeof x === "string") return x;
+    const msg = x?.message;
+    const text = typeof msg === "string" ? msg : msg?.value ?? "";
+    const e = x;
+    return e.expectedOutput !== void 0 ? `${text}
+Expected: ${e.expectedOutput}
+Actual: ${e.actualOutput ?? ""}` : text;
+  };
+  return Array.isArray(m) ? m.map(one).join("\n") : one(m);
+}
+
+// packages/exthost/src/host/debugConfig.ts
+var DebugConfigService = class {
+  constructor(rpc, folder) {
+    this.rpc = rpc;
+    this.folder = folder;
+    rpc.register("$provideDebugConfigurations", async () => {
+      const out = [];
+      for (const { type, provider } of this.#providers) {
+        if (!provider.provideDebugConfigurations) continue;
+        try {
+          const list2 = await provider.provideDebugConfigurations(this.folder());
+          for (const c of list2 ?? []) if (c && typeof c === "object") out.push({ type, ...c });
+        } catch {
+        }
+      }
+      return out;
+    });
+    rpc.register("$resolveDebugConfiguration", async ([config]) => {
+      let c = config;
+      for (const { type, provider } of this.#providers) {
+        if (!c) return null;
+        if (type !== "*" && type !== c.type) continue;
+        if (provider.resolveDebugConfiguration) c = await provider.resolveDebugConfiguration(this.folder(), c);
+      }
+      return c ?? null;
+    });
+  }
+  rpc;
+  folder;
+  #providers = [];
+  register(type, provider) {
+    const entry = { type, provider };
+    this.#providers.push(entry);
+    return { dispose: () => void this.#providers.splice(this.#providers.indexOf(entry), 1) };
+  }
+  /** debug.startDebugging: a configuration (or a launch.json name) started by TMCode. */
+  start(nameOrConfig) {
+    return this.rpc.request("$main.startDebugging", [nameOrConfig]).then((r) => !!r);
+  }
+};
+
+// packages/exthost/src/activation.ts
+var list = (v) => Array.isArray(v) ? v.filter((x) => !!x && typeof x === "object") : [];
+function activationEventsOf(manifest) {
+  const out = /* @__PURE__ */ new Set();
+  if (Array.isArray(manifest.activationEvents)) {
+    for (const e of manifest.activationEvents) if (typeof e === "string" && e) out.add(e);
+  }
+  const c = manifest.contributes ?? {};
+  for (const cmd of list(c.commands)) if (typeof cmd.command === "string") out.add(`onCommand:${cmd.command}`);
+  for (const lang of list(c.languages)) if (typeof lang.id === "string") out.add(`onLanguage:${lang.id}`);
+  if (c.views && typeof c.views === "object") {
+    for (const views of Object.values(c.views)) for (const v of list(views)) if (typeof v.id === "string") out.add(`onView:${v.id}`);
+  }
+  return [...out];
+}
+function matchesActivationEvent(events, event) {
+  if (events.includes(event)) return true;
+  if (event.startsWith("onLanguage:") && events.includes("onLanguage")) return true;
+  return false;
+}
+var STARTUP_EVENTS = ["*", "onStartupFinished"];
+function workspaceContainsPatterns(events) {
+  return events.filter((e) => e.startsWith("workspaceContains:")).map((e) => e.slice("workspaceContains:".length)).filter(Boolean);
+}
+
+// packages/exthost/src/configuration.ts
+var isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+function typeDefault(type) {
+  const t = Array.isArray(type) ? type[0] : type;
+  switch (t) {
+    case "boolean":
+      return false;
+    case "number":
+    case "integer":
+      return 0;
+    case "string":
+      return "";
+    case "array":
+      return [];
+    case "object":
+      return {};
+    default:
+      return null;
+  }
+}
+function configurationProperties(contributes, fallbackTitle, localize = (s) => typeof s === "string" ? s : "") {
+  const c = isObj(contributes) ? contributes.configuration : void 0;
+  const blocks = Array.isArray(c) ? c : c ? [c] : [];
+  const out = [];
+  for (const block of blocks) {
+    if (!isObj(block) || !isObj(block.properties)) continue;
+    const title = localize(block.title) || fallbackTitle;
+    for (const [key, raw] of Object.entries(block.properties)) {
+      if (!isObj(raw)) continue;
+      out.push({
+        key,
+        title,
+        type: raw.type,
+        default: "default" in raw ? raw.default : typeDefault(raw.type),
+        description: localize(raw.description) || void 0,
+        markdownDescription: localize(raw.markdownDescription) || void 0,
+        enum: Array.isArray(raw.enum) ? raw.enum : void 0,
+        enumDescriptions: Array.isArray(raw.enumDescriptions) ? raw.enumDescriptions.map((d) => localize(d)) : Array.isArray(raw.markdownEnumDescriptions) ? raw.markdownEnumDescriptions.map((d) => localize(d)) : void 0,
+        minimum: typeof raw.minimum === "number" ? raw.minimum : void 0,
+        maximum: typeof raw.maximum === "number" ? raw.maximum : void 0,
+        order: typeof raw.order === "number" ? raw.order : void 0,
+        deprecationMessage: typeof raw.deprecationMessage === "string" ? raw.deprecationMessage : typeof raw.markdownDeprecationMessage === "string" ? raw.markdownDeprecationMessage : void 0,
+        scope: typeof raw.scope === "string" ? raw.scope : void 0
+      });
+    }
+  }
+  return out;
+}
+function configurationDefaults(contributes) {
+  const d = isObj(contributes) && isObj(contributes.configurationDefaults) ? contributes.configurationDefaults : {};
+  return { ...d };
+}
+function deepMerge(base, over) {
+  if (!isObj(base) || !isObj(over)) return over === void 0 ? base : over;
+  const out = { ...base };
+  for (const [k, v] of Object.entries(over)) out[k] = deepMerge(base[k], v);
+  return out;
+}
+function deepClone(v) {
+  return v === void 0 ? v : JSON.parse(JSON.stringify(v));
+}
+function nest(flat) {
+  const root = {};
+  for (const key of Object.keys(flat).sort((a, b) => a.length - b.length)) {
+    if (key.startsWith("[")) continue;
+    const parts = key.split(".");
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts[i];
+      if (!isObj(node[p])) node[p] = {};
+      node = node[p];
+    }
+    const last = parts[parts.length - 1];
+    node[last] = deepMerge(node[last], deepClone(flat[key]));
+  }
+  return root;
+}
+function lookup(tree, section) {
+  if (!section) return tree;
+  let node = tree;
+  for (const p of section.split(".")) {
+    if (!isObj(node)) return void 0;
+    node = node[p];
+  }
+  return node;
+}
+var ConfigurationModel = class {
+  constructor(defaults, user) {
+    this.defaults = defaults;
+    this.user = user;
+    this.#rebuild();
+  }
+  defaults;
+  user;
+  #defaultsTree = {};
+  #userTree = {};
+  #merged = {};
+  #langCache = /* @__PURE__ */ new Map();
+  #rebuild() {
+    this.#defaultsTree = nest(this.defaults);
+    this.#userTree = nest(this.user);
+    this.#merged = deepMerge(this.#defaultsTree, this.#userTree);
+    this.#langCache.clear();
+  }
+  setDefaults(defaults) {
+    this.defaults = defaults;
+    this.#rebuild();
+  }
+  setUser(user) {
+    this.user = user;
+    this.#rebuild();
+  }
+  get userValues() {
+    return this.user;
+  }
+  #forLanguage(languageId) {
+    if (!languageId) return this.#merged;
+    const key = `[${languageId}]`;
+    let hit = this.#langCache.get(languageId);
+    if (!hit) {
+      const d = isObj(this.defaults[key]) ? nest(this.defaults[key]) : {};
+      const u = isObj(this.user[key]) ? nest(this.user[key]) : {};
+      hit = deepMerge(deepMerge(this.#merged, d), u);
+      this.#langCache.set(languageId, hit);
+    }
+    return hit;
+  }
+  /** The value at a full dotted key. */
+  getValue(key, languageId) {
+    return deepClone(lookup(this.#forLanguage(languageId), key));
+  }
+  inspect(key, languageId) {
+    const def = lookup(this.#defaultsTree, key);
+    const glob = lookup(this.#userTree, key);
+    const out = { key, defaultValue: deepClone(def), globalValue: deepClone(glob) };
+    if (languageId) {
+      const k = `[${languageId}]`;
+      if (isObj(this.defaults[k])) out.defaultLanguageValue = deepClone(lookup(nest(this.defaults[k]), key));
+      if (isObj(this.user[k])) out.globalLanguageValue = deepClone(lookup(nest(this.user[k]), key));
+      out.languageIds = [languageId];
+    }
+    return out;
+  }
+};
+function affects(changedKeys, section) {
+  return changedKeys.some((k) => {
+    const key = k.replace(/^\[[^\]]+\]\.?/, "");
+    return !key || key === section || key.startsWith(section + ".") || section.startsWith(key + ".");
+  });
 }
 
 // packages/exthost/src/host/document.ts
@@ -3791,7 +4175,6 @@ function createApi(host2, ext) {
     bundle: void 0,
     uri: void 0
   };
-  const empty = (name) => g(name, {});
   const debug = g("debug", {
     activeDebugSession: void 0,
     activeDebugConsole: { append() {
@@ -3802,7 +4185,54 @@ function createApi(host2, ext) {
     onDidTerminateDebugSession: new EventEmitter().event,
     onDidChangeActiveDebugSession: new EventEmitter().event,
     onDidChangeBreakpoints: new EventEmitter().event,
-    onDidReceiveDebugSessionCustomEvent: new EventEmitter().event
+    onDidReceiveDebugSessionCustomEvent: new EventEmitter().event,
+    registerDebugConfigurationProvider: (type, provider) => {
+      const d = host2.debugConfigs.register(String(type), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
+    },
+    startDebugging: (_folder, nameOrConfig) => host2.debugConfigs.start(nameOrConfig),
+    stopDebugging: () => Promise.resolve(),
+    addBreakpoints: () => void 0,
+    removeBreakpoints: () => void 0,
+    asDebugSourceUri: (source) => Uri.file(String(source?.path ?? ""))
+  });
+  const scm = g("scm", {
+    get inputBox() {
+      return void 0;
+    },
+    createSourceControl: (id, label, rootUri) => {
+      const sc = host2.scm.create(String(id), String(label), rootUri);
+      ext.context?.subscriptions.push(sc);
+      return sc;
+    }
+  });
+  const tests = g("tests", {
+    createTestController: (id, label) => {
+      const c = host2.testing.create(String(id), String(label));
+      ext.context?.subscriptions.push(c);
+      return c;
+    }
+  });
+  const notebooks = g("notebooks", {
+    createNotebookController: (id, notebookType, label) => ({ id, notebookType, label, supportedLanguages: [], executeHandler: void 0, createNotebookCellExecution: () => ({ start() {
+    }, end() {
+    }, replaceOutput: async () => void 0, appendOutput: async () => void 0 }), updateNotebookAffinity() {
+    }, onDidChangeSelectedNotebooks: new EventEmitter().event, dispose() {
+    } }),
+    createRendererMessaging: () => ({ onDidReceiveMessage: new EventEmitter().event, postMessage: async () => false })
+  });
+  const chat = g("chat", {
+    createChatParticipant: (id) => ({ id, iconPath: void 0, requestHandler: void 0, followupProvider: void 0, onDidReceiveFeedback: new EventEmitter().event, dispose() {
+    } })
+  });
+  const lm = g("lm", {
+    tools: [],
+    selectChatModels: async () => [],
+    onDidChangeChatModels: new EventEmitter().event,
+    invokeTool: async () => {
+      throw new Error("Language model tools aren't available in TMCode.");
+    }
   });
   const tasks = g("tasks", {
     get taskExecutions() {
@@ -3831,9 +4261,9 @@ function createApi(host2, ext) {
     l10n,
     debug,
     tasks,
-    scm: empty("scm"),
-    tests: empty("tests"),
-    notebooks: empty("notebooks"),
+    scm,
+    tests,
+    notebooks,
     authentication: g("authentication", host2.authentication.api(ext)),
     comments: g("comments", {
       // Comment threads aren't shown in TMCode yet; the controller works so extensions that add
@@ -3857,8 +4287,8 @@ function createApi(host2, ext) {
         };
       }
     }),
-    chat: empty("chat"),
-    lm: empty("lm"),
+    chat,
+    lm,
     // classes & enums
     Uri,
     Position,
@@ -5074,6 +5504,10 @@ var ExtHost = class {
   tabs;
   /** Extensions' tasks (tasks.ts). */
   tasks;
+  /** Extensions' source controls (scm.ts), tests (testing.ts) and debug configurations (debugConfig.ts). */
+  scm;
+  testing;
+  debugConfigs;
   env;
   data;
   fs;
@@ -5141,6 +5575,9 @@ var ExtHost = class {
     this.virtual = new VirtualDocs(this.rpc);
     this.tabs = new TabsService(this.rpc, this.paths);
     this.tasks = new TaskService(this.rpc);
+    this.scm = new ScmService(this.rpc, this.paths, this.#commandCacheApi);
+    this.testing = new TestingService(this.rpc, this.paths);
+    this.debugConfigs = new DebugConfigService(this.rpc, () => this.folder ? { uri: this.folder, name: this.folder.path.split("/").pop() ?? "folder", index: 0 } : void 0);
     EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText2(e)}`);
     env2.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();

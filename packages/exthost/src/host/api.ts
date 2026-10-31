@@ -595,8 +595,7 @@ export function createApi(host: ExtHost, ext: ExtState) {
     uri: undefined,
   };
 
-  // Namespaces TMCode does not provide yet: every member reports itself.
-  const empty = (name: string) => g(name, {});
+  // Members TMCode does not provide report themselves (the guard).
   const debug = g("debug", {
     activeDebugSession: undefined,
     activeDebugConsole: { append() {}, appendLine() {} },
@@ -606,6 +605,50 @@ export function createApi(host: ExtHost, ext: ExtState) {
     onDidChangeActiveDebugSession: new EventEmitter<unknown>().event,
     onDidChangeBreakpoints: new EventEmitter<unknown>().event,
     onDidReceiveDebugSessionCustomEvent: new EventEmitter<unknown>().event,
+    registerDebugConfigurationProvider: (type: string, provider: Parameters<typeof host.debugConfigs.register>[1]) => {
+      const d = host.debugConfigs.register(String(type), provider);
+      ext.context?.subscriptions.push(d);
+      return d;
+    },
+    startDebugging: (_folder: unknown, nameOrConfig: unknown) => host.debugConfigs.start(nameOrConfig),
+    stopDebugging: () => Promise.resolve(),
+    addBreakpoints: () => undefined,
+    removeBreakpoints: () => undefined,
+    asDebugSourceUri: (source: { path?: string }) => Uri.file(String(source?.path ?? "")),
+  });
+  const scm = g("scm", {
+    get inputBox() {
+      return undefined;
+    },
+    createSourceControl: (id: string, label: string, rootUri?: Uri) => {
+      const sc = host.scm.create(String(id), String(label), rootUri);
+      ext.context?.subscriptions.push(sc);
+      return sc;
+    },
+  });
+  const tests = g("tests", {
+    createTestController: (id: string, label: string) => {
+      const c = host.testing.create(String(id), String(label));
+      ext.context?.subscriptions.push(c);
+      return c;
+    },
+  });
+  // Notebooks, chat participants and language models aren't shown in TMCode: extensions that use
+  // them keep working (nothing to show, no models), rather than failing on the first call.
+  const notebooks = g("notebooks", {
+    createNotebookController: (id: string, notebookType: string, label: string) => ({ id, notebookType, label, supportedLanguages: [] as string[], executeHandler: undefined as unknown, createNotebookCellExecution: () => ({ start() {}, end() {}, replaceOutput: async () => undefined, appendOutput: async () => undefined }), updateNotebookAffinity() {}, onDidChangeSelectedNotebooks: new EventEmitter<unknown>().event, dispose() {} }),
+    createRendererMessaging: () => ({ onDidReceiveMessage: new EventEmitter<unknown>().event, postMessage: async () => false }),
+  });
+  const chat = g("chat", {
+    createChatParticipant: (id: string) => ({ id, iconPath: undefined as unknown, requestHandler: undefined as unknown, followupProvider: undefined as unknown, onDidReceiveFeedback: new EventEmitter<unknown>().event, dispose() {} }),
+  });
+  const lm = g("lm", {
+    tools: [] as unknown[],
+    selectChatModels: async () => [] as unknown[],
+    onDidChangeChatModels: new EventEmitter<unknown>().event,
+    invokeTool: async () => {
+      throw new Error("Language model tools aren't available in TMCode.");
+    },
   });
   const tasks = g("tasks", {
     get taskExecutions() {
@@ -635,9 +678,9 @@ export function createApi(host: ExtHost, ext: ExtState) {
     l10n,
     debug,
     tasks,
-    scm: empty("scm"),
-    tests: empty("tests"),
-    notebooks: empty("notebooks"),
+    scm,
+    tests,
+    notebooks,
     authentication: g("authentication", host.authentication.api(ext)),
     comments: g("comments", {
       // Comment threads aren't shown in TMCode yet; the controller works so extensions that add
@@ -661,8 +704,8 @@ export function createApi(host: ExtHost, ext: ExtState) {
         };
       },
     }),
-    chat: empty("chat"),
-    lm: empty("lm"),
+    chat,
+    lm,
     // classes & enums
     Uri,
     Position: T.Position,

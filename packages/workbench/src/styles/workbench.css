@@ -11769,3 +11769,57 @@ button.tm-setting-badge {
 .tm-editor-area.is-centered {
   padding: 0 max(0px, calc((100% - 1100px) / 2));
 }
+
+/* ───────────── Extensions' source controls and tests ───────────── */
+.tm-ext-scm-input {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px 6px;
+}
+.tm-ext-scm-input .tm-input {
+  flex: 1;
+  min-width: 0;
+}
+.tm-ext-scm-group {
+  padding: 4px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--sidebar-title-fg);
+}
+.tm-scm-row.is-faded {
+  opacity: 0.6;
+}
+.tm-scm-name.is-deleted {
+  text-decoration: line-through;
+}
+.tm-ext-test {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+.tm-ext-test-label {
+  cursor: pointer;
+}
+.tm-ext-test-icon.is-passed {
+  color: var(--term-cmd-success);
+}
+.tm-ext-test-icon.is-failed,
+.tm-ext-test-icon.is-errored {
+  color: var(--term-cmd-error);
+}
+.tm-ext-test .tm-action-button {
+  margin-left: auto;
+  visibility: hidden;
+}
+.tm-ext-test:hover .tm-action-button {
+  visibility: visible;
+}
+.tm-ext-test-message {
+  margin: 0 12px 4px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--term-cmd-error);
+  font-size: 12px;
+  white-space: pre-wrap;
+}

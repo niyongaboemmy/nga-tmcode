@@ -1,4 +1,7 @@
 import { terminalOp } from "./terminals";
+import { installExtScmTests } from "./extScmTests";
+import { extensionDebugConfigs } from "../debug/debugService";
+import type { LaunchConfig } from "../debug/launchJson";
 import { registerExtensionTaskSource, toUserTask, type ExtensionTaskDTO } from "../tasks/extensionTasks";
 import { virtualChanged, virtualScheme } from "./virtualDocs";
 import { setExtensionEnv } from "../terminal/env";
@@ -436,6 +439,16 @@ export function installMainThread(ctx: MainContext) {
     return id;
   });
   r.register("$main.terminateTask", () => null);
+  // Extensions' source controls and test controllers (exthost/extScmTests.tsx).
+  installExtScmTests(kind, r);
+  // Extensions' debug configuration providers, and debug.startDebugging.
+  extensionDebugConfigs.provide = () => r.request("$provideDebugConfigurations", []) as Promise<LaunchConfig[]>;
+  extensionDebugConfigs.resolve = (config) => r.request("$resolveDebugConfiguration", [config]) as Promise<LaunchConfig | null>;
+  r.register("$main.startDebugging", async ([nameOrConfig]) => {
+    const { startDebugging, useDebug } = await import("../debug/debugService");
+    const config = typeof nameOrConfig === "string" ? useDebug.getState().configs.find((c) => c.name === nameOrConfig) : (nameOrConfig as LaunchConfig);
+    return config ? startDebugging(config) : false;
+  });
   r.register("$main.virtualScheme", ([scheme, type, ext, on]) => virtualScheme(kind, r, String(scheme), type === "fs" ? "fs" : "content", String(ext), !!on));
   r.register("$main.virtualChanged", ([uri]) => virtualChanged(String(uri)));
   r.register("$main.envCollection", ([ext, list]) => setExtensionEnv(String(ext), (Array.isArray(list) ? list : []) as TerminalEnvMutation[]));

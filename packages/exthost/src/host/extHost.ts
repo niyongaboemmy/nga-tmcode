@@ -18,6 +18,9 @@ import { Uri, setUriPlatform } from "../api/uri";
 import { CancellationTokenSource, EventEmitter, type CancellationToken, type Event } from "../api/events";
 import { RpcConnection } from "../rpc";
 import { TaskService } from "./tasks";
+import { ScmService } from "./scm";
+import { TestingService } from "./testing";
+import { DebugConfigService } from "./debugConfig";
 import { activationEventsOf, matchesActivationEvent, STARTUP_EVENTS, workspaceContainsPatterns } from "../activation";
 import { ConfigurationModel, affects, configurationDefaults, configurationProperties, type Flat } from "../configuration";
 import * as C from "./convert";
@@ -290,6 +293,10 @@ export class ExtHost {
   readonly tabs: TabsService;
   /** Extensions' tasks (tasks.ts). */
   readonly tasks: TaskService;
+  /** Extensions' source controls (scm.ts), tests (testing.ts) and debug configurations (debugConfig.ts). */
+  readonly scm: ScmService;
+  readonly testing: TestingService;
+  readonly debugConfigs: DebugConfigService;
   readonly env: HostEnvironment;
   data!: InitData;
   fs!: HostFs;
@@ -359,6 +366,9 @@ export class ExtHost {
     this.virtual = new VirtualDocs(this.rpc);
     this.tabs = new TabsService(this.rpc, this.paths);
     this.tasks = new TaskService(this.rpc);
+    this.scm = new ScmService(this.rpc, this.paths, this.#commandCacheApi);
+    this.testing = new TestingService(this.rpc, this.paths);
+    this.debugConfigs = new DebugConfigService(this.rpc, () => (this.folder ? { uri: this.folder, name: this.folder.path.split("/").pop() ?? "folder", index: 0 } : undefined));
     EventEmitter.onListenerError = (e) => this.log("error", `An extension's event listener threw: ${errorText(e)}`);
     env.onConsole?.((level, text) => this.log(level, text));
     this.#registerHandlers();
