@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { MergeEditor } from "../../scm/MergeEditor";
 import { create } from "zustand";
 import { executeCommand, formatKeybinding, getCommand, keybindingFor } from "../../commands/registry";
 import {
@@ -162,6 +163,7 @@ export function titleOf(e: EditorInput): string {
   if (e.kind === "historyDiff" && e.source === "conflict") return `${basename(e.path)}: Current ↔ Incoming`;
   if (e.kind === "historyDiff") return `${basename(e.path)} (${new Date(e.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}) ↔ Current`;
   if (e.kind === "gitDiff") return `${basename(e.path)} (${e.deleted ? "Deleted" : e.mode === "staged" ? "Index" : "Working Tree"})`;
+  if (e.kind === "merge") return `${basename(e.path)} (Merging)`;
   if (e.kind === "settings") return "Settings";
   if (e.kind === "settingsJson") return "settings.json";
   if (e.kind === "shortcuts") return "Keyboard Shortcuts";
@@ -177,7 +179,7 @@ export function titleOf(e: EditorInput): string {
 }
 
 function iconOf(e: EditorInput) {
-  if (e.kind === "file" || e.kind === "gitDiff") return <FileIcon path={e.path} />;
+  if (e.kind === "file" || e.kind === "gitDiff" || e.kind === "merge") return <FileIcon path={e.path} />;
   if (e.kind === "historyDiff") return <Codicon name={e.source === "git" ? "git-commit" : e.source ? "diff" : "history"} className="tm-tab-codicon" />;
   if (e.kind === "welcome") return <Logo size={14} />;
   if (e.kind === "preview") return <Codicon name="open-preview" className="tm-tab-codicon" />;
@@ -209,7 +211,7 @@ function descriptions(editors: EditorInput[]) {
     if ((names.get(titleOf(e)) ?? 0) < 2) return "";
     if (e.kind === "file") return dirname(e.path) || ".";
     if (e.kind === "preview") return e.root || ".";
-    if (e.kind === "gitDiff") return dirname(e.path) || ".";
+    if (e.kind === "gitDiff" || e.kind === "merge") return dirname(e.path) || ".";
     return "";
   };
 }
@@ -641,6 +643,7 @@ export function EditorGroupView({ group, single }: { group: EditorGroup; single:
         {active?.kind === "logic" && <LogicEditor key={active.id} input={active} />}
         {active?.kind === "api" && <ApiTester key={active.id} />}
         {active?.kind === "gitDiff" && <GitDiffEditor key={active.id} input={active} groupId={group.id} />}
+        {active?.kind === "merge" && <MergeEditor key={active.id} path={active.path} id={active.id} groupId={group.id} />}
         {!active && <Watermark />}
       </div>
     </section>

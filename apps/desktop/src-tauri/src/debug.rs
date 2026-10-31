@@ -520,6 +520,7 @@ pub fn parse_ps(out: &str) -> Vec<ProcessInfo> {
 }
 
 /// `tasklist /fo csv /nh` lines → processes (Windows). Pure.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn parse_tasklist(out: &str) -> Vec<ProcessInfo> {
     out.lines()
         .filter_map(|l| {

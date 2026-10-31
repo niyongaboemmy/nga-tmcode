@@ -83,6 +83,12 @@ export interface Settings {
   "explorer.compactFolders": boolean;
   /** The Explorer shows and selects the active file. */
   "explorer.autoReveal": boolean;
+  /** File nesting (VS Code's explorer.fileNesting): generated and lock files under their file. */
+  "explorer.fileNesting.enabled": boolean;
+  /** Git blame after the current line (VS Code's git.blame.editorDecoration.enabled). */
+  "git.blame.editorDecoration.enabled": boolean;
+  /** Git blame of the current line in the status bar. */
+  "git.blame.statusBarItem.enabled": boolean;
   /** Screen reader mode for the editor. */
   "editor.accessibilitySupport": "auto" | "on" | "off";
   /** Whole-window zoom: 0 is 100 %, each step is 20 % (VS Code's window.zoomLevel). */
@@ -184,6 +190,9 @@ export const DEFAULT_SETTINGS: Settings = {
   "search.useIgnoreFiles": true,
   "explorer.compactFolders": true,
   "explorer.autoReveal": true,
+  "explorer.fileNesting.enabled": false,
+  "git.blame.editorDecoration.enabled": false,
+  "git.blame.statusBarItem.enabled": true,
   "editor.accessibilitySupport": "auto",
   "window.zoomLevel": 0,
   "keybindings.user": {},
@@ -658,6 +667,24 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       { key: "search.useIgnoreFiles", label: "Search: Use Ignore Files", description: "Search skips files that .gitignore ignores.", type: "boolean" },
       { key: "explorer.compactFolders", label: "Explorer: Compact Folders", description: "Show a folder that holds only one folder on a single row.", type: "boolean" },
       { key: "explorer.autoReveal", label: "Explorer: Auto Reveal", description: "Show and select the active file in the Explorer.", type: "boolean" },
+      {
+        key: "git.blame.statusBarItem.enabled",
+        label: "Git: Blame in the Status Bar",
+        description: "Show who last changed the current line, and when, in the status bar.",
+        type: "boolean",
+      },
+      {
+        key: "git.blame.editorDecoration.enabled",
+        label: "Git: Blame After the Line",
+        description: "Show who last changed the current line, when and why, after the line in the editor.",
+        type: "boolean",
+      },
+      {
+        key: "explorer.fileNesting.enabled",
+        label: "Explorer: File Nesting",
+        description: "Show related files under their file: package-lock.json under package.json, app.js under app.ts, and so on.",
+        type: "boolean",
+      },
     ],
   },
   {

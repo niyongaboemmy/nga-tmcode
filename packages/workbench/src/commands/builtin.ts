@@ -135,6 +135,17 @@ export function registerBuiltinCommands() {
   });
   registerCommand({ id: "workbench.files.action.refreshFilesExplorer", title: "Refresh Explorer", category: "File", enabled: hasWorkspace, run: refreshExplorer });
   registerCommand({ id: "workbench.files.action.collapseExplorerFolders", title: "Collapse Folders in Explorer", category: "View", run: collapseAll });
+  // Find in the Explorer (VS Code's list.find on the Explorer): ⌥⌘F / Ctrl+Alt+F with the Explorer focused.
+  registerCommand({
+    id: "list.find",
+    title: "Find in Explorer",
+    category: "Explorer",
+    mac: "mod+alt+f",
+    keybinding: "ctrl+alt+f",
+    when: () => !!(document.activeElement as HTMLElement | null)?.closest?.(".tm-explorer, .tm-explorer-find"),
+    enabled: () => !!useWorkbench.getState().workspace,
+    run: () => void import("../parts/explorer/ExplorerView").then((m) => m.openExplorerFind()),
+  });
 
   // ── Go / quick input ──
   registerCommand({ id: "workbench.action.showCommands", title: "Show All Commands", category: "View", keybinding: "mod+shift+p", run: () => openQuickInput("commands") });

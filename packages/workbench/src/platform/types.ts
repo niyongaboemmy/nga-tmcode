@@ -33,6 +33,11 @@ export interface FileSystem {
   readBase64?(path: string): Promise<string>;
   /** A binary file's bytes as text anyway (invalid characters replaced), for "Open Anyway". */
   readFileAnyway?(path: string): Promise<string>;
+  /**
+   * Search, fast path (desktop: Rust, in parallel): which of `files` contain a match on disk.
+   * Rejects when the query needs JavaScript's regex features; the caller then searches every file itself.
+   */
+  searchFiles?(files: string[], query: { pattern: string; isRegex: boolean; matchCase: boolean; wholeWord: boolean }): Promise<string[]>;
   // ── encodings and imports (feat/files-search) ──
   /** The encoding a file is read and saved with ("utf8", "utf8bom", "utf16le", "utf16be", "windows1252", "iso88591"). */
   encodingOf?(path: string): Promise<FileEncoding>;
@@ -582,6 +587,26 @@ export interface GitCommit {
   subject: string;
 }
 
+/** One line of `git blame`. */
+export interface BlameLine {
+  line: number;
+  hash: string;
+  author: string;
+  date: number;
+  summary: string;
+}
+
+/** A commit of the graph, with its parents. */
+export interface GraphCommit {
+  hash: string;
+  short: string;
+  parents: string[];
+  author: string;
+  date: number;
+  refs: string;
+  subject: string;
+}
+
 export type GitEvent = { type: "step"; name: string } | { type: "progress"; line: string };
 
 /** A long-running git operation (clone, pull, push…). */
@@ -622,6 +647,10 @@ export interface GitHost {
   showAt?(path: string, commit: string): Promise<string | null>;
   /** The commits that changed a file, newest first (the Timeline). */
   fileLog?(path: string, limit: number): Promise<GitCommit[]>;
+  /** Who last changed each line (the status bar and inline blame). */
+  blame?(path: string): Promise<BlameLine[]>;
+  /** Every branch's commits with their parents, newest first (the Graph). */
+  graph?(limit: number): Promise<GraphCommit[]>;
   /** Puts this text in the index as the file's staged content (Stage Change for one hunk). */
   stageContent?(path: string, content: string): Promise<void>;
   stage(paths: string[]): Promise<void>;

@@ -40,6 +40,8 @@ type EditorInputBase =
   | { kind: "image"; id: string; path: string; preview: false }
   /** Git: HEAD/index (left) vs index/working tree (right) of one file (scm/GitDiffEditor). */
   | { kind: "gitDiff"; id: string; path: string; mode: "working" | "staged"; deleted: boolean; preview: boolean }
+  /** The merge editor for a file with conflict markers (scm/MergeEditor). */
+  | { kind: "merge"; id: string; path: string; preview: false }
   /** Local History: a saved copy (left, read-only) against the file now (right, editable). */
   | { kind: "historyDiff"; id: string; path: string; entry: string; time: number; preview: false; /** "taskMentor": `entry` is the path of Task Mentor's copy of a conflicting file (projects compareConflict). "grading": `entry` is "<project>@<revision>" of a version (grading/diff.ts), named by `label`. */ source?: "taskMentor" | "grading" | "git" | "conflict" | "saved" | "file" | "extension"; label?: string }
   /** A language's user snippets file (snippets/SnippetsEditor). */

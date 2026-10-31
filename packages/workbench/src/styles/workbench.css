@@ -11561,3 +11561,206 @@ button.tm-setting-badge {
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
+
+/* ───────────── Open Editors ───────────── */
+.tm-open-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 4px;
+  height: 22px;
+  cursor: pointer;
+}
+.tm-open-editor.is-active {
+  background: var(--list-inactive-selection-bg, rgba(128, 128, 128, 0.18));
+}
+.tm-open-editor-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--icon);
+  visibility: hidden;
+  cursor: pointer;
+}
+.tm-open-editor-close.is-dirty,
+.tm-open-editor:hover .tm-open-editor-close,
+.tm-open-editor.is-active .tm-open-editor-close {
+  visibility: visible;
+}
+.tm-open-editor-close.is-dirty .codicon {
+  font-size: 10px !important;
+}
+.tm-open-editor:hover .tm-open-editor-close.is-dirty .codicon-circle-filled::before {
+  content: "\ea76";
+}
+.tm-open-editor-name {
+  white-space: nowrap;
+}
+.tm-open-editor-dir {
+  color: var(--description);
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-open-editors-group {
+  padding: 4px 12px 2px;
+  color: var(--description);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.tm-open-editors-badge {
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  font-size: 11px;
+}
+.tm-chat[data-drag-over]::after {
+  content: "Drop to attach to your question";
+  position: absolute;
+  inset: 6px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--focus-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sidebar-bg) 88%, var(--focus-border));
+  color: var(--foreground);
+  pointer-events: none;
+}
+
+/* ───────────── Find in the Explorer ───────────── */
+.tm-explorer-find {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.tm-explorer-find .tm-input-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+}
+.tm-explorer-find .tm-input {
+  flex: 1;
+  min-width: 0;
+}
+.tm-explorer-find-count {
+  color: var(--description);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tm-tree-match {
+  background: var(--find-match-bg, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  border-radius: 2px;
+}
+.tm-inline-blame {
+  color: var(--description);
+  opacity: 0.8;
+  font-style: italic;
+}
+.tm-graph-lanes {
+  flex: none;
+  margin-left: -4px;
+  stroke-width: 2;
+}
+
+/* ───────────── Merge editor ───────────── */
+.tm-merge-editor {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--editor-bg);
+  color: var(--editor-fg);
+  padding-bottom: 24px;
+}
+.tm-merge-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--editor-bg);
+  border-bottom: 1px solid var(--border);
+}
+.tm-merge-title {
+  font-weight: 600;
+}
+.tm-merge-count {
+  color: var(--description);
+}
+.tm-merge-spacer {
+  flex: 1;
+}
+.tm-merge-conflict {
+  margin: 14px 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tm-merge-conflict.is-resolved {
+  border-color: color-mix(in srgb, var(--term-cmd-success) 60%, var(--border));
+}
+.tm-merge-conflict-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--sidebar-bg);
+  font-weight: 600;
+}
+.tm-merge-chosen {
+  margin-left: auto;
+  color: var(--term-cmd-success);
+  font-weight: normal;
+}
+.tm-merge-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.tm-merge-side + .tm-merge-side {
+  border-left: 1px solid var(--border);
+}
+.tm-merge-side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--description);
+}
+.tm-merge-side.is-current .tm-merge-side-head {
+  background: rgba(64, 200, 174, 0.12);
+}
+.tm-merge-side.is-incoming .tm-merge-side-head {
+  background: rgba(64, 166, 255, 0.12);
+}
+.tm-merge-side.is-chosen {
+  box-shadow: inset 3px 0 0 var(--term-cmd-success);
+}
+.tm-merge-editor pre {
+  margin: 0;
+  padding: 6px 10px;
+  font-family: var(--font-mono, Menlo, Consolas, monospace);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tm-merge-result {
+  border-top: 1px solid var(--border);
+}
+.tm-search-open-editor {
+  margin-left: 6px;
+}

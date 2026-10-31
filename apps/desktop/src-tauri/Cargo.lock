@@ -5423,6 +5423,7 @@ dependencies = [
  "notify-debouncer-mini",
  "percent-encoding",
  "portable-pty",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

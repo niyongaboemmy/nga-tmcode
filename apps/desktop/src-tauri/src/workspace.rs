@@ -275,6 +275,58 @@ pub fn read_file(root: &Path, path: &str) -> Result<String, String> {
     Ok(encoding::decode(&bytes, enc))
 }
 
+/// The Rust form of a Search view query, or None when it needs JavaScript's regex features (lookbehind, backreferences).
+pub fn search_regex(pattern: &str, is_regex: bool, match_case: bool, whole_word: bool) -> Option<regex::bytes::Regex> {
+    let mut source = if is_regex { pattern.to_string() } else { regex::escape(pattern) };
+    if whole_word {
+        source = format!(r"\b(?:{source})\b");
+    }
+    regex::bytes::RegexBuilder::new(&source).case_insensitive(!match_case).multi_line(true).build().ok()
+}
+
+/// Which of `files` (workspace-relative) contain a match: read in parallel, skipping unreadable and
+/// binary-looking ones. The Search view lists the files (includes, excludes, .gitignore) and builds the previews.
+pub fn search_files(root: &Path, files: &[String], re: &regex::bytes::Regex) -> Vec<String> {
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(8);
+    let chunk = files.len().div_ceil(threads).max(1);
+    let mut out: Vec<(usize, String)> = std::thread::scope(|s| {
+        let handles: Vec<_> = files
+            .chunks(chunk)
+            .enumerate()
+            .map(|(ci, part)| {
+                s.spawn(move || {
+                    let mut hits = Vec::new();
+                    for (i, rel) in part.iter().enumerate() {
+                        let Ok(file) = resolve(root, rel) else { continue };
+                        let Ok(meta) = fs::metadata(&file) else { continue };
+                        if meta.len() > MAX_TEXT_BYTES {
+                            continue;
+                        }
+                        let Ok(bytes) = fs::read(&file) else { continue };
+                        if bytes.iter().take(8000).any(|b| *b == 0) {
+                            continue;
+                        }
+                        if re.is_match(&bytes) {
+                            hits.push((ci * chunk + i, rel.clone()));
+                        }
+                    }
+                    hits
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    });
+    out.sort_by_key(|(i, _)| *i);
+    out.into_iter().map(|(_, p)| p).collect()
+}
+
+#[tauri::command]
+pub async fn ws_search_files(ws: State<'_, Workspace>, files: Vec<String>, pattern: String, is_regex: bool, match_case: bool, whole_word: bool) -> Result<Vec<String>, String> {
+    let root = ws.root()?;
+    let re = search_regex(&pattern, is_regex, match_case, whole_word).ok_or("unsupported")?;
+    tauri::async_runtime::spawn_blocking(move || search_files(&root, &files, &re)).await.map_err(|e| e.to_string())
+}
+
 /// "Open Anyway" on a binary file: its bytes as text (invalid sequences replaced), up to the same size.
 pub fn read_file_anyway(root: &Path, path: &str) -> Result<String, String> {
     let file = resolve(root, path)?;
@@ -525,6 +577,25 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn search_finds_the_files_with_a_match_in_order() {
+        let (_d, root) = root();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/a.py"), "def Greet():\n    pass\n").unwrap();
+        fs::write(root.join("b.txt"), "nothing here").unwrap();
+        fs::write(root.join("c.md"), "greeting card").unwrap();
+        fs::write(root.join("d.bin"), [b'g', b'r', b'e', b'e', b't', 0]).unwrap();
+        let files: Vec<String> = ["src/a.py", "b.txt", "c.md", "d.bin", "missing.txt"].iter().map(|s| s.to_string()).collect();
+        let re = search_regex("greet", false, false, false).unwrap();
+        assert_eq!(search_files(&root, &files, &re), ["src/a.py", "c.md"]);
+        let word = search_regex("greet", false, false, true).unwrap();
+        assert_eq!(search_files(&root, &files, &word), ["src/a.py"]);
+        let case = search_regex("greet", false, true, false).unwrap();
+        assert_eq!(search_files(&root, &files, &case), ["c.md"]);
+        assert!(search_regex("(?<=a)b", true, false, false).is_none(), "lookbehind is JavaScript-only");
+        assert_eq!(search_files(&root, &files, &search_regex("^def", true, true, false).unwrap()), ["src/a.py"]);
+    }
 
     #[test]
     fn binary_files_open_only_when_asked_and_large_files_open() {

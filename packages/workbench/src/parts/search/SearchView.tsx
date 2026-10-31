@@ -7,6 +7,7 @@ import { basename, dirname } from "../../util/paths";
 import { ActionButton, Codicon, FileIcon } from "../../widgets/icons";
 import { SkeletonRows } from "../../widgets/Skeleton";
 import { useTreeKeyboard, type TreeKeyRow } from "../../widgets/useTreeKeyboard";
+import { openSearchEditor } from "./searchEditor";
 import { MAX_MATCHES, buildRegExp, expandReplacement, listFiles, matchKey, searchText, type FileMatches, type LineMatch, type SearchOptions } from "./search";
 import { applyReplace, previewReplace, type ReplaceTarget } from "./replace";
 import { ReplacePreview, type ReplacePreviewState } from "./ReplacePreview";
@@ -66,6 +67,20 @@ function replacedText(m: LineMatch, opts: SearchOptions, replace: string) {
   }
 }
 
+/**
+ * The files worth reading: on the desktop, Rust finds which files match on disk (in parallel);
+ * files with unsaved changes are always searched here, in their editor's text.
+ */
+async function candidateFiles(files: string[], opts: SearchOptions): Promise<string[]> {
+  const fs = getPlatform().fs;
+  if (!fs.searchFiles || files.length < 50) return files;
+  const dirty = new Set(Object.keys(useWorkbench.getState().dirty));
+  const hits = await fs.searchFiles(files.filter((f) => !dirty.has(f)), { pattern: opts.query, isRegex: opts.regex, matchCase: opts.matchCase, wholeWord: opts.wholeWord }).catch(() => null);
+  if (!hits) return files;
+  const set = new Set(hits);
+  return files.filter((f) => dirty.has(f) || set.has(f));
+}
+
 export function SearchView() {
   const workspace = useWorkbench((s) => s.workspace);
   const filesExclude = useWorkbench((s) => s.settings["files.exclude"]);
@@ -109,7 +124,7 @@ export function SearchView() {
       });
       const budget = { left: MAX_MATCHES };
       const found: FileMatches[] = [];
-      for (const path of files) {
+      for (const path of await candidateFiles(files, opts)) {
         if (runId.current !== id) return;
         // Search unsaved editor contents rather than what is on disk.
         const text = getDocument(path)?.getValue() ?? (await fs.readFile(path).catch(() => ""));
@@ -332,6 +347,11 @@ export function SearchView() {
       {message && (
         <div className="tm-search-message" role="status">
           {message}
+          {results.length > 0 && (
+            <button type="button" className="tm-link-button tm-search-open-editor" onClick={() => void openSearchEditor(opts, { include: ui.include, exclude: ui.exclude }, results)} data-testid="search-open-editor">
+              Open in editor
+            </button>
+          )}
         </div>
       )}
       <div className="tm-pane-body tm-scroll tm-search-results" aria-label="Search results" {...tree.treeProps}>

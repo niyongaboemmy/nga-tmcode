@@ -17,6 +17,7 @@ import { SYNC_ICON, SYNC_LABEL, SYNC_TIP, SYNC_TONE } from "../projects/syncLabe
 import type { SyncState } from "../projects/types";
 // ── git ──
 import { useGit, useGitAllowed } from "../scm/gitService";
+import { blameText, useBlame } from "../scm/blame";
 import { branchLabel } from "../scm/model";
 import { useDebug } from "../debug/debugService";
 import { useIsTeacher, useRoleChecking } from "../state/role";
@@ -196,6 +197,18 @@ function LanguageItem({ language }: { language: string | null }) {
   );
 }
 
+/** Git blame of the current line ("Ada, 3 days ago"); hover for the commit. */
+function BlameItem() {
+  const line = useBlame((s) => s.line);
+  const on = useWorkbench((s) => s.settings["git.blame.statusBarItem.enabled"] !== false);
+  if (!on || !line) return null;
+  return (
+    <Item className="tm-prio-low" title={`${line.summary}\n${line.hash.slice(0, 8)} · ${line.author} · ${new Date(line.date * 1000).toLocaleString()}`} onClick={() => executeCommand("git.blame.toggleEditorDecoration")}>
+      <Codicon name="git-commit" /> {blameText(line, false)}
+    </Item>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -249,6 +262,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
         {chord && <Item title="Waiting for second key of chord">({chord}) was pressed. Waiting for second key of chord...</Item>}
       </div>
       <div className="tm-status-right">
+        <BlameItem />
         {hasFile && (
           <>
             <Item title="Go to Line/Column" onClick={() => executeCommand("workbench.action.gotoLine")}>

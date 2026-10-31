@@ -52,6 +52,8 @@ flate2 = "1"
 tar = "0.4"
 # Explorer Delete moves files to the OS Trash / Recycle Bin.
 trash = "5"
+# Workspace search: which files match, read in parallel (the workbench builds the previews).
+regex = "1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

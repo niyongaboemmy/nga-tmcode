@@ -73,3 +73,18 @@ describe("replace planning", () => {
     expect(planReplace("Avg avg", re("avg", { matchCase: true }), "x", { regex: false }).text).toBe("Avg x");
   });
 });
+
+describe("Search Editor text", () => {
+  it("lists the query, flags, files and results, and where each result line points", async () => {
+    const { formatSearchResults } = await import("./searchEditor");
+    const m = (line: number, start: number, preview: string) => ({ line, start, end: start + 3, preview, previewStart: 0, previewEnd: 3, text: "foo" });
+    const out = formatSearchResults({ query: "foo", regex: true, matchCase: false, wholeWord: true }, { include: "src", exclude: "" }, [
+      { path: "src/a.ts", matches: [m(3, 7, "const foo = 1;"), m(9, 1, "foo()")] },
+    ]);
+    expect(out.text).toBe("# Query: foo\n# Flags: RegExp WordMatch\n# Including: src\n\n2 results - 1 file\n\nsrc/a.ts:\n     3: const foo = 1;\n     9: foo()\n");
+    expect([...out.targets.entries()]).toEqual([
+      [8, { path: "src/a.ts", line: 3, column: 7, length: 3 }],
+      [9, { path: "src/a.ts", line: 9, column: 1, length: 3 }],
+    ]);
+  });
+});

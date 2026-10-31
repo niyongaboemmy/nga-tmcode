@@ -497,6 +497,16 @@ export function ChatView() {
     input.current?.focus();
   };
 
+  // Files dragged from the Explorer (a pointer drag, not an HTML one) arrive as workspace paths.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const onPaths = (e: Event) => void attach(() => workspaceAttachments((e as CustomEvent<string[]>).detail ?? []));
+    el.addEventListener("tmcode:drop-paths", onPaths);
+    return () => el.removeEventListener("tmcode:drop-paths", onPaths);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root.current]);
+
   // Desktop: files dropped from Finder / File Explorer arrive as paths (the HTML drop gets none).
   useEffect(() => {
     const platform = getPlatform();
@@ -663,6 +673,7 @@ export function ChatView() {
       ref={root}
       className={`tm-chat ${dropping ? "is-dropping" : ""}`}
       data-testid="tmcode-ai-chat"
+      data-drop-files=""
       onDragOver={(e) => {
         if (!dragHasFiles(e)) return;
         e.preventDefault();

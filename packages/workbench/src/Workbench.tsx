@@ -29,6 +29,7 @@ import { inExam } from "./exam/state";
 import { wireDocuments } from "./monaco/documents";
 import { wireBackups } from "./state/backups";
 import { wireTaskRunner } from "./tasks/runner";
+import { wireBlame } from "./scm/blame";
 import { wireRunServices } from "./run/wire";
 import { applyExternalChanges } from "./monaco/external";
 import { startAutoUpdates, stopAutoUpdates } from "./update/updateService";
@@ -126,6 +127,7 @@ export function Workbench() {
     wireDocuments();
     wireBackups();
     wireTaskRunner();
+    wireBlame();
     wireSmartEditor();
     wireRunServices();
     wireScm();
