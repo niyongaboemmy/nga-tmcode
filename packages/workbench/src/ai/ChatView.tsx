@@ -480,7 +480,7 @@ const within = (p: Promise<unknown>, ms: number) => Promise.race([p.catch(() => 
 async function modeItems(): Promise<PickItem[]> {
   // The status says which models, premium and own keys there are: without it only Free and Auto showed.
   const signedInNow = !!useProjects.getState().account?.signed_in;
-  await Promise.all([useAi.getState().status || !signedInNow ? null : within(refreshAiStatus(), 8000), useAiKeys.getState().loaded ? null : within(loadAiKeys(), 3000), within(detectAllClis(), 8000)]);
+  await Promise.all([useAi.getState().status || !signedInNow ? null : within(refreshAiStatus(), 8000), useAiKeys.getState().loaded ? null : within(loadAiKeys(), 3000), within(detectAllClis(), 400)]);
   const { status, mode, error } = useAi.getState();
   const keys = useAiKeys.getState();
   const icon = (id: string, fallback: string) => (id === mode ? "check" : fallback);
@@ -554,6 +554,8 @@ function cliItems(icon: (id: string, fallback: string) => string): PickItem[] {
     if (cc.state === "missing") return [{ id: `__cli:install:${id}`, label: `Install ${spec.label}…`, description: `your ${spec.account} account`, icon: "cloud-download" }];
     if (cc.state === "signed-out") return [{ id: `__cli:signin:${id}`, label: `Sign In to ${spec.label}…`, description: `with your ${spec.account} account`, detail: "Installed, not signed in yet.", icon: "account" }];
     if (cc.state === "unavailable") return [{ id: `__cli:retry:${id}`, label: spec.label, detail: `${cc.detail ?? "It couldn't be checked."} Pick this to check again.`, icon: "warning" }];
+    // Still being checked (the menu doesn't wait for it): pick it to see the result.
+    if (cc.state === "checking" || cc.state === "unknown") return [{ id: `__cli:retry:${id}`, label: spec.label, description: "checking…", detail: `Is ${spec.label} installed and signed in with your ${spec.account} account? Pick this to see.`, icon: "loading" }];
     const base = `cli:${id}`;
     const who = cc.account ?? `your ${spec.account} account`;
     return [
@@ -733,6 +735,11 @@ export function ChatView() {
     setAttachError(errors.length ? errors.join(" ") : null);
     input.current?.focus();
   };
+
+  // Your AI accounts (Claude Code, Codex, Gemini CLI) are checked now, so the model menu opens without waiting.
+  useEffect(() => {
+    if (getPlatform().proc) void detectAllClis();
+  }, []);
 
   // Files dragged from the Explorer (a pointer drag, not an HTML one) arrive as workspace paths.
   useEffect(() => {

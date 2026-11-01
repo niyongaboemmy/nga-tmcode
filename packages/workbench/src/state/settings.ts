@@ -158,6 +158,10 @@ export interface Settings {
   "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
   /** Students: four views (Assignments, Files, Search, Run) and a short status bar; the rest under More. */
   "workbench.simpleLayout": boolean;
+  /** AI tools (TMCode AI and AI extensions' views) under one AI icon in the activity bar, the open one highlighted. */
+  "workbench.activityBar.groupAiTools": boolean;
+  /** Icons hidden from the activity bar and the secondary side bar's tabs (right-click › Hide); their views stay one click away. */
+  "workbench.activityBar.hidden": string[];
   /** Grading: while a student's submission is open, the side bar and the student list fold away (a switcher stays). */
   "grading.focusWhileReviewing": boolean;
   /** Source Control in a student's assignment workspace (off: the view and its badge are hidden there). */
@@ -245,6 +249,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "markdown.editor.drop.enabled": "smart",
   "workbench.startupEditor": "home",
   "workbench.simpleLayout": true,
+  "workbench.activityBar.groupAiTools": true,
+  "workbench.activityBar.hidden": [],
   "grading.focusWhileReviewing": true,
   "scm.showInAssignments": false,
 };
@@ -660,6 +666,12 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
         key: "workbench.simpleLayout",
         label: "Simple Layout (students)",
         description: "For students: Assignments, Files, Search and Run come first, in plain words, with a short status bar. Every view stays in the bar while it fits; only a short window puts the rest under More. Teachers always see everything.",
+        type: "boolean",
+      },
+      {
+        key: "workbench.activityBar.groupAiTools",
+        label: "Activity Bar: Group AI Tools",
+        description: "Show TMCode AI and the AI extensions (Claude Code, Codex, Gemini, Cline…) under one AI icon, with the one that is open highlighted. Off: each gets its own icon. Right-click an icon to hide it.",
         type: "boolean",
       },
       {

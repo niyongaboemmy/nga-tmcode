@@ -162,6 +162,9 @@ async function boot() {
   } else if (desktopLog && dev?.selftestExtensions) {
     const { runExtensionsSelfTest } = await import("./selftest");
     setTimeout(() => void runExtensionsSelfTest(platform, (m) => void desktopLog.info(m)), 3000);
+  } else if (desktopLog && dev?.selftestAiViews) {
+    const { runAiViewsSelfTest } = await import("./selftest");
+    setTimeout(() => void runAiViewsSelfTest((m) => void desktopLog.info(m)), 4000);
   } else if (desktopLog && dev?.selftestExthost) {
     const { runExthostSelfTest } = await import("./selftest");
     setTimeout(() => void runExthostSelfTest(platform, (m) => void desktopLog.info(m)), 3000);

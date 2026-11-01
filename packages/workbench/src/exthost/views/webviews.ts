@@ -51,7 +51,28 @@ interface Runtime {
   generation: number;
   published: boolean;
   lastRect: string;
+  /** The page has started (see useWebviewStatus): until then its iframe stays hidden and the slot shows progress. */
+  started: boolean;
+  /** It started once: a re-created iframe (its slot came back) shows at once, without "Starting…" again. */
+  everStarted: boolean;
+  timers: ReturnType<typeof setTimeout>[];
 }
+
+/**
+ * Whether each webview's page has started, for the slot's progress and error states:
+ * - starting: loading; the iframe is hidden and the slot says "Starting…";
+ * - running: the page posted its first message to the extension (or, for pages that never
+ *   post, it loaded and 1.2 s passed without a script error); only a view's first load waits;
+ * - stuck: 30 s without starting; the slot shows what went wrong on the page and Reload.
+ */
+export interface WebviewStatus {
+  phase: "starting" | "running" | "stuck";
+  /** What the page reported (prelude: errors, rejections, failed loads, CSP refusals), newest last. */
+  diagnostics: { kind: string; text: string }[];
+}
+export const useWebviewStatus = create<Record<string, WebviewStatus>>()(() => ({}));
+const START_GRACE_MS = 1200;
+const STUCK_MS = 30_000;
 
 /** The webviews by handle (title, icon… for tabs and panes). */
 export const useWebviews = create<{ entries: Record<string, WebviewEntry>; viewHandles: Record<string, string> }>()(() => ({ entries: {}, viewHandles: {} }));
@@ -72,9 +93,56 @@ export function webviewEnv(): { webviewBase: string; webviewCspSource: string } 
   return host ? { webviewBase: host.base, webviewCspSource: host.cspSource } : { webviewBase: BROWSER_WEBVIEW_BASE, webviewCspSource: `${BROWSER_WEBVIEW_BASE} data:` };
 }
 
+function setStatus(handle: string, p: Partial<WebviewStatus>) {
+  useWebviewStatus.setState((s) => ({ [handle]: { ...((s[handle] as WebviewStatus | undefined) ?? { phase: "starting", diagnostics: [] }), ...p } }));
+}
+
+/** A (re)loading page: progress until it starts, or "stuck" after STUCK_MS. */
+function beginStart(handle: string, r: Runtime) {
+  for (const t of r.timers.splice(0)) clearTimeout(t);
+  if (r.everStarted) {
+    r.started = true;
+    r.lastRect = "";
+    setStatus(handle, { phase: "running" });
+    return;
+  }
+  r.started = false;
+  r.lastRect = "";
+  setStatus(handle, { phase: "starting", diagnostics: [] });
+  r.timers.push(
+    setTimeout(() => {
+      if (!r.started && useWebviewStatus.getState()[handle]?.phase === "starting") setStatus(handle, { phase: "stuck" });
+    }, STUCK_MS),
+  );
+}
+
+function markStarted(handle: string) {
+  const r = runtime.get(handle);
+  if (!r || r.started) return;
+  r.started = true;
+  r.everStarted = true;
+  for (const t of r.timers.splice(0)) clearTimeout(t);
+  r.lastRect = "";
+  setStatus(handle, { phase: "running" });
+  schedule();
+}
+
+/** A script error or a script that didn't load keeps a silent page from counting as started. */
+const blocking = (d: { kind: string; text: string }) => d.kind === "error" || d.kind === "rejection" || (d.kind === "load" && /^script /.test(d.text));
+
+/** Reload (the slot's error state). */
+export function reloadWebview(handle: string) {
+  reload(handle);
+}
+
+/** Show the page as it is, though it hasn't started (the slot's error state). */
+export function showWebviewAnyway(handle: string) {
+  markStarted(handle);
+}
+
 function rt(handle: string): Runtime {
   let r = runtime.get(handle);
-  if (!r) runtime.set(handle, (r = { frame: null, slot: null, ready: false, queue: [], wanted: false, generation: 0, published: false, lastRect: "" }));
+  if (!r) runtime.set(handle, (r = { frame: null, slot: null, ready: false, queue: [], wanted: false, generation: 0, published: false, lastRect: "", started: false, everStarted: false, timers: [] }));
   return r;
 }
 
@@ -142,6 +210,7 @@ export function webviewOp(handle: string, op: string, data: unknown) {
 export function postToWebview(handle: string, message: unknown): boolean {
   const r = runtime.get(handle);
   if (!r || !entry(handle)) return false;
+  trace(handle, "→page", message);
   if (r.frame && r.ready) {
     r.frame.contentWindow?.postMessage({ __tmwebview: 1, type: "message", data: message }, "*");
     return true;
@@ -157,7 +226,13 @@ export function disposeWebview(handle: string, notifyHost: boolean) {
   const e = entry(handle);
   if (!e) return;
   destroyFrame(handle);
+  for (const t of runtime.get(handle)?.timers ?? []) clearTimeout(t);
   runtime.delete(handle);
+  useWebviewStatus.setState((s) => {
+    const next = { ...s };
+    delete next[handle];
+    return next;
+  }, true);
   getPlatform().webviews?.dispose(handle);
   useWebviews.setState((s) => {
     const entries = { ...s.entries };
@@ -280,6 +355,7 @@ function createFrame(handle: string) {
   frame.style.visibility = "hidden";
   r.frame = frame;
   r.ready = false;
+  beginStart(handle, r);
   (layer ?? document.body).appendChild(frame);
   void load(handle);
 }
@@ -290,6 +366,7 @@ function destroyFrame(handle: string) {
   r.frame.remove();
   r.frame = null;
   r.ready = false;
+  for (const t of r.timers.splice(0)) clearTimeout(t);
   r.queue = [];
 }
 
@@ -300,6 +377,7 @@ function reload(handle: string) {
   const e = entry(handle);
   if (e) r.frame.setAttribute("sandbox", sandboxFor(e.options));
   r.ready = false;
+  beginStart(handle, r);
   void load(handle);
 }
 
@@ -375,7 +453,7 @@ function tick() {
     const key = hidden ? "hidden" : `${b.left - (layerRect?.left ?? 0)},${b.top - (layerRect?.top ?? 0)},${b.width},${b.height}`;
     if (key === r.lastRect) continue;
     r.lastRect = key;
-    if (hidden) {
+    if (hidden || !r.started) {
       r.frame.style.visibility = "hidden";
       continue;
     }
@@ -394,6 +472,28 @@ function handleOf(source: MessageEventSource | null): string | null {
 
 /** Messages each webview posted (self-tests: proof that its page loaded and its script runs). */
 export const webviewMessageCounts = new Map<string, number>();
+/** The first messages each way per webview, by type ("page→ ready", "→page services"), for self-tests. */
+export const webviewTrace = new Map<string, string[]>();
+let traceBodies = false;
+/** Self-tests: keep the start of each message's JSON in the trace too. */
+export function traceWebviewBodies(on: boolean) {
+  traceBodies = on;
+}
+function trace(handle: string, dir: "page→" | "→page", m: unknown) {
+  const t = webviewTrace.get(handle) ?? [];
+  if (t.length >= 60) return;
+  const type = m && typeof m === "object" ? String((m as { type?: unknown }).type ?? Object.keys(m).slice(0, 3).join(",")) : typeof m;
+  let body = "";
+  if (traceBodies) {
+    try {
+      body = ` ${JSON.stringify(m).slice(0, 700)}`;
+    } catch {
+      body = " (unserialisable)";
+    }
+  }
+  t.push(`${dir} ${type}${body}`);
+  webviewTrace.set(handle, t);
+}
 
 function onMessage(ev: MessageEvent) {
   const d = ev.data as { __tmwebview?: number; type?: string; data?: unknown; href?: string } | null;
@@ -407,9 +507,25 @@ function onMessage(ev: MessageEvent) {
     case "ready":
       r.ready = true;
       for (const m of r.queue.splice(0)) r.frame?.contentWindow?.postMessage({ __tmwebview: 1, type: "message", data: m }, "*");
+      // A page that never posts counts as started once it has loaded and ran without a script error for a moment.
+      r.timers.push(
+        setTimeout(() => {
+          if (!(useWebviewStatus.getState()[handle]?.diagnostics ?? []).some(blocking)) markStarted(handle);
+        }, START_GRACE_MS),
+      );
       return;
+    case "diagnostic": {
+      const dd = d as unknown as { kind?: string; text?: string };
+      const item = { kind: String(dd.kind ?? "error"), text: String(dd.text ?? "").slice(0, 600) };
+      setStatus(handle, { diagnostics: [...(useWebviewStatus.getState()[handle]?.diagnostics ?? []), item].slice(-40) });
+      // An extension's own style policy refusing inline styles is noise; everything else is worth a line in the log.
+      if (!(item.kind === "csp" && /CSP refused style-src/.test(item.text))) log(HOST_CHANNEL, `[${e.extensionId}] webview '${e.viewType}': ${item.text}`, item.kind === "csp" ? "warn" : "error");
+      return;
+    }
     case "message":
+      markStarted(handle);
       webviewMessageCounts.set(handle, (webviewMessageCounts.get(handle) ?? 0) + 1);
+      trace(handle, "page→", d.data);
       void e.link.rpc.request("$webviewMessage", [handle, d.data]).catch(() => {});
       return;
     case "setState":

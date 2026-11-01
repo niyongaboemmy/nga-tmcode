@@ -91,6 +91,8 @@ struct AppInfo {
     dev_selftest_exthost: bool,
     /// Debug builds only: `TMCODE_DEV_SELFTEST=extensions` installs and uses real extensions end to end.
     dev_selftest_extensions: bool,
+    /// Debug builds only: `TMCODE_DEV_SELFTEST=aiviews` opens every installed extension's webview views and reports whether they start.
+    dev_selftest_aiviews: bool,
     /// Debug builds only: a tmcode:// link to open at start (`TMCODE_DEV_LAUNCH`).
     dev_launch: Option<String>,
     /// A folder or file given on the command line (`tmcode ~/project`).
@@ -129,6 +131,7 @@ fn app_info() -> AppInfo {
         dev_selftest_projects: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("projects"),
         dev_selftest_exthost: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("exthost"),
         dev_selftest_extensions: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("extensions"),
+        dev_selftest_aiviews: cfg!(debug_assertions) && std::env::var("TMCODE_DEV_SELFTEST").as_deref() == Ok("aiviews"),
         dev_launch: if cfg!(debug_assertions) { std::env::var("TMCODE_DEV_LAUNCH").ok() } else { None },
         open_path: path_arg(&std::env::args().collect::<Vec<_>>(), &std::env::current_dir().unwrap_or_default()),
         devtools: cfg!(debug_assertions),

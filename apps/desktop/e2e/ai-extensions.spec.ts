@@ -113,6 +113,13 @@ exports.activate = (context) => {
       await vscode.window.tabGroups.close(tab);
       vscode.window.showInformationMessage("Accepted (" + (findTab() ? "tab still open" : "tab closed") + ", saved " + saved + ")");
     }),
+    // An agent view in the activity bar whose page posts nothing: TMCode shows "Starting…" until it has loaded.
+    vscode.window.registerWebviewViewProvider("fixture.agent", {
+      resolveWebviewView(view) {
+        view.webview.options = { enableScripts: true };
+        view.webview.html = "<!doctype html><html><body><h1 id='agent'>Fixture agent</h1></body></html>";
+      },
+    }),
     vscode.window.registerWebviewViewProvider("fixture.chat", {
       resolveWebviewView(view) {
         view.webview.options = { enableScripts: true };
@@ -133,8 +140,8 @@ const PKG = {
   browser: "./dist/web.js",
   activationEvents: ["onStartupFinished"],
   contributes: {
-    viewsContainers: { secondarySidebar: [{ id: "fixture-ai", title: "Fixture AI", icon: "$(hubot)" }] },
-    views: { "fixture-ai": [{ id: "fixture.chat", name: "Chat", type: "webview" }] },
+    viewsContainers: { secondarySidebar: [{ id: "fixture-ai", title: "Fixture AI", icon: "$(hubot)" }], activitybar: [{ id: "fixture-agent", title: "Fixture Agent", icon: "$(robot)" }] },
+    views: { "fixture-ai": [{ id: "fixture.chat", name: "Chat", type: "webview" }], "fixture-agent": [{ id: "fixture.agent", name: "Agent", type: "webview" }] },
     commands: [
       { command: "fixture.propose", title: "Propose Edit", category: "Fixture AI" },
       { command: "fixture.accept", title: "Accept Proposed Edit", category: "Fixture AI" },
@@ -232,7 +239,9 @@ test("an AI extension: ghost-text suggestions, a proposed edit as a diff, tabGro
   await page.keyboard.press("ControlOrMeta+Alt+b");
   const aux = page.getByTestId("auxiliary-bar");
   await expect(aux).toBeVisible();
-  await aux.getByTestId("auxbar-tab-ext:fixture-ai").click();
+  // AI tools share one switcher (workbench.activityBar.groupAiTools, on by default).
+  await aux.getByTestId("auxbar-ai-switcher").click();
+  await page.getByTestId("ai-tools-menu").getByRole("menuitemradio", { name: /Fixture AI/ }).click();
   const frame = page.frameLocator('iframe[data-view-type="fixture.chat"]');
   await expect(frame.locator("#hello")).toHaveText("Fixture AI chat", { timeout: 15000 });
 
@@ -247,4 +256,55 @@ test("an AI extension: ghost-text suggestions, a proposed edit as a diff, tabGro
   await expect(page.getByTestId("activity-ai-count")).toContainText(/[1-9]\d* with AI · Fixture AI/);
   await page.getByTestId("activity-filter-ai").click();
   await expect(log.locator(".tm-actlog-row:not(.is-ai)")).toHaveCount(0);
+});
+
+test("all AI tools under one AI icon: the open one highlighted, Starting… while a view loads, right-click to hide or split them", async ({ page }) => {
+  await install(page);
+  const bar = page.locator(".tm-activitybar");
+  // One AI icon instead of one per AI extension.
+  await expect(page.getByTestId("activity-ai-tools")).toBeVisible();
+  await expect(page.getByTestId("activity-ext:fixture-agent")).toHaveCount(0);
+
+  await page.getByTestId("activity-ai-tools").click();
+  const menu = page.getByTestId("ai-tools-menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveText([/TMCode AI/, /Fixture Agent/, /Fixture AI/]);
+  await menu.getByRole("menuitemradio", { name: /Fixture Agent/ }).click();
+  // The page hasn't started yet: the view says so, then shows the page.
+  await expect(sidebar(page).getByTestId("webview-starting")).toContainText("Starting Fixture AI…");
+  await expect(page.frameLocator('iframe[data-view-type="fixture.agent"]').locator("#agent")).toHaveText("Fixture agent", { timeout: 15000 });
+  await expect(sidebar(page).getByTestId("webview-starting")).toHaveCount(0);
+  // The AI icon is highlighted while an AI tool is open, and the menu highlights that one only.
+  await expect(page.getByTestId("activity-ai-tools")).toHaveClass(/is-active/);
+  await page.getByTestId("activity-ai-tools").click();
+  await expect(menu.getByRole("menuitemradio", { checked: true })).toHaveText(/Fixture Agent/);
+  await expect(menu.getByRole("menuitemradio", { checked: true })).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+
+  // Right-click: one icon each instead, then hide one of them, then reset.
+  await page.getByTestId("activity-ai-tools").click({ button: "right" });
+  const ctx = page.locator(".tm-menu");
+  await expect(ctx.getByRole("menuitemcheckbox", { name: "One AI Icon for All AI Tools" })).toHaveAttribute("aria-checked", "true");
+  await ctx.getByRole("menuitemcheckbox", { name: "One AI Icon for All AI Tools" }).click();
+  await expect(page.getByTestId("activity-ai-tools")).toHaveCount(0);
+  await expect(page.getByTestId("activity-ext:fixture-agent")).toBeVisible();
+  // Hiding the open view's icon keeps it until another view opens.
+  await page.getByRole("tab", { name: /^Explorer/ }).click();
+  await page.getByTestId("activity-ext:fixture-agent").click({ button: "right" });
+  await ctx.getByRole("menuitem", { name: "Hide 'Fixture Agent'" }).click();
+  await expect(page.getByTestId("activity-ext:fixture-agent")).toHaveCount(0);
+  await bar.click({ button: "right", position: { x: 20, y: 5 } });
+  await expect(ctx.getByRole("menuitemcheckbox", { name: "Fixture Agent" })).toHaveAttribute("aria-checked", "false");
+  await ctx.getByRole("menuitem", { name: "Reset Activity Bar" }).click();
+  await expect(page.getByTestId("activity-ai-tools")).toBeVisible();
+  await expect(page.getByTestId("activity-ext:fixture-agent")).toHaveCount(0);
+
+  // The secondary side bar: one switcher showing the AI tool that is open there.
+  await page.keyboard.press("ControlOrMeta+Alt+b");
+  const aux = page.getByTestId("auxiliary-bar");
+  await expect(aux.getByTestId("auxbar-ai-switcher")).toContainText("TMCode AI");
+  await aux.getByTestId("auxbar-ai-switcher").click();
+  await menu.getByRole("menuitemradio", { name: /Fixture AI/ }).click();
+  await expect(aux.getByTestId("auxbar-ai-switcher")).toContainText("Fixture AI");
+  await expect(page.frameLocator('iframe[data-view-type="fixture.chat"]').locator("#hello")).toHaveText("Fixture AI chat", { timeout: 15000 });
 });

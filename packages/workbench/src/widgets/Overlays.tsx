@@ -76,7 +76,8 @@ export function ContextMenu() {
           ) : (
             <div
               key={i}
-              role="menuitem"
+              role={it.checked !== undefined ? "menuitemcheckbox" : "menuitem"}
+              aria-checked={it.checked}
               aria-disabled={it.disabled}
               className={`tm-menu-item ${focus === i ? "is-focused" : ""} ${it.disabled ? "is-disabled" : ""} ${it.danger ? "is-danger" : ""}`}
               onMouseEnter={() => !it.disabled && setFocus(i)}
@@ -87,6 +88,11 @@ export function ContextMenu() {
                 it.run();
               }}
             >
+              {menu.items.some((x) => x.kind === "item" && x.checked !== undefined) && (
+                <span className="tm-menu-check" aria-hidden>
+                  {it.checked && <Codicon name="check" />}
+                </span>
+              )}
               <span className="tm-menu-label">{it.label}</span>
               {it.keybinding && <span className="tm-menu-kb">{it.keybinding}</span>}
             </div>

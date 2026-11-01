@@ -22,6 +22,8 @@ import type { AccountStatus } from "../platform/types";
 import { useViews, type ViewContainer } from "../exthost/views/model";
 import { useWebviews } from "../exthost/views/webviews";
 import { ExtIcon } from "../exthost/views/ExtIcon";
+import { AiToolsButton, hiddenItems, setHidden, useAiTools } from "./aiTools";
+import { updateSetting } from "../state/store";
 
 /** The student layout's views (guided plan J): where the work is, the files, search, and Run. */
 const SIMPLE_IDS: ViewId[] = ["assignments", "explorer", "search", "debug"];
@@ -94,12 +96,39 @@ export function ActivityBar() {
   const ordered = simple ? [...allViews.filter((v) => SIMPLE_IDS.includes(v.id)).sort((a, b) => SIMPLE_IDS.indexOf(a.id) - SIMPLE_IDS.indexOf(b.id)), ...allViews.filter((v) => !SIMPLE_IDS.includes(v.id))] : allViews;
   // Extensions never run in exams, so their containers only exist in practice mode.
   useViews((s) => s.version);
-  const extContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam && whenFor(c.when));
+  const allExtContainers = useViews((s) => s.containers).filter((c) => c.location === "activitybar" && practice && !inExam && whenFor(c.when));
+  // AI tools under one icon (the default), else one icon each; and what the person hid (right-click › Hide).
+  const aiTools = useAiTools();
+  const groupAi = useWorkbench((s) => s.settings["workbench.activityBar.groupAiTools"] !== false);
+  const hidden = useWorkbench((s) => s.settings["workbench.activityBar.hidden"]);
+  const hiddenSet = new Set(Array.isArray(hidden) ? hidden : []);
+  const aiKeys = new Set(aiTools.map((t) => t.key));
+  const extContainers = allExtContainers.filter((c) => !(groupAi && aiKeys.has(c.key)));
 
   // Every view shows while the bar has room (U10 revisited: a handful of icons is never hidden).
   // Only when the window is too short does the rest go under "More" — each entry once, and
   // never the view that is open.
-  const items: BarItem[] = [...ordered.map((v) => ({ key: v.id as string, view: v })), ...extContainers.map((c) => ({ key: c.key, container: c }))];
+  const everything: BarItem[] = [
+    ...ordered.map((v) => ({ key: v.id as string, view: v })),
+    ...extContainers.map((c) => ({ key: c.key, container: c })),
+    ...(groupAi && practice && !inExam && aiTools.length > 1 ? [{ key: "ai-tools", ai: true as const }] : []),
+  ];
+  // A hidden icon stays while its view is the one open (so the open view always has its icon).
+  const items = everything.filter((it) => !hiddenSet.has(it.key) || (sidebarVisible && activeView === it.key));
+  const nameOf = (it: BarItem) => (it.ai ? "AI Tools" : it.view ? tr(it.view.label) : (it.container?.title ?? it.key));
+  /** Right-click: VS Code's activity bar menu (hide this icon, show or hide each one, AI grouping, reset). */
+  const barMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const key = (e.target as HTMLElement).closest<HTMLElement>("[data-key]")?.dataset.key;
+    const target = everything.find((it) => it.key === key);
+    openContextMenu(e.clientX, e.clientY, [
+      ...(target ? [{ kind: "item" as const, label: `Hide '${nameOf(target)}'`, run: () => setHidden(target.key, true) }, { kind: "separator" as const }] : []),
+      ...everything.map((it) => ({ kind: "item" as const, label: nameOf(it), checked: !hiddenSet.has(it.key), run: () => setHidden(it.key, !hiddenSet.has(it.key)) })),
+      { kind: "separator" },
+      { kind: "item", label: "One AI Icon for All AI Tools", checked: groupAi, run: () => updateSetting("workbench.activityBar.groupAiTools", !groupAi) },
+      { kind: "item", label: "Reset Activity Bar", disabled: !hiddenItems().length && groupAi, run: () => (updateSetting("workbench.activityBar.hidden", []), updateSetting("workbench.activityBar.groupAiTools", true)) },
+    ]);
+  };
   const nav = useRef<HTMLElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState(Number.POSITIVE_INFINITY);
@@ -131,9 +160,10 @@ export function ActivityBar() {
   };
 
   return (
-    <nav ref={nav} className="tm-activitybar" aria-label="Active View Switcher">
+    <nav ref={nav} className="tm-activitybar" aria-label="Active View Switcher" onContextMenu={barMenu}>
       <div className="tm-activitybar-top" role="tablist" aria-orientation="vertical">
         {shown.map((item) => {
+          if (item.ai) return <AiToolsButton key={item.key} tools={aiTools} />;
           if (item.container) return <ExtContainerButton key={item.key} container={item.container} active={sidebarVisible && activeView === item.key} />;
           const v = item.view!;
           const active = sidebarVisible && activeView === v.id;
@@ -145,6 +175,7 @@ export function ActivityBar() {
               aria-selected={active}
               className={`tm-activity ${active ? "is-active" : ""}`}
               data-view={v.id}
+              data-key={v.id}
               title={label(v)}
               aria-label={label(v)}
               onClick={() => showView(v.id)}
@@ -185,7 +216,7 @@ export function ActivityBar() {
               openContextMenu(
                 r.right + 4,
                 r.top,
-                overflow.map((item) => ({ kind: "item" as const, label: item.view ? label(item.view) : item.container!.title, run: () => showView(item.key as ViewId) })),
+                overflow.map((item) => ({ kind: "item" as const, label: item.ai ? "AI Tools" : item.view ? label(item.view) : item.container!.title, run: () => (item.ai ? (document.querySelector<HTMLElement>('[data-key="ai-tools"]')?.click(), undefined) : showView(item.key as ViewId)) })),
               );
             }}
           >
@@ -233,7 +264,7 @@ function ExtContainerButton({ container, active }: { container: ViewContainer; a
   const webBadge = useWebviews((s) => Object.values(s.entries).filter((e) => e.kind === "view" && useViews.getState().views.some((v) => v.id === e.viewType && v.container === container.key)).reduce((n, e) => n + (e.meta.badge?.value ?? 0), 0));
   const total = badge + webBadge;
   return (
-    <button type="button" role="tab" aria-selected={active} className={`tm-activity ${active ? "is-active" : ""}`} title={container.title} aria-label={container.title} data-testid={`activity-${container.key}`} onClick={() => showView(container.key)}>
+    <button type="button" role="tab" aria-selected={active} className={`tm-activity ${active ? "is-active" : ""}`} title={container.title} aria-label={container.title} data-key={container.key} data-testid={`activity-${container.key}`} onClick={() => showView(container.key)}>
       <ExtIcon icon={container.icon} mask size={24} className="tm-activity-ext-icon" />
       {total > 0 && <span className="tm-activity-badge">{total}</span>}
     </button>
