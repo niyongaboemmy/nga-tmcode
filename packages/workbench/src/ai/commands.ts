@@ -54,6 +54,18 @@ export function wireAi() {
     },
   });
   registerCommand({ id: "tmcodeAI.explain", title: "Explain This Code", category: "TMCode AI", enabled: allowed, run: () => askNow("Explain what this code does, step by step.") });
+  // The request check on demand (prompt interpreter report, Q8): what's in the prompt box, checked.
+  registerCommand({
+    id: "tmcodeAI.checkMeaning",
+    title: "Check What I Mean",
+    category: "TMCode AI",
+    aliases: ["enhance prompt", "clarify request", "intent card", "prompt check"],
+    enabled: allowed,
+    run: () => {
+      showAuxiliaryView("chat");
+      setTimeout(() => (document.querySelector('[data-testid="ai-check-meaning"]') as HTMLButtonElement | null)?.click(), 50);
+    },
+  });
   // Learning: the same commands ask the tutor for words, never code (proposal §8.2).
   registerCommand({
     id: "tmcodeAI.fix",

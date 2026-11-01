@@ -23,6 +23,9 @@ import { answerQuestion, approveStep, ask, MODES, modeLabelNow, newChat, referTo
 import { aiReadsImages, effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
 import { scaleImage } from "./imageScale";
 import { addAttachments, ATTACH_LIMITS, formatSize, fromAttachedFile, fromBrowserFile, pastedAttachment, textAttachment, type Attachment } from "./attachments";
+import { CoachChecklist, IntentNote, IntentPanel, RequestMeter } from "./interpreter/IntentPanel";
+import { PromptProblemPanel } from "./interpreter/PromptProblem";
+import { interceptRequest, isStudent, registerComposer, useIntent } from "./interpreter/state";
 
 /**
  * TMCode AI's panel (secondary side bar), modelled on Claude Code's: pick a mode (Chat, Manual,
@@ -784,6 +787,18 @@ export function ChatView() {
   useEffect(() => {
     void loadAiSettings();
   }, []);
+  // The request check's "Edit my words" puts the text back here.
+  useEffect(() => {
+    registerComposer((t) => {
+      setText(t);
+      setTimeout(() => {
+        input.current?.focus();
+        input.current?.setSelectionRange(t.length, t.length);
+      }, 0);
+    });
+    return () => registerComposer(null);
+  }, []);
+  const checking = useIntent((s) => !!s.pending);
   useEffect(() => {
     if (signedIn) void refreshAiStatus();
   }, [signedIn, projectId]);
@@ -839,7 +854,8 @@ export function ChatView() {
     );
   }
 
-  const send = (typed = text) => {
+  /** "starter": one of the ready-made prompts (already clear, so never checked). */
+  const send = (typed = text, trigger: "send" | "manual" | "starter" = "send") => {
     const files = attachments;
     // Attachments alone are a question too.
     const q = typed.trim() || (files.length ? `Look at the attached file${files.length === 1 ? "" : "s"}.` : "");
@@ -862,8 +878,14 @@ export function ChatView() {
       return void ask(recipe.arg || "Plan the next step for this project.", { file: withFile, problems: withProblems, mentions: used, attachments: files }, "plan");
     }
     if (recipe?.kind === "ask") return void ask(recipe.prompt, { file: withFile, problems: withProblems, mentions: used, attachments: files }, recipe.mode);
-    void ask(q, { file: withFile, problems: withProblems, mentions: used, attachments: files });
+    const opts = { file: withFile, problems: withProblems, mentions: used, attachments: files };
+    // The request check (prompt interpreter report): the card or the coach first, when the gate says so.
+    if (trigger !== "starter" && interceptRequest(q, opts, agentMode, { firstOfTask: !useChat.getState().messages.length, recipeWithArgs: false, planEntry: agentMode === "plan" && !useChat.getState().messages.length, mentions: used.length, openFile: !!file }, trigger)) return;
+    void ask(q, opts);
   };
+
+  /** ✨ / ⌘⇧Enter: check what I mean before the AI acts (on demand, Q8). */
+  const checkMeaning = () => send(text, "manual");
 
   const pickFiles = () => {
     const host = getPlatform().attachments;
@@ -950,6 +972,8 @@ export function ChatView() {
   const current = MODES.find((m) => m.id === agentMode) ?? MODES[1];
   const tutor = gate.tutor;
   const allowance = status?.learning?.allowance ?? null;
+  // Students in Guided or Learning see which of the six things their request says, as they type.
+  const showMeter = !checking && isStudent() && (gate.tutor || gate.profile === "guided") && status?.interpreter?.arm !== "holdout";
 
   return (
     <div
@@ -1033,6 +1057,7 @@ export function ChatView() {
           if (sel && !allowAiCopy(sel, "the AI panel")) e.preventDefault();
         }}
       >
+        <PromptProblemPanel />
         {!messages.length && (
           <div className="tm-chat-empty">
             {tutor ? (
@@ -1050,7 +1075,7 @@ export function ChatView() {
             )}
             <div className="tm-chat-starters">
               {(tutor ? TUTOR_STARTERS : STARTERS).map((s) => (
-                <button key={s.label} type="button" className="tm-chat-starter" onClick={() => send(s.prompt)} disabled={!file && s.icon !== "lightbulb"}>
+                <button key={s.label} type="button" className="tm-chat-starter" onClick={() => send(s.prompt, "starter")} disabled={!file && s.icon !== "lightbulb"}>
                   <Codicon name={s.icon} /> {s.label}
                 </button>
               ))}
@@ -1070,6 +1095,14 @@ export function ChatView() {
                 </div>
               )}
               <div className="tm-chat-q-text">{m.content}</div>
+              {m.intent && (
+                <details className="tm-chat-q-intent" data-testid="ai-question-checked">
+                  <summary>
+                    <Codicon name="pass-filled" /> Checked: {m.intent.restated}
+                  </summary>
+                  <div className="tm-chat-q-spec">{m.intent.spec}</div>
+                </details>
+              )}
               <div className="tm-chat-q-foot">
                 {m.mode && m.mode !== "chat" && <span className="tm-chat-chip is-mode">{MODES.find((x) => x.id === m.mode)?.label}</span>}
                 {m.chips?.map((c) => (
@@ -1086,6 +1119,9 @@ export function ChatView() {
         )}
       </div>
       <div className="tm-chat-compose">
+        <IntentPanel />
+        <IntentNote />
+        {!checking && <CoachChecklist text={text} />}
         {reference && (
           <div className="tm-chat-reference" data-testid="ai-reference">
             <Codicon name="reply" />
@@ -1142,7 +1178,8 @@ export function ChatView() {
             ref={input}
             value={text}
             rows={1}
-            placeholder={agentMode === "chat" ? (file ? `Ask about ${file.slice(file.lastIndexOf("/") + 1)}…` : "Ask TMCode AI…") : "Describe a change or a fix… (@ adds a file)"}
+            placeholder={checking ? "Confirm or change what TMCode understood above…" : agentMode === "chat" ? (file ? `Ask about ${file.slice(file.lastIndexOf("/") + 1)}…` : "Ask TMCode AI…") : "Describe a change or a fix… (@ adds a file)"}
+            disabled={checking}
             aria-label="Ask TMCode AI"
             onPaste={onPaste}
             onChange={(e) => {
@@ -1188,6 +1225,11 @@ export function ChatView() {
                 setText(at < history.length ? history[at] : "");
                 return;
               }
+              if (e.key === "Enter" && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (text.trim()) checkMeaning();
+                return;
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 send();
@@ -1207,6 +1249,11 @@ export function ChatView() {
               if (files.length) void attach(() => Promise.all(files.map(fromBrowserFile)));
             }}
           />
+          {!busy && !checking && (
+            <button type="button" className="tm-chat-attach tm-chat-check" onClick={checkMeaning} disabled={!text.trim()} title={tutor ? "Check my question before asking (⌘⇧Enter)" : "Check what I mean before the AI acts (⌘⇧Enter)"} aria-label="Check what I mean" data-testid="ai-check-meaning">
+              <Codicon name="sparkle" />
+            </button>
+          )}
           <button type="button" className="tm-chat-attach" onClick={pickFiles} title="Attach files (or paste / drop them here)" aria-label="Attach files" data-testid="ai-attach">
             <Codicon name="attach" />
           </button>
@@ -1215,13 +1262,14 @@ export function ChatView() {
               <Codicon name="debug-stop" />
             </button>
           ) : (
-            <button type="button" className="tm-chat-send" onClick={() => send()} disabled={!text.trim() && !attachments.length} title="Send (Enter)" aria-label="Send" data-testid="ai-send">
+            <button type="button" className="tm-chat-send" onClick={() => send()} disabled={checking || (!text.trim() && !attachments.length)} title="Send (Enter)" aria-label="Send" data-testid="ai-send">
               <Codicon name="send" />
             </button>
           )}
         </div>
+        {showMeter && <RequestMeter text={text} mentions={mentions.length} />}
         <div className="tm-chat-hint">
-          Enter to send · Shift+Enter new line · ⇧Tab mode · @ file · paste or drop files · ↑ earlier prompts
+          Enter to send · ⌘⇧Enter check what I mean · Shift+Enter new line · ⇧Tab mode · @ file · ↑ earlier prompts
         </div>
       </div>
     </div>

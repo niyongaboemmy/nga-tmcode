@@ -1,4 +1,4 @@
-import { filterLearningText, identifiersOf } from "@tmcode/protocol";
+import { filterLearningText, identifiersOf, ruleCard, ruleCoach } from "@tmcode/protocol";
 import type { TmResponse, TmStreamEvent } from "./types";
 
 /**
@@ -33,10 +33,52 @@ function mockPolicy(): { allowed: boolean; reason: string; message: string; thir
   }
 }
 
+/**
+ * localStorage "tmcode:mock-interpreter" = JSON merged into /status's interpreter block (arm,
+ * stage, show_prompts, prompt_problem with its `hidden` examples, available) plus "fail": a code
+ * /interpret answers with (INTERPRETER_INVALID…), "delay": ms before it answers, and "card": a
+ * JSON card it returns instead of the rule card.
+ */
+function mockInterpreter(): Record<string, any> | null {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem("tmcode:mock-interpreter") : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The mock's Prompt Problem "AI": exact code only when the request says how evenness is decided. */
+function promptProblemCode(request: string): string {
+  if (/even|pair|gifu/i.test(request) && /(divid|remainder|modulo|%|by 2|by two|ku 2|par 2)/i.test(request)) return "```javascript\nexport function is_even(n) {\n  return n % 2 === 0;\n}\n```";
+  if (/even|pair/i.test(request)) return "```javascript\nexport function is_even(n) {\n  return n > 0;\n}\n```";
+  return "```javascript\nexport function solve() {\n  return null;\n}\n```";
+}
+
+/** Runs JavaScript Prompt Problem examples in the page (the mock's code runner). */
+function checkJs(code: string, examples: { input: string; output: string; hidden?: boolean }[]) {
+  const body = code.replace(/\bexport\s+(default\s+)?/g, "");
+  const results = examples.map((e) => {
+    let got = "";
+    try {
+      // eslint-disable-next-line no-new-func
+      got = JSON.stringify(new Function(`${body}\nreturn (${e.input});`)());
+    } catch (err) {
+      got = String((err as Error).message);
+    }
+    const norm = (v: string) => v.trim().replace(/^True$/, "true").replace(/^False$/, "false");
+    return { ...e, got, passed: norm(got) === norm(e.output) };
+  });
+  const shown = results.filter((r) => !r.hidden).map((r) => ({ input: r.input, expected: r.output, got: r.got, passed: r.passed }));
+  const hidden = results.filter((r) => r.hidden);
+  return { passed: results.filter((r) => r.passed).length, total: results.length, shown, hidden: { passed: hidden.filter((r) => r.passed).length, total: hidden.length }, error: null };
+}
+
 const CHAT_LIMIT = 40;
 
 export function memoryAi() {
   const lastChat: { body: Record<string, unknown> | null } = { body: null };
+  const lastInterpret: { body: Record<string, unknown> | null } = { body: null };
   let used = 0;
   let completes = 0;
   let seq = 0;
@@ -106,6 +148,12 @@ export function memoryAi() {
             ],
           };
         })(),
+        interpreter: (() => {
+          const i = mockInterpreter() ?? {};
+          const pp = i.prompt_problem ? { ...i.prompt_problem, hidden_count: (i.prompt_problem.hidden ?? []).length } : null;
+          if (pp) delete pp.hidden;
+          return { available: i.available ?? true, arm: i.arm ?? "card", stage: i.stage ?? "auto", show_prompts: !!i.show_prompts, prompt_problem: pp, you: { cards: { used: 0, limit: 60 }, coach: { used: 0, limit: 40 } } };
+        })(),
         ...(() => {
           const p = mockPolicy();
           if (!p) return {};
@@ -142,6 +190,7 @@ export function memoryAi() {
   }
 
   function answer(question: string, context: Record<string, unknown>): string {
+    if (context.purpose === "prompt-problem") return promptProblemCode(question);
     const seen = /\n\[(\d+) images?\]$/.exec(question);
     if (seen) return `I can see ${seen[1]} image${seen[1] === "1" ? "" : "s"}. The screenshot shows an error message on the page.`;
     const file = typeof context.file === "string" ? context.file : null;
@@ -157,6 +206,7 @@ export function memoryAi() {
 
   return {
     lastChat,
+    lastInterpret,
     route(method: string, path: string, body: Record<string, unknown>): TmResponse {
       if (path === "/status" && method === "GET") return status();
       const policy = mockPolicy();
@@ -176,6 +226,20 @@ export function memoryAi() {
         const agent = body.agent as { mode: string; step: number } | undefined;
         jobs.set(id, { mode: String(body.mode ?? "free"), question: messages.filter((m) => m.role === "user").pop()?.content ?? "", context: (body.context as Record<string, unknown>) ?? {}, agent, messages: messages as unknown as Wire[] });
         return { status: 201, body: { id } };
+      }
+      if (path === "/interpret" && method === "POST") {
+        lastInterpret.body = body;
+        const i = mockInterpreter() ?? {};
+        if (i.fail) return { status: 502, body: { code: i.fail, message: "The interpreter's answer couldn't be used." } };
+        const text = String(body.text ?? "");
+        if (mockPolicy()?.layer === "learning") return { status: 200, body: { kind: "coach", coach: ruleCoach(text), provider: "groq", model: "openai/gpt-oss-20b", ms: 40, language: "en", allowance: { max: 10, regain_minutes: 3, left: 10 - used, next_in_s: null } } };
+        const card = i.card ? { ...i.card, original: text } : ruleCard(text, (body.paths as string[]) ?? []);
+        return { status: 200, body: { kind: "card", card, provider: "groq", model: "openai/gpt-oss-20b", ms: 40, language: card.language, notes: [], samples: body.samples ?? 1, agreed: null, arm: i.arm ?? "card", stage: i.stage ?? "auto" } };
+      }
+      if (path === "/prompt-problem/check" && method === "POST") {
+        const pp = mockInterpreter()?.prompt_problem;
+        if (!pp) return { status: 404, body: { code: "NO_PROMPT_PROBLEM", message: "This work isn't a Prompt Problem." } };
+        return { status: 200, body: checkJs(String(body.code ?? ""), [...pp.examples, ...(pp.hidden ?? []).map((e: object) => ({ ...e, hidden: true }))]) };
       }
       if (path === "/byok/verify" && method === "POST") {
         if (body.key === "bad") return { status: 400, body: { code: "BYOK_REJECTED", message: "OpenAI refused your API key: Incorrect API key provided." } };

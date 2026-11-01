@@ -799,6 +799,10 @@ export function createMemoryAccountHost(fs: FileSystem, folders?: { newFolder(na
     lastAiChatBody() {
       return ai.lastChat.body;
     },
+    /** The last TMCode AI /interpret body (the request check). */
+    lastInterpretBody() {
+      return ai.lastInterpret.body;
+    },
     /** Grade saves fail with this HTTP status (null: they work again). */
     failGradeSaves(status: number | null) {
       failGradeSave = status;

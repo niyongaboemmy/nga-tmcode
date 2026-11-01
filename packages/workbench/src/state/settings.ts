@@ -47,6 +47,16 @@ export interface Settings {
   "terminal.integrated.ai.hashPrompt": boolean;
   /** The language TMCode AI answers in (proposal H3); "auto": the language you write in. */
   "tmcodeAI.replyLanguage": "auto" | "en" | "fr" | "rw";
+  /**
+   * The request check (prompt interpreter report, Q8): "auto" shows what TMCode understood before
+   * the AI acts on a new or unclear request; "onDemand" only with ✨ / ⌘⇧Enter (and for Kinyarwanda
+   * or very unclear requests); "never". For students, the teacher's setting decides.
+   */
+  "tmcodeAI.interpreter": "auto" | "onDemand" | "never";
+  /** Check English and French requests with a model on this computer (Ollama, LM Studio); never Kinyarwanda. */
+  "tmcodeAI.interpreter.local": boolean;
+  /** Double-check unclear requests: two readings, one question when they differ (uses more requests). */
+  "tmcodeAI.interpreter.doubleCheck": boolean;
   "terminal.integrated.ai.suggestFixes": boolean;
   /** "auto": the GPU renderer in the desktop app, the DOM renderer in the browser. */
   "terminal.integrated.gpuAcceleration": "auto" | "on" | "off";
@@ -196,6 +206,9 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.ai.enabled": true,
   "terminal.integrated.ai.hashPrompt": true,
   "tmcodeAI.replyLanguage": "auto",
+  "tmcodeAI.interpreter": "onDemand",
+  "tmcodeAI.interpreter.local": false,
+  "tmcodeAI.interpreter.doubleCheck": false,
   "terminal.integrated.ai.suggestFixes": true,
   "terminal.integrated.gpuAcceleration": "auto",
   "terminal.integrated.minimumContrastRatio": 4.5,
@@ -601,6 +614,29 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "fr", label: "Français" },
           { value: "rw", label: "Kinyarwanda" },
         ],
+      },
+      {
+        key: "tmcodeAI.interpreter",
+        label: "Check What I Mean",
+        description: "Before TMCode AI works on a request, show what it understood (the goal, examples to tick, unusual cases, files) so you can confirm or correct it. On request: only with ✨ or ⌘⇧Enter (Ctrl+Shift+Enter), and for Kinyarwanda or very unclear requests. For students, the teacher's setting decides.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "For new or unclear requests" },
+          { value: "onDemand", label: "On request" },
+          { value: "never", label: "Never" },
+        ],
+      },
+      {
+        key: "tmcodeAI.interpreter.local",
+        label: "Check Requests on This Computer",
+        description: "Use your local model (Ollama, LM Studio) to check English and French requests: nothing leaves your computer. Kinyarwanda requests use the school's AI, because small local models don't understand Kinyarwanda well.",
+        type: "boolean",
+      },
+      {
+        key: "tmcodeAI.interpreter.doubleCheck",
+        label: "Double-Check Unclear Requests",
+        description: "Read an unclear request twice and ask one question when the two readings differ. Uses more of your AI requests.",
+        type: "boolean",
       },
     ],
   },
