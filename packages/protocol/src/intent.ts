@@ -353,8 +353,9 @@ export function normalizeCard(raw: unknown, original: string, opts: NormalizeOpt
   const spec = clean(r.spec_en ?? r.spec ?? r.goal, 2000);
   if (!spec) return null;
   if (words(spec).length > CARD_LIMITS.specWordsHard) return null;
+  // Instructions inside pasted blocks are never the user's own words.
   const all = JSON.stringify(r);
-  if (suspicious(all, original)) return null;
+  if (suspicious(all, stripPasted(original).text)) return null;
   const language = (["en", "fr", "rw", "rw+en", "rw+fr", "fr+en", "other"] as const).includes(r.language as IntentLang) ? (r.language as IntentLang) : detectLanguage(original);
   const task = (TASK_TYPES as readonly string[]).includes(String(r.task_type)) ? (r.task_type as TaskType) : "other";
   const requirements: IntentItem[] = [];
