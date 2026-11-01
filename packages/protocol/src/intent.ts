@@ -752,10 +752,12 @@ export function ruleCoach(original: string): CoachResult {
   const card = ruleCard(original);
   const c = completeness(card);
   const missing = c.missing.map((id) => ({ id: (id === "edge_case" ? "edge_case" : id) as MissingId, label: MISSING_LABEL[id as MissingId], question: defaultQuestion(id as MissingId) }));
-  const segments = card.requirements.map((r) => ({ text: r.quote ?? r.text, kind: (/\b(when|if|niba|iyo|si|quand)\b/i.test(r.text) ? "edge" : "goal") as CoachResult["segments"][number]["kind"] }));
-  if (VAGUE.test(original)) {
-    const m = VAGUE.exec(original);
-    if (m) segments.push({ text: m[0], kind: "vague", note: "Say exactly what should happen instead." } as never);
-  }
+  const segments: CoachResult["segments"] = card.requirements.map((r) => {
+    const t = r.quote ?? r.text;
+    if (VAGUE.test(t)) return { text: t, kind: "vague", note: "Say exactly what should happen instead." };
+    return { text: t, kind: /\b(when|if|niba|iyo|si|quand)\b/i.test(t) ? "edge" : "goal" };
+  });
+  const vague = VAGUE.exec(original);
+  if (vague && !segments.some((x) => x.kind === "vague")) segments.push({ text: vague[0], kind: "vague", note: "Say exactly what should happen instead." });
   return { version: 1, language: card.language, missing: missing.slice(0, 5), segments, ...(c.have.length ? { praise: `You already said: ${c.have.join(", ").replace("_", " ")}.` } : {}) };
 }

@@ -485,9 +485,8 @@ export async function interpretOnServer(body: { text: string; purpose?: "card" |
 
 /** Runs a Prompt Problem's examples (shown and hidden) on the AI's code (Task Mentor POST /ai/prompt-problem/check). */
 export async function checkPromptProblem(code: string): Promise<{ passed: number; total: number; shown: { input: string; expected: string; got: string; passed: boolean }[]; hidden: { passed: number; total: number }; error: string | null }> {
-  const project = currentAiProjectId();
-  if (project == null) throw new AiRequestError("NO_PROJECT", "Open the assignment's project to check a Prompt Problem.");
-  return call("POST", "/prompt-problem/check", { project_id: project, code });
+  // Task Mentor checks the project (the assignment's Prompt Problem); it refuses without one.
+  return call("POST", "/prompt-problem/check", { ...projectField(), code });
 }
 
 /** One ghost-text suggestion at the cursor (null: nothing, or no allowance left). */

@@ -501,10 +501,10 @@ function Segments({ text, coach }: { text: string; coach: CoachResult }) {
     return out;
   }, [text, coach]);
   return (
-    <p className="tm-coach-text" data-testid="coach-text">
+    <p className="tm-pcoach-text" data-testid="coach-text">
       {parts.map((x, i) =>
         x.kind ? (
-          <mark key={i} className={`tm-coach-seg is-${x.kind}`} title={x.note ?? x.kind} data-testid="coach-segment">
+          <mark key={i} className={`tm-pcoach-seg is-${x.kind}`} title={x.note ?? x.kind} data-testid="coach-segment">
             {x.text}
           </mark>
         ) : (
@@ -518,7 +518,7 @@ function Segments({ text, coach }: { text: string; coach: CoachResult }) {
 /** Learning's prompt coach: what's missing, as questions; the student rewrites (never a rewrite from TMCode). */
 function Coach({ p, coach }: { p: Pending; coach: CoachResult }) {
   return (
-    <div className="tm-coach" data-testid="coach-panel">
+    <div className="tm-pcoach" data-testid="coach-panel">
       <div className="tm-intent-head">
         <Codicon name="lightbulb" className="tm-intent-spark" />
         <span className="tm-intent-title">Before you ask the tutor</span>
@@ -529,16 +529,16 @@ function Coach({ p, coach }: { p: Pending; coach: CoachResult }) {
       </div>
       <Segments text={p.text} coach={coach} />
       {coach.praise && (
-        <p className="tm-coach-praise">
+        <p className="tm-pcoach-praise">
           <Codicon name="star-full" /> {coach.praise}
         </p>
       )}
       {!!coach.missing.length && (
-        <ul className="tm-coach-missing">
+        <ul className="tm-pcoach-missing">
           {coach.missing.map((m) => (
             <li key={m.id} data-testid="coach-missing">
-              <span className="tm-coach-item">{m.label}</span>
-              <span className="tm-coach-q">{m.question}</span>
+              <span className="tm-pcoach-item">{m.label}</span>
+              <span className="tm-pcoach-q">{m.question}</span>
             </li>
           ))}
         </ul>
@@ -566,10 +566,10 @@ export function CoachChecklist({ text }: { text: string }) {
   const have = completeness(ruleCard(text)).have as string[];
   const done = coach.missing.filter((m) => have.includes(m.id)).length;
   return (
-    <div className="tm-coach-checklist" data-testid="coach-checklist">
+    <div className="tm-pcoach-checklist" data-testid="coach-checklist">
       <Codicon name="checklist" />
       {coach.missing.map((m) => (
-        <span key={m.id} className={`tm-coach-tick ${have.includes(m.id) ? "is-done" : ""}`} title={m.question} data-testid="coach-tick">
+        <span key={m.id} className={`tm-pcoach-tick ${have.includes(m.id) ? "is-done" : ""}`} title={m.question} data-testid="coach-tick">
           <Codicon name={have.includes(m.id) ? "pass-filled" : "circle-large-outline"} /> {m.label}
         </span>
       ))}
