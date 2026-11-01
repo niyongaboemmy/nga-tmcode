@@ -380,7 +380,8 @@ export interface ChatContext {
 }
 
 export interface StreamHandlers {
-  meta(m: { provider: string; model: string }): void;
+  /** Who answers; `privacy` is the provider's terms in a few words (Task Mentor ≥ 2026-11, J4). */
+  meta(m: { provider: string; model: string; privacy?: string | null }): void;
   delta(text: string): void;
   done(d: {
     provider: string;
@@ -420,7 +421,7 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
     fn();
   };
   const parse = sseParser((name, data) => {
-    if (name === "meta") on.meta(data as { provider: string; model: string });
+    if (name === "meta") on.meta(data as { provider: string; model: string; privacy?: string | null });
     else if (name === "delta") on.delta(String((data as { text?: string }).text ?? ""));
     else if (name === "done") finish(() => on.done(data as { provider: string; model: string }));
     else if (name === "error")

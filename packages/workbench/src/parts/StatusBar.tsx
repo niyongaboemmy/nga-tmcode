@@ -28,6 +28,7 @@ import { useIsTeacher, useRoleChecking } from "../state/role";
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
 import { LayerBadge } from "../ai/LayerBadge";
+import { useAiGate } from "../ai/gate";
 import { encodingLabel, pickEncoding, pickEol, pickIndentation, pickLanguage, toggleScreenReaderMode, useActiveFileInfo } from "./editorStatus";
 
 // TMCode has no lab lockdown yet, so a "secure" exam runs exactly like a monitored one and says so.
@@ -273,15 +274,17 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const checking = useRoleChecking();
   const signedIn = useProjects((s) => !!s.account?.signed_in);
   const simple = simplePref && mode === "practice" && signedIn && !teacher && !checking;
+  // A session whose AI isn't off is a timed task, not an exam (proposal D9).
+  const timedTask = useAiGate().timedTask;
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
   return (
     <footer className={`tm-statusbar is-${mode} ${debugging ? "is-debugging" : ""} ${simple ? "is-simple" : ""}`} role="status" aria-label="Status Bar" data-simple={simple ? "true" : undefined}>
       <div className="tm-status-left">
-        <Item className="tm-status-mode" title={MODE_TITLE[mode]}>
-          <Codicon name={MODE_ICON[mode]} />
-          <span>{MODE_LABEL[mode]}</span>
+        <Item className="tm-status-mode" title={timedTask ? "TMCode: a timed task. Your teacher allowed AI, so this isn't an exam (exams are always No AI)." : MODE_TITLE[mode]}>
+          <Codicon name={timedTask ? "watch" : MODE_ICON[mode]} />
+          <span>{timedTask ? "Timed task" : MODE_LABEL[mode]}</span>
         </Item>
         <LayerBadge />
         {!simple && <GitItems />}

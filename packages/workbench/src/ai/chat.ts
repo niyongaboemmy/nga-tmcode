@@ -4,7 +4,7 @@ import { getDocument, languageForPath } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
-import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
+import { Checkpoint, EXPLORE_TOOLS, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
 import { aiMaySee, combine, forAi, guardCall, loadAgentGuard } from "./agent/guard";
 import { aiGate } from "./gate";
@@ -44,11 +44,15 @@ export interface Step {
   diff?: { path: string; before: string; after: string };
   command?: string;
   output?: string;
+  /** ask_user (C12): the agent's question and its choices, waiting for the answer. */
+  question?: { text: string; choices: string[] };
 }
 
 export interface Message {
   /** Learning: lines of code the filter cut from this answer. */
   filtered?: number;
+  /** The answering provider's terms in a few words ("Free tier · terms 18+ · no training"). */
+  privacy?: string;
   id: number;
   role: "user" | "assistant";
   content: string;
@@ -82,6 +86,9 @@ let seq = 0;
 let cancel: (() => void) | null = null;
 const stopFlag = { cancelled: false };
 const approvals = new Map<string, (ok: boolean) => void>();
+/** ask_user steps waiting for the answer (null: skipped). */
+const answers = new Map<string, (answer: string | null) => void>();
+const EXPLORE_STEPS = 8;
 const checkpoints = new Map<number, Checkpoint>();
 /** "Allow all edits / commands for this request" after the first OK. */
 let allowAllFor: number | null = null;
@@ -228,7 +235,7 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
       wire,
       context,
       {
-        meta: (m) => patch(id, { model: m.model, provider: m.provider }),
+        meta: (m) => patch(id, { model: m.model, provider: m.provider, ...(m.privacy ? { privacy: m.privacy } : {}) }),
         delta: (t) => {
           text += t;
           patch(id, { content: prefix + text });
@@ -334,6 +341,26 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
       for (const call of r.toolCalls) {
         if (stopFlag.cancelled) break;
         const args = parseArgs(call);
+        // The agent asks instead of guessing (C12): the step waits for the user's answer.
+        if (call.function.name === "ask_user") {
+          const text = String(args.question ?? "").slice(0, 400) || "Which way should I go?";
+          const choices = (Array.isArray(args.choices) ? args.choices : []).map((c) => String(c).slice(0, 120)).filter(Boolean).slice(0, 4);
+          setStep(id, { id: call.id, tool: "ask_user", title: text, status: "waiting", question: { text, choices } });
+          const answer = await new Promise<string | null>((resolve) => answers.set(call.id, resolve));
+          answers.delete(call.id);
+          setStep(id, { id: call.id, tool: "ask_user", title: text, status: answer ? "done" : "rejected", output: answer ?? undefined });
+          wire = [...wire, { role: "tool", tool_call_id: call.id, content: answer ? `The user answered: ${answer}` : "The user skipped the question. Make a sensible choice and say which." }];
+          continue;
+        }
+        // A read-only helper researches and answers with a summary (C11 Explore).
+        if (call.function.name === "explore") {
+          const q = String(args.question ?? "").slice(0, 600);
+          setStep(id, { id: call.id, tool: "explore", title: `Exploring: ${q.slice(0, 80)}`, status: "running" });
+          const summary = await explore(q, context).catch((e) => `The explorer couldn't finish: ${asAiError(e).message}`);
+          setStep(id, { id: call.id, tool: "explore", title: `Explored: ${q.slice(0, 80)}`, status: "done", output: summary });
+          wire = [...wire, { role: "tool", tool_call_id: call.id, content: summary }];
+          continue;
+        }
         const layer = aiGate().layer;
         const modeVerdict = permission(mode, call.function.name, args, layer);
         // The safety rails (rules, ignore list, package check) tighten what the mode allows.
@@ -385,7 +412,37 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
   } finally {
     for (const [, resolve] of approvals) resolve(false);
     approvals.clear();
+    for (const [, resolve] of answers) resolve(null);
+    answers.clear();
   }
+}
+
+/** The user's answer to an ask_user step (null: skip). */
+export function answerQuestion(stepId: string, answer: string | null) {
+  answers.get(stepId)?.(answer && answer.trim() ? answer.trim().slice(0, 600) : null);
+}
+
+/**
+ * Explore (C11): a separate, read-only run with its own small conversation, so the main agent's
+ * context stays small. It may list, read, search and use the code map; it answers with a summary.
+ */
+async function explore(question: string, context: ChatContext): Promise<string> {
+  const canRun = !!getPlatform().proc;
+  const tools = toolDefs("plan", canRun, false, aiGate().layer).filter((t) => EXPLORE_TOOLS.has(t.function.name));
+  let wire: WireMessage[] = [{ role: "user", content: `Research this question in the project with the read-only tools, then answer with a concise summary (the files, functions and how they connect; at most 200 words). Don't propose changes.\n\nQuestion: ${question}` }];
+  const cp = new Checkpoint();
+  for (let step = 0; step < EXPLORE_STEPS; step++) {
+    if (stopFlag.cancelled) return "(stopped)";
+    const r = await new Promise<{ text: string; calls: ToolCall[] }>((resolve, reject) => {
+      let text = "";
+      chat(wire, step === 0 ? { file: context.file, language: context.language } : undefined, { meta() {}, delta: (t) => (text += t), done: (d) => resolve({ text, calls: (d.tool_calls ?? []) as ToolCall[] }), error: reject }, { mode: "plan", step: step + 1, tools }).catch(reject);
+    });
+    const calls = r.calls.filter((c) => EXPLORE_TOOLS.has(c.function.name));
+    if (!calls.length) return r.text.trim() || "(the explorer found nothing to report)";
+    wire = [...wire, { role: "assistant", content: r.text || null, tool_calls: calls }];
+    for (const c of calls) wire = [...wire, { role: "tool", tool_call_id: c.id, content: (await runTool(c, cp, stopFlag)).output }];
+  }
+  return "(the explorer ran out of steps; ask a narrower question)";
 }
 
 /** The student's answer to a waiting step. `all`: allow the rest of this request without asking. */

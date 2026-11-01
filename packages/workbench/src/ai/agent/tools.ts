@@ -5,6 +5,7 @@ import { applyExternalChanges } from "../../monaco/external";
 import { monaco } from "../../monaco/setup";
 import { buildRegExp, listFiles, searchText } from "../../parts/search/search";
 import { getPlatform, moveEntry, openFile, useWorkbench } from "../../state/store";
+import { findSymbol, repoMap } from "./codebase";
 import { aiMaySee, forAi } from "./guard";
 
 /**
@@ -35,6 +36,11 @@ export const TOOL_DEFS = [
   { name: "rename_file", description: "Rename or move a file.", parameters: { type: "object", properties: { from: str, to: str }, required: ["from", "to"] } },
   { name: "delete_file", description: "Delete a file (it goes to the Trash).", parameters: { type: "object", properties: { path: str }, required: ["path"] } },
   { name: "run_command", description: "Run a shell command in the project folder (tests, a build, the program) and get its output.", parameters: { type: "object", properties: { command: str }, required: ["command"] } },
+  // Understanding the codebase (G7, C11) and asking instead of guessing (C12).
+  { name: "repo_map", description: "A map of the project: files ranked by how much the rest of the project uses them, with their functions, classes and types (line numbers). Optional `under` folder. Start here in an unfamiliar project.", parameters: { type: "object", properties: { under: str } } },
+  { name: "find_symbol", description: "Where a function, class, type or variable is defined and every place it is used (file:line).", parameters: { type: "object", properties: { name: str }, required: ["name"] } },
+  { name: "explore", description: "Hand a research question to a read-only helper that searches the project and answers with a short summary (keeps your context small). Use for 'where/how does X work?' across many files.", parameters: { type: "object", properties: { question: str }, required: ["question"] } },
+  { name: "ask_user", description: "Ask the user ONE short question instead of guessing when the request is ambiguous (e.g. 'Should the total include tax?'). Give 2-4 short choices when you can.", parameters: { type: "object", properties: { question: str, choices: { type: "array", items: str } }, required: ["question"] } },
 ] as const;
 
 /**
@@ -62,7 +68,9 @@ export const GRADING_TOOL_DEFS = [
 ] as const;
 
 export type ToolName = (typeof TOOL_DEFS)[number]["name"];
-export const READ_ONLY = new Set<string>(["list_files", "read_file", "search", "get_problems", "get_grading_context"]);
+export const READ_ONLY = new Set<string>(["list_files", "read_file", "search", "get_problems", "get_grading_context", "repo_map", "find_symbol", "explore", "ask_user"]);
+/** What the Explore helper may use: looking only, no questions, no nesting. */
+export const EXPLORE_TOOLS = new Set<string>(["list_files", "read_file", "search", "get_problems", "repo_map", "find_symbol"]);
 /** Tools that change nothing on disk and save nothing (allowed in every mode, Plan included). */
 const HARMLESS = new Set<string>(["propose_grade"]);
 
@@ -309,6 +317,14 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
           for (const x of m?.matches ?? []) out.push(`${p}:${x.line + 1}: ${x.text.trim().slice(0, 200)}`);
         }
         return { ok: true, output: forAi(out.join("\n")) || "No matches.", summary: `Searched for "${q.slice(0, 40)}" (${out.length} match${out.length === 1 ? "" : "es"})` };
+      }
+      case "repo_map": {
+        const under = a.under ? cleanPath(a.under) : "";
+        return { ok: true, output: forAi(await repoMap(fs, under)), summary: `Mapped the project${under ? ` (${under})` : ""}` };
+      }
+      case "find_symbol": {
+        const n = String(a.name ?? "");
+        return { ok: true, output: clip(forAi(await findSymbol(fs, n))), summary: `Looked up ${n.slice(0, 40)}` };
       }
       case "get_problems": {
         const only = a.path ? cleanPath(a.path) : null;

@@ -1749,6 +1749,24 @@ kbd,
   align-items: center;
   gap: 3px;
 }
+.tm-chat-question {
+  display: grid;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+.tm-chat-question-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tm-chat-question-own {
+  display: flex;
+  gap: 6px;
+}
+.tm-chat-question-own .tm-input {
+  flex: 1;
+  min-width: 0;
+}
 .tm-chat-code-lock {
   display: inline-flex;
   align-items: center;

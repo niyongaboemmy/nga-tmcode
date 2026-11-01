@@ -17,7 +17,7 @@ import { allowAiCopy } from "./copyGuard";
 import { aiMaySee } from "./agent/guard";
 import { detectLocalModels, DIRECT_SUGGESTED, isLocalMode, useLocalAi } from "./direct";
 import { insertAtCursor, proposeEdit } from "./apply";
-import { approveStep, ask, MODES, modeLabelNow, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
+import { answerQuestion, approveStep, ask, MODES, modeLabelNow, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
 import { aiReadsImages, effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
 import { scaleImage } from "./imageScale";
 import { addAttachments, ATTACH_LIMITS, formatSize, fromAttachedFile, fromBrowserFile, pastedAttachment, textAttachment, type Attachment } from "./attachments";
@@ -170,7 +170,39 @@ function Diff({ d }: { d: NonNullable<Step["diff"]> }) {
   );
 }
 
-const STEP_ICON: Record<string, string> = { list_files: "list-tree", read_file: "file", search: "search", get_problems: "warning", edit_file: "edit", write_file: "new-file", rename_file: "replace", delete_file: "trash", run_command: "terminal" };
+/** ask_user (C12): the agent's question, its choices and a box for your own words. */
+function QuestionCard({ step }: { step: Step }) {
+  const [text, setText] = useState("");
+  const q = step.question!;
+  return (
+    <div className="tm-chat-question" data-testid="ai-question">
+      <div className="tm-chat-question-choices">
+        {q.choices.map((c) => (
+          <button key={c} type="button" className="tm-chat-btn" onClick={() => answerQuestion(step.id, c)} data-testid="ai-question-choice">
+            {c}
+          </button>
+        ))}
+      </div>
+      <form
+        className="tm-chat-question-own"
+        onSubmit={(e) => {
+          e.preventDefault();
+          answerQuestion(step.id, text);
+        }}
+      >
+        <input className="tm-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Or answer in your own words…" aria-label="Your answer" data-testid="ai-question-input" />
+        <button type="submit" className="tm-chat-btn is-primary" disabled={!text.trim()}>
+          Answer
+        </button>
+        <button type="button" className="tm-chat-btn" onClick={() => answerQuestion(step.id, null)}>
+          Skip
+        </button>
+      </form>
+    </div>
+  );
+}
+
+const STEP_ICON: Record<string, string> = { ask_user: "question", explore: "telescope", repo_map: "type-hierarchy", find_symbol: "symbol-method", list_files: "list-tree", read_file: "file", search: "search", get_problems: "warning", edit_file: "edit", write_file: "new-file", rename_file: "replace", delete_file: "trash", run_command: "terminal" };
 
 function StepCard({ messageId, step }: { messageId: number; step: Step }) {
   const [open, setOpen] = useState(step.status === "waiting");
@@ -181,7 +213,7 @@ function StepCard({ messageId, step }: { messageId: number; step: Step }) {
       <button type="button" className="tm-chat-step-head" onClick={() => detail && setOpen(!open)} aria-expanded={open}>
         <Codicon name={step.status === "running" ? "loading" : step.status === "failed" ? "error" : step.status === "rejected" || step.status === "refused" ? "circle-slash" : STEP_ICON[step.tool] ?? "tools"} className={step.status === "running" ? "codicon-modifier-spin" : ""} />
         <span className="tm-chat-step-title">{step.title}</span>
-        {step.status === "waiting" && <span className="tm-chat-step-badge">Needs your OK</span>}
+        {step.status === "waiting" && <span className="tm-chat-step-badge">{step.question ? "Needs your answer" : "Needs your OK"}</span>}
         {step.status === "rejected" && <span className="tm-chat-step-badge is-muted">Declined</span>}
         {detail && <Codicon name={open ? "chevron-down" : "chevron-right"} className="tm-chat-step-chev" />}
       </button>
@@ -192,7 +224,8 @@ function StepCard({ messageId, step }: { messageId: number; step: Step }) {
           {step.output && <pre className="tm-chat-cmd-out">{step.output}</pre>}
         </div>
       )}
-      {step.status === "waiting" && (
+      {step.status === "waiting" && step.question && <QuestionCard step={step} />}
+      {step.status === "waiting" && !step.question && (
         <div className="tm-chat-approve">
           <button type="button" className="tm-chat-btn is-primary" onClick={() => approveStep(messageId, step.id, true)} data-testid="ai-approve">
             <Codicon name="check" /> {step.tool === "run_command" ? "Run" : "Approve"}
@@ -330,6 +363,16 @@ function Answer({ m }: { m: Message }) {
           {m.model && !m.error && (
             <span className="tm-chat-meta">
               <Codicon name="sparkle" /> {m.model.replace(/:free$/, "")} · {m.provider}
+            </span>
+          )}
+          {m.privacy && !m.error && (
+            <span className="tm-chat-meta tm-chat-privacy" title="What this provider's terms say about your data" data-testid="ai-privacy">
+              <Codicon name="shield" /> {m.privacy}
+            </span>
+          )}
+          {!!m.filtered && (
+            <span className="tm-chat-meta" title="Learning: the tutor's code was removed before you saw it" data-testid="ai-filtered">
+              <Codicon name="filter" /> {m.filtered} line{m.filtered === 1 ? "" : "s"} of code removed
             </span>
           )}
           {m.content && <MessageActions m={m} />}
