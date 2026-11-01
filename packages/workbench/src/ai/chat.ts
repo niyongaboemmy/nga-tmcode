@@ -6,6 +6,7 @@ import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
+import { aiGate } from "./gate";
 import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 import { attachmentChips, attachmentText, type Attachment } from "./attachments";
 
@@ -45,6 +46,8 @@ export interface Step {
 }
 
 export interface Message {
+  /** Learning: lines of code the filter cut from this answer. */
+  filtered?: number;
   id: number;
   role: "user" | "assistant";
   content: string;
@@ -158,9 +161,17 @@ function priorTurns(): WireMessage[] {
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
+/** What a mode is called now: in Learning every question goes to the tutor. */
+export function modeLabelNow(mode: ChatMode, layer = aiGate().layer): string {
+  return layer === "learning" ? "Tutor" : MODES.find((m) => m.id === mode)!.label;
+}
+
 export async function ask(text: string, opts: ContextOptions = { file: true, problems: true }, mode: ChatMode = useAi.getState().agentMode) {
   let question = text.trim();
   if (!question || useChat.getState().busy) return;
+  // Learning: the tutor, which may read the project (read-only tools) and never changes it.
+  const layer = aiGate().layer;
+  if (layer === "learning") mode = getPlatform().fs ? "plan" : "chat";
   const ref = useChat.getState().reference;
   if (ref) question = `About your earlier answer:\n> ${ref.excerpt.replace(/\n/g, "\n> ")}\n\n${question}`;
   // An AI CLI in an agent mode: it works on the project itself, in a terminal (ai/aiClis.ts).
@@ -176,10 +187,10 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
     kind: "ai",
     action: "chat",
     path: context.file,
-    text: `Asked TMCode AI${mode === "chat" ? "" : ` (${MODES.find((m) => m.id === mode)!.label})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
-    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
+    text: `Asked TMCode AI${layer === "learning" ? " (Tutor, Learning)" : mode === "chat" ? "" : ` (${modeLabelNow(mode, layer)})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
+    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, layer, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
     actor: { type: "you" },
-    ai: { by: "TMCode AI", how: mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
+    ai: { by: "TMCode AI", how: layer === "learning" ? "question asked to the tutor (Learning)" : mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
   });
   // Images go with this question only (earlier turns are sent as text).
   const turn: WireMessage = { role: "user", content: images.length ? [{ type: "text", text: question }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))] : question };
@@ -221,8 +232,15 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
         done: (d) => {
           cancel = null;
           if (useAi.getState().status) {
-            useAi.setState((s) => ({ status: s.status && { ...s.status, you: { ...s.status.you, ...(d.you ? { chat: d.you } : {}), ...(d.steps ? { agent: d.steps } : {}) } } }));
+            useAi.setState((s) => ({
+              status: s.status && {
+                ...s.status,
+                you: { ...s.status.you, ...(d.you ? { chat: d.you } : {}), ...(d.steps ? { agent: d.steps } : {}) },
+                ...(d.allowance && s.status.learning ? { learning: { ...s.status.learning, allowance: d.allowance } } : {}),
+              },
+            }));
           }
+          if (d.filtered?.removed) noteFiltered(id, d.filtered.removed, d.provider, d.model);
           resolve({ text, toolCalls: (d.tool_calls ?? []) as ToolCall[], provider: d.provider, model: d.model });
         },
         error: (e) => {
@@ -230,7 +248,7 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
           reject(e);
         },
       },
-      agent && agent.mode !== "chat" ? { mode: agent.mode, step: agent.step, tools: toolDefs(agent.mode, canRun, !!gradingTools.chatContext?.()) } : undefined,
+      agent && agent.mode !== "chat" ? { mode: agent.mode, step: agent.step, tools: toolDefs(agent.mode, canRun, !!gradingTools.chatContext?.(), aiGate().layer) } : undefined,
     )
       .then((c) => (cancel = c))
       .catch(reject);
@@ -244,6 +262,19 @@ async function answerOnce(id: number, wire: WireMessage[], context: ChatContext)
   } catch (e) {
     fail(id, e);
   }
+}
+
+/** Learning: the filter cut code from an answer. The teacher sees it in the log (I1: filter hits). */
+function noteFiltered(id: number, removed: number, provider: string, model: string) {
+  patch(id, (m) => ({ filtered: (m.filtered ?? 0) + removed }));
+  recordActivity({
+    kind: "ai",
+    action: "filtered",
+    text: `Learning: TMCode removed ${removed} line${removed === 1 ? "" : "s"} of code from the tutor's answer`,
+    data: { removed },
+    actor: { type: "tmcode-ai" },
+    ai: { by: "TMCode AI", how: "Learning filter removed code", model: `${provider} · ${model}` },
+  });
 }
 
 function finish(id: number, content: string, provider: string, model: string) {
@@ -298,12 +329,13 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
       for (const call of r.toolCalls) {
         if (stopFlag.cancelled) break;
         const args = parseArgs(call);
-        const verdict = permission(mode, call.function.name, args);
+        const layer = aiGate().layer;
+        const verdict = permission(mode, call.function.name, args, layer);
         const p = await preview(call);
         let output: string;
         if (verdict === "refuse") {
           setStep(id, { id: call.id, tool: call.function.name, title: p.title, status: "refused" });
-          output = "Not allowed in Plan mode: present your plan instead of changing files.";
+          output = layer === "learning" ? "Not allowed in Learning: the student writes every line. Explain in words what they could try instead." : "Not allowed in Plan mode: present your plan instead of changing files.";
         } else {
           let ok = true;
           if (verdict === "ask" && allowAllFor !== id) {

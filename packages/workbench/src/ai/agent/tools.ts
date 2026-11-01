@@ -1,3 +1,4 @@
+import type { Layer } from "@tmcode/protocol";
 import { recordActivity, runAs, type Actor } from "../../activity/log";
 import { ensureDocument, getDocument, saveDocument } from "../../monaco/documents";
 import { applyExternalChanges } from "../../monaco/external";
@@ -67,10 +68,14 @@ const HARMLESS = new Set<string>(["propose_grade"]);
 /** The draft file any AI may write in a review folder (the only file there that may change). */
 export const GRADING_DRAFT_PATH = ".tmcode/grading/draft.json";
 
-export function toolDefs(mode: AgentMode, canRun: boolean, grading = false) {
-  const defs: readonly { name: string; description: string; parameters: unknown }[] = [...TOOL_DEFS, ...(grading ? GRADING_TOOL_DEFS : [])];
+/**
+ * The tools for a request. In the Learning layer only the looking tools (the tutor reads the
+ * student's code, it never changes it; Task Mentor drops any other tool too).
+ */
+export function toolDefs(mode: AgentMode, canRun: boolean, grading = false, layer: Layer = "industrial") {
+  const defs: readonly { name: string; description: string; parameters: unknown }[] = layer === "learning" ? TOOL_DEFS : [...TOOL_DEFS, ...(grading ? GRADING_TOOL_DEFS : [])];
   return defs
-    .filter((t) => (mode === "plan" ? READ_ONLY.has(t.name) || HARMLESS.has(t.name) : t.name !== "run_command" || canRun))
+    .filter((t) => (layer === "learning" ? READ_ONLY.has(t.name) : mode === "plan" ? READ_ONLY.has(t.name) || HARMLESS.has(t.name) : t.name !== "run_command" || canRun))
     .map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown> } }));
 }
 
@@ -82,8 +87,11 @@ const RISKY_COMMAND = /\b(rm|rmdir|del|sudo|chmod|chown|curl|wget|ssh|scp|git (p
 
 export type Verdict = "allow" | "ask" | "refuse";
 
-export function permission(mode: AgentMode, name: string, args: Record<string, unknown>): Verdict {
-  if (READ_ONLY.has(name) || HARMLESS.has(name)) return "allow";
+export function permission(mode: AgentMode, name: string, args: Record<string, unknown>, layer: Layer = "industrial"): Verdict {
+  if (READ_ONLY.has(name)) return "allow";
+  // Learning: the read-only preset, fixed (proposal C7). Exam never gets here (no AI).
+  if (layer !== "industrial") return "refuse";
+  if (HARMLESS.has(name)) return "allow";
   if (mode === "plan") return "refuse";
   if (mode === "manual") return "ask";
   if (name === "run_command") {

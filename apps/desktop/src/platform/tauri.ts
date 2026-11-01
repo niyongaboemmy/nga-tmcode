@@ -292,6 +292,8 @@ export async function createTauriPlatform(): Promise<Platform> {
       set: (provider, key) => invoke("ai_key_set", { provider, key }),
       delete: (provider) => invoke("ai_key_delete", { provider }),
     },
+    devicePolicy: () => invoke<unknown>("device_policy"),
+    setExamAiOff: (off) => void invoke("exam_ai_off", { off }).catch(() => undefined),
     proc: {
       run: async (command, cwd, onEvent, opts) => {
         const channel = new Channel<ProcEvent>();

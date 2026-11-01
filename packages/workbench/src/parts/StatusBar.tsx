@@ -27,6 +27,7 @@ import { useIsTeacher, useRoleChecking } from "../state/role";
 // ── Run hub ──
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
+import { LayerBadge } from "../ai/LayerBadge";
 import { encodingLabel, pickEncoding, pickEol, pickIndentation, pickLanguage, toggleScreenReaderMode, useActiveFileInfo } from "./editorStatus";
 
 // TMCode has no lab lockdown yet, so a "secure" exam runs exactly like a monitored one and says so.
@@ -282,6 +283,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <Codicon name={MODE_ICON[mode]} />
           <span>{MODE_LABEL[mode]}</span>
         </Item>
+        <LayerBadge />
         {!simple && <GitItems />}
         <ProfileItem />
         <WorkspaceFolderItem />

@@ -1700,6 +1700,63 @@ kbd,
 .tm-root[data-theme="dark-hc"] .tm-status-mode {
   color: #000;
 }
+/* The AI layer badge (vibe coding proposal §8.8): Exam red, Learning blue, Industrial purple. */
+:root {
+  --tm-layer-exam: #e5534b;
+  --tm-layer-learning: #3b8eea;
+  --tm-layer-industrial: #a371f7;
+}
+.tm-status-layer {
+  gap: 4px;
+  padding: 0 8px;
+  font-weight: 600;
+}
+.tm-status-layer.is-exam {
+  color: #fff;
+  background: color-mix(in srgb, var(--tm-layer-exam) 85%, #000);
+}
+.tm-status-layer.is-learning {
+  color: #fff;
+  background: color-mix(in srgb, var(--tm-layer-learning) 85%, #000);
+}
+.tm-status-layer.is-industrial {
+  color: #fff;
+  background: color-mix(in srgb, var(--tm-layer-industrial) 80%, #000);
+}
+.tm-status-layer.is-clickable:hover {
+  filter: brightness(1.12);
+}
+/* A thin accent under the title bar in the layer's colour. */
+:root[data-ai-layer="exam"] .tm-titlebar {
+  box-shadow: inset 0 -2px 0 var(--tm-layer-exam);
+}
+:root[data-ai-layer="learning"] .tm-titlebar {
+  box-shadow: inset 0 -2px 0 var(--tm-layer-learning);
+}
+:root[data-ai-layer="industrial"] .tm-titlebar {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--tm-layer-industrial) 70%, transparent);
+}
+.tm-chat-agent-mode.is-tutor {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--tm-layer-learning) 55%, var(--border));
+  color: var(--tm-layer-learning);
+}
+.tm-chat-hero.is-tutor > .codicon {
+  color: var(--tm-layer-learning);
+}
+.tm-chat-quota.is-hearts {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.tm-chat-code-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.75;
+}
 .tm-status-unsaved {
   font-size: 10px !important;
 }

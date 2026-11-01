@@ -579,7 +579,7 @@ pub async fn tm_api(app: AppHandle, request: TmRequest) -> Result<TmResponse, St
     if !valid_tm_path(&request.path) {
         return Err("Not a Task Mentor TMCode API path.".into());
     }
-    if exam_active(&app) && !allowed_during_exam(&request.path) {
+    if exam_active(&app) && !allowed_during_exam_now(&request.path, exam_ai_is_off()) {
         return Err("Task Mentor projects are not available during an exam.".into());
     }
     let (token, mis) = {
@@ -645,6 +645,27 @@ pub fn allowed_during_exam(path: &str) -> bool {
     path.starts_with("/api/tmcode/ai/")
 }
 
+/// The exam's AI layer is Exam (no AI; AI layers A5): the workbench says so (`exam_ai_off`).
+static EXAM_AI_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// While an exam's layer is Exam, only "is AI allowed now?" may leave the machine (the status and the
+/// live events, so TMCode hears a teacher turning AI on): no question, answer or suggestion does.
+pub fn allowed_during_exam_now(path: &str, ai_off: bool) -> bool {
+    if !allowed_during_exam(path) {
+        return false;
+    }
+    !ai_off || path.starts_with("/api/tmcode/ai/status") || path == "/api/tmcode/ai/events"
+}
+
+#[tauri::command]
+pub fn exam_ai_off(off: bool) {
+    EXAM_AI_OFF.store(off, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn exam_ai_is_off() -> bool {
+    EXAM_AI_OFF.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// A Task Mentor GET whose body keeps coming (a live run's events, `text/event-stream`). Same rules
 /// as `tm_api` (TMCode paths only, signed in, not during an exam); no overall time limit, only for
 /// the connection. The body goes to `on_event` piece by piece until it ends or `tm_stream_cancel`.
@@ -653,7 +674,7 @@ pub async fn tm_stream(app: AppHandle, streams: State<'_, Streams>, id: u32, pat
     if !valid_tm_path(&path) {
         return Err("Not a Task Mentor TMCode API path.".into());
     }
-    if exam_active(&app) && !allowed_during_exam(&path) {
+    if exam_active(&app) && !allowed_during_exam_now(&path, exam_ai_is_off()) {
         return Err("Task Mentor projects are not available during an exam.".into());
     }
     let (token, mis) = {
@@ -733,6 +754,14 @@ mod tests {
         assert!(!super::allowed_during_exam("/api/tmcode/projects"));
         assert!(!super::allowed_during_exam("/api/tmcode/assignments/mine"));
         assert!(!super::allowed_during_exam("/api/tmcode/ai"));
+        // The exam's layer is Exam: only the status and the live events.
+        assert!(super::allowed_during_exam_now("/api/tmcode/ai/status?project_id=4", true));
+        assert!(super::allowed_during_exam_now("/api/tmcode/ai/events", true));
+        assert!(!super::allowed_during_exam_now("/api/tmcode/ai/chat", true));
+        assert!(!super::allowed_during_exam_now("/api/tmcode/ai/chat/abc/stream", true));
+        assert!(!super::allowed_during_exam_now("/api/tmcode/ai/complete", true));
+        assert!(super::allowed_during_exam_now("/api/tmcode/ai/chat", false));
+        assert!(!super::allowed_during_exam_now("/api/tmcode/projects", false));
         // `..` never gets this far: valid_tm_path refuses it first.
         assert!(!super::valid_tm_path("/api/tmcode/ai/../projects"));
     }

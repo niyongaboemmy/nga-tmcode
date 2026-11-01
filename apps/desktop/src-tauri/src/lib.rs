@@ -18,6 +18,7 @@ mod account;
 mod ai_attach;
 mod ai_keys;
 mod ai_tools;
+mod device_policy;
 mod api;
 mod proc;
 mod projects;
@@ -460,6 +461,7 @@ pub fn run() {
             ai_keys::ai_key_set,
             ai_keys::ai_key_get,
             ai_keys::ai_key_delete,
+            device_policy::device_policy,
             webview::webview_publish,
             webview::webview_dispose,
             account::auth_sign_in,
@@ -467,6 +469,7 @@ pub fn run() {
             account::auth_reopen_browser,
             account::auth_status,
             account::auth_sign_out,
+            account::exam_ai_off,
             account::tm_api,
             account::tm_stream,
             account::tm_stream_cancel,

@@ -303,20 +303,28 @@ export function TerminalAi() {
   );
 }
 
-/** "This command failed. ✨ Fix with AI": beside the terminal after a failed command. */
-export function FixHint({ command, onFix, onExplain, onDismiss }: { command: string; onFix(): void; onExplain(): void; onDismiss(): void }) {
+/** "This command failed. ✨ Fix with AI": beside the terminal after a failed command. Learning: "Explain this error" only. */
+export function FixHint({ command, onFix, onExplain, onDismiss, explainOnly = false }: { command: string; onFix(): void; onExplain(): void; onDismiss(): void; explainOnly?: boolean }) {
   return (
     <div className="tm-term-ai-hint" role="status" data-testid="terminal-ai-hint">
       <Codicon name="error" />
       <span className="tm-term-ai-hint-text" title={command}>
         <strong>{command.length > 40 ? `${command.slice(0, 37)}…` : command}</strong> failed
       </span>
-      <button type="button" className="tm-term-ai-hint-fix" onClick={onFix} data-testid="terminal-ai-fix">
-        <Codicon name="sparkle" /> Fix with AI
-      </button>
-      <button type="button" className="tm-link-button" onClick={onExplain}>
-        Explain
-      </button>
+      {explainOnly ? (
+        <button type="button" className="tm-term-ai-hint-fix" onClick={onExplain} data-testid="terminal-ai-explain">
+          <Codicon name="lightbulb" /> Explain this error
+        </button>
+      ) : (
+        <>
+          <button type="button" className="tm-term-ai-hint-fix" onClick={onFix} data-testid="terminal-ai-fix">
+            <Codicon name="sparkle" /> Fix with AI
+          </button>
+          <button type="button" className="tm-link-button" onClick={onExplain}>
+            Explain
+          </button>
+        </>
+      )}
       <button type="button" className="tm-chat-icon" title="Dismiss" aria-label="Dismiss" onClick={onDismiss}>
         <Codicon name="close" />
       </button>

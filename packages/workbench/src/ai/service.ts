@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { getPlatform } from "../state/store";
 import { cliChat, cliModeLabel, isCliMode } from "./aiClis";
+import { directChat, directRoute, isLocalMode, localModelOf } from "./direct";
 import { aiExamActive, aiGate, aiReasonText } from "./gate";
+import { useLayerInputs } from "./layerState";
 import { MissingKeyError, modeFields, parseMode, providerLabel, whenKeyRemoved } from "./keys";
 
 /**
@@ -14,7 +16,9 @@ import { MissingKeyError, modeFields, parseMode, providerLabel, whenKeyRemoved }
  * - "byok:<provider>/<model>": the user's own key (ai/keys.ts), sent with that request only;
  * - "cli:<claude|codex|gemini>[/<model>]": Claude Code, Codex (ChatGPT) or Gemini CLI on this
  *   computer, signed in with the user's own account (ai/aiClis.ts): answers never reach Task Mentor
- *   (suggestions use Free there).
+ *   (suggestions use Free there);
+ * - "local:<model>": a model on this computer (Ollama, LM Studio; ai/direct.ts), never NGA.
+ * Signed out, own keys call the provider directly (ai/direct.ts) and Free/Auto/premium can't run.
  * Whether it may run is Task Mentor's AI status for the open project (ai/gate.ts), sent with
  * `project_id`; in exams the exam policy's `ai`. Without an NGA sign-in it can't run.
  */
@@ -63,6 +67,21 @@ export interface AiStatus {
   premium_models?: AiModel[];
   premium_you?: { used: number; limit: number } | null;
   byok_providers?: { id: string; label: string; suggested_models: string[] }[];
+  /*
+   * AI layers (vibe coding proposal §8; Task Mentor 2026-11 and later, older servers send none):
+   */
+  /** "exam" | "learning" | "industrial" for this user and project. */
+  layer?: string;
+  /** The highest layer for this user's class or role (MIS), if one is set. */
+  max_layer?: string | null;
+  /** The assignment's teacher allowed students' own AI tools (Industrial · Open). */
+  own_tools?: boolean;
+  /** Learning's teacher knobs (help strength, pseudo-code, allowance) and the allowance left. */
+  learning?: { strength: "hints" | "tutor"; pseudo: boolean; syntax: boolean; allowance: { max: number; regain_minutes: number; left: number; next_in_s: number | null } };
+  /** The project's signed sticky layer (A9), to keep in its `.tmcode/layer.json`. */
+  layer_token?: { claims: string; sig: string } | null;
+  /** Hidden from AI in every layer (teacher-hidden tests, reference solution, marking notes): glob patterns. */
+  hidden_paths?: string[];
 }
 
 /** The open project (Task Mentor id) the AI status is for. */
@@ -136,6 +155,7 @@ export function modeLabel(mode: string, status: AiStatus | null = useAi.getState
   if (mode === "free") return "Free";
   if (mode === "auto") return "Auto";
   if (isCliMode(mode)) return cliModeLabel(mode);
+  if (isLocalMode(mode)) return `${localModelOf(mode)} · local`;
   const p = parseMode(mode);
   if (p.tier === "premium") return `${status?.premium_models?.find((m) => m.id === mode)?.label ?? p.model} · Premium`;
   if (p.tier === "byok") return `${p.model} · your ${providerLabel(p.provider ?? "")} key`;
@@ -149,6 +169,8 @@ export function modeLabel(mode: string, status: AiStatus | null = useAi.getState
 export function effectiveMode(mode: string = useAi.getState().mode, status: AiStatus | null = useAi.getState().status): string {
   // AI CLIs: where third-party AI tools are allowed (not in exams, not where the school says no).
   if (isCliMode(mode)) return aiGate().thirdParty ? mode : "free";
+  // A local model: nothing leaves the computer, so every layer with AI may use it.
+  if (isLocalMode(mode)) return mode;
   const tier = parseMode(mode).tier;
   if (tier === "free" || !status) return mode;
   if (tier === "premium") return status.tiers?.premium && status.premium_models?.some((m) => m.id === mode) ? mode : "free";
@@ -163,7 +185,7 @@ export function effectiveMode(mode: string = useAi.getState().mode, status: AiSt
 export function aiReadsImages(mode: string = useAi.getState().mode, status: AiStatus | null = useAi.getState().status): boolean {
   if (!status) return false;
   const m = effectiveMode(mode, status);
-  if (isCliMode(m)) return false;
+  if (isCliMode(m) || isLocalMode(m)) return false;
   const models = status.models ?? [];
   if (m === "free") return models.some((x) => x.provider === "openrouter" && x.vision);
   if (m === "auto") return models.some((x) => x.vision);
@@ -175,8 +197,8 @@ export function aiReadsImages(mode: string = useAi.getState().mode, status: AiSt
 /** `mode` (and `byok`) for a request body: own keys are read from the keychain now. */
 export async function requestModeFields(): Promise<{ mode: string; byok?: { provider: string; key: string } }> {
   const mode = effectiveMode();
-  // An AI CLI answers on this computer; what still goes to Task Mentor (suggestions) uses Free.
-  if (isCliMode(mode)) return { mode: "free" };
+  // An AI CLI or a local model answers on this computer; what still goes to Task Mentor (suggestions) uses Free.
+  if (isCliMode(mode) || isLocalMode(mode)) return { mode: "free" };
   try {
     return await modeFields(mode);
   } catch (e) {
@@ -360,7 +382,17 @@ export interface ChatContext {
 export interface StreamHandlers {
   meta(m: { provider: string; model: string }): void;
   delta(text: string): void;
-  done(d: { provider: string; model: string; you?: { used: number; limit: number }; steps?: { used: number; limit: number }; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }): void;
+  done(d: {
+    provider: string;
+    model: string;
+    you?: { used: number; limit: number };
+    steps?: { used: number; limit: number };
+    tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
+    /** Learning: the answer came from the tutor, `filtered.removed` lines of code were cut, the allowance left. */
+    layer?: string;
+    filtered?: { removed: number };
+    allowance?: { max: number; regain_minutes: number; left: number; next_in_s: number | null };
+  }): void;
   error(e: AiRequestError): void;
 }
 
@@ -370,6 +402,13 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
   if (!gate.chat) throw new AiRequestError(gate.reason === "EXAM_ACTIVE" ? "EXAM_ACTIVE" : "AI_DISABLED", gate.message ?? aiReasonText(gate.reason), gate.reason ?? undefined);
   const mode = effectiveMode();
   if (isCliMode(mode) && !agent) return cliChat(messages, context, on, mode);
+  // Your own key while signed out, or a local model: straight to it, never NGA.
+  const signedOut = useLayerInputs.getState().signedIn === false || !getPlatform().account;
+  if (isLocalMode(mode) || (signedOut && parseMode(mode).tier === "byok")) {
+    const route = await directRoute(mode);
+    if (route) return directChat(route, messages, context, on, agent, gate.layer);
+  }
+  if (signedOut) throw new AiRequestError("SIGNED_OUT", "You're not signed in to NGA: pick your own API key, a local model or your AI account (Claude Code, ChatGPT, Gemini) under \"Which AI answers\", or sign in for your school's AI.");
   const { id } = await call<{ id: string }>("POST", "/chat", { ...(await requestModeFields()), messages, context, ...(agent ? { agent } : {}), ...projectField() });
   const h = host();
   let finished = false;
