@@ -6,12 +6,16 @@ import type { WebviewTheme } from "./themeVars";
  * host does:
  * - `acquireVsCodeApi()` → { postMessage, getState, setState } (once per page);
  * - messages from the workbench arrive as plain `message` events whose `data`
- *   is what the extension posted (the envelope never reaches page scripts);
+ *   is what the extension posted (the envelope never reaches page scripts), from
+ *   the page's own origin, as in VS Code (pages that check `event.origin` accept them);
  * - the theme's `--vscode-*` variables on <html>, `vscode-dark|light|high-contrast`
  *   on <body>, and VS Code's default webview styles in a low-priority layer;
  * - link clicks (http, https, mailto, command:) go to the workbench;
  * - keyboard shortcuts with ⌘/Ctrl are forwarded so workbench keybindings work;
- * - an in-memory localStorage/sessionStorage (the page has an opaque origin).
+ * - an in-memory localStorage/sessionStorage (the page has an opaque origin);
+ * - what goes wrong on the page (a script that throws, a promise nobody catches, a resource that
+ *   fails to load, what a CSP refuses) is reported to the workbench, which logs it in the
+ *   Extensions output: otherwise an extension whose page never starts fails silently.
  */
 
 export interface PreludeConfig {
@@ -41,6 +45,22 @@ const SCRIPT = `(function (cfg, defaultStyles) {
   "use strict";
   var host = window.parent;
   var post = function (m) { host.postMessage(Object.assign({ __tmwebview: 1 }, m), "*"); };
+  var reported = 0;
+  function report(kind, text) {
+    if (reported++ < 40) post({ type: "diagnostic", kind: kind, text: String(text).slice(0, 600) });
+  }
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t !== window && t.tagName) report("load", t.tagName.toLowerCase() + " failed to load: " + (t.src || t.href || "?"));
+    else report("error", (e.message || "Error") + (e.filename ? " (" + String(e.filename).split("/").pop() + ":" + e.lineno + ")" : "") + (e.error && e.error.stack ? "\\n" + String(e.error.stack).slice(0, 400) : ""));
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    var r = e.reason;
+    report("rejection", r && (r.stack || r.message) ? String(r.stack || r.message) : String(r));
+  });
+  document.addEventListener("securitypolicyviolation", function (e) {
+    report("csp", "the page's CSP refused " + e.effectiveDirective + ": " + (e.blockedURI || "inline"));
+  });
   // ArrayBuffers and typed arrays cross the (JSON) extension host link as {$$tmbuf: base64, t: type}.
   function encode(v, depth) {
     depth = depth || 0;
@@ -91,7 +111,9 @@ const SCRIPT = `(function (cfg, defaultStyles) {
     var d = e.data;
     if (e.source !== host || !d || d.__tmwebview !== 1) return;
     e.stopImmediatePropagation();
-    if (d.type === "message") window.dispatchEvent(new MessageEvent("message", { data: decode(d.data) }));
+    // As VS Code delivers them: from the page's own origin (Codex drops messages whose origin isn't
+    // window.location.origin), with the host as the source.
+    if (d.type === "message") window.dispatchEvent(new MessageEvent("message", { data: decode(d.data), origin: window.location.origin, source: host }));
     else if (d.type === "theme") applyTheme(d.theme);
   }, true);
   function applyTheme(t) {
