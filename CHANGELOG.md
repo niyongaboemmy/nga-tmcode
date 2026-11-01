@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.5.0 — 2026-11-01
+
+**TMCode 1.5: three AI layers, safety rails for every AI request, and AI where the work is.** TMCode AI now works in one of three layers: **Exam** (no AI at all), **Learning** (a tutor that explains and asks, but never writes your code) and **Industrial** (the full AI, Guided for students, Open for staff). The status bar shows the layer you are in and why. Every AI request, from TMCode AI or an AI extension, now passes the same safety rails.
+
+### Three AI layers
+
+- **The layer badge** in the status bar shows Exam, Learning or Industrial · Guided / Open. Hover it to see why (the exam, the school, the class, the assignment…). Click it to lower your own layer: an Industrial student can switch to Learning for practice. Every change is written to the activity log.
+- **Exam:** no AI panel, no AI in the terminal, no completions, and no AI request leaves the computer while the exam is open.
+- **Learning:** TMCode AI becomes a tutor. It asks what you think before it reveals anything, reads your project but changes nothing, and answers without code (Task Mentor removes it, so this holds in every build). You get 10 questions, with one back every 3 minutes. Code in the tutor's answers can't be copied, and the terminal only explains.
+- **Industrial · Guided** (students): the full agent, which leaves small `TODO(you)` gaps and asks you to explain each change before you accept it.
+- **Signed out:** use your own API key or a local model (Ollama, LM Studio) directly; nothing goes through NGA.
+- **For schools:** a read-only policy file on lab computers can cap the layer. An assignment's layer stays in force after you sign out (Task Mentor signs it).
+
+### Safety rails for every AI request
+
+- **Permission rules:** deny wins over ask, ask wins over allow. Set them in `.tmcode/permissions.json`.
+- **`.tmcodeignore`** keeps files away from every AI, and files a teacher hides are never sent.
+- **Secrets are masked** (`.env` values, API keys, private keys) before anything reaches an AI.
+- **Package check:** before the AI installs a package, TMCode checks that it exists on npm, PyPI, crates.io, RubyGems, Packagist or the Go proxy, so a made-up package name is caught.
+
+### AI that understands your project
+
+- **Project map and symbol lookup:** the agent sees which files matter most and where each name is defined and used. All of it is worked out on your computer.
+- **Explore and Ask:** the agent can send a read-only helper to look around, and asks you a question rather than guessing.
+- **Project rules:** `AGENTS.md` (and a nested one per folder) tells every AI how to work in the project. **Sync AI Rules from AGENTS.md** copies it into each tool's own file (`CLAUDE.md`, `GEMINI.md`, Cursor, Copilot), and never overwrites one you wrote by hand.
+
+### AI where the work is
+
+- **Explain this problem / Fix this problem** quick fixes on any error.
+- **Review My Code (Comments Only)** puts review comments in Problems. **Debug With Me** walks through a bug step by step. **Tour This Project** gives a guided tour of the code.
+- **Slash recipes:** `/add-page`, `/add-form`, `/add-auth`, `/add-db`, `/add-api`, `/test`, `/readme`, `/responsive`, `/a11y`… In Learning each one becomes a step-by-step guide.
+- **Save as Plan** writes the agent's plan to a file you can edit. The test-and-fix loop stops when the same failure comes back.
+- **Answers in your language:** English, French or Kinyarwanda (Settings › AI Answers).
+
+### Sharing and handing in
+
+- **Safety Scan (Before Sharing)** checks a project offline for the mistakes AI-built apps ship most often: secrets in code, a `.env` that git would share, SQL built from strings, open CORS, weak password hashes, routes that change data without a sign-in check, debug mode left on, and packages that don't exist. It also runs in the Submit dialog, where it only warns and never blocks.
+- **AI-use statement:** the Submit dialog shows how AI was used on the assignment, taken from the activity log, as the teacher will see it (**Show My AI-Use Statement** shows it any time).
+- **Explain-Your-Code Questions (Grading):** teachers generate questions about a student's own code to check that the student understands it.
+
+### All changes
+
+- Status bar fits at 1024 px with Linux fonts: encoding (when UTF-8) and EOL hide at medium width
+- Layer badge is icon-only below the largest window size, so the status bar fits at 1024 px; keybindings test clicks an empty spot of the status bar
+- Release notes for 1.5.0: AI layers, safety rails, AI where the work is
+- Model picker never waits for local models; Enter while a picker loads picks the first match
+- Declare and allow device_policy and exam_ai_off; French label for AI Answers; grading tool list
+- AI-use statement, explain-your-code questions, one rules source
+- Pre-publish safety scan; the scan before Submit
+- Industrial core: AGENTS.md rules, plan file, slash recipes, self-healing loop, Guided scaffolds
+- AI where the work is: explain/fix any problem, reviewer comments, debug coach, code tour, my language
+- Tests: Learning's tool list includes the new read-only tools; codebase index
+- Codebase understanding, Explore, clarifying questions; privacy tier and timed task in the UI
+- Safety rails for every AI request: permission rules, .tmcodeignore, secret guard, package check
+- The three AI layers: Exam, Learning, Industrial (Guided/Open)
+
 ## 1.4.0 — 2026-11-01
 
 **TMCode 1.4: Codex and every AI extension open properly, and all your AI tools sit under one AI icon.** OpenAI's Codex extension now starts in TMCode, and an AI panel that is still loading says so. Your AI tools (TMCode AI, Claude Code, Codex, Gemini Code Assist, Cline, Continue…) share one AI icon with the open one highlighted. Right-click any icon to hide it, as in VS Code.
