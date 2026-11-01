@@ -82,6 +82,21 @@ export interface AiStatus {
   layer_token?: { claims: string; sig: string } | null;
   /** Hidden from AI in every layer (teacher-hidden tests, reference solution, marking notes): glob patterns. */
   hidden_paths?: string[];
+  /** The request interpreter (Task Mentor 2026-11 and later; older servers send none and TMCode checks requests only on demand, on the rule path). */
+  interpreter?: InterpreterStatus;
+}
+
+export interface InterpreterStatus {
+  available: boolean;
+  /** The A/B arm (students): "holdout" never sees the card. */
+  arm: "card" | "holdout";
+  /** The teacher's pin for students ("auto": fading). */
+  stage: "auto" | "full" | "hint" | "strip" | "off";
+  /** The teacher sees the text of requests (else only metadata is logged). */
+  show_prompts: boolean;
+  /** A Prompt Problem on this work (the hidden examples stay on Task Mentor). */
+  prompt_problem: { language: "python" | "javascript"; entry: string; examples: { input: string; output: string }[]; instructions: string; hints: boolean; hidden_count: number } | null;
+  you?: { cards: { used: number; limit: number }; coach: { used: number; limit: number } };
 }
 
 /** The open project (Task Mentor id) the AI status is for. */
@@ -375,7 +390,7 @@ export interface ChatContext {
    * "grading": a teacher grading a review folder (Task Mentor uses its grading prompt for staff);
    * "terminal": the terminal asking for shell commands (terminal/ai.ts, Task Mentor's terminal prompt).
    */
-  purpose?: "grading" | "terminal";
+  purpose?: "grading" | "terminal" | "prompt-problem";
   /** Industrial · Guided (A6, E7): explain each step in one sentence, leave TODO(you) gaps. */
   scaffolds?: boolean;
   /** Answer in this language (H3; keywords stay English, glossed). Absent: the question's language. */
@@ -455,6 +470,24 @@ export async function chat(messages: WireMessage[], context: ChatContext | undef
     finished = true;
     handle?.cancel();
   };
+}
+
+/** The request interpreter's answer (Task Mentor POST /ai/interpret). */
+export type InterpretAnswer =
+  | { kind: "card"; card: unknown; provider: string; model: string; ms: number; language: string; notes?: string[]; samples?: number; agreed?: boolean | null; arm?: string; stage?: string }
+  | { kind: "coach"; coach: unknown; provider: string; model: string; ms: number; language: string; allowance?: { max: number; regain_minutes: number; left: number; next_in_s: number | null } };
+
+/** Asks Task Mentor to interpret a request (an intent card, or Learning's coach). */
+export async function interpretOnServer(body: { text: string; purpose?: "card" | "coach" | "auto"; reply_language?: string; paths?: string[]; symbols?: string[]; assignment_title?: string; samples?: 1 | 2; draft_id?: string; guided?: boolean }): Promise<InterpretAnswer> {
+  if (!aiGate().chat) throw new AiRequestError("AI_DISABLED", aiGate().message ?? "AI is off.");
+  return call<InterpretAnswer>("POST", "/interpret", { ...(await requestModeFields()), ...body, ...projectField() });
+}
+
+/** Runs a Prompt Problem's examples (shown and hidden) on the AI's code (Task Mentor POST /ai/prompt-problem/check). */
+export async function checkPromptProblem(code: string): Promise<{ passed: number; total: number; shown: { input: string; expected: string; got: string; passed: boolean }[]; hidden: { passed: number; total: number }; error: string | null }> {
+  const project = currentAiProjectId();
+  if (project == null) throw new AiRequestError("NO_PROJECT", "Open the assignment's project to check a Prompt Problem.");
+  return call("POST", "/prompt-problem/check", { project_id: project, code });
 }
 
 /** One ghost-text suggestion at the cursor (null: nothing, or no allowance left). */

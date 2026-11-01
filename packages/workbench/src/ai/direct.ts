@@ -278,3 +278,23 @@ export async function directChat(route: DirectRoute, messages: WireMessage[], co
     cancelled = true;
   };
 }
+
+/**
+ * One JSON answer from a direct route (the request interpreter on a local model or your own key,
+ * prompt interpreter report Q13): a system prompt and the request, JSON asked for where the
+ * endpoint supports it. Returns the raw text (the caller validates it).
+ */
+export async function directJson(route: DirectRoute, system: string, user: string, timeoutMs = 20_000): Promise<string> {
+  const http = getPlatform().http;
+  if (!http) throw new AiRequestError("OLD_APP", "Local models and your own keys answer in the TMCode desktop app.");
+  const body =
+    route.kind === "anthropic"
+      ? { model: route.model, max_tokens: 1100, system, messages: [{ role: "user", content: user }] }
+      : { model: route.model, messages: [{ role: "system", content: system }, { role: "user", content: user }], temperature: 0.1, response_format: { type: "json_object" } };
+  const res = await Promise.race([
+    http.request({ method: "POST", url: route.url, headers: [["Content-Type", "application/json"], ...route.headers], body: JSON.stringify(body) }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new AiRequestError("TIMEOUT", `${route.label} took too long.`)), timeoutMs)),
+  ]);
+  if (res.status < 200 || res.status >= 300) throw refusal(route.label, res.status, res.body);
+  return parseAnswer(route.kind, JSON.parse(res.body), route.model).text;
+}

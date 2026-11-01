@@ -13,6 +13,7 @@ import { replyLanguage } from "./actions";
 import { aiGate } from "./gate";
 import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 import { attachmentChips, attachmentText, type Attachment } from "./attachments";
+import { handoffText, similarity, type IntentCard } from "@tmcode/protocol";
 
 /**
  * TMCode AI's conversation, as Claude Code's: one place for the question, the answer and, in the
@@ -73,6 +74,8 @@ export interface Message {
   mode?: ChatMode;
   /** Images attached to a question (data: URLs), shown as thumbnails. */
   images?: string[];
+  /** The request check the user confirmed (prompt interpreter report, Q4): what was understood. */
+  intent?: { restated: string; spec: string; language: string };
 }
 
 interface ChatState {
@@ -97,6 +100,9 @@ const checkpoints = new Map<number, Checkpoint>();
 let allowAllFor: number | null = null;
 
 const MAX_STEPS = 25;
+/** The last question asked, and the last self-check failure with the question it followed (Q9). */
+let lastQuestion = "";
+let prevFailure: { question: string; sig: string } | null = null;
 
 // ── context ──
 
@@ -191,8 +197,9 @@ export function modeLabelNow(mode: ChatMode, layer = aiGate().layer): string {
   return layer === "learning" ? "Tutor" : MODES.find((m) => m.id === mode)!.label;
 }
 
-export async function ask(text: string, opts: ContextOptions = { file: true, problems: true }, mode: ChatMode = useAi.getState().agentMode) {
-  let question = text.trim();
+export async function ask(text: string, opts: ContextOptions = { file: true, problems: true }, mode: ChatMode = useAi.getState().agentMode, extra: { intent?: IntentCard } = {}) {
+  // A confirmed request check (Q4): the agent gets the user's words (authoritative) plus the card.
+  let question = extra.intent ? handoffText(extra.intent) : text.trim();
   if (!question || useChat.getState().busy) return;
   // Learning: the tutor, which may read the project (read-only tools) and never changes it.
   const layer = aiGate().layer;
@@ -204,7 +211,9 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
   const { context, chips } = await gatherContext(opts);
   const prior = priorTurns();
   const images = (opts.attachments ?? []).flatMap((a) => (a.kind === "image" && a.image ? [a.image] : []));
-  const user: Message = { id: ++seq, role: "user", content: text.trim(), chips: ref ? ["earlier answer", ...chips] : chips, mode, ...(images.length ? { images } : {}) };
+  const intent = extra.intent ? { restated: extra.intent.restated, spec: extra.intent.spec_en, language: extra.intent.language } : undefined;
+  const user: Message = { id: ++seq, role: "user", content: text.trim(), chips: ref ? ["earlier answer", ...chips] : chips, mode, ...(images.length ? { images } : {}), ...(intent ? { intent } : {}) };
+  lastQuestion = text.trim();
   const answer: Message = { id: ++seq, role: "assistant", content: "", streaming: true, mode, ...(mode !== "chat" ? { steps: [] } : {}) };
   useChat.setState((s) => ({ messages: [...s.messages, user, answer], busy: true, history: [...s.history.filter((h) => h !== text.trim()), text.trim()].slice(-50), reference: null }));
   stopFlag.cancelled = false;
@@ -213,7 +222,17 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
     action: "chat",
     path: context.file,
     text: `Asked TMCode AI${layer === "learning" ? " (Tutor, Learning)" : mode === "chat" ? "" : ` (${modeLabelNow(mode, layer)})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
-    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, layer, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
+    data: {
+      question: text.trim().slice(0, 600),
+      context: chips.join(", ") || "none",
+      mode: useAi.getState().mode,
+      agent_mode: mode,
+      layer,
+      ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}),
+      // The request check's A/B arm (Q14): holdout students' questions count for the comparison too.
+      ...(useAi.getState().status?.interpreter ? { arm: useAi.getState().status!.interpreter!.arm } : {}),
+      ...(extra.intent ? { checked: true } : {}),
+    },
     actor: { type: "you" },
     ai: { by: "TMCode AI", how: layer === "learning" ? "question asked to the tutor (Learning)" : mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
   });
@@ -491,6 +510,12 @@ async function selfCheck(id: number, mode: AgentMode, cp: Checkpoint, state: Hea
     return null;
   }
   const sig = failureSignature(res.output);
+  // Q9 (the "same wrong program despite edits" trap): an edited request that fails the same way.
+  if (state.attempts === 0 && prevFailure && prevFailure.sig === sig && prevFailure.question !== lastQuestion && similarity(prevFailure.question, lastQuestion) >= 0.3) {
+    setStep(id, { id: `${stepId}-same`, tool: "ask_user", title: "Same failure as before you changed your request: the change didn't change the result. Try adding an example of what should happen.", status: "done" });
+    recordActivity({ kind: "ai", action: "understood-diff", text: "TMCode noticed an edited request that failed the same way as before", data: { kind: "same-failure" }, actor: { type: "tmcode-ai" }, ai: { by: "TMCode AI", how: "same failure after an edited request" } });
+  }
+  if (state.attempts === 0) prevFailure = { question: lastQuestion, sig };
   const attempts = state.attempts + 1;
   if (sig === state.last || attempts > HEAL_MAX) {
     setStep(id, { id: stepId, tool: "run_command", title: sig === state.last ? "Self-check stopped: the same failure came back (circuit breaker)" : `Self-check stopped after ${HEAL_MAX} attempts`, status: "failed", command, output: res.output });
