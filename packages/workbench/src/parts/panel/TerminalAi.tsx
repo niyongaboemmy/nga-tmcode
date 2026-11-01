@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CommandChip } from "../../activity/ActivityView";
 import { CliFixes, pickMode, openAiKeysSettings } from "../../ai/ChatView";
-import { CLIS, cliOf, detectCli } from "../../ai/aiClis";
+import { CLIS, cliOf, detectAllClis, detectCli } from "../../ai/aiClis";
 import { useAiGate } from "../../ai/gate";
 import { effectiveMode, refreshAiStatus, setAiMode, useAi } from "../../ai/service";
 import { getPlatform, notify } from "../../state/store";
@@ -40,6 +40,7 @@ export function TerminalAi() {
     if (!useAi.getState().status) void refreshAiStatus();
     const cli = cliOf(useAi.getState().mode);
     if (cli) void detectCli(cli);
+    else if (getPlatform().proc) void detectAllClis();
     requestAnimationFrame(() => input.current?.focus());
   }, [s.open, s.focusSeq]);
   useEffect(() => {
