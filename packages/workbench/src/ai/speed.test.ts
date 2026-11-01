@@ -57,3 +57,16 @@ describe("the self-healing loop (L3)", () => {
     expect(failureSignature("expected 3, got 2")).not.toBe(failureSignature("expected 3, got 4"));
   });
 });
+
+describe("one rules source (O7)", () => {
+  it("writes each vendor's file from AGENTS.md and never overwrites one written by hand", async () => {
+    const { syncVendorRules, GENERATED_MARK } = await import("./agent/projectRules");
+    resetWorkbenchForTests();
+    const p = platform({ "AGENTS.md": "Use tabs.\n", "GEMINI.md": "My own Gemini notes." });
+    await initWorkbench(p);
+    expect(await syncVendorRules(p.fs)).toEqual({ written: ["CLAUDE.md", ".cursor/rules/agents.mdc", ".github/copilot-instructions.md"], kept: ["GEMINI.md"] });
+    expect(await p.fs.readFile("CLAUDE.md")).toBe(`${GENERATED_MARK}\n\nUse tabs.\n`);
+    expect(await p.fs.readFile(".cursor/rules/agents.mdc")).toMatch(/^---\ndescription: Project rules \(from AGENTS\.md\)\nalwaysApply: true\n---\n/);
+    expect(await p.fs.readFile("GEMINI.md")).toBe("My own Gemini notes.");
+  });
+});

@@ -2,6 +2,8 @@ import type { ProjectScan, SkippedFile } from "../platform/types";
 import { msg } from "../messages/catalog";
 import { getPlatform, log, notify, showDialog, showPanel } from "../state/store";
 import { runSafetyScan } from "../ai/scan";
+import { aiUseStatement, summariseAiUse } from "../activity/aiStatement";
+import { useActivityLog } from "../activity/log";
 import { showQuickPick } from "../widgets/QuickPick";
 import { openInTaskMentor } from "./taskMentorLinks";
 import { notifyError, TmError } from "./service";
@@ -103,9 +105,11 @@ export async function confirmSubmit(opts: { message: string; late?: boolean; qui
   // The verification gate (proposal F1): the safety scan runs first and says what it found.
   // It informs; it never stops a student handing work in (only sharing is blocked, M1).
   const scan = opts.quizPractical ? null : await runSafetyScan({ quiet: true }).catch(() => null);
+  // The AI-use statement (I4): facts from the Activity log, as the teacher will see them.
+  const aiUse = aiUseStatement(summariseAiUse(useActivityLog.getState().events));
   for (;;) {
     const scanLine = scan && scan.findings.length ? `\n\nSafety scan: ${scan.critical ? `${scan.critical} critical finding${scan.critical === 1 ? "" : "s"} (a security mistake to fix), ` : ""}${scan.findings.length} in all. You can still submit.` : scan ? "\n\nSafety scan: nothing found." : "";
-    const extra = (manifest ? `\n\n${manifestLine(manifest)}.${notIncludedLine(manifest) ? ` ${notIncludedLine(manifest)}: Show to see what and why.` : ""}` : "") + scanLine;
+    const extra = (manifest ? `\n\n${manifestLine(manifest)}.${notIncludedLine(manifest) ? ` ${notIncludedLine(manifest)}: Show to see what and why.` : ""}` : "") + scanLine + `\n\n${aiUse}`;
     const choice = await showDialog({
       severity: "info",
       message: opts.message,

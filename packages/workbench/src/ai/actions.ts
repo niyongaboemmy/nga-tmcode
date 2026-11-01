@@ -5,7 +5,10 @@ import { revealInEditor } from "../monaco/reveal";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, notify, showAuxiliaryView, useWorkbench } from "../state/store";
 import { aiMaySee, forAi } from "./agent/guard";
+import { gradingTools } from "./agent/tools";
 import { ask } from "./chat";
+
+const gradingContext = () => gradingTools.chatContext?.() ?? null;
 import { aiGate } from "./gate";
 import { chat, type WireMessage } from "./service";
 import { create } from "zustand";
@@ -213,6 +216,42 @@ export function wireAiActions() {
   registerCommand({ id: "tmcodeAI.tour", title: "Tour This Project", category: "TMCode AI", aliases: ["code tour", "walkthrough"], enabled: chatOn, run: () => void startTour() });
   registerCommand({ id: "tmcodeAI.tourNext", title: "Code Tour: Next Stop", category: "TMCode AI", enabled: () => useTour.getState().at >= 0, run: () => goToStop(useTour.getState().at + 1) });
   registerCommand({ id: "tmcodeAI.tourPrevious", title: "Code Tour: Previous Stop", category: "TMCode AI", enabled: () => useTour.getState().at > 0, run: () => goToStop(useTour.getState().at - 1) });
+  registerCommand({
+    id: "tmcodeAI.syncRules",
+    title: "Sync AI Rules from AGENTS.md",
+    category: "TMCode AI",
+    aliases: ["CLAUDE.md", "GEMINI.md", "copilot instructions", "cursor rules"],
+    run: async () => {
+      const { syncVendorRules } = await import("./agent/projectRules");
+      const r = await syncVendorRules(getPlatform().fs);
+      if (!r) return notify("info", "Write the project's rules in AGENTS.md first (the one source every AI follows).");
+      notify("info", `${r.written.length ? `Wrote ${r.written.join(", ")} from AGENTS.md.` : ""}${r.kept.length ? ` Left ${r.kept.join(", ")} as written by hand.` : ""}`.trim());
+    },
+  });
+  registerCommand({
+    id: "tmcodeAI.aiUseStatement",
+    title: "Show My AI-Use Statement",
+    category: "TMCode AI",
+    run: async () => {
+      const { aiUseStatement, summariseAiUse } = await import("../activity/aiStatement");
+      const { useActivityLog } = await import("../activity/log");
+      notify("info", aiUseStatement(summariseAiUse(useActivityLog.getState().events)));
+    },
+  });
+  registerCommand({
+    id: "tmcodeAI.explainYourCode",
+    title: "Explain-Your-Code Questions (Grading)",
+    category: "Grading",
+    enabled: () => chatOn() && !!gradingContext(),
+    run: () => {
+      showAuxiliaryView("chat");
+      void ask(
+        "Write 3 to 5 questions that check whether the student understands THEIR OWN code in this submission (e.g. 'Why does line 14 use <=?', 'What happens if the list is empty?'). Cite the file and line for each, add what a good answer would mention, and don't grade: I'll ask them and judge the answers.",
+        { file: true, problems: false },
+        "plan",
+      );
+    },
+  });
   registerCommand({ id: "tmcodeAI.tourEnd", title: "Code Tour: End", category: "TMCode AI", enabled: () => useTour.getState().at >= 0, run: endTour });
 }
 
