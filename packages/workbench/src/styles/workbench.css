@@ -1723,6 +1723,8 @@ kbd,
   color: #fff;
   background: color-mix(in srgb, var(--tm-layer-industrial) 80%, #000);
 }
+.tm-root[data-size="md"] .tm-status-encoding:not(.is-non-default),
+.tm-root[data-size="md"] .tm-status-eol,
 .tm-root[data-size="md"] .tm-status-layer-profile,
 .tm-root[data-size="md"] .tm-status-layer-name,
 .tm-root[data-size="sm"] .tm-status-layer-profile,

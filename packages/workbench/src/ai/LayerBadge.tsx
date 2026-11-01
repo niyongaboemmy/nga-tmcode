@@ -49,7 +49,7 @@ export function LayerBadge() {
   return (
     <button type="button" className={`tm-status-item is-clickable tm-status-layer is-${g.layer} is-${g.profile}`} title={layerTitle(g)} aria-label={layerTitle(g)} onClick={() => void pickLayer(g)} data-testid="ai-layer-badge" data-layer={g.layer} data-profile={g.profile}>
       <Codicon name={info.icon} />
-      {/* Below the largest window size only the icon shows (the status bar is full); the title keeps it all. */}
+      {/* Below the largest window size only the icon shows (with encoding and EOL hidden, the status bar fits at 1024 px); the title keeps it all. */}
       <span>
         <span className="tm-status-layer-name">{layerName(g.layer, null, aiExamActive())}</span>
         {g.layer === "industrial" && <span className="tm-status-layer-profile">{` · ${g.profile === "open" ? "Open" : "Guided"}`}</span>}
