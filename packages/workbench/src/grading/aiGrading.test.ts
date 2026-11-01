@@ -140,7 +140,7 @@ describe("AI-assisted grading", () => {
   });
 
   it("the agent: grading tools while reviewing, propose_grade fills the form, the read-only folder refuses edits", async () => {
-    expect(toolDefs("plan", false, true).map((t) => t.function.name)).toEqual(["list_files", "read_file", "search", "get_problems", "get_grading_context", "propose_grade"]);
+    expect(toolDefs("plan", false, true).map((t) => t.function.name)).toEqual(["list_files", "read_file", "search", "get_problems", "repo_map", "find_symbol", "explore", "ask_user", "get_grading_context", "propose_grade"]);
     expect(toolDefs("manual", false, false).map((t) => t.function.name)).not.toContain("propose_grade");
     expect(permission("manual", "propose_grade", {})).toBe("allow");
     const cp = new Checkpoint();

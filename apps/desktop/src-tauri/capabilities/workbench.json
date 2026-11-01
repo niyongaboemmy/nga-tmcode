@@ -124,6 +124,8 @@
     "allow-ai-key-set",
     "allow-ai-key-get",
     "allow-ai-key-delete",
+    "allow-device-policy",
+    "allow-exam-ai-off",
     "allow-webview-publish",
     "allow-webview-dispose",
     "allow-auth-sign-in",
