@@ -6,6 +6,7 @@ import { ask } from "./chat";
 import { aiGate, aiUiHidden } from "./gate";
 import { useLayerInputs } from "./layerState";
 import { wireAiActions } from "./actions";
+import { wireSafetyScan } from "./scan";
 import { wireLayers } from "./layers";
 import { wireAiProject } from "./project";
 import { wireAiTools } from "./tools";
@@ -38,6 +39,7 @@ export function wireAi() {
   wireAiTools();
   wireInlineSuggestions();
   wireAiActions();
+  wireSafetyScan();
   registerCommand({
     id: "tmcodeAI.ask",
     title: "Ask TMCode AI",

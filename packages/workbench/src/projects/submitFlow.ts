@@ -1,6 +1,7 @@
 import type { ProjectScan, SkippedFile } from "../platform/types";
 import { msg } from "../messages/catalog";
-import { getPlatform, log, notify, showDialog } from "../state/store";
+import { getPlatform, log, notify, showDialog, showPanel } from "../state/store";
+import { runSafetyScan } from "../ai/scan";
 import { showQuickPick } from "../widgets/QuickPick";
 import { openInTaskMentor } from "./taskMentorLinks";
 import { notifyError, TmError } from "./service";
@@ -99,8 +100,12 @@ export async function showNotIncluded(m: Manifest) {
  */
 export async function confirmSubmit(opts: { message: string; late?: boolean; quizPractical?: boolean }): Promise<boolean> {
   const manifest = await currentManifest();
+  // The verification gate (proposal F1): the safety scan runs first and says what it found.
+  // It informs; it never stops a student handing work in (only sharing is blocked, M1).
+  const scan = opts.quizPractical ? null : await runSafetyScan({ quiet: true }).catch(() => null);
   for (;;) {
-    const extra = manifest ? `\n\n${manifestLine(manifest)}.${notIncludedLine(manifest) ? ` ${notIncludedLine(manifest)}: Show to see what and why.` : ""}` : "";
+    const scanLine = scan && scan.findings.length ? `\n\nSafety scan: ${scan.critical ? `${scan.critical} critical finding${scan.critical === 1 ? "" : "s"} (a security mistake to fix), ` : ""}${scan.findings.length} in all. You can still submit.` : scan ? "\n\nSafety scan: nothing found." : "";
+    const extra = (manifest ? `\n\n${manifestLine(manifest)}.${notIncludedLine(manifest) ? ` ${notIncludedLine(manifest)}: Show to see what and why.` : ""}` : "") + scanLine;
     const choice = await showDialog({
       severity: "info",
       message: opts.message,
@@ -108,10 +113,15 @@ export async function confirmSubmit(opts: { message: string; late?: boolean; qui
       buttons: [
         { id: "submit", label: "Save and Submit", primary: true },
         ...(manifest && manifest.skippedCount ? [{ id: "show", label: "Show Not Included" }] : []),
+        ...(scan?.findings.length ? [{ id: "findings", label: "Show Findings" }] : []),
         { id: "cancel", label: "Cancel" },
       ],
       cancelId: "cancel",
     });
+    if (choice === "findings") {
+      showPanel("problems");
+      return false;
+    }
     if (choice !== "show" || !manifest) return choice === "submit";
     await showNotIncluded(manifest);
   }
