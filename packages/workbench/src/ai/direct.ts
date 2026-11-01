@@ -140,6 +140,7 @@ function systemPrompt(context: ChatContext | undefined, agent: AgentRequest | un
   if (context?.selection) parts.push(`Selected code:\n\`\`\`${context.language ?? ""}\n${context.selection}\n\`\`\``);
   else if (context?.fileText) parts.push(`The file:\n\`\`\`${context.language ?? ""}\n${context.fileText}\n\`\`\``);
   if (context?.problems?.length) parts.push(`Problems the editor reports:\n${context.problems.map((p) => `- ${p}`).join("\n")}`);
+  if (context?.reply_language) parts.push(`Reply in ${context.reply_language}; keep English programming keywords and explain them briefly.`);
   const base = layer === "learning" ? TUTOR_LOCAL : SYSTEM;
   const agentText = agent ? `\n\n${layer === "learning" ? "You may look at the project with read-only tools. Never change anything." : `${AGENT_RULES}\n${AGENT_MODE[agent.mode]}`}` : "";
   return (parts.length ? `${base}\n\n${parts.join("\n\n")}` : base) + agentText;

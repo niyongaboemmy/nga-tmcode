@@ -5,6 +5,7 @@ import { notify, showAuxiliaryView, useWorkbench } from "../state/store";
 import { ask } from "./chat";
 import { aiGate, aiUiHidden } from "./gate";
 import { useLayerInputs } from "./layerState";
+import { wireAiActions } from "./actions";
 import { wireLayers } from "./layers";
 import { wireAiProject } from "./project";
 import { wireAiTools } from "./tools";
@@ -36,6 +37,7 @@ export function wireAi() {
   wireLayers();
   wireAiTools();
   wireInlineSuggestions();
+  wireAiActions();
   registerCommand({
     id: "tmcodeAI.ask",
     title: "Ask TMCode AI",

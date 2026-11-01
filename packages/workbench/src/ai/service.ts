@@ -376,6 +376,8 @@ export interface ChatContext {
    * "terminal": the terminal asking for shell commands (terminal/ai.ts, Task Mentor's terminal prompt).
    */
   purpose?: "grading" | "terminal";
+  /** Answer in this language (H3; keywords stay English, glossed). Absent: the question's language. */
+  reply_language?: "English" | "French" | "Kinyarwanda";
   grading?: { activity_title: string; brief: string; rubric: { index: number; criteria: string; description: string | null; max_score: number }[]; student_name: string; question_text?: string };
 }
 

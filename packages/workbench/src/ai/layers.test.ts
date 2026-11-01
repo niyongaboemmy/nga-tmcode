@@ -182,7 +182,7 @@ describe("the sticky signed layer (A9)", () => {
 describe("codebase understanding (G7)", () => {
   it("maps definitions ranked by use and finds where a name is defined and used", async () => {
     const { p } = platform(() => ({ status: 200, body: "{}" }));
-    (p as { fs: MemoryFileSystem }).fs = new MemoryFileSystem({
+    (p as unknown as { fs: MemoryFileSystem }).fs = new MemoryFileSystem({
       "src/cart.js": "export function total(items) {\n  return items.reduce((a, b) => a + b.price, 0);\n}\nexport class Cart {}\n",
       "src/app.js": "import { total } from './cart.js';\nconsole.log(total([]));\nconsole.log(total([{ price: 2 }]));\n",
       "util.py": "def helper():\n    pass\n\nclass Thing:\n    def go(self):\n        pass\n",

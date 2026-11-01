@@ -7,6 +7,7 @@ import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, EXPLORE_TOOLS, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
 import { aiMaySee, combine, forAi, guardCall, loadAgentGuard } from "./agent/guard";
+import { replyLanguage } from "./actions";
 import { aiGate } from "./gate";
 import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 import { attachmentChips, attachmentText, type Attachment } from "./attachments";
@@ -148,6 +149,8 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
   chips.push(...attachmentChips(opts.attachments ?? []));
   if (extra.length) context.task = [context.task, ...extra].filter(Boolean).join("\n\n");
   // A teacher reviewing a submission: Task Mentor answers as a grading assistant (staff only).
+  const lang = replyLanguage();
+  if (lang) context.reply_language = lang;
   const grading = gradingTools.chatContext?.() ?? null;
   if (grading) {
     context.purpose = grading.purpose;

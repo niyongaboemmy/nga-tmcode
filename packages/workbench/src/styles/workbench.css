@@ -1749,6 +1749,15 @@ kbd,
   align-items: center;
   gap: 3px;
 }
+.tm-tour-line {
+  background: color-mix(in srgb, var(--tm-layer-learning) 14%, transparent);
+}
+.tm-status-tour {
+  gap: 2px;
+}
+.tm-status-tour .tm-action {
+  color: inherit;
+}
 .tm-chat-question {
   display: grid;
   gap: 6px;

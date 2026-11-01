@@ -28,6 +28,7 @@ import { useIsTeacher, useRoleChecking } from "../state/role";
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
 import { LayerBadge } from "../ai/LayerBadge";
+import { endTour, goToStop, useTour } from "../ai/actions";
 import { useAiGate } from "../ai/gate";
 import { encodingLabel, pickEncoding, pickEol, pickIndentation, pickLanguage, toggleScreenReaderMode, useActiveFileInfo } from "./editorStatus";
 
@@ -249,6 +250,30 @@ function BlameItem() {
   );
 }
 
+/** The code tour (N6): where you are, with previous / next / end. */
+function TourItem() {
+  const { stops, at } = useTour();
+  if (at < 0 || !stops.length) return null;
+  const s = stops[at];
+  return (
+    <span className="tm-status-item tm-status-tour" data-testid="tour-status" title={s.text}>
+      <Codicon name="map" />
+      <button type="button" className="tm-action" aria-label="Previous stop" disabled={at === 0} onClick={() => goToStop(at - 1)}>
+        <Codicon name="chevron-left" />
+      </button>
+      <span>
+        Tour {at + 1}/{stops.length}: {s.text.length > 60 ? `${s.text.slice(0, 57)}…` : s.text}
+      </span>
+      <button type="button" className="tm-action" aria-label="Next stop" disabled={at >= stops.length - 1} onClick={() => goToStop(at + 1)}>
+        <Codicon name="chevron-right" />
+      </button>
+      <button type="button" className="tm-action" aria-label="End the tour" onClick={endTour}>
+        <Codicon name="close" />
+      </button>
+    </span>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -287,6 +312,7 @@ export function StatusBar({ chord }: { chord: string | null }) {
           <span>{timedTask ? "Timed task" : MODE_LABEL[mode]}</span>
         </Item>
         <LayerBadge />
+        <TourItem />
         {!simple && <GitItems />}
         <ProfileItem />
         <WorkspaceFolderItem />
