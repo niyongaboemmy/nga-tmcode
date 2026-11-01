@@ -8806,10 +8806,47 @@ button.tm-setting-badge {
   pointer-events: none;
   border: 1px solid color-mix(in srgb, var(--focus-border) 45%, transparent);
 }
+/* The terminal list beside the terminals: one line per terminal, long names cut with "…" (the tooltip has the
+   whole name), icons in one column, Split / Kill only on the row being pointed at (or focused). */
 .tm-terminal-list {
-  width: 190px;
+  width: clamp(120px, 24%, 220px);
+  flex: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.tm-terminal-list li {
+  min-width: 0;
+  padding-right: 2px;
+}
+.tm-terminal-list li > button:first-child {
+  min-width: 0;
+  justify-content: flex-start;
+  text-align: left;
+  color: inherit;
+}
+.tm-terminal-list li > button:first-child > .codicon {
+  flex: none;
+}
+.tm-terminal-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-terminal-list .tm-terminal-kill {
+  display: none;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+}
+.tm-terminal-list li:hover .tm-terminal-kill,
+.tm-terminal-list li:focus-within .tm-terminal-kill {
+  display: flex;
+  opacity: 1;
 }
 .tm-terminal-tree {
+  flex: none;
   width: 10px;
   color: var(--description);
   font-family: monospace;

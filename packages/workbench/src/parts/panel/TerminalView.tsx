@@ -673,8 +673,11 @@ export function TerminalView({ visible }: { visible: boolean }) {
                 ) : (
                   <button type="button" onClick={() => setActiveId(i.id)} onDoubleClick={() => setRenaming(i.id)} title={`${labelOf(i)} (double-click to rename)`}>
                     {members.length > 1 && <span className="tm-terminal-tree">{mi === members.length - 1 ? "└" : mi === 0 ? "┌" : "├"}</span>}
-                    <Codicon name={i.owned ? "tools" : "terminal"} /> {members.length > 1 || mi > 0 ? "" : `${gi + 1}: `}
-                    {labelOf(i)}
+                    <Codicon name={i.owned ? "tools" : "terminal"} />
+                    <span className="tm-terminal-name">
+                      {members.length > 1 || mi > 0 ? "" : `${gi + 1}: `}
+                      {labelOf(i)}
+                    </span>
                   </button>
                 )}
                 <button type="button" className="tm-terminal-kill" aria-label={`Split ${labelOf(i)}`} title="Split Terminal" onClick={() => void create({ splitOf: i.id })}>
