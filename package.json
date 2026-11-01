@@ -1,7 +1,7 @@
 {
   "name": "nga-tmcode",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "TMCode: the VS Code-style exam code editor controlled and graded by Task Mentor",
   "type": "module",
   "workspaces": [

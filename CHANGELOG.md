@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1 — 2026-11-01
+
+**TMCode 1.5.1: a tidy terminal list.** The list of terminals beside the terminal panel keeps one line per terminal: long names such as "Install ChatGPT (Codex)" end with "…" (point at one for the whole name), the icons line up in one column, Split and Kill show on the row you point at, and the list's width follows the panel.
+
+### All changes
+
+- Release notes: the terminal list fix ships in 1.5.1 (1.5.0 went out first)
+- Terminal list: one line per terminal, aligned icons, actions on hover (1.4.1)
+
 ## 1.5.0 — 2026-11-01
 
 **TMCode 1.5: three AI layers, safety rails for every AI request, and AI where the work is.** TMCode AI now works in one of three layers: **Exam** (no AI at all), **Learning** (a tutor that explains and asks, but never writes your code) and **Industrial** (the full AI, Guided for students, Open for staff). The status bar shows the layer you are in and why. Every AI request, from TMCode AI or an AI extension, now passes the same safety rails.
