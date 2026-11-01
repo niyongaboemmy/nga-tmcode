@@ -17,7 +17,7 @@ import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli,
 import { gateLabel, useAiGate } from "./gate";
 import { allowAiCopy } from "./copyGuard";
 import { aiMaySee } from "./agent/guard";
-import { detectLocalModels, DIRECT_SUGGESTED, isLocalMode, useLocalAi } from "./direct";
+import { detectLocalModels, DIRECT_SUGGESTED, isLocalMode, loadLocalSettings, useLocalAi } from "./direct";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { answerQuestion, approveStep, ask, MODES, modeLabelNow, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
 import { aiReadsImages, effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
@@ -520,12 +520,13 @@ async function modeItems(): Promise<PickItem[]> {
     }
     byok.push({ id: "__keys", label: keys.saved.length ? "Manage Your API Keys…" : "Add Your Own API Key…", description: "Settings › TMCode AI", icon: "gear", alwaysShow: true });
   }
-  // Local models (Ollama, LM Studio): free, offline, nothing leaves the computer.
-  const localModels = getPlatform().http ? ((await within(detectLocalModels(), 4000)) as string[] | undefined) ?? [] : [];
+  // Local models (Ollama, LM Studio): free, offline, nothing leaves the computer. Found in the
+  // background (the chat looks when it opens), so the picker never waits for them.
+  const lo = useLocalAi.getState();
   const local: PickItem[] = getPlatform().http
-    ? localModels.length
-      ? localModels.map((m) => ({ id: `local:${m}`, label: m, description: "on this computer", icon: icon(`local:${m}`, "device-desktop") }))
-      : [{ id: "__local:help", label: "Local models (Ollama, LM Studio)", detail: useLocalAi.getState().error ?? "Start Ollama or LM Studio to use a model on this computer.", icon: "info" }]
+    ? lo.models.length
+      ? lo.models.map((m) => ({ id: `local:${m}`, label: m, description: "on this computer", icon: icon(`local:${m}`, "device-desktop") }))
+      : [{ id: "__local:find", label: lo.state === "checking" ? "Looking for local models…" : "Find Local Models (Ollama, LM Studio)", detail: lo.error ?? "Use a model on this computer: free, offline, private.", icon: lo.state === "checking" ? "loading" : "search" }]
     : [];
   const section = (list: PickItem[], label: string) => list.map((x, i) => (i === 0 ? { ...x, separator: label } : x));
   if (signedOut) return [...section(cliItems(icon), "Your AI accounts"), ...section(byok, "Your keys"), ...section(local, "On this computer")];
@@ -578,7 +579,11 @@ export async function pickMode() {
     return model ? setAiMode(`cli:${id}/${model.trim()}`) : undefined;
   }
   if (picked.id === "__cli:blocked") return void notify("info", cliBlocked() ?? "AI CLIs aren't available here.");
-  if (picked.id === "__local:help") return void notify("info", useLocalAi.getState().error ?? "Install Ollama (ollama.com) or LM Studio, pull a model, then pick it here.");
+  if (picked.id === "__local:find") {
+    const found = await detectLocalModels();
+    if (found.length) return pickMode();
+    return void notify("info", useLocalAi.getState().error ?? "Install Ollama (ollama.com) or LM Studio, pull a model, then pick it here.");
+  }
   if (picked.id.startsWith("__custom:")) {
     const provider = picked.id.slice("__custom:".length);
     const model = await showInputBox({ title: `A ${providerLabel(provider)} model`, prompt: "The model id, as the provider names it", placeholder: "e.g. gpt-4.1-mini", validate: (v) => (!v.trim() || /\s/.test(v.trim()) ? "One model id, without spaces." : null) });
@@ -777,6 +782,8 @@ export function ChatView() {
   }, [signedIn, projectId]);
   useEffect(() => {
     void loadAiKeys();
+    // Local models: looked for once, quietly, when the chat opens.
+    void loadLocalSettings().then(() => (useLocalAi.getState().state === "unknown" && getPlatform().http ? detectLocalModels() : null));
   }, []);
   useLayoutEffect(() => {
     const el = list.current;
