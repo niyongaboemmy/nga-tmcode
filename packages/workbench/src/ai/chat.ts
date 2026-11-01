@@ -6,6 +6,7 @@ import { monaco } from "../monaco/setup";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
+import { aiMaySee, combine, forAi, guardCall, loadAgentGuard } from "./agent/guard";
 import { aiGate } from "./gate";
 import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 import { attachmentChips, attachmentText, type Attachment } from "./attachments";
@@ -99,7 +100,10 @@ export interface ContextOptions {
 }
 
 export async function gatherContext(opts: ContextOptions): Promise<{ context: ChatContext; chips: string[] }> {
-  const file = activeFilePath();
+  await loadAgentGuard();
+  // A file kept away from AI (secrets, .tmcodeignore, teacher-hidden) never goes along.
+  const active = activeFilePath();
+  const file = aiMaySee(active) ? active : null;
   const chips: string[] = [];
   const context: ChatContext = {};
   if (file) {
@@ -109,10 +113,10 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
     context.language = model?.getLanguageId() ?? languageForPath(file);
     const sel = ed?.getModel() === model ? ed?.getSelection() : null;
     if (model && sel && !sel.isEmpty()) {
-      context.selection = model.getValueInRange(sel).slice(0, 20_000);
+      context.selection = forAi(model.getValueInRange(sel).slice(0, 20_000));
       chips.push(`${file.slice(file.lastIndexOf("/") + 1)}: lines ${sel.startLineNumber}–${sel.endLineNumber}`);
     } else if (opts.file && model) {
-      context.fileText = model.getValue().slice(0, 60_000);
+      context.fileText = forAi(model.getValue().slice(0, 60_000));
       chips.push(file.slice(file.lastIndexOf("/") + 1));
     }
     if (opts.problems && model) {
@@ -125,11 +129,11 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
   }
   const extra: string[] = [];
   for (const m of opts.mentions ?? []) {
-    if (m === file) continue;
+    if (m === file || !aiMaySee(m)) continue;
     const open = getDocument(m)?.getValue();
     const text = open ?? (await getPlatform().fs.readFile(m).catch(() => null));
     if (text === null) continue;
-    extra.push(`File ${m}:\n\`\`\`\n${text.slice(0, 30_000)}\n\`\`\``);
+    extra.push(`File ${m}:\n\`\`\`\n${forAi(text.slice(0, 30_000))}\n\`\`\``);
     chips.push(m.slice(m.lastIndexOf("/") + 1));
   }
   const attached = attachmentText(opts.attachments ?? []);
@@ -309,6 +313,7 @@ function setStep(id: number, step: Step) {
 
 /** The agent: ask, run the tools the AI calls (with the student's OK where the mode wants it), repeat. */
 async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], context: ChatContext) {
+  await loadAgentGuard();
   const cp = new Checkpoint();
   checkpoints.set(id, cp);
   allowAllFor = null;
@@ -330,16 +335,20 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
         if (stopFlag.cancelled) break;
         const args = parseArgs(call);
         const layer = aiGate().layer;
-        const verdict = permission(mode, call.function.name, args, layer);
+        const modeVerdict = permission(mode, call.function.name, args, layer);
+        // The safety rails (rules, ignore list, package check) tighten what the mode allows.
+        const rails = modeVerdict === "refuse" ? { verdict: null } : await guardCall(mode, call.function.name, args);
+        const verdict = combine(modeVerdict, rails);
         const p = await preview(call);
         let output: string;
         if (verdict === "refuse") {
-          setStep(id, { id: call.id, tool: call.function.name, title: p.title, status: "refused" });
-          output = layer === "learning" ? "Not allowed in Learning: the student writes every line. Explain in words what they could try instead." : "Not allowed in Plan mode: present your plan instead of changing files.";
+          setStep(id, { id: call.id, tool: call.function.name, title: rails.reason ? `${p.title}: ${rails.reason}` : p.title, status: "refused" });
+          output = rails.reason ? `Refused: ${rails.reason} Don't retry it; continue without it or ask the user.` : layer === "learning" ? "Not allowed in Learning: the student writes every line. Explain in words what they could try instead." : "Not allowed in Plan mode: present your plan instead of changing files.";
         } else {
           let ok = true;
-          if (verdict === "ask" && allowAllFor !== id) {
-            setStep(id, { id: call.id, tool: call.function.name, title: p.title, status: "waiting", diff: p.diff, command: p.command });
+          // "Allow all" never skips a rails question (a rule's ask, a new package).
+          if (verdict === "ask" && (allowAllFor !== id || rails.verdict === "ask")) {
+            setStep(id, { id: call.id, tool: call.function.name, title: rails.warning ? `${p.title} — ${rails.warning}` : p.title, status: "waiting", diff: p.diff, command: p.command });
             ok = await new Promise<boolean>((resolve) => approvals.set(call.id, resolve));
             approvals.delete(call.id);
           }

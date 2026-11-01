@@ -5,6 +5,7 @@ import { applyExternalChanges } from "../../monaco/external";
 import { monaco } from "../../monaco/setup";
 import { buildRegExp, listFiles, searchText } from "../../parts/search/search";
 import { getPlatform, moveEntry, openFile, useWorkbench } from "../../state/store";
+import { aiMaySee, forAi } from "./guard";
 
 /**
  * What TMCode AI's agent can do in the project (the tools it is given, Claude Code's set in small):
@@ -276,7 +277,7 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
   try {
     switch (call.function.name as ToolName) {
       case "list_files": {
-        const all = await listFiles(fs);
+        const all = (await listFiles(fs)).filter((f) => aiMaySee(f));
         const under = a.under ? cleanPath(a.under) : "";
         const list = all.filter((p) => !under || p.startsWith(`${under}/`)).slice(0, 400);
         return { ok: true, output: list.join("\n") || "(no files)", summary: `Listed ${list.length} file${list.length === 1 ? "" : "s"}${under ? ` in ${under}` : ""}` };
@@ -291,7 +292,7 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
           .slice(start - 1, end)
           .map((l, i) => `${String(start + i).padStart(4)}  ${l}`)
           .join("\n");
-        return { ok: true, output: clip(numbered), summary: `Read ${name(path)}${start > 1 || end < all.length ? ` (lines ${start}–${end})` : ` (${all.length} lines)`}` };
+        return { ok: true, output: clip(forAi(numbered)), summary: `Read ${name(path)}${start > 1 || end < all.length ? ` (lines ${start}–${end})` : ` (${all.length} lines)`}` };
       }
       case "search": {
         const q = String(a.query ?? "");
@@ -301,12 +302,13 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
         const out: string[] = [];
         for (const p of await listFiles(fs)) {
           if (budget.left <= 0 || signal.cancelled) break;
+          if (!aiMaySee(p)) continue;
           const text = await fs.readFile(p).catch(() => null);
           if (text === null || text.length > 500_000) continue;
           const m = searchText(p, text, rx, budget);
           for (const x of m?.matches ?? []) out.push(`${p}:${x.line + 1}: ${x.text.trim().slice(0, 200)}`);
         }
-        return { ok: true, output: out.join("\n") || "No matches.", summary: `Searched for "${q.slice(0, 40)}" (${out.length} match${out.length === 1 ? "" : "es"})` };
+        return { ok: true, output: forAi(out.join("\n")) || "No matches.", summary: `Searched for "${q.slice(0, 40)}" (${out.length} match${out.length === 1 ? "" : "es"})` };
       }
       case "get_problems": {
         const only = a.path ? cleanPath(a.path) : null;
@@ -382,8 +384,8 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
               done(-1);
             });
         });
-        recordActivity({ kind: "terminal", action: "command", text: `TMCode AI ran: ${command.slice(0, 120)} (exit ${code ?? "?"})`, data: { command: command.slice(0, 500), exit: code ?? null }, actor: ACTOR, ai: { by: "TMCode AI", how: "agent ran a command" } });
-        return { ok: code === 0, output: clip(`$ ${command}\n${out}\n(exit code ${code ?? "unknown"})`), summary: `Ran \`${command.slice(0, 60)}\` → exit ${code ?? "?"}` };
+        recordActivity({ kind: "terminal", action: "command", text: `TMCode AI ran: ${forAi(command).slice(0, 120)} (exit ${code ?? "?"})`, data: { command: forAi(command).slice(0, 500), exit: code ?? null }, actor: ACTOR, ai: { by: "TMCode AI", how: "agent ran a command" } });
+        return { ok: code === 0, output: clip(forAi(`$ ${command}\n${out}\n(exit code ${code ?? "unknown"})`)), summary: `Ran \`${command.slice(0, 60)}\` → exit ${code ?? "?"}` };
       }
     }
     return { ok: false, output: `Unknown tool ${call.function.name}.`, summary: `Unknown tool ${call.function.name}` };

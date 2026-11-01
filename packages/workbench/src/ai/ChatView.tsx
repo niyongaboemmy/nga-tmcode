@@ -14,6 +14,7 @@ import { AiExtensions } from "./AiExtensions";
 import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli, signInCli, useAiClis, validCliModel, type CliId } from "./aiClis";
 import { gateLabel, useAiGate } from "./gate";
 import { allowAiCopy } from "./copyGuard";
+import { aiMaySee } from "./agent/guard";
 import { detectLocalModels, DIRECT_SUGGESTED, isLocalMode, useLocalAi } from "./direct";
 import { insertAtCursor, proposeEdit } from "./apply";
 import { approveStep, ask, MODES, modeLabelNow, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
@@ -567,7 +568,7 @@ async function desktopAttachments(paths: string[]): Promise<(Attachment | string
 let fileCache: { at: number; files: string[] } | null = null;
 async function projectFiles(): Promise<string[]> {
   if (fileCache && Date.now() - fileCache.at < 15_000) return fileCache.files;
-  const files = await listFiles(getPlatform().fs).catch(() => [] as string[]);
+  const files = (await listFiles(getPlatform().fs).catch(() => [] as string[])).filter((f) => aiMaySee(f));
   fileCache = { at: Date.now(), files };
   return files;
 }
