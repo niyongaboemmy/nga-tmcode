@@ -1,9 +1,12 @@
+import type { Layer } from "@tmcode/protocol";
 import { recordActivity, runAs, type Actor } from "../../activity/log";
 import { ensureDocument, getDocument, saveDocument } from "../../monaco/documents";
 import { applyExternalChanges } from "../../monaco/external";
 import { monaco } from "../../monaco/setup";
 import { buildRegExp, listFiles, searchText } from "../../parts/search/search";
 import { getPlatform, moveEntry, openFile, useWorkbench } from "../../state/store";
+import { findSymbol, repoMap } from "./codebase";
+import { aiMaySee, forAi } from "./guard";
 
 /**
  * What TMCode AI's agent can do in the project (the tools it is given, Claude Code's set in small):
@@ -33,6 +36,11 @@ export const TOOL_DEFS = [
   { name: "rename_file", description: "Rename or move a file.", parameters: { type: "object", properties: { from: str, to: str }, required: ["from", "to"] } },
   { name: "delete_file", description: "Delete a file (it goes to the Trash).", parameters: { type: "object", properties: { path: str }, required: ["path"] } },
   { name: "run_command", description: "Run a shell command in the project folder (tests, a build, the program) and get its output.", parameters: { type: "object", properties: { command: str }, required: ["command"] } },
+  // Understanding the codebase (G7, C11) and asking instead of guessing (C12).
+  { name: "repo_map", description: "A map of the project: files ranked by how much the rest of the project uses them, with their functions, classes and types (line numbers). Optional `under` folder. Start here in an unfamiliar project.", parameters: { type: "object", properties: { under: str } } },
+  { name: "find_symbol", description: "Where a function, class, type or variable is defined and every place it is used (file:line).", parameters: { type: "object", properties: { name: str }, required: ["name"] } },
+  { name: "explore", description: "Hand a research question to a read-only helper that searches the project and answers with a short summary (keeps your context small). Use for 'where/how does X work?' across many files.", parameters: { type: "object", properties: { question: str }, required: ["question"] } },
+  { name: "ask_user", description: "Ask the user ONE short question instead of guessing when the request is ambiguous (e.g. 'Should the total include tax?'). Give 2-4 short choices when you can.", parameters: { type: "object", properties: { question: str, choices: { type: "array", items: str } }, required: ["question"] } },
 ] as const;
 
 /**
@@ -60,17 +68,23 @@ export const GRADING_TOOL_DEFS = [
 ] as const;
 
 export type ToolName = (typeof TOOL_DEFS)[number]["name"];
-export const READ_ONLY = new Set<string>(["list_files", "read_file", "search", "get_problems", "get_grading_context"]);
+export const READ_ONLY = new Set<string>(["list_files", "read_file", "search", "get_problems", "get_grading_context", "repo_map", "find_symbol", "explore", "ask_user"]);
+/** What the Explore helper may use: looking only, no questions, no nesting. */
+export const EXPLORE_TOOLS = new Set<string>(["list_files", "read_file", "search", "get_problems", "repo_map", "find_symbol"]);
 /** Tools that change nothing on disk and save nothing (allowed in every mode, Plan included). */
 const HARMLESS = new Set<string>(["propose_grade"]);
 
 /** The draft file any AI may write in a review folder (the only file there that may change). */
 export const GRADING_DRAFT_PATH = ".tmcode/grading/draft.json";
 
-export function toolDefs(mode: AgentMode, canRun: boolean, grading = false) {
-  const defs: readonly { name: string; description: string; parameters: unknown }[] = [...TOOL_DEFS, ...(grading ? GRADING_TOOL_DEFS : [])];
+/**
+ * The tools for a request. In the Learning layer only the looking tools (the tutor reads the
+ * student's code, it never changes it; Task Mentor drops any other tool too).
+ */
+export function toolDefs(mode: AgentMode, canRun: boolean, grading = false, layer: Layer = "industrial") {
+  const defs: readonly { name: string; description: string; parameters: unknown }[] = layer === "learning" ? TOOL_DEFS : [...TOOL_DEFS, ...(grading ? GRADING_TOOL_DEFS : [])];
   return defs
-    .filter((t) => (mode === "plan" ? READ_ONLY.has(t.name) || HARMLESS.has(t.name) : t.name !== "run_command" || canRun))
+    .filter((t) => (layer === "learning" ? READ_ONLY.has(t.name) : mode === "plan" ? READ_ONLY.has(t.name) || HARMLESS.has(t.name) : t.name !== "run_command" || canRun))
     .map((t) => ({ type: "function" as const, function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown> } }));
 }
 
@@ -82,8 +96,11 @@ const RISKY_COMMAND = /\b(rm|rmdir|del|sudo|chmod|chown|curl|wget|ssh|scp|git (p
 
 export type Verdict = "allow" | "ask" | "refuse";
 
-export function permission(mode: AgentMode, name: string, args: Record<string, unknown>): Verdict {
-  if (READ_ONLY.has(name) || HARMLESS.has(name)) return "allow";
+export function permission(mode: AgentMode, name: string, args: Record<string, unknown>, layer: Layer = "industrial"): Verdict {
+  if (READ_ONLY.has(name)) return "allow";
+  // Learning: the read-only preset, fixed (proposal C7). Exam never gets here (no AI).
+  if (layer !== "industrial") return "refuse";
+  if (HARMLESS.has(name)) return "allow";
   if (mode === "plan") return "refuse";
   if (mode === "manual") return "ask";
   if (name === "run_command") {
@@ -268,7 +285,7 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
   try {
     switch (call.function.name as ToolName) {
       case "list_files": {
-        const all = await listFiles(fs);
+        const all = (await listFiles(fs)).filter((f) => aiMaySee(f));
         const under = a.under ? cleanPath(a.under) : "";
         const list = all.filter((p) => !under || p.startsWith(`${under}/`)).slice(0, 400);
         return { ok: true, output: list.join("\n") || "(no files)", summary: `Listed ${list.length} file${list.length === 1 ? "" : "s"}${under ? ` in ${under}` : ""}` };
@@ -283,7 +300,7 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
           .slice(start - 1, end)
           .map((l, i) => `${String(start + i).padStart(4)}  ${l}`)
           .join("\n");
-        return { ok: true, output: clip(numbered), summary: `Read ${name(path)}${start > 1 || end < all.length ? ` (lines ${start}–${end})` : ` (${all.length} lines)`}` };
+        return { ok: true, output: clip(forAi(numbered)), summary: `Read ${name(path)}${start > 1 || end < all.length ? ` (lines ${start}–${end})` : ` (${all.length} lines)`}` };
       }
       case "search": {
         const q = String(a.query ?? "");
@@ -293,12 +310,21 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
         const out: string[] = [];
         for (const p of await listFiles(fs)) {
           if (budget.left <= 0 || signal.cancelled) break;
+          if (!aiMaySee(p)) continue;
           const text = await fs.readFile(p).catch(() => null);
           if (text === null || text.length > 500_000) continue;
           const m = searchText(p, text, rx, budget);
           for (const x of m?.matches ?? []) out.push(`${p}:${x.line + 1}: ${x.text.trim().slice(0, 200)}`);
         }
-        return { ok: true, output: out.join("\n") || "No matches.", summary: `Searched for "${q.slice(0, 40)}" (${out.length} match${out.length === 1 ? "" : "es"})` };
+        return { ok: true, output: forAi(out.join("\n")) || "No matches.", summary: `Searched for "${q.slice(0, 40)}" (${out.length} match${out.length === 1 ? "" : "es"})` };
+      }
+      case "repo_map": {
+        const under = a.under ? cleanPath(a.under) : "";
+        return { ok: true, output: forAi(await repoMap(fs, under)), summary: `Mapped the project${under ? ` (${under})` : ""}` };
+      }
+      case "find_symbol": {
+        const n = String(a.name ?? "");
+        return { ok: true, output: clip(forAi(await findSymbol(fs, n))), summary: `Looked up ${n.slice(0, 40)}` };
       }
       case "get_problems": {
         const only = a.path ? cleanPath(a.path) : null;
@@ -374,8 +400,8 @@ export async function runTool(call: ToolCall, cp: Checkpoint, signal: { cancelle
               done(-1);
             });
         });
-        recordActivity({ kind: "terminal", action: "command", text: `TMCode AI ran: ${command.slice(0, 120)} (exit ${code ?? "?"})`, data: { command: command.slice(0, 500), exit: code ?? null }, actor: ACTOR, ai: { by: "TMCode AI", how: "agent ran a command" } });
-        return { ok: code === 0, output: clip(`$ ${command}\n${out}\n(exit code ${code ?? "unknown"})`), summary: `Ran \`${command.slice(0, 60)}\` → exit ${code ?? "?"}` };
+        recordActivity({ kind: "terminal", action: "command", text: `TMCode AI ran: ${forAi(command).slice(0, 120)} (exit ${code ?? "?"})`, data: { command: forAi(command).slice(0, 500), exit: code ?? null }, actor: ACTOR, ai: { by: "TMCode AI", how: "agent ran a command" } });
+        return { ok: code === 0, output: clip(forAi(`$ ${command}\n${out}\n(exit code ${code ?? "unknown"})`)), summary: `Ran \`${command.slice(0, 60)}\` → exit ${code ?? "?"}` };
       }
     }
     return { ok: false, output: `Unknown tool ${call.function.name}.`, summary: `Unknown tool ${call.function.name}` };

@@ -45,6 +45,8 @@ export interface Settings {
   "terminal.integrated.stickyScroll.enabled": boolean;
   "terminal.integrated.ai.enabled": boolean;
   "terminal.integrated.ai.hashPrompt": boolean;
+  /** The language TMCode AI answers in (proposal H3); "auto": the language you write in. */
+  "tmcodeAI.replyLanguage": "auto" | "en" | "fr" | "rw";
   "terminal.integrated.ai.suggestFixes": boolean;
   /** "auto": the GPU renderer in the desktop app, the DOM renderer in the browser. */
   "terminal.integrated.gpuAcceleration": "auto" | "on" | "off";
@@ -193,6 +195,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "terminal.integrated.stickyScroll.enabled": true,
   "terminal.integrated.ai.enabled": true,
   "terminal.integrated.ai.hashPrompt": true,
+  "tmcodeAI.replyLanguage": "auto",
   "terminal.integrated.ai.suggestFixes": true,
   "terminal.integrated.gpuAcceleration": "auto",
   "terminal.integrated.minimumContrastRatio": 4.5,
@@ -580,6 +583,23 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "ask", label: "ask" },
           { value: "webServer", label: "webServer (htdocs)" },
           { value: "projectsFolder", label: "projectsFolder (php -S)" },
+        ],
+      },
+    ],
+  },
+  {
+    title: "AI Answers",
+    settings: [
+      {
+        key: "tmcodeAI.replyLanguage",
+        label: "Answer in My Language",
+        description: "The language TMCode AI answers in. Programming keywords stay in English and are explained. Auto: the language you write your question in.",
+        type: "enum",
+        options: [
+          { value: "auto", label: "Auto (the language I write in)" },
+          { value: "en", label: "English" },
+          { value: "fr", label: "Français" },
+          { value: "rw", label: "Kinyarwanda" },
         ],
       },
     ],

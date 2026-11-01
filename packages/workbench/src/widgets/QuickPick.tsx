@@ -171,6 +171,13 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
   }, [index]);
 
   const loading = items === null;
+  // Enter pressed while the items were still loading: take the first match once they arrive.
+  const [pendingEnter, setPendingEnter] = useState(false);
+  useEffect(() => {
+    if (!pendingEnter || loading) return;
+    setPendingEnter(false);
+    if (shown[0]) finish(shown[0].it);
+  }, [pendingEnter, loading, shown]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Frame title={options.title} onCancel={() => finish(undefined)}>
       <div className="tm-qi-input-row">
@@ -192,7 +199,7 @@ function PickWidget({ req }: { req: Extract<Request, { kind: "pick" }> }) {
             else if (e.key === "ArrowUp") setIndex((i) => (n ? (i - 1 + n) % n : 0));
             else if (e.key === "PageDown") setIndex((i) => Math.min(n - 1, i + 10));
             else if (e.key === "PageUp") setIndex((i) => Math.max(0, i - 10));
-            else if (e.key === "Enter") (many ? accept() : shown[index] && finish(shown[index].it));
+            else if (e.key === "Enter") (many ? accept() : loading ? setPendingEnter(true) : shown[index] && finish(shown[index].it));
             else if (many && e.key === " " && !value && shown[index]) toggle(shown[index].it);
             else if (e.key === "Escape") finish(undefined);
             else return;

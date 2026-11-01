@@ -145,6 +145,7 @@ const FR: Record<string, string> = {
   "Task Mentor Projects": "Projets Task Mentor",
   Assignments: "Devoirs",
   Grading: "Notation",
+  "AI Answers": "Réponses de l'IA",
   Extensions: "Extensions",
   Activity: "Activité",
   "Debug Console": "Console de débogage",

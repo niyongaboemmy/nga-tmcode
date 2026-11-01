@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { recordActivity } from "../activity/log";
 import { aiExtensionName, isAiExtension } from "../activity/aiExtensions";
 import { aiGate, thirdPartyMessage } from "../ai/gate";
+import { useLayerInputs } from "../ai/layerState";
 import { useAi } from "../ai/service";
 import { getPlatform, log, notify, openQuickInput, showDialog, useWorkbench } from "../state/store";
 import { useExam } from "../exam/state";
@@ -349,7 +350,7 @@ useExam.subscribe(recheck);
 
 // AI extensions switch off and on with Task Mentor's AI status (school switch, project change).
 let wasAiBlocked = false;
-useAi.subscribe(() => {
+const recheckAi = () => {
   const blocked = aiExtensionsBlocked();
   if (blocked === wasAiBlocked) return;
   wasAiBlocked = blocked;
@@ -362,7 +363,10 @@ useAi.subscribe(() => {
   // The extension host restarts with (or without) them, as after enabling or disabling one.
   useExtensions.setState({ version: useExtensions.getState().version + 1 });
   applyContributions();
-});
+};
+useAi.subscribe(recheckAi);
+// The AI layer (sign-in, device policy, sticky layer, the user's choice) changes it too.
+useLayerInputs.subscribe(recheckAi);
 useWorkbench.subscribe((s, prev) => {
   if (s.policy !== prev.policy) recheck();
 });

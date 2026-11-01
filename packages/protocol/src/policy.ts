@@ -9,9 +9,11 @@ export const IntelligenceSchema = z.enum(["none", "basic", "diagnostics", "full"
 export type Intelligence = z.infer<typeof IntelligenceSchema>;
 
 /**
- * TMCode AI in an exam (AI usage control plan §6.3): Task Mentor fills it from the quiz's
- * `ai_mode`, or "off" when the school's AI policy denies. "hints" has no TMCode feature yet, so
- * only "full" turns TMCode AI on in an exam. Outside exams Task Mentor's AI status decides.
+ * TMCode AI in a session (AI usage control plan §6.3): Task Mentor fills it from the quiz's
+ * `ai_mode`, or "off" when the school's AI policy denies. The values are the three AI layers
+ * (layers.ts): "off" = Exam (no AI), "hints" = Learning (a tutor that writes no code), "full" =
+ * Industrial. A session whose `ai` isn't "off" is a timed task, not an exam (proposal D9).
+ * Outside sessions Task Mentor's AI status decides.
  */
 export const AiModeSchema = z.enum(["off", "hints", "full"]);
 export type AiMode = z.infer<typeof AiModeSchema>;

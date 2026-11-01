@@ -68,7 +68,8 @@ describe("AI gate in exams", () => {
   it("off unless the exam policy says full", () => {
     expect(gate({ exam: true, status: allowedStatus })).toMatchObject({ chat: false, reason: "EXAM_ACTIVE" });
     expect(gate({ exam: true, examAi: "off", status: allowedStatus })).toMatchObject({ chat: false, reason: "EXAM_ACTIVE" });
-    expect(gate({ exam: true, examAi: "hints" })).toMatchObject({ chat: false, complete: false, reason: "HINTS_ONLY" });
+    // "hints" in a session is a timed task in Learning (D9): the tutor, no suggestions, no tools.
+    expect(gate({ exam: true, examAi: "hints" })).toMatchObject({ chat: true, complete: false, thirdParty: false, layer: "learning", tutor: true, timedTask: true, edit: false });
   });
 
   it("full: TMCode AI on, third-party tools still off", () => {
@@ -108,5 +109,62 @@ describe("aiReasonText", () => {
     for (const r of ["GLOBAL_OFF", "TEACHER_OFF", "HINTS_ONLY", "EXAM_ACTIVE", "ROLE_OFF", "ASSESSMENT_LOCKED", "APP_OFF"]) expect(aiReasonText(r)).toBe(AI_REASON_TEXT[r]);
     expect(aiReasonText("SOMETHING_NEW")).toBe("TMCode AI is off.");
     expect(aiReasonText("GLOBAL_OFF", "  ")).toBe(AI_REASON_TEXT.GLOBAL_OFF);
+  });
+});
+
+describe("AI layers (vibe coding proposal §8)", () => {
+  const learning = status({ allowed: true, reason: "ALLOWED_BY_TEACHER", mode: "hints", layer: "learning", features: { assist: true, complete: false }, thirdPartyExtensions: false });
+  const full = status({ allowed: true, reason: "ALLOWED_BY_ROLE", mode: null, layer: "industrial", features: { assist: true, complete: true }, thirdPartyExtensions: true });
+
+  it("Learning from a Task Mentor that knows layers: the tutor, words only", () => {
+    expect(gate({ status: learning, assessmentProject: true })).toMatchObject({ layer: "learning", chat: true, tutor: true, complete: false, edit: false, nlCommand: false, copyCode: false, thirdParty: false, cause: "assignment" });
+    expect(thirdPartyMessage(gate({ status: learning }), false)).toMatch(/Learning/);
+  });
+
+  it("an older Task Mentor's hints is still off (it can't filter the tutor)", () => {
+    expect(gate({ status: status({ allowed: false, reason: "HINTS_ONLY", mode: "hints" }) })).toMatchObject({ layer: "exam", chat: false });
+  });
+
+  it("Industrial: Guided for students, Open for staff", () => {
+    expect(gate({ status: { ...full, staff: false, thirdPartyExtensions: false } })).toMatchObject({ layer: "industrial", profile: "guided", edit: true, nlCommand: true, thirdParty: false });
+    expect(gate({ status: { ...full, staff: true } })).toMatchObject({ layer: "industrial", profile: "open", thirdParty: true });
+    // An Industrial assignment: Guided unless the teacher allowed own tools.
+    const assignment = { ...full, mode: "full" as const, thirdPartyExtensions: true };
+    expect(gate({ status: assignment, assessmentProject: true })).toMatchObject({ profile: "guided", thirdParty: false });
+    expect(gate({ status: { ...assignment, own_tools: true }, assessmentProject: true })).toMatchObject({ profile: "open", thirdParty: true });
+  });
+
+  it("signed out: Industrial · Open (bring your own AI), unless the device says otherwise", () => {
+    expect(gate({ signedIn: false })).toMatchObject({ layer: "industrial", profile: "open", cause: "signed-out", thirdParty: true, chat: true });
+    expect(gate({ signedIn: false, device: { signedOutLayer: "learning" } })).toMatchObject({ layer: "learning", cause: "device", thirdParty: false });
+    expect(gate({ signedIn: false, device: { requireSignIn: true } })).toMatchObject({ layer: "exam", chat: false, reason: "SIGN_IN_REQUIRED" });
+  });
+
+  it("the device's max layer and Guided apply signed in too", () => {
+    expect(gate({ status: { ...full, staff: true }, device: { maxLayer: "learning" } })).toMatchObject({ layer: "learning", cause: "device" });
+    expect(gate({ status: { ...full, staff: true }, device: { forceGuided: true } })).toMatchObject({ profile: "guided", thirdParty: false });
+  });
+
+  it("a sticky assignment layer holds when signed out, and expires", () => {
+    const sticky = { layer: "learning" as const, ownTools: false, projectId: 7, exp: new Date(Date.now() + 3_600_000).toISOString() };
+    expect(gate({ signedIn: false, sticky, assessmentProject: true })).toMatchObject({ layer: "learning", cause: "sticky", thirdParty: false });
+    expect(gate({ signedIn: false, sticky: { ...sticky, exp: new Date(Date.now() - 1000).toISOString() } })).toMatchObject({ layer: "industrial" });
+    // Signed in with a status, the status speaks (the teacher may have raised it since).
+    expect(gate({ status: full, sticky })).toMatchObject({ layer: "industrial" });
+  });
+
+  it("a class ceiling from MIS caps the layer", () => {
+    expect(gate({ status: { ...full, max_layer: "learning" } })).toMatchObject({ layer: "learning", cause: "class" });
+  });
+
+  it("the user may only lower: choosing Learning or No AI", () => {
+    expect(gate({ status: full, choice: "learning" })).toMatchObject({ layer: "learning", cause: "choice", tutor: true });
+    expect(gate({ status: full, choice: "exam" })).toMatchObject({ layer: "exam", chat: false, reason: "YOUR_CHOICE" });
+    expect(gate({ status: learning, choice: "industrial" })).toMatchObject({ layer: "learning" });
+  });
+
+  it("an exam session is Exam; a timed task keeps third-party AI off", () => {
+    expect(gate({ exam: true, examAi: "off", status: full })).toMatchObject({ layer: "exam", cause: "exam-session", timedTask: false });
+    expect(gate({ exam: true, examAi: "full" })).toMatchObject({ layer: "industrial", timedTask: true, thirdParty: false });
   });
 });

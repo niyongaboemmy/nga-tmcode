@@ -44,7 +44,8 @@ test("keybindings.json: a rule adds a key, and it works at once", async ({ page 
   await page.keyboard.press("End");
   await page.keyboard.insertText('\n  { "key": "ctrl+alt+j", "command": "workbench.action.toggleSidebarVisibility" }');
   await expect(editor).toContainText("1 rule");
-  await page.locator(".tm-statusbar").click();
+  // Focus off the editor without pressing a status bar item (the middle is a button now).
+  await page.locator(".tm-statusbar").click({ position: { x: 2, y: 2 } });
   await page.keyboard.press("Control+Alt+j");
   await expect(row(page, "main.py")).toBeHidden();
   await page.keyboard.press("Control+Alt+j");

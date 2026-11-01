@@ -110,13 +110,20 @@ test("TMCode AI: ask about the file, apply its fix as a diff, switch to Auto, gh
   }
 });
 
-test("TMCode AI asks for an NGA sign-in first", async ({ page }) => {
+test("signed out, TMCode AI is Industrial · Open: bring your own AI, or sign in for the school's", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.locator(".tm-statusbar")).toBeVisible();
+  // The layer badge says so, in the status bar.
+  await expect(page.getByTestId("ai-layer-badge")).toHaveAttribute("data-layer", "industrial");
+  await expect(page.getByTestId("ai-layer-badge")).toHaveAttribute("data-profile", "open");
   await page.keyboard.press("ControlOrMeta+Alt+b");
-  await expect(page.getByTestId("tmcode-ai-chat")).toContainText("Sign in to use TMCode AI");
+  const chat = page.getByTestId("tmcode-ai-chat");
+  await expect(chat).toContainText("You're not signed in to NGA");
+  await expect(chat).toContainText("Industrial · Open");
+  await expect(page.getByTestId("ai-pick-own")).toBeVisible();
+  await expect(page.getByTestId("ai-sign-in")).toBeVisible();
 });
 
 test("TMCode AI shows why when Task Mentor says AI is off (AI usage control)", async ({ page }) => {

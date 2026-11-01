@@ -1,6 +1,7 @@
 import { recordActivity, sizeText } from "../activity/log";
 import { monaco, setupMonaco } from "../monaco/setup";
 import { pathOfUri } from "../monaco/documents";
+import { aiMaySee, forAi } from "./agent/guard";
 import { aiGate } from "./gate";
 import { completeAt, useAi } from "./service";
 
@@ -31,7 +32,7 @@ export function wireInlineSuggestions() {
         const { suggestions } = useAi.getState();
         const explicit = context.triggerKind === monaco.languages.InlineCompletionTriggerKind.Explicit;
         if ((!suggestions && !explicit) || !aiGate().complete || Date.now() < quietUntil) return { items: [] };
-        if (model.uri.scheme !== "tmcode") return { items: [] };
+        if (model.uri.scheme !== "tmcode" || !aiMaySee(pathOfUri(model.uri))) return { items: [] };
         const line = model.getLineContent(position.lineNumber);
         const after = line.slice(position.column - 1);
         // Mid-word or mid-line (other than closing brackets): no suggestion, as Copilot does.
@@ -40,8 +41,8 @@ export function wireInlineSuggestions() {
         if (!explicit && !before.trim() && position.lineNumber > 1 && !model.getLineContent(position.lineNumber - 1).trim()) return { items: [] };
         const full = model.getValue();
         const offset = model.getOffsetAt(position);
-        const prefix = full.slice(Math.max(0, offset - 6000), offset);
-        const suffix = full.slice(offset, offset + 2000);
+        const prefix = forAi(full.slice(Math.max(0, offset - 6000), offset));
+        const suffix = forAi(full.slice(offset, offset + 2000));
         if (prefix.trim().length < 8) return { items: [] };
         const k = key(prefix, suffix);
         let text = cache.get(k);

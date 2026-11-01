@@ -24,7 +24,7 @@ import { decorateCommand } from "../../terminal/commandDecorations";
 import type { Settings } from "../../state/settings";
 import { naturalLanguageRequest, worthFixing } from "../../terminal/ai";
 import { closeTerminalAi, openTerminalAi, registerTerminalAiHost, terminalAiEnabled, useTerminalAi } from "../../terminal/aiSession";
-import { useAiGate } from "../../ai/gate";
+import { aiGate as aiGateNow, useAiGate, useAiUiHidden } from "../../ai/gate";
 import { FixHint, TerminalAi } from "./TerminalAi";
 
 /** Terminal colours of the active colour theme (its terminal.* keys); the static palettes cover the moment before it loads. */
@@ -200,7 +200,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
   const [failed, setFailed] = useState<{ id: number; command: string } | null>(null);
   const aiOpen = useTerminalAi((s) => s.open);
   const aiGate = useAiGate();
-  const aiOn = useWorkbench((s) => s.settings["terminal.integrated.ai.enabled"] !== false);
+  const aiHidden = useAiUiHidden();
+  const aiOn = useWorkbench((s) => s.settings["terminal.integrated.ai.enabled"] !== false) && !aiHidden;
   const suggestFixes = useWorkbench((s) => s.settings["terminal.integrated.ai.suggestFixes"] !== false);
   // Terminals whose shell has printed something (until then a skeleton stands in for the prompt).
   const [started, setStarted] = useState<ReadonlySet<number>>(() => new Set());
@@ -385,6 +386,8 @@ export function TerminalView({ visible }: { visible: boolean }) {
     }
     if (e.key !== "Enter" || e.shiftKey || e.altKey || mod || !inst.si.active) return;
     if (useWorkbench.getState().settings["terminal.integrated.ai.hashPrompt"] === false) return;
+    // Learning: "# words" stays a shell comment (no plain words → commands).
+    if (!aiGateNow().nlCommand) return;
     const request = naturalLanguageRequest(inst.si.promptInput() ?? "");
     if (!request) return;
     e.preventDefault();
@@ -651,6 +654,7 @@ export function TerminalView({ visible }: { visible: boolean }) {
       {finding && active && <TerminalFind key={active.id} inst={active} onClose={() => setFinding(false)} />}
       {aiOn && suggestFixes && aiGate.chat && !aiOpen && failed && failed.id === activeId && (
         <FixHint
+          explainOnly={!aiGate.nlCommand}
           command={failed.command}
           onFix={() => (setFailed(null), openTerminalAi({ kind: "fix" }))}
           onExplain={() => (setFailed(null), openTerminalAi({ kind: "explain" }))}

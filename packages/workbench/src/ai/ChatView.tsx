@@ -5,16 +5,21 @@ import { rememberAiCopy } from "../activity/sources";
 import { monaco } from "../monaco/setup";
 import { listFiles } from "../parts/search/search";
 import { signIn, useProjects } from "../projects/service";
-import { activeFilePath, getPlatform, notify, openSpecialEditor, useWorkbench } from "../state/store";
+import { activeFilePath, getPlatform, notify, openFile, openSpecialEditor, useWorkbench } from "../state/store";
+import { debugWithAi, reviewFile, startTour } from "./actions";
+import { expandRecipe, recipeSuggestions } from "./recipes";
 import { showInputBox, showQuickPick, type PickItem } from "../widgets/QuickPick";
 import { loadAiKeys, providerLabel, setCustomModels, useAiKeys } from "./keys";
 import { Codicon } from "../widgets/icons";
 import { renderMarkdown } from "../widgets/markdown";
 import { AiExtensions } from "./AiExtensions";
 import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli, signInCli, useAiClis, validCliModel, type CliId } from "./aiClis";
-import { useAiGate } from "./gate";
+import { gateLabel, useAiGate } from "./gate";
+import { allowAiCopy } from "./copyGuard";
+import { aiMaySee } from "./agent/guard";
+import { detectLocalModels, DIRECT_SUGGESTED, isLocalMode, loadLocalSettings, useLocalAi } from "./direct";
 import { insertAtCursor, proposeEdit } from "./apply";
-import { approveStep, ask, MODES, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
+import { answerQuestion, approveStep, ask, MODES, modeLabelNow, newChat, referTo, resend, startBuilding, stopAnswer, undoRequest, useChat, type ChatMode, type Message, type Step } from "./chat";
 import { aiReadsImages, effectiveMode, loadAiSettings, modeLabel, refreshAiStatus, setAgentMode, setAiMode, setAiSuggestions, useAi } from "./service";
 import { scaleImage } from "./imageScale";
 import { addAttachments, ATTACH_LIMITS, formatSize, fromAttachedFile, fromBrowserFile, pastedAttachment, textAttachment, type Attachment } from "./attachments";
@@ -72,6 +77,8 @@ function resolveTarget(named: string | null): string | null {
 function CodeBlock({ part, model }: { part: Extract<Part, { kind: "code" }>; model: string }) {
   const ref = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
+  // Learning: a block that got through (the teacher's tiny syntax example) can be read, not taken.
+  const takeable = useAiGate().copyCode;
   useEffect(() => {
     const el = ref.current;
     if (!el || part.open) return;
@@ -85,6 +92,13 @@ function CodeBlock({ part, model }: { part: Extract<Part, { kind: "code" }>; mod
     <div className="tm-chat-code">
       <div className="tm-chat-code-bar">
         <span className="tm-chat-code-lang">{part.file ?? (part.lang || "code")}</span>
+        {!takeable && (
+          <span className="tm-chat-code-lock" title="Learning: you write every line" data-testid="ai-code-locked">
+            <Codicon name="lock" /> read only
+          </span>
+        )}
+        {takeable && (
+          <>
         <button
           type="button"
           className="tm-chat-code-btn"
@@ -113,6 +127,8 @@ function CodeBlock({ part, model }: { part: Extract<Part, { kind: "code" }>; mod
         >
           <Codicon name="sparkle" /> Apply
         </button>
+          </>
+        )}
       </div>
       <pre ref={ref} className="tm-chat-code-body">
         {part.code}
@@ -156,7 +172,39 @@ function Diff({ d }: { d: NonNullable<Step["diff"]> }) {
   );
 }
 
-const STEP_ICON: Record<string, string> = { list_files: "list-tree", read_file: "file", search: "search", get_problems: "warning", edit_file: "edit", write_file: "new-file", rename_file: "replace", delete_file: "trash", run_command: "terminal" };
+/** ask_user (C12): the agent's question, its choices and a box for your own words. */
+function QuestionCard({ step }: { step: Step }) {
+  const [text, setText] = useState("");
+  const q = step.question!;
+  return (
+    <div className="tm-chat-question" data-testid="ai-question">
+      <div className="tm-chat-question-choices">
+        {q.choices.map((c) => (
+          <button key={c} type="button" className="tm-chat-btn" onClick={() => answerQuestion(step.id, c)} data-testid="ai-question-choice">
+            {c}
+          </button>
+        ))}
+      </div>
+      <form
+        className="tm-chat-question-own"
+        onSubmit={(e) => {
+          e.preventDefault();
+          answerQuestion(step.id, text);
+        }}
+      >
+        <input className="tm-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Or answer in your own words…" aria-label="Your answer" data-testid="ai-question-input" />
+        <button type="submit" className="tm-chat-btn is-primary" disabled={!text.trim()}>
+          Answer
+        </button>
+        <button type="button" className="tm-chat-btn" onClick={() => answerQuestion(step.id, null)}>
+          Skip
+        </button>
+      </form>
+    </div>
+  );
+}
+
+const STEP_ICON: Record<string, string> = { ask_user: "question", explore: "telescope", repo_map: "type-hierarchy", find_symbol: "symbol-method", list_files: "list-tree", read_file: "file", search: "search", get_problems: "warning", edit_file: "edit", write_file: "new-file", rename_file: "replace", delete_file: "trash", run_command: "terminal" };
 
 function StepCard({ messageId, step }: { messageId: number; step: Step }) {
   const [open, setOpen] = useState(step.status === "waiting");
@@ -167,7 +215,7 @@ function StepCard({ messageId, step }: { messageId: number; step: Step }) {
       <button type="button" className="tm-chat-step-head" onClick={() => detail && setOpen(!open)} aria-expanded={open}>
         <Codicon name={step.status === "running" ? "loading" : step.status === "failed" ? "error" : step.status === "rejected" || step.status === "refused" ? "circle-slash" : STEP_ICON[step.tool] ?? "tools"} className={step.status === "running" ? "codicon-modifier-spin" : ""} />
         <span className="tm-chat-step-title">{step.title}</span>
-        {step.status === "waiting" && <span className="tm-chat-step-badge">Needs your OK</span>}
+        {step.status === "waiting" && <span className="tm-chat-step-badge">{step.question ? "Needs your answer" : "Needs your OK"}</span>}
         {step.status === "rejected" && <span className="tm-chat-step-badge is-muted">Declined</span>}
         {detail && <Codicon name={open ? "chevron-down" : "chevron-right"} className="tm-chat-step-chev" />}
       </button>
@@ -178,7 +226,8 @@ function StepCard({ messageId, step }: { messageId: number; step: Step }) {
           {step.output && <pre className="tm-chat-cmd-out">{step.output}</pre>}
         </div>
       )}
-      {step.status === "waiting" && (
+      {step.status === "waiting" && step.question && <QuestionCard step={step} />}
+      {step.status === "waiting" && !step.question && (
         <div className="tm-chat-approve">
           <button type="button" className="tm-chat-btn is-primary" onClick={() => approveStep(messageId, step.id, true)} data-testid="ai-approve">
             <Codicon name="check" /> {step.tool === "run_command" ? "Run" : "Approve"}
@@ -204,6 +253,7 @@ function MessageActions({ m }: { m: Message }) {
         title="Copy"
         aria-label="Copy"
         onClick={() => {
+          if (m.role === "assistant" && !allowAiCopy(m.content)) return;
           copyText(m.content);
           if (m.role === "assistant") rememberAiCopy(m.content, "TMCode AI");
           setCopied(true);
@@ -233,8 +283,59 @@ function MessageActions({ m }: { m: Message }) {
 
 let editPrompt: (m: Message) => void = () => undefined;
 
+/**
+ * Explain before accept (E1, Industrial · Guided): one question about the change before you keep
+ * it. It never blocks; the answer goes to the Activity log, where the teacher sees it (I1).
+ */
+function ExplainChange({ m }: { m: Message }) {
+  const [text, setText] = useState("");
+  const [done, setDone] = useState(false);
+  if (done) return <p className="tm-chat-note" data-testid="ai-explained">Thanks: your explanation is in your Activity log.</p>;
+  return (
+    <form
+      className="tm-chat-explain"
+      data-testid="ai-explain-change"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!text.trim()) return;
+        recordActivity({ kind: "ai", action: "explained", text: `Explained TMCode AI's change to ${m.checkpoint!.files.join(", ")}: "${text.trim().slice(0, 300)}"`, data: { files: m.checkpoint!.files.join(", "), explanation: text.trim().slice(0, 1000) }, actor: { type: "you" }, ai: { by: "TMCode AI", how: "change explained by the student" } });
+        setDone(true);
+      }}
+    >
+      <label>
+        <Codicon name="mortar-board" /> Before you keep it: in one sentence, what does this change do, and why?
+      </label>
+      <div className="tm-chat-question-own">
+        <input className="tm-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="It… because…" aria-label="Explain the change" />
+        <button type="submit" className="tm-chat-btn is-primary" disabled={!text.trim()}>
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+const PLAN_FILE = ".tmcode/plan/plan.md";
+
+/** B1: the plan becomes a file you can edit; "Start building" then carries it out. */
+async function savePlan(content: string) {
+  const fs = getPlatform().fs;
+  await fs.createDir(".tmcode").catch(() => undefined);
+  await fs.createDir(".tmcode/plan").catch(() => undefined);
+  const tasks = content
+    .split("\n")
+    .map((l) => l.replace(/^\s*\d+[.)]\s+/, "- [ ] "))
+    .join("\n");
+  await fs.writeFile(PLAN_FILE, `# Plan\n\n${tasks.trim()}\n\n## How we'll check it\n\n- [ ] The tests pass\n- [ ] It works in the preview\n`);
+  recordActivity({ kind: "ai", action: "plan", path: PLAN_FILE, text: `Saved TMCode AI's plan as ${PLAN_FILE}`, actor: { type: "you" }, ai: { by: "TMCode AI", how: "plan saved as a file" } });
+  openFile(PLAN_FILE, { pinned: true });
+}
+
 function Answer({ m }: { m: Message }) {
   const parts = useMemo(() => splitAnswer(m.content), [m.content]);
+  const g = useAiGate();
+  const canEdit = g.edit;
+  const scaffolds = g.layer === "industrial" && g.profile === "guided" && useAi.getState().status?.staff !== true;
   const model = m.provider ? `${m.provider} · ${m.model}` : (m.model ?? "");
   const busy = useChat((s) => s.busy);
   return (
@@ -274,8 +375,12 @@ function Answer({ m }: { m: Message }) {
           )}
         </div>
       )}
-      {m.mode === "plan" && !m.streaming && !m.error && m.content.trim() && (
+      {m.checkpoint && !m.checkpoint.undone && !m.streaming && scaffolds && <ExplainChange m={m} />}
+      {m.mode === "plan" && canEdit && !m.streaming && !m.error && m.content.trim() && (
         <div className="tm-chat-approve">
+          <button type="button" className="tm-chat-btn" onClick={() => void savePlan(m.content)} disabled={busy} data-testid="ai-save-plan" title={`Save as ${PLAN_FILE}: edit it, then build from it`}>
+            <Codicon name="save" /> Save as Plan
+          </button>
           <button type="button" className="tm-chat-btn is-primary" onClick={() => startBuilding("edit")} disabled={busy} data-testid="ai-start-building">
             <Codicon name="play" /> Start building
           </button>
@@ -315,6 +420,16 @@ function Answer({ m }: { m: Message }) {
           {m.model && !m.error && (
             <span className="tm-chat-meta">
               <Codicon name="sparkle" /> {m.model.replace(/:free$/, "")} · {m.provider}
+            </span>
+          )}
+          {m.privacy && !m.error && (
+            <span className="tm-chat-meta tm-chat-privacy" title="What this provider's terms say about your data" data-testid="ai-privacy">
+              <Codicon name="shield" /> {m.privacy}
+            </span>
+          )}
+          {!!m.filtered && (
+            <span className="tm-chat-meta" title="Learning: the tutor's code was removed before you saw it" data-testid="ai-filtered">
+              <Codicon name="filter" /> {m.filtered} line{m.filtered === 1 ? "" : "s"} of code removed
             </span>
           )}
           {m.content && <MessageActions m={m} />}
@@ -364,7 +479,8 @@ const within = (p: Promise<unknown>, ms: number) => Promise.race([p.catch(() => 
 /** The picker's items: what Task Mentor offers (asked first when not known yet) and the AI CLIs. */
 async function modeItems(): Promise<PickItem[]> {
   // The status says which models, premium and own keys there are: without it only Free and Auto showed.
-  await Promise.all([useAi.getState().status ? null : within(refreshAiStatus(), 8000), useAiKeys.getState().loaded ? null : within(loadAiKeys(), 3000), within(detectAllClis(), 400)]);
+  const signedInNow = !!useProjects.getState().account?.signed_in;
+  await Promise.all([useAi.getState().status || !signedInNow ? null : within(refreshAiStatus(), 8000), useAiKeys.getState().loaded ? null : within(loadAiKeys(), 3000), within(detectAllClis(), 400)]);
   const { status, mode, error } = useAi.getState();
   const keys = useAiKeys.getState();
   const icon = (id: string, fallback: string) => (id === mode ? "check" : fallback);
@@ -393,12 +509,33 @@ async function modeItems(): Promise<PickItem[]> {
   }
   // Also while the status couldn't load (it used to vanish then); an older Task Mentor, or own keys off: none.
   if (status?.tiers?.byok || !status) byok.push({ id: "__keys", label: keys.saved.length ? "Manage Your API Keys…" : "Add Your Own API Key…", description: "Settings › TMCode AI", icon: "gear", alwaysShow: true });
+  // Signed out, Task Mentor's list isn't there: your keys go straight to the provider (ai/direct.ts).
+  const signedOut = !useProjects.getState().account?.signed_in;
+  if (signedOut) {
+    byok.length = 0;
+    for (const provider of keys.saved) {
+      const models = [...new Set([...(DIRECT_SUGGESTED[provider] ?? []), ...(keys.models[provider] ?? [])])];
+      for (const m of models) byok.push({ id: `byok:${provider}/${m}`, label: m, description: `${providerLabel(provider)} · your key, direct`, icon: icon(`byok:${provider}/${m}`, "key") });
+      byok.push({ id: `__custom:${provider}`, label: `Another ${providerLabel(provider)} model…`, description: "type its id", icon: "add" });
+    }
+    byok.push({ id: "__keys", label: keys.saved.length ? "Manage Your API Keys…" : "Add Your Own API Key…", description: "Settings › TMCode AI", icon: "gear", alwaysShow: true });
+  }
+  // Local models (Ollama, LM Studio): free, offline, nothing leaves the computer. Found in the
+  // background (the chat looks when it opens), so the picker never waits for them.
+  const lo = useLocalAi.getState();
+  const local: PickItem[] = getPlatform().http
+    ? lo.models.length
+      ? lo.models.map((m) => ({ id: `local:${m}`, label: m, description: "on this computer", icon: icon(`local:${m}`, "device-desktop") }))
+      : [{ id: "__local:find", label: lo.state === "checking" ? "Looking for local models…" : "Find Local Models (Ollama, LM Studio)", detail: lo.error ?? "Use a model on this computer: free, offline, private.", icon: lo.state === "checking" ? "loading" : "search" }]
+    : [];
   const section = (list: PickItem[], label: string) => list.map((x, i) => (i === 0 ? { ...x, separator: label } : x));
+  if (signedOut) return [...section(cliItems(icon), "Your AI accounts"), ...section(byok, "Your keys"), ...section(local, "On this computer")];
   return [
     ...section(free, "Free"),
     ...section(premium, `Premium${pu ? ` · ${Math.max(0, pu.limit - pu.used)} of ${pu.limit} left today` : ""}`),
     ...section(cliItems(icon), "Your AI accounts"),
     ...section(byok, "Your keys"),
+    ...section(local, "On this computer"),
   ];
 }
 
@@ -444,6 +581,11 @@ export async function pickMode() {
     return model ? setAiMode(`cli:${id}/${model.trim()}`) : undefined;
   }
   if (picked.id === "__cli:blocked") return void notify("info", cliBlocked() ?? "AI CLIs aren't available here.");
+  if (picked.id === "__local:find") {
+    const found = await detectLocalModels();
+    if (found.length) return pickMode();
+    return void notify("info", useLocalAi.getState().error ?? "Install Ollama (ollama.com) or LM Studio, pull a model, then pick it here.");
+  }
   if (picked.id.startsWith("__custom:")) {
     const provider = picked.id.slice("__custom:".length);
     const model = await showInputBox({ title: `A ${providerLabel(provider)} model`, prompt: "The model id, as the provider names it", placeholder: "e.g. gpt-4.1-mini", validate: (v) => (!v.trim() || /\s/.test(v.trim()) ? "One model id, without spaces." : null) });
@@ -533,7 +675,7 @@ async function desktopAttachments(paths: string[]): Promise<(Attachment | string
 let fileCache: { at: number; files: string[] } | null = null;
 async function projectFiles(): Promise<string[]> {
   if (fileCache && Date.now() - fileCache.at < 15_000) return fileCache.files;
-  const files = await listFiles(getPlatform().fs).catch(() => [] as string[]);
+  const files = (await listFiles(getPlatform().fs).catch(() => [] as string[])).filter((f) => aiMaySee(f));
   fileCache = { at: Date.now(), files };
   return files;
 }
@@ -543,6 +685,14 @@ const STARTERS = [
   { icon: "bug", label: "Find and fix bugs", prompt: "Find the bugs in this code and fix them." },
   { icon: "beaker", label: "Write tests", prompt: "Write unit tests for this code." },
   { icon: "lightbulb", label: "Make it better", prompt: "Make this code clearer and better." },
+];
+
+/** Learning's starters: the student commits first (Lead-and-Reveal), the tutor never writes code. */
+const TUTOR_STARTERS = [
+  { icon: "question", label: "Give me a hint", prompt: "I'm stuck. Give me one hint about the next step, without code." },
+  { icon: "bug", label: "Explain my error", prompt: "Help me understand the error I'm getting. Ask me what I think it means first." },
+  { icon: "book", label: "Explain a concept", prompt: "Explain the concept this code relies on, in words, with an example input and output." },
+  { icon: "lightbulb", label: "What should I check?", prompt: "What should I check or test next in my code? Ask me questions." },
 ];
 
 export function ChatView() {
@@ -637,6 +787,11 @@ export function ChatView() {
   useEffect(() => {
     if (signedIn) void refreshAiStatus();
   }, [signedIn, projectId]);
+  useEffect(() => {
+    void loadAiKeys();
+    // Local models: looked for once, quietly, when the chat opens.
+    void loadLocalSettings().then(() => (useLocalAi.getState().state === "unknown" && getPlatform().http ? detectLocalModels() : null));
+  }, []);
   useLayoutEffect(() => {
     const el = list.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
@@ -659,15 +814,24 @@ export function ChatView() {
       </div>
     );
   }
-  if (!signedIn) {
+  // Signed out: bring your own AI (proposal §8.6). Your key, a local model or your AI account
+  // answer here; the school's free AI needs a sign-in.
+  const ownAi = mode.startsWith("byok:") || isLocalMode(mode) || mode.startsWith("cli:");
+  if (!signedIn && !ownAi) {
     return (
       <div className="tm-chat tm-chat-welcome" data-testid="tmcode-ai-chat">
         <div className="tm-chat-hero">
           <Codicon name="sparkle" />
           <h2>TMCode AI</h2>
-          <p>Ask about your code, or let it work on your project with you. Free AI, through your NGA account.</p>
-          <button type="button" className="tm-button" onClick={() => void signIn()}>
-            Sign in to use TMCode AI
+          <p>
+            You're not signed in to NGA, so TMCode is in <strong>{gateLabel(gate)}</strong> mode: use your own AI. Pick your API key, a local model (Ollama, LM Studio) or your Claude, ChatGPT or Gemini account. Nothing goes through NGA.
+          </p>
+          <button type="button" className="tm-button" onClick={() => void pickMode()} data-testid="ai-pick-own">
+            Use My Own AI…
+          </button>
+          <p className="tm-chat-note">NGA students: sign in to get your school's AI and your assignments.</p>
+          <button type="button" className="tm-button is-secondary" onClick={() => void signIn()} data-testid="ai-sign-in">
+            Sign In to NGA
           </button>
         </div>
         <AiExtensions />
@@ -687,6 +851,17 @@ export function ChatView() {
     setAttachments([]);
     setAttachError(null);
     historyAt.current = null;
+    // Slash recipes (L6): one word for a common job; in Learning they become guides.
+    const recipe = expandRecipe(q, gate.tutor, agentMode);
+    if (recipe?.kind === "action") {
+      if (recipe.action === "review") return void reviewFile();
+      if (recipe.action === "debug") return debugWithAi();
+      if (recipe.action === "tour") return void startTour();
+      if (gate.tutor) return void ask(`Help me write a plan for: ${recipe.arg || "this task"}. Ask me questions about what it should do; I write the plan.`, { file: withFile, problems: withProblems }, "chat");
+      setAgentMode("plan");
+      return void ask(recipe.arg || "Plan the next step for this project.", { file: withFile, problems: withProblems, mentions: used, attachments: files }, "plan");
+    }
+    if (recipe?.kind === "ask") return void ask(recipe.prompt, { file: withFile, problems: withProblems, mentions: used, attachments: files }, recipe.mode);
     void ask(q, { file: withFile, problems: withProblems, mentions: used, attachments: files });
   };
 
@@ -738,6 +913,12 @@ export function ChatView() {
   };
 
   const updateSuggest = async (value: string, caret: number) => {
+    // "/" at the start: the slash recipes (L6).
+    const slash = /^\/([a-z0-9-]*)$/i.exec(value.slice(0, caret));
+    if (slash) {
+      const items = recipeSuggestions(slash[1]).map((r) => `/${r.id}`);
+      return setSuggest(items.length ? { query: slash[1], items, index: 0 } : null);
+    }
     const m = /(^|\s)@([\w./-]*)$/.exec(value.slice(0, caret));
     if (!m) return setSuggest(null);
     const q = m[2].toLowerCase();
@@ -747,6 +928,12 @@ export function ChatView() {
 
   const pickMention = (path: string) => {
     const el = input.current;
+    if (path.startsWith("/")) {
+      setText(`${path} `);
+      setSuggest(null);
+      setTimeout(() => el?.focus(), 0);
+      return;
+    }
     const caret = el?.selectionStart ?? text.length;
     const before = text.slice(0, caret).replace(/@([\w./-]*)$/, `@${path} `);
     setText(before + text.slice(caret));
@@ -761,6 +948,8 @@ export function ChatView() {
   const left = status ? Math.max(0, status.you.chat.limit - status.you.chat.used) : null;
   const or = status?.openrouter;
   const current = MODES.find((m) => m.id === agentMode) ?? MODES[1];
+  const tutor = gate.tutor;
+  const allowance = status?.learning?.allowance ?? null;
 
   return (
     <div
@@ -786,19 +975,35 @@ export function ChatView() {
         </div>
       )}
       <div className="tm-chat-head">
-        <div className="tm-chat-agent-wrap">
-          <button type="button" className="tm-chat-agent-mode" onClick={() => setModesOpen(!modesOpen)} title={current.detail} data-testid="ai-agent-mode" aria-haspopup="menu" aria-expanded={modesOpen}>
-            <Codicon name={current.icon} />
-            <span>{current.label}</span>
-            <Codicon name="chevron-down" />
-          </button>
-          {modesOpen && <ModeMenu onClose={() => setModesOpen(false)} />}
-        </div>
+        {tutor ? (
+          <span className="tm-chat-agent-mode is-tutor" title={`${gateLabel(gate)}: AI helps you think, you write every line. ${gate.detail ?? ""}`.trim()} data-testid="ai-tutor-mode">
+            <Codicon name="lightbulb" />
+            <span>{modeLabelNow(agentMode, gate.layer)}{status?.learning?.strength === "hints" ? " · hints" : ""}</span>
+          </span>
+        ) : (
+          <div className="tm-chat-agent-wrap">
+            <button type="button" className="tm-chat-agent-mode" onClick={() => setModesOpen(!modesOpen)} title={current.detail} data-testid="ai-agent-mode" aria-haspopup="menu" aria-expanded={modesOpen}>
+              <Codicon name={current.icon} />
+              <span>{current.label}</span>
+              <Codicon name="chevron-down" />
+            </button>
+            {modesOpen && <ModeMenu onClose={() => setModesOpen(false)} />}
+          </div>
+        )}
         <button type="button" className="tm-chat-mode" onClick={() => void pickMode()} title="Which AI answers" data-testid="ai-mode">
-          <Codicon name={mode === "auto" ? "sparkle" : mode === "free" ? "gift" : mode.startsWith("premium:") ? "star-full" : mode.startsWith("byok:") ? "key" : "circuit-board"} />
+          <Codicon name={mode === "auto" ? "sparkle" : mode === "free" ? "gift" : mode.startsWith("premium:") ? "star-full" : mode.startsWith("byok:") ? "key" : isLocalMode(mode) ? "device-desktop" : "circuit-board"} />
           <span>{modeLabel(effectiveMode(mode, status), status)}</span>
           <Codicon name="chevron-down" />
         </button>
+        {tutor && allowance ? (
+          <span
+            className={`tm-chat-quota is-hearts ${allowance.left <= 2 ? "is-low" : ""}`}
+            title={`Questions: ${allowance.left} of ${allowance.max} left. One comes back every ${allowance.regain_minutes} min${allowance.next_in_s ? ` (next in ${Math.ceil(allowance.next_in_s / 60)} min)` : ""}: a pause to think is part of learning.`}
+            data-testid="ai-allowance"
+          >
+            <Codicon name="heart" /> {allowance.left}/{allowance.max}
+          </span>
+        ) : (
         <span
           className={`tm-chat-quota ${left !== null && left <= 5 ? "is-low" : ""}`}
           title={[left !== null ? `You: ${left} of ${status!.you.chat.limit} questions left today` : null, status?.you.agent ? `Agent steps: ${status.you.agent.limit - status.you.agent.used} of ${status.you.agent.limit} left today` : null, or ? `School's OpenRouter free requests: ${or.remaining} of ${or.limit} left today` : null].filter(Boolean).join("\n")}
@@ -806,30 +1011,51 @@ export function ChatView() {
         >
           {left !== null ? `${left} left today` : error ? "offline" : "…"}
         </span>
+        )}
         <span className="tm-chat-spacer" />
-        <button type="button" className={`tm-chat-icon ${suggestions ? "is-on" : ""}`} title={suggestions ? "Suggestions while typing: on" : "Suggestions while typing: off"} aria-pressed={suggestions} onClick={() => setAiSuggestions(!suggestions)} data-testid="ai-suggestions">
-          <Codicon name="lightbulb-autofix" />
-        </button>
+        {gate.complete && (
+          <button type="button" className={`tm-chat-icon ${suggestions ? "is-on" : ""}`} title={suggestions ? "Suggestions while typing: on" : "Suggestions while typing: off"} aria-pressed={suggestions} onClick={() => setAiSuggestions(!suggestions)} data-testid="ai-suggestions">
+            <Codicon name="lightbulb-autofix" />
+          </button>
+        )}
         <button type="button" className="tm-chat-icon" title="New Chat" onClick={newChat} data-testid="ai-new-chat">
           <Codicon name="add" />
         </button>
       </div>
-      <div ref={list} className="tm-chat-list tm-scroll" role="log" aria-live="polite">
+      <div
+        ref={list}
+        className="tm-chat-list tm-scroll"
+        role="log"
+        aria-live="polite"
+        onCopy={(e) => {
+          // Learning: selected code can't leave the panel either (the copy guard, logged).
+          const sel = window.getSelection()?.toString() ?? "";
+          if (sel && !allowAiCopy(sel, "the AI panel")) e.preventDefault();
+        }}
+      >
         {!messages.length && (
           <div className="tm-chat-empty">
-            <div className="tm-chat-hero">
-              <Codicon name="sparkle" />
-              <h2>{agentMode === "chat" ? "Ask TMCode AI" : "What should we build?"}</h2>
-              <p>{agentMode === "chat" ? (file ? `About ${file.slice(file.lastIndexOf("/") + 1)}, or anything about code.` : "Ask anything about code.") : `${current.label}: ${current.detail.toLowerCase()}.`}</p>
-            </div>
+            {tutor ? (
+              <div className="tm-chat-hero is-tutor" data-testid="ai-tutor-hero">
+                <Codicon name="lightbulb" />
+                <h2>Your tutor</h2>
+                <p>Learning: AI helps you think. You write every line. Ask about an error, a concept, or what to try next; the tutor answers in words, never with code.</p>
+              </div>
+            ) : (
+              <div className="tm-chat-hero">
+                <Codicon name="sparkle" />
+                <h2>{agentMode === "chat" ? "Ask TMCode AI" : "What should we build?"}</h2>
+                <p>{agentMode === "chat" ? (file ? `About ${file.slice(file.lastIndexOf("/") + 1)}, or anything about code.` : "Ask anything about code.") : `${current.label}: ${current.detail.toLowerCase()}.`}</p>
+              </div>
+            )}
             <div className="tm-chat-starters">
-              {STARTERS.map((s) => (
+              {(tutor ? TUTOR_STARTERS : STARTERS).map((s) => (
                 <button key={s.label} type="button" className="tm-chat-starter" onClick={() => send(s.prompt)} disabled={!file && s.icon !== "lightbulb"}>
                   <Codicon name={s.icon} /> {s.label}
                 </button>
               ))}
             </div>
-            <AiExtensions />
+            {!tutor && <AiExtensions />}
             <p className="tm-chat-note">Everything AI does is in your Activity log, and your teacher sees it for linked work.</p>
           </div>
         )}
@@ -905,8 +1131,9 @@ export function ChatView() {
           {suggest && (
             <div className="tm-chat-suggest" role="listbox" data-testid="ai-mentions">
               {suggest.items.map((f, i) => (
-                <button key={f} type="button" role="option" aria-selected={i === suggest.index} className={i === suggest.index ? "is-on" : ""} onMouseDown={(e) => (e.preventDefault(), pickMention(f))}>
-                  <Codicon name="file" /> {f}
+                <button key={f} type="button" role="option" aria-selected={i === suggest.index} className={i === suggest.index ? "is-on" : ""} onMouseDown={(e) => (e.preventDefault(), pickMention(f))} data-testid={f.startsWith("/") ? "ai-recipe" : undefined}>
+                  <Codicon name={f.startsWith("/") ? "zap" : "file"} /> {f}
+                  {f.startsWith("/") && <span className="tm-chat-suggest-detail">{recipeSuggestions(f.slice(1)).find((r) => r.id === f.slice(1))?.label}</span>}
                 </button>
               ))}
             </div>

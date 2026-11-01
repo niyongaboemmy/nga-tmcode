@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useAiUiHidden } from "../../ai/gate";
 import { tr, useLocale } from "../../messages/i18n";
 import { ProblemsView } from "./ProblemsView";
 import { clearOutput, getPlatform, showPanel, togglePanel, togglePanelMaximized, useWorkbench, type PanelId } from "../../state/store";
@@ -32,7 +33,8 @@ import { openTerminalAi } from "../../terminal/aiSession";
 function TerminalActions() {
   const count = useTerminalPanel((s) => s.count);
   const name = useTerminalPanel((s) => s.activeName);
-  const aiOn = useWorkbench((s) => s.settings["terminal.integrated.ai.enabled"] !== false);
+  const aiHidden = useAiUiHidden();
+  const aiOn = useWorkbench((s) => s.settings["terminal.integrated.ai.enabled"] !== false) && !aiHidden;
   return (
     <>
       {count === 1 && name && (

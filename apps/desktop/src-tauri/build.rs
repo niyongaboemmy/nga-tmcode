@@ -96,6 +96,8 @@ fn main() {
             "ai_key_set",
             "ai_key_get",
             "ai_key_delete",
+            // AI layers: the managed device policy, and no AI requests in an Exam-layer exam
+            "device_policy",
             "webview_publish",
             "webview_dispose",
             "auth_sign_in",
@@ -103,6 +105,7 @@ fn main() {
             "auth_reopen_browser",
             "auth_status",
             "auth_sign_out",
+            "exam_ai_off",
             "tm_api",
             "tm_stream",
             "tm_stream_cancel",

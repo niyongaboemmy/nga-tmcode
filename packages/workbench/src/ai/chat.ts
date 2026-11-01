@@ -3,9 +3,14 @@ import { recordActivity } from "../activity/log";
 import { getDocument, languageForPath } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
+import { listFiles } from "../parts/search/search";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
-import { Checkpoint, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
+import { Checkpoint, EXPLORE_TOOLS, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
+import { aiMaySee, combine, forAi, guardCall, loadAgentGuard } from "./agent/guard";
+import { projectRules } from "./agent/projectRules";
+import { replyLanguage } from "./actions";
+import { aiGate } from "./gate";
 import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
 import { attachmentChips, attachmentText, type Attachment } from "./attachments";
 
@@ -42,9 +47,15 @@ export interface Step {
   diff?: { path: string; before: string; after: string };
   command?: string;
   output?: string;
+  /** ask_user (C12): the agent's question and its choices, waiting for the answer. */
+  question?: { text: string; choices: string[] };
 }
 
 export interface Message {
+  /** Learning: lines of code the filter cut from this answer. */
+  filtered?: number;
+  /** The answering provider's terms in a few words ("Free tier · terms 18+ · no training"). */
+  privacy?: string;
   id: number;
   role: "user" | "assistant";
   content: string;
@@ -78,6 +89,9 @@ let seq = 0;
 let cancel: (() => void) | null = null;
 const stopFlag = { cancelled: false };
 const approvals = new Map<string, (ok: boolean) => void>();
+/** ask_user steps waiting for the answer (null: skipped). */
+const answers = new Map<string, (answer: string | null) => void>();
+const EXPLORE_STEPS = 8;
 const checkpoints = new Map<number, Checkpoint>();
 /** "Allow all edits / commands for this request" after the first OK. */
 let allowAllFor: number | null = null;
@@ -96,7 +110,10 @@ export interface ContextOptions {
 }
 
 export async function gatherContext(opts: ContextOptions): Promise<{ context: ChatContext; chips: string[] }> {
-  const file = activeFilePath();
+  await loadAgentGuard();
+  // A file kept away from AI (secrets, .tmcodeignore, teacher-hidden) never goes along.
+  const active = activeFilePath();
+  const file = aiMaySee(active) ? active : null;
   const chips: string[] = [];
   const context: ChatContext = {};
   if (file) {
@@ -106,10 +123,10 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
     context.language = model?.getLanguageId() ?? languageForPath(file);
     const sel = ed?.getModel() === model ? ed?.getSelection() : null;
     if (model && sel && !sel.isEmpty()) {
-      context.selection = model.getValueInRange(sel).slice(0, 20_000);
+      context.selection = forAi(model.getValueInRange(sel).slice(0, 20_000));
       chips.push(`${file.slice(file.lastIndexOf("/") + 1)}: lines ${sel.startLineNumber}–${sel.endLineNumber}`);
     } else if (opts.file && model) {
-      context.fileText = model.getValue().slice(0, 60_000);
+      context.fileText = forAi(model.getValue().slice(0, 60_000));
       chips.push(file.slice(file.lastIndexOf("/") + 1));
     }
     if (opts.problems && model) {
@@ -122,11 +139,11 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
   }
   const extra: string[] = [];
   for (const m of opts.mentions ?? []) {
-    if (m === file) continue;
+    if (m === file || !aiMaySee(m)) continue;
     const open = getDocument(m)?.getValue();
     const text = open ?? (await getPlatform().fs.readFile(m).catch(() => null));
     if (text === null) continue;
-    extra.push(`File ${m}:\n\`\`\`\n${text.slice(0, 30_000)}\n\`\`\``);
+    extra.push(`File ${m}:\n\`\`\`\n${forAi(text.slice(0, 30_000))}\n\`\`\``);
     chips.push(m.slice(m.lastIndexOf("/") + 1));
   }
   const attached = attachmentText(opts.attachments ?? []);
@@ -134,6 +151,17 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
   chips.push(...attachmentChips(opts.attachments ?? []));
   if (extra.length) context.task = [context.task, ...extra].filter(Boolean).join("\n\n");
   // A teacher reviewing a submission: Task Mentor answers as a grading assistant (staff only).
+  const lang = replyLanguage();
+  if (lang) context.reply_language = lang;
+  // AGENTS.md (B2): the project's own rules, nearest folder last.
+  const rules = await projectRules(getPlatform().fs, active).catch(() => null);
+  if (rules?.text) {
+    context.task = [context.task, `Project rules (${rules.files.join(", ")}): follow them.\n${forAi(rules.text)}`].filter(Boolean).join("\n\n");
+    chips.push(`Rules: ${rules.files.length} file${rules.files.length === 1 ? "" : "s"}`);
+  }
+  // Industrial · Guided (A6, E7): scaffolds on for students.
+  const g = aiGate();
+  if (g.layer === "industrial" && g.profile === "guided" && useAi.getState().status?.staff !== true) context.scaffolds = true;
   const grading = gradingTools.chatContext?.() ?? null;
   if (grading) {
     context.purpose = grading.purpose;
@@ -158,9 +186,17 @@ function priorTurns(): WireMessage[] {
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
+/** What a mode is called now: in Learning every question goes to the tutor. */
+export function modeLabelNow(mode: ChatMode, layer = aiGate().layer): string {
+  return layer === "learning" ? "Tutor" : MODES.find((m) => m.id === mode)!.label;
+}
+
 export async function ask(text: string, opts: ContextOptions = { file: true, problems: true }, mode: ChatMode = useAi.getState().agentMode) {
   let question = text.trim();
   if (!question || useChat.getState().busy) return;
+  // Learning: the tutor, which may read the project (read-only tools) and never changes it.
+  const layer = aiGate().layer;
+  if (layer === "learning") mode = getPlatform().fs ? "plan" : "chat";
   const ref = useChat.getState().reference;
   if (ref) question = `About your earlier answer:\n> ${ref.excerpt.replace(/\n/g, "\n> ")}\n\n${question}`;
   // An AI CLI in an agent mode: it works on the project itself, in a terminal (ai/aiClis.ts).
@@ -176,10 +212,10 @@ export async function ask(text: string, opts: ContextOptions = { file: true, pro
     kind: "ai",
     action: "chat",
     path: context.file,
-    text: `Asked TMCode AI${mode === "chat" ? "" : ` (${MODES.find((m) => m.id === mode)!.label})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
-    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
+    text: `Asked TMCode AI${layer === "learning" ? " (Tutor, Learning)" : mode === "chat" ? "" : ` (${modeLabelNow(mode, layer)})`}: "${question.length > 90 ? `${question.slice(0, 87)}…` : text.trim().slice(0, 90)}"`,
+    data: { question: text.trim().slice(0, 600), context: chips.join(", ") || "none", mode: useAi.getState().mode, agent_mode: mode, layer, ...(opts.attachments?.length ? { attachments: opts.attachments.map((a) => a.name).join(", ") } : {}) },
     actor: { type: "you" },
-    ai: { by: "TMCode AI", how: mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
+    ai: { by: "TMCode AI", how: layer === "learning" ? "question asked to the tutor (Learning)" : mode === "chat" ? "question asked in the chat" : `asked to work on the project (${mode})` },
   });
   // Images go with this question only (earlier turns are sent as text).
   const turn: WireMessage = { role: "user", content: images.length ? [{ type: "text", text: question }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))] : question };
@@ -213,7 +249,7 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
       wire,
       context,
       {
-        meta: (m) => patch(id, { model: m.model, provider: m.provider }),
+        meta: (m) => patch(id, { model: m.model, provider: m.provider, ...(m.privacy ? { privacy: m.privacy } : {}) }),
         delta: (t) => {
           text += t;
           patch(id, { content: prefix + text });
@@ -221,8 +257,15 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
         done: (d) => {
           cancel = null;
           if (useAi.getState().status) {
-            useAi.setState((s) => ({ status: s.status && { ...s.status, you: { ...s.status.you, ...(d.you ? { chat: d.you } : {}), ...(d.steps ? { agent: d.steps } : {}) } } }));
+            useAi.setState((s) => ({
+              status: s.status && {
+                ...s.status,
+                you: { ...s.status.you, ...(d.you ? { chat: d.you } : {}), ...(d.steps ? { agent: d.steps } : {}) },
+                ...(d.allowance && s.status.learning ? { learning: { ...s.status.learning, allowance: d.allowance } } : {}),
+              },
+            }));
           }
+          if (d.filtered?.removed) noteFiltered(id, d.filtered.removed, d.provider, d.model);
           resolve({ text, toolCalls: (d.tool_calls ?? []) as ToolCall[], provider: d.provider, model: d.model });
         },
         error: (e) => {
@@ -230,7 +273,7 @@ function streamOnce(id: number, wire: WireMessage[], context: ChatContext | unde
           reject(e);
         },
       },
-      agent && agent.mode !== "chat" ? { mode: agent.mode, step: agent.step, tools: toolDefs(agent.mode, canRun, !!gradingTools.chatContext?.()) } : undefined,
+      agent && agent.mode !== "chat" ? { mode: agent.mode, step: agent.step, tools: toolDefs(agent.mode, canRun, !!gradingTools.chatContext?.(), aiGate().layer) } : undefined,
     )
       .then((c) => (cancel = c))
       .catch(reject);
@@ -244,6 +287,19 @@ async function answerOnce(id: number, wire: WireMessage[], context: ChatContext)
   } catch (e) {
     fail(id, e);
   }
+}
+
+/** Learning: the filter cut code from an answer. The teacher sees it in the log (I1: filter hits). */
+function noteFiltered(id: number, removed: number, provider: string, model: string) {
+  patch(id, (m) => ({ filtered: (m.filtered ?? 0) + removed }));
+  recordActivity({
+    kind: "ai",
+    action: "filtered",
+    text: `Learning: TMCode removed ${removed} line${removed === 1 ? "" : "s"} of code from the tutor's answer`,
+    data: { removed },
+    actor: { type: "tmcode-ai" },
+    ai: { by: "TMCode AI", how: "Learning filter removed code", model: `${provider} · ${model}` },
+  });
 }
 
 function finish(id: number, content: string, provider: string, model: string) {
@@ -278,12 +334,14 @@ function setStep(id: number, step: Step) {
 
 /** The agent: ask, run the tools the AI calls (with the student's OK where the mode wants it), repeat. */
 async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], context: ChatContext) {
+  await loadAgentGuard();
   const cp = new Checkpoint();
   checkpoints.set(id, cp);
   allowAllFor = null;
   let content = "";
   let provider = "";
   let model = "";
+  let heal: HealState = { attempts: 0, last: null };
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       if (stopFlag.cancelled) break;
@@ -293,21 +351,53 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
       provider = r.provider;
       model = r.model;
       if (r.text.trim()) content = prefix + r.text;
-      if (!r.toolCalls.length) break;
+      if (!r.toolCalls.length) {
+        // L3: check the work (the project's tests), and let the agent fix what fails, with a breaker.
+        const again = await selfCheck(id, mode, cp, heal);
+        if (!again) break;
+        heal = again.state;
+        wire = [...wire, { role: "assistant", content: r.text || "Done." }, { role: "user", content: again.prompt }];
+        continue;
+      }
       wire = [...wire, { role: "assistant", content: r.text || null, tool_calls: r.toolCalls }];
       for (const call of r.toolCalls) {
         if (stopFlag.cancelled) break;
         const args = parseArgs(call);
-        const verdict = permission(mode, call.function.name, args);
+        // The agent asks instead of guessing (C12): the step waits for the user's answer.
+        if (call.function.name === "ask_user") {
+          const text = String(args.question ?? "").slice(0, 400) || "Which way should I go?";
+          const choices = (Array.isArray(args.choices) ? args.choices : []).map((c) => String(c).slice(0, 120)).filter(Boolean).slice(0, 4);
+          setStep(id, { id: call.id, tool: "ask_user", title: text, status: "waiting", question: { text, choices } });
+          const answer = await new Promise<string | null>((resolve) => answers.set(call.id, resolve));
+          answers.delete(call.id);
+          setStep(id, { id: call.id, tool: "ask_user", title: text, status: answer ? "done" : "rejected", output: answer ?? undefined });
+          wire = [...wire, { role: "tool", tool_call_id: call.id, content: answer ? `The user answered: ${answer}` : "The user skipped the question. Make a sensible choice and say which." }];
+          continue;
+        }
+        // A read-only helper researches and answers with a summary (C11 Explore).
+        if (call.function.name === "explore") {
+          const q = String(args.question ?? "").slice(0, 600);
+          setStep(id, { id: call.id, tool: "explore", title: `Exploring: ${q.slice(0, 80)}`, status: "running" });
+          const summary = await explore(q, context).catch((e) => `The explorer couldn't finish: ${asAiError(e).message}`);
+          setStep(id, { id: call.id, tool: "explore", title: `Explored: ${q.slice(0, 80)}`, status: "done", output: summary });
+          wire = [...wire, { role: "tool", tool_call_id: call.id, content: summary }];
+          continue;
+        }
+        const layer = aiGate().layer;
+        const modeVerdict = permission(mode, call.function.name, args, layer);
+        // The safety rails (rules, ignore list, package check) tighten what the mode allows.
+        const rails = modeVerdict === "refuse" ? { verdict: null } : await guardCall(mode, call.function.name, args);
+        const verdict = combine(modeVerdict, rails);
         const p = await preview(call);
         let output: string;
         if (verdict === "refuse") {
-          setStep(id, { id: call.id, tool: call.function.name, title: p.title, status: "refused" });
-          output = "Not allowed in Plan mode: present your plan instead of changing files.";
+          setStep(id, { id: call.id, tool: call.function.name, title: rails.reason ? `${p.title}: ${rails.reason}` : p.title, status: "refused" });
+          output = rails.reason ? `Refused: ${rails.reason} Don't retry it; continue without it or ask the user.` : layer === "learning" ? "Not allowed in Learning: the student writes every line. Explain in words what they could try instead." : "Not allowed in Plan mode: present your plan instead of changing files.";
         } else {
           let ok = true;
-          if (verdict === "ask" && allowAllFor !== id) {
-            setStep(id, { id: call.id, tool: call.function.name, title: p.title, status: "waiting", diff: p.diff, command: p.command });
+          // "Allow all" never skips a rails question (a rule's ask, a new package).
+          if (verdict === "ask" && (allowAllFor !== id || rails.verdict === "ask")) {
+            setStep(id, { id: call.id, tool: call.function.name, title: rails.warning ? `${p.title} — ${rails.warning}` : p.title, status: "waiting", diff: p.diff, command: p.command });
             ok = await new Promise<boolean>((resolve) => approvals.set(call.id, resolve));
             approvals.delete(call.id);
           }
@@ -344,7 +434,102 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
   } finally {
     for (const [, resolve] of approvals) resolve(false);
     approvals.clear();
+    for (const [, resolve] of answers) resolve(null);
+    answers.clear();
   }
+}
+
+// ── L3: the self-healing loop, with a circuit breaker ──
+
+export interface HealState {
+  attempts: number;
+  /** The last failure, to stop when the same one comes back. */
+  last: string | null;
+}
+
+export const HEAL_MAX = 5;
+
+/** The project's own test command, if it has one (never anything destructive). */
+export async function detectTestCommand(): Promise<string | null> {
+  const fs = getPlatform().fs;
+  const pkg = await fs.readFile("package.json").catch(() => null);
+  if (pkg) {
+    try {
+      const t = (JSON.parse(pkg) as { scripts?: Record<string, string> }).scripts?.test;
+      if (t && !/no test specified/.test(t)) return "npm test --silent";
+    } catch {
+      /* not JSON */
+    }
+  }
+  const files = await listFiles(fs).catch(() => [] as string[]);
+  if (files.some((f) => /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(f))) return "python3 -m pytest -q";
+  if (files.some((f) => /_test\.go$/.test(f))) return "go test ./...";
+  if (files.includes("Cargo.toml")) return "cargo test --quiet";
+  return null;
+}
+
+/** A failure's fingerprint: the output's tail without numbers that change between runs (times, ids). */
+export function failureSignature(output: string): string {
+  return output.slice(-600).replace(/\d+(\.\d+)?\s*m?s\b/g, "#").replace(/0x[0-9a-f]+/gi, "#").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * After the agent says it's done (Industrial, Edit automatically / Auto, files changed): run the
+ * tests. Pass: stop. Fail: hand the output back, at most HEAL_MAX times, and stop at once when the
+ * same failure repeats (the breaker), never running anything but the project's own test command.
+ */
+async function selfCheck(id: number, mode: AgentMode, cp: Checkpoint, state: HealState): Promise<{ prompt: string; state: HealState } | null> {
+  const g = aiGate();
+  if (stopFlag.cancelled || g.layer !== "industrial" || (mode !== "edit" && mode !== "auto") || !cp.files.length || !getPlatform().proc) return null;
+  const command = await detectTestCommand();
+  if (!command) return null;
+  const stepId = `selfcheck-${state.attempts + 1}`;
+  setStep(id, { id: stepId, tool: "run_command", title: `Self-check ${state.attempts + 1}: ${command}`, status: "running", command });
+  const res = await runTool({ id: stepId, type: "function", function: { name: "run_command", arguments: JSON.stringify({ command }) } }, cp, stopFlag);
+  if (res.ok) {
+    setStep(id, { id: stepId, tool: "run_command", title: `Self-check passed: ${command}`, status: "done", command, output: res.output });
+    return null;
+  }
+  const sig = failureSignature(res.output);
+  const attempts = state.attempts + 1;
+  if (sig === state.last || attempts > HEAL_MAX) {
+    setStep(id, { id: stepId, tool: "run_command", title: sig === state.last ? "Self-check stopped: the same failure came back (circuit breaker)" : `Self-check stopped after ${HEAL_MAX} attempts`, status: "failed", command, output: res.output });
+    recordActivity({ kind: "ai", action: "self-heal-stopped", text: `TMCode AI's self-check stopped (${sig === state.last ? "same failure twice" : `${HEAL_MAX} attempts`})`, data: { attempts }, actor: { type: "tmcode-ai" }, ai: { by: "TMCode AI", how: "self-healing loop stopped by the breaker" } });
+    return null;
+  }
+  setStep(id, { id: stepId, tool: "run_command", title: `Self-check ${attempts}/${HEAL_MAX} failed: fixing`, status: "failed", command, output: res.output });
+  return {
+    state: { attempts, last: sig },
+    prompt: `The self-check (\`${command}\`) failed, attempt ${attempts} of ${HEAL_MAX}:\n\n${res.output.slice(-4000)}\n\nFix the cause with the smallest change. Don't change or delete tests to make them pass, and don't run destructive commands.`,
+  };
+}
+
+/** The user's answer to an ask_user step (null: skip). */
+export function answerQuestion(stepId: string, answer: string | null) {
+  answers.get(stepId)?.(answer && answer.trim() ? answer.trim().slice(0, 600) : null);
+}
+
+/**
+ * Explore (C11): a separate, read-only run with its own small conversation, so the main agent's
+ * context stays small. It may list, read, search and use the code map; it answers with a summary.
+ */
+async function explore(question: string, context: ChatContext): Promise<string> {
+  const canRun = !!getPlatform().proc;
+  const tools = toolDefs("plan", canRun, false, aiGate().layer).filter((t) => EXPLORE_TOOLS.has(t.function.name));
+  let wire: WireMessage[] = [{ role: "user", content: `Research this question in the project with the read-only tools, then answer with a concise summary (the files, functions and how they connect; at most 200 words). Don't propose changes.\n\nQuestion: ${question}` }];
+  const cp = new Checkpoint();
+  for (let step = 0; step < EXPLORE_STEPS; step++) {
+    if (stopFlag.cancelled) return "(stopped)";
+    const r = await new Promise<{ text: string; calls: ToolCall[] }>((resolve, reject) => {
+      let text = "";
+      chat(wire, step === 0 ? { file: context.file, language: context.language } : undefined, { meta() {}, delta: (t) => (text += t), done: (d) => resolve({ text, calls: (d.tool_calls ?? []) as ToolCall[] }), error: reject }, { mode: "plan", step: step + 1, tools }).catch(reject);
+    });
+    const calls = r.calls.filter((c) => EXPLORE_TOOLS.has(c.function.name));
+    if (!calls.length) return r.text.trim() || "(the explorer found nothing to report)";
+    wire = [...wire, { role: "assistant", content: r.text || null, tool_calls: calls }];
+    for (const c of calls) wire = [...wire, { role: "tool", tool_call_id: c.id, content: (await runTool(c, cp, stopFlag)).output }];
+  }
+  return "(the explorer ran out of steps; ask a narrower question)";
 }
 
 /** The student's answer to a waiting step. `all`: allow the rest of this request without asking. */

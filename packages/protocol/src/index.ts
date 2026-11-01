@@ -5,3 +5,5 @@ export * from "./telemetry";
 export * from "./output";
 export * from "./journal";
 export * from "./aiTools";
+export * from "./layers";
+export * from "./learningFilter";

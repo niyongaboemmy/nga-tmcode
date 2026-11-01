@@ -27,6 +27,9 @@ import { useIsTeacher, useRoleChecking } from "../state/role";
 // ── Run hub ──
 import { RunMenuHost, RunStatusItems } from "../run/RunHubViews";
 import { ExtensionStatusItems } from "../exthost/ui";
+import { LayerBadge } from "../ai/LayerBadge";
+import { endTour, goToStop, useTour } from "../ai/actions";
+import { useAiGate } from "../ai/gate";
 import { encodingLabel, pickEncoding, pickEol, pickIndentation, pickLanguage, toggleScreenReaderMode, useActiveFileInfo } from "./editorStatus";
 
 // TMCode has no lab lockdown yet, so a "secure" exam runs exactly like a monitored one and says so.
@@ -247,6 +250,30 @@ function BlameItem() {
   );
 }
 
+/** The code tour (N6): where you are, with previous / next / end. */
+function TourItem() {
+  const { stops, at } = useTour();
+  if (at < 0 || !stops.length) return null;
+  const s = stops[at];
+  return (
+    <span className="tm-status-item tm-status-tour" data-testid="tour-status" title={s.text}>
+      <Codicon name="map" />
+      <button type="button" className="tm-action" aria-label="Previous stop" disabled={at === 0} onClick={() => goToStop(at - 1)}>
+        <Codicon name="chevron-left" />
+      </button>
+      <span>
+        Tour {at + 1}/{stops.length}: {s.text.length > 60 ? `${s.text.slice(0, 57)}…` : s.text}
+      </span>
+      <button type="button" className="tm-action" aria-label="Next stop" disabled={at >= stops.length - 1} onClick={() => goToStop(at + 1)}>
+        <Codicon name="chevron-right" />
+      </button>
+      <button type="button" className="tm-action" aria-label="End the tour" onClick={endTour}>
+        <Codicon name="close" />
+      </button>
+    </span>
+  );
+}
+
 export function StatusBar({ chord }: { chord: string | null }) {
   const mode = useWorkbench((s) => s.policy.mode);
   const problems = useWorkbench((s) => s.problems);
@@ -272,16 +299,20 @@ export function StatusBar({ chord }: { chord: string | null }) {
   const checking = useRoleChecking();
   const signedIn = useProjects((s) => !!s.account?.signed_in);
   const simple = simplePref && mode === "practice" && signedIn && !teacher && !checking;
+  // A session whose AI isn't off is a timed task, not an exam (proposal D9).
+  const timedTask = useAiGate().timedTask;
   const errors = problems.filter((p) => p.severity === "error").length;
   const warnings = problems.filter((p) => p.severity === "warning").length;
 
   return (
     <footer className={`tm-statusbar is-${mode} ${debugging ? "is-debugging" : ""} ${simple ? "is-simple" : ""}`} role="status" aria-label="Status Bar" data-simple={simple ? "true" : undefined}>
       <div className="tm-status-left">
-        <Item className="tm-status-mode" title={MODE_TITLE[mode]}>
-          <Codicon name={MODE_ICON[mode]} />
-          <span>{MODE_LABEL[mode]}</span>
+        <Item className="tm-status-mode" title={timedTask ? "TMCode: a timed task. Your teacher allowed AI, so this isn't an exam (exams are always No AI)." : MODE_TITLE[mode]}>
+          <Codicon name={timedTask ? "watch" : MODE_ICON[mode]} />
+          <span>{timedTask ? "Timed task" : MODE_LABEL[mode]}</span>
         </Item>
+        <LayerBadge />
+        <TourItem />
         {!simple && <GitItems />}
         <ProfileItem />
         <WorkspaceFolderItem />

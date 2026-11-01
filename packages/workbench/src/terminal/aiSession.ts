@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { recordActivity } from "../activity/log";
 import { CLIS, cliOf, isCliProvider } from "../ai/aiClis";
-import { aiGate } from "../ai/gate";
+import { aiGate, aiUiHidden } from "../ai/gate";
 import { AiRequestError, asAiError, chat, modeLabel, effectiveMode, useAi, type WireMessage } from "../ai/service";
 import type { OsKind } from "../platform/types";
 import { getPlatform, useWorkbench } from "../state/store";
@@ -80,7 +80,8 @@ function stop() {
 
 /** Is TMCode AI in the terminal on (the setting), whatever the school allows? */
 export function terminalAiEnabled(): boolean {
-  return useWorkbench.getState().settings["terminal.integrated.ai.enabled"] !== false;
+  // Exam: the terminal has no AI at all (A5).
+  return useWorkbench.getState().settings["terminal.integrated.ai.enabled"] !== false && !aiUiHidden();
 }
 
 /** Opens the widget on the active terminal; with `request`, asks at once. */
@@ -152,6 +153,11 @@ export async function askTerminalAi(kind: TerminalAiKind, request: string) {
     useTerminalAi.setState({ phase: "error", error: new AiRequestError(gate.reason ?? "AI_DISABLED", gate.message ?? "TMCode AI is off.", gate.reason ?? undefined) });
     return;
   }
+  // Learning: TMCode AI explains what you typed, in words; it never writes the command for you.
+  if (!gate.nlCommand && kind !== "explain") {
+    useTerminalAi.setState({ phase: "error", error: new AiRequestError("LAYER_LEARNING", "Learning: TMCode AI won't write commands for you. Use Explain on a failed command, or ask your tutor in the chat.") });
+    return;
+  }
   const followUp = s.phase === "done" && s.turns.length > 0 && kind === "ask";
   const recent = host.recent(kind !== "ask");
   if (kind !== "ask" && !recent.length) {
@@ -180,7 +186,9 @@ export async function askTerminalAi(kind: TerminalAiKind, request: string) {
       },
       done: (d) => {
         cancelStream = null;
-        const parsed = parseTerminalAnswer(raw);
+        const answer = parseTerminalAnswer(raw);
+        // Learning: words only, whatever came back (the server's filter cuts commands too).
+        const parsed = aiGate().nlCommand ? answer : { ...answer, commands: [] };
         if (!parsed.commands.length && !parsed.explanation && !parsed.question) return fail(new AiRequestError("EMPTY", `${isCliProvider(d.provider) ? d.provider : "TMCode AI"} sent an empty answer. Try again, or pick another model.`));
         useTerminalAi.setState({
           phase: "done",

@@ -1,3 +1,4 @@
+import { filterLearningText, identifiersOf } from "@tmcode/protocol";
 import type { TmResponse, TmStreamEvent } from "./types";
 
 /**
@@ -7,6 +8,8 @@ import type { TmResponse, TmStreamEvent } from "./types";
  * "PROVIDER_QUOTA" makes Free answers fail as an exhausted OpenRouter pool would.
  * localStorage "tmcode:mock-ai-policy" = a JSON AI decision ({"allowed":false,"reason":"TEACHER_OFF",
  * "message":"…"}) makes the status carry it (AI usage control) and chat/complete answer 403 AI_DISABLED.
+ * With "layer":"learning" it is a Task Mentor that knows the AI layers: the tutor answers, its code
+ * is cut by the Learning filter (done.filtered), completions are refused (LAYER_LEARNING).
  * localStorage "tmcode:mock-ai-tiers" = {"premium":true,"byok":true,"staff":true} makes the status a
  * Task Mentor with premium AI and own keys (without it: an older one, free only). An own key "bad"
  * is refused (BYOK_REJECTED); `lastChatBody` on the returned object is the last /chat body.
@@ -21,7 +24,7 @@ function mockTiers(): { premium?: boolean; byok?: boolean; staff?: boolean } | n
   }
 }
 
-function mockPolicy(): { allowed: boolean; reason: string; message: string; thirdPartyExtensions?: boolean } | null {
+function mockPolicy(): { allowed: boolean; reason: string; message: string; thirdPartyExtensions?: boolean; layer?: string; mode?: string; own_tools?: boolean; staff?: boolean } | null {
   try {
     const raw = typeof localStorage !== "undefined" ? localStorage.getItem("tmcode:mock-ai-policy") : null;
     return raw ? JSON.parse(raw) : null;
@@ -105,7 +108,19 @@ export function memoryAi() {
         })(),
         ...(() => {
           const p = mockPolicy();
-          return p ? { allowed: p.allowed, reason: p.reason, message: p.message, mode: null, features: { assist: p.allowed, complete: p.allowed }, thirdPartyExtensions: p.thirdPartyExtensions ?? p.allowed } : {};
+          if (!p) return {};
+          const learning = p.layer === "learning";
+          return {
+            allowed: p.allowed,
+            reason: p.reason,
+            message: p.message,
+            mode: p.mode ?? (learning ? "hints" : null),
+            features: { assist: p.allowed, complete: p.allowed && !learning },
+            thirdPartyExtensions: learning ? false : (p.thirdPartyExtensions ?? p.allowed),
+            ...(p.layer ? { layer: p.layer, own_tools: !!p.own_tools } : {}),
+            ...(p.staff !== undefined ? { staff: p.staff } : {}),
+            ...(learning ? { learning: { strength: "tutor", pseudo: true, syntax: false, allowance: { max: 10, regain_minutes: 3, left: 10 - used, next_in_s: null } } } : {}),
+          };
         })(),
       },
     };
@@ -201,20 +216,34 @@ export function memoryAi() {
         send("meta", { provider, model });
         if (job.agent) {
           const turn = agentTurn(job as { context: Record<string, unknown>; agent: { mode: string }; messages: Wire[] });
+          // Learning: the tutor's words pass the filter; tools that change files never reach the app.
+          if (mockPolicy()?.layer === "learning") {
+            turn.text = filterLearningText(turn.text).text;
+            turn.tool_calls = turn.tool_calls?.filter((c) => ["list_files", "read_file", "search", "get_problems", "repo_map", "find_symbol", "explore", "ask_user"].includes(c.function.name));
+            if (!turn.tool_calls?.length) delete turn.tool_calls;
+          }
           if (turn.text) send("delta", { text: turn.text });
           // Like Task Mentor: only an agent's first step is a question; the rest are agent steps.
           if (!job.agent.step) used++;
           send("done", { provider, model, you: { used, limit: CHAT_LIMIT }, ...(turn.tool_calls ? { tool_calls: turn.tool_calls } : {}) });
           return onEvent({ type: "end" });
         }
-        const text = job.context.purpose === "terminal" ? terminalAnswer(job.question) : answer(job.question, job.context);
+        let text = job.context.purpose === "terminal" ? terminalAnswer(job.question) : answer(job.question, job.context);
+        // Learning (a Task Mentor that knows the layers): the answer passes the code filter.
+        const learning = mockPolicy()?.layer === "learning";
+        let removed = 0;
+        if (learning) {
+          const f = filterLearningText(text, { identifiers: identifiersOf(String(job.context.fileText ?? job.context.selection ?? "")) });
+          text = f.text;
+          removed = f.removed;
+        }
         for (let i = 0; i < text.length && !cancelled; i += 12) {
           send("delta", { text: text.slice(i, i + 12) });
           await new Promise((r) => setTimeout(r, 8));
         }
         if (cancelled) return;
         used++;
-        send("done", { provider, model, you: { used, limit: CHAT_LIMIT } });
+        send("done", { provider, model, you: { used, limit: CHAT_LIMIT }, ...(learning ? { layer: "learning", filtered: { removed } } : {}) });
         onEvent({ type: "end" });
       })();
       return { cancel: () => (cancelled = true) };

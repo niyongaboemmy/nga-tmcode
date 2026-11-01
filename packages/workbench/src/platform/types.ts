@@ -229,6 +229,13 @@ export interface Platform {
    * build keeps them in memory only. Never localStorage, never logged.
    */
   aiKeys?: AiKeysHost;
+  /**
+   * The managed device policy (AI layers, A8): IT's read-only policy.json, or null when there is
+   * none (desktop: device_policy.rs). Absent → no device policy.
+   */
+  devicePolicy?(): Promise<unknown>;
+  /** The exam's AI layer is Exam (A5): only "is AI allowed?" may reach Task Mentor (desktop: account.rs). */
+  setExamAiOff?(off: boolean): void;
 }
 
 export interface AiKeysHost {

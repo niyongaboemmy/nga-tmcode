@@ -4,6 +4,7 @@ import { useExam } from "../exam/state";
 import type { AiToolEvent } from "../platform/types";
 import { getPlatform, notify, useWorkbench } from "../state/store";
 import { aiGate, thirdPartyMessage } from "./gate";
+import { useLayerInputs } from "./layerState";
 import { useAi } from "./service";
 
 /**
@@ -56,6 +57,7 @@ export function wireAiTools() {
   };
   push();
   useAi.subscribe(push);
+  useLayerInputs.subscribe(push);
   useExam.subscribe(push);
   useWorkbench.subscribe((s, prev) => {
     if (s.policy !== prev.policy) push();
