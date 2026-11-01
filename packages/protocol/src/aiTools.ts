@@ -29,6 +29,8 @@ export const AI_TOOL_CATALOG: AiToolCatalog = {
     "claude-code": "Claude Code",
     codex: "Codex CLI",
     gemini: "Gemini CLI",
+    agy: "Antigravity CLI",
+    antigravity: "Antigravity CLI",
     copilot: "GitHub Copilot CLI",
     "github-copilot-cli": "GitHub Copilot CLI",
     aider: "Aider",

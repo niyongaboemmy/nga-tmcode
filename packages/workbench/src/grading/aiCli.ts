@@ -7,17 +7,18 @@ import { draftKey } from "./drafts";
 import { useGrading } from "./service";
 
 /**
- * "Grade with Claude Code / Gemini CLI / Codex": a terminal in the review folder runs the AI CLI
+ * "Grade with Claude Code / Gemini (Antigravity) / Gemini CLI / Codex": a terminal in the review folder runs the AI CLI
  * with a prompt that points it to .tmcode/grading/README.md; it writes .tmcode/grading/draft.json,
  * which TMCode puts in the grade form (aiGrading.ts). "Copy Grading Prompt" is the same for an
  * extension's chat (the Claude Code or Gemini Code Assist extension). Third-party AI tools only
  * where the school allows them for staff (the AI gate's `thirdParty`).
  */
 
-export type GradingCli = "claude" | "gemini" | "codex";
+export type GradingCli = "claude" | "agy" | "gemini" | "codex";
 
-export const GRADING_CLIS: Record<GradingCli, { label: string; bin: string; command: (prompt: string) => string; install: string; docs: string }> = {
+export const GRADING_CLIS: Record<GradingCli, { label: string; bin: string; command: (prompt: string) => string; install: string; installWindows?: string; docs: string }> = {
   claude: { label: "Claude Code", bin: "claude", command: (p) => `claude "${p}"`, install: "npm install -g @anthropic-ai/claude-code", docs: "https://docs.anthropic.com/en/docs/claude-code" },
+  agy: { label: "Gemini (Antigravity)", bin: "agy", command: (p) => `agy -i "${p}"`, install: "curl -fsSL https://antigravity.google/cli/install.sh | bash", installWindows: "irm https://antigravity.google/cli/install.ps1 | iex", docs: "https://antigravity.google/docs/cli" },
   gemini: { label: "Gemini CLI", bin: "gemini", command: (p) => `gemini -i "${p}"`, install: "npm install -g @google/gemini-cli", docs: "https://github.com/google-gemini/gemini-cli" },
   codex: { label: "Codex", bin: "codex", command: (p) => `codex "${p}"`, install: "npm install -g @openai/codex", docs: "https://github.com/openai/codex" },
 };
@@ -36,7 +37,8 @@ export function gradingToolsBlocked(): string | null {
 async function installed(bin: string): Promise<boolean | null> {
   const p = getPlatform();
   if (!p.proc || p.kind !== "desktop") return null;
-  const check = p.os === "windows" ? `where ${bin}` : `command -v ${bin}`;
+  // agy's installer puts it in ~/.local/bin, which a login shell may not have on PATH yet.
+  const check = p.os === "windows" ? `where ${bin}` : `command -v ${bin}${bin === "agy" ? ' || test -x "$HOME/.local/bin/agy"' : ""}`;
   return new Promise<boolean | null>((resolve) => {
     const t = setTimeout(() => resolve(null), 5000);
     p.proc!.run(check, "", (e) => {
@@ -71,8 +73,9 @@ export async function gradeWithCli(tool: GradingCli): Promise<boolean> {
   }
   const has = await installed(cli.bin);
   if (has === false) {
-    notify("warning", `${cli.label} isn't installed on this computer. Install it in a terminal with: ${cli.install}`, [
-      { label: "Copy Install Command", run: () => void copy(cli.install) },
+    const install = (getPlatform().os === "windows" && cli.installWindows) || cli.install;
+    notify("warning", `${cli.label} isn't installed on this computer. Install it in a terminal with: ${install}`, [
+      { label: "Copy Install Command", run: () => void copy(install) },
       { label: "Open Install Guide", run: () => void getPlatform().openExternal?.(cli.docs) },
     ], { kind: "result" });
     return false;

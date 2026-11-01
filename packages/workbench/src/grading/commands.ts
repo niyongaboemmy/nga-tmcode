@@ -186,7 +186,7 @@ export function registerGradingCommands() {
       if (!controller()?.aiDraft?.()) notify("info", "Pick a student who handed in, then Draft with AI.");
     },
   });
-  for (const tool of ["claude", "gemini", "codex"] as const) {
+  for (const tool of ["claude", "agy", "gemini", "codex"] as const) {
     registerCommand({
       id: `grading.gradeWith.${tool}`,
       title: `Grade with ${GRADING_CLIS[tool].label}`,

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getPlatform, notify } from "../state/store";
 import { Codicon } from "../widgets/icons";
 import { aiKeysSupported, BYOK_PROVIDERS, KEY_PAGES, keyShapeWarning, loadAiKeys, providerLabel, removeAiKey, saveAiKey, setCustomModels, useAiKeys, verifyAiKey, type KeyCheck } from "./keys";
-import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli, openCliPlans, signInCli, signOutCli, useAiClis, type CliId } from "./aiClis";
+import { CLI_IDS, CLIS, cliBlocked, cliOf, detectAllClis, detectCli, installCli, installCommand, openCliPlans, signInCli, signOutCli, useAiClis, type CliId } from "./aiClis";
 import { useAiGate } from "./gate";
 import { refreshAiStatus, setAiMode, useAi } from "./service";
 
@@ -172,7 +172,7 @@ function CliAccountRow({ id }: { id: CliId }) {
         </span>
         <span className="tm-ai-key-actions">
           {info.state === "missing" && (
-            <button type="button" className="tm-button tm-button--small" onClick={() => installCli(id)} data-testid="ai-account-install" title={spec.install}>
+            <button type="button" className="tm-button tm-button--small" onClick={() => installCli(id)} data-testid="ai-account-install" title={installCommand(id, getPlatform().os === "windows")}>
               <Codicon name="cloud-download" /> Install
             </button>
           )}
@@ -193,7 +193,7 @@ function CliAccountRow({ id }: { id: CliId }) {
             </button>
           )}
           {info.state === "ready" && !spec.signOut && (
-            <button type="button" className="tm-link-button" onClick={() => signInCli(id)} title={`Opens ${spec.label}: use its /auth command to switch account`}>
+            <button type="button" className="tm-link-button" onClick={() => signInCli(id)} title={`Opens ${spec.label}: use its ${spec.switchAccount ?? "/auth"} command to switch account`}>
               Switch Account
             </button>
           )}
@@ -206,12 +206,17 @@ function CliAccountRow({ id }: { id: CliId }) {
         </span>
       </div>
       {info.state === "unavailable" && info.detail && <p className="tm-muted">{info.detail}</p>}
+      {spec.note && (
+        <p className="tm-muted" data-testid="ai-account-note">
+          {spec.note}
+        </p>
+      )}
     </div>
   );
 }
 
 /**
- * Settings › TMCode AI › Your AI accounts: Claude Code, ChatGPT (Codex) and Gemini CLI signed in
+ * Settings › TMCode AI › Your AI accounts: Claude Code, ChatGPT (Codex), Gemini (Antigravity) and Gemini CLI signed in
  * with the user's own accounts, to answer TMCode AI without copying code into a browser tab.
  */
 function AiAccounts() {
@@ -229,7 +234,7 @@ function AiAccounts() {
         <strong>Your AI accounts</strong>
       </div>
       <div className="tm-setting-description">
-        Sign in to Claude Code, ChatGPT (Codex) or Gemini with your own account, free or paid, and TMCode AI answers with it: in the chat, in the terminal, and in agent modes (which open it in the terminal). Each runs on this computer with your account and plan; nothing is copied into a browser. Your school&apos;s AI rules still apply, and what each one does is in your activity log.
+        Sign in to Claude Code, ChatGPT (Codex) or Gemini (Antigravity) with your own account, free or paid, and TMCode AI answers with it: in the chat, in the terminal, and in agent modes (which open it in the terminal). Each runs on this computer with your account and plan; nothing is copied into a browser. Your school&apos;s AI rules still apply, and what each one does is in your activity log.
       </div>
       <div className="tm-setting-control tm-ai-keys">{body}</div>
     </div>

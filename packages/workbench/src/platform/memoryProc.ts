@@ -8,8 +8,9 @@ import type { FileSystem, ProcHost } from "./types";
  * command answers "not found" like a shell would.
  *
  * Also the AI companies' CLIs (ai/aiClis.ts) when localStorage `tmcode:mock-clis`
- * names them, e.g. {"claude":"ready","codex":"signed-out","gemini":"limit"}
- * (a CLI it doesn't name is not installed). Headless questions stream each
+ * names them, e.g. {"claude":"ready","codex":"signed-out","agy":"limit"}
+ * (a CLI it doesn't name is not installed). Gemini CLI also has "moved": signed
+ * in with a personal Google account, which it no longer serves. Headless questions stream each
  * CLI's real JSON lines; the last prompt (stdin) and command are kept in
  * `window.__tmcodeCli` for tests.
  */
@@ -21,10 +22,12 @@ function mockClis(): Record<string, string> {
   }
 }
 
-/** The pretend `claude`, `codex` and `gemini` (false: not one of them). */
-function simulateCli(command: string, stdin: string | undefined, onEvent: Parameters<ProcHost["run"]>[2]): boolean {
+/** The pretend `claude`, `codex`, `agy` and `gemini` (false: not one of them). */
+function simulateCli(full: string, stdin: string | undefined, onEvent: Parameters<ProcHost["run"]>[2]): boolean {
+  // agy's install folder goes at the end of PATH first (aiClis.ts withCliPath).
+  const command = full.replace(/^export PATH="[^"]*"; /, "");
   const statusCheck = /\.gemini|GEMINI_API_KEY/.test(command);
-  const cli = statusCheck ? "gemini" : /^(claude|codex|gemini)\b/.exec(command)?.[1];
+  const cli = statusCheck ? "gemini" : /^(claude|codex|agy|gemini)\b/.exec(command)?.[1];
   if (!cli) return false;
   const state = mockClis()[cli];
   const out = (o: unknown) => onEvent({ type: "stdout", data: `${JSON.stringify(o)}\n` });
@@ -35,9 +38,12 @@ function simulateCli(command: string, stdin: string | undefined, onEvent: Parame
     return true;
   }
   const signedOut = state === "signed-out";
-  if (statusCheck) return exit(signedOut ? 1 : 0), true;
+  if (statusCheck) {
+    if (!signedOut) onEvent({ type: "stdout", data: state === "moved" ? "Google account\n" : "Gemini API key\n" });
+    return exit(signedOut ? 1 : 0), true;
+  }
   if (/ --version$/.test(command)) {
-    onEvent({ type: "stdout", data: { claude: "2.1.310 (Claude Code)\n", codex: "codex-cli 0.166.0\n", gemini: "0.66.0\n" }[cli]! });
+    onEvent({ type: "stdout", data: { claude: "2.1.310 (Claude Code)\n", codex: "codex-cli 0.166.0\n", agy: "1.4.12\n", gemini: "0.66.0\n" }[cli]! });
     return exit(0), true;
   }
   if (cli === "claude" && /auth status/.test(command)) return out({ loggedIn: !signedOut, authMethod: "claude.ai", email: "student@nga.ac.rw", subscriptionType: "pro" }), exit(signedOut ? 1 : 0), true;
@@ -45,12 +51,25 @@ function simulateCli(command: string, stdin: string | undefined, onEvent: Parame
     onEvent({ type: "stdout", data: signedOut ? "Not logged in\n" : "Logged in using ChatGPT\n" });
     return exit(signedOut ? 1 : 0), true;
   }
-  const headless = cli === "claude" ? / -p\b/.test(command) : cli === "codex" ? /^codex exec\b/.test(command) : / -p ""/.test(command);
+  if (cli === "agy" && /^agy models$/.test(command)) {
+    if (signedOut) onEvent({ type: "stderr", data: "Error: Please sign in to view available models. Launch the CLI without arguments to sign in.\n" });
+    else onEvent({ type: "stdout", data: "Fetching available models...\ngemini-3.1-pro-high\tGemini 3.1 Pro (High)\ngemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n" });
+    return exit(signedOut ? 1 : 0), true;
+  }
+  const headless = cli === "claude" ? / -p\b/.test(command) : cli === "codex" ? /^codex exec\b/.test(command) : cli === "agy" ? /^agy --output-format stream-json\b/.test(command) : / -p ""/.test(command);
   if (!headless) return exit(0), true;
-  (window as unknown as { __tmcodeCli?: { command: string; stdin: string } }).__tmcodeCli = { command, stdin: stdin ?? "" };
+  (window as unknown as { __tmcodeCli?: { command: string; stdin: string } }).__tmcodeCli = { command: full, stdin: stdin ?? "" };
   const model = /--model (\S+)/.exec(command)?.[1];
   const text = cliAnswer(cli, stdin ?? "");
-  const failure = signedOut ? { claude: "Not logged in · Please run /login", codex: "401 Unauthorized: Missing bearer or basic authentication in header", gemini: "Please set an Auth method" }[cli]! : state === "limit" ? "Usage limit reached for your plan. Try again at 5pm." : null;
+  const failure = signedOut
+    ? { claude: "Not logged in · Please run /login", codex: "401 Unauthorized: Missing bearer or basic authentication in header", agy: "authentication failed or timed out", gemini: "Please set an Auth method" }[cli]!
+    : state === "limit"
+      ? cli === "agy"
+        ? "RESOURCE_EXHAUSTED: You have exhausted your quota for this model. Try again later."
+        : "Usage limit reached for your plan. Try again at 5pm."
+      : state === "moved"
+        ? "This Google account is no longer supported in Gemini CLI. Use Antigravity CLI."
+        : null;
   if (cli === "claude") {
     out({ type: "system", subtype: "init", tools: [] });
     if (failure) out({ type: "result", subtype: "success", is_error: true, result: failure });
@@ -69,6 +88,21 @@ function simulateCli(command: string, stdin: string | undefined, onEvent: Parame
       out({ type: "item.completed", item: { id: "item_1", type: "agent_message", text } });
       out({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 20 } });
     }
+  } else if (cli === "agy") {
+    // Antigravity CLI 1.4.12's stream-json (agy --output-format stream-json).
+    const r = (status: string, response: string, error?: string) => out({ event: "result", result: { conversation_id: "c1", status, response, ...(error ? { error } : {}), duration_seconds: 1, num_turns: 1, usage: {} } });
+    if (signedOut) {
+      onEvent({ type: "stderr", data: "Error: authentication required. Run 'agy' to log in, then retry.\nerror: authentication failed or timed out\n" });
+      r("ERROR", "", failure!);
+    } else {
+      out({ event: "init", conversation_id: "c1", init: { model: model ?? "gemini-3.8-flash-medium", cwd: "/", tools: [], permission_mode: "request-review" } });
+      out({ event: "step_update", step_update: { conversation_id: "c1", step_index: 0, state: "DONE", step_type: "user_input" } });
+      if (failure) r("ERROR", "", failure);
+      else {
+        for (let i = 0; i < text.length; i += 16) out({ event: "step_update", step_update: { conversation_id: "c1", step_index: 1, state: "ACTIVE", step_type: "agent_response", text_delta: text.slice(i, i + 16) } });
+        r("SUCCESS", text);
+      }
+    }
   } else {
     if (signedOut) {
       onEvent({ type: "stderr", data: `${failure} in your settings.json\n` });
@@ -76,7 +110,7 @@ function simulateCli(command: string, stdin: string | undefined, onEvent: Parame
     }
     out({ type: "init", session_id: "s1", model: model ? `gemini-${model}` : "gemini-2.5-pro" });
     out({ type: "message", role: "user", content: "…" });
-    if (failure) out({ type: "result", status: "error", error: { type: "QuotaError", message: failure } });
+    if (failure) out({ type: "result", status: "error", error: { type: state === "moved" ? "FatalAuthenticationError" : "QuotaError", message: failure } });
     else {
       for (let i = 0; i < text.length; i += 16) out({ type: "message", role: "assistant", content: text.slice(i, i + 16), delta: true });
       out({ type: "result", status: "success", stats: {} });
@@ -88,7 +122,7 @@ function simulateCli(command: string, stdin: string | undefined, onEvent: Parame
 
 /** The pretend CLIs' answers: terminal JSON for terminal questions, else a short Markdown answer naming the CLI. */
 function cliAnswer(cli: string, prompt: string): string {
-  const name = { claude: "Claude Code", codex: "ChatGPT", gemini: "Gemini" }[cli];
+  const name = { claude: "Claude Code", codex: "ChatGPT", agy: "Antigravity", gemini: "Gemini" }[cli];
   const message = prompt.slice(prompt.lastIndexOf("message:\n") + "message:\n".length);
   if (/ONE JSON object/.test(prompt)) {
     if (/port/i.test(message)) return JSON.stringify({ commands: [{ command: "lsof -ti :3000 | xargs kill", explanation: "Finds what listens on port 3000 (-t: ids only) and stops it." }], explanation: `${name}: this stops the program using port 3000.`, risk: "caution" });

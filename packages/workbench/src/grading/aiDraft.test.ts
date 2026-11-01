@@ -100,6 +100,7 @@ describe("the grading files", () => {
     expect(CLI_PROMPT).not.toMatch(/["'`$\\\n]/);
     expect(cliCommand("claude")).toBe(`claude "${CLI_PROMPT}"`);
     expect(cliCommand("gemini")).toBe(`gemini -i "${CLI_PROMPT}"`);
+    expect(cliCommand("agy")).toBe(`agy -i "${CLI_PROMPT}"`);
     expect(cliCommand("codex", 'say "hi" $HOME')).toBe('codex "say hi HOME"');
   });
 });
