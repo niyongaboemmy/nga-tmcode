@@ -642,3 +642,72 @@ export async function runExtensionsSelfTest(platform: Platform, log: (msg: strin
   await platform.store.set("extensions.codeTrustAcknowledged", hadTrust ?? false);
   log(`extensions selftest: ${results.filter((r) => !r).length} failed of ${results.length}`);
 }
+
+/**
+ * TMCODE_DEV_SELFTEST=aiviews: every installed extension's webview views (Codex, Gemini Code
+ * Assist, Claude Code, Continue, Cline…) opened in the real WKWebView / WebView2, one by one: does
+ * its page start (post to its extension), and what did it report (prelude diagnostics)?
+ */
+export async function runAiViewsSelfTest(log: (msg: string) => void) {
+  const X = exthostForSelfTest;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const until = async (pred: () => boolean, ms: number) => {
+    const end = Date.now() + ms;
+    while (!pred() && Date.now() < end) await sleep(200);
+    return pred();
+  };
+  X.traceWebviewBodies(true);
+  await until(() => X.useViews.getState().views.some((v) => v.type === "webview"), 60_000);
+  // Let activation (onStartupFinished, onView) settle.
+  await sleep(6000);
+  const views = X.useViews.getState().views.filter((v) => v.type === "webview");
+  log(`aiviews selftest: ${views.length} webview view(s): ${views.map((v) => `${v.extensionId}/${v.id}`).join(", ")}`);
+  for (const v of views) {
+    X.focusView(v.id, false);
+    const resolved = await until(() => !!X.useWebviews.getState().viewHandles[v.id], 25_000);
+    if (!resolved) {
+      log(`aiviews RESULT ${v.extensionId} ${v.id}: no-handle (no provider resolved it in 25 s)`);
+      continue;
+    }
+    const h = X.useWebviews.getState().viewHandles[v.id];
+    await until(() => (X.useWebviewStatus.getState()[h]?.phase ?? "starting") !== "starting", 40_000);
+    const st = X.useWebviewStatus.getState()[h];
+    const msgs = X.webviewMessageCounts.get(h) ?? 0;
+    const diags = (st?.diagnostics ?? []).filter((d) => !/CSP refused style-src/.test(d.text));
+    log(`aiviews RESULT ${v.extensionId} ${v.id}: ${st?.phase ?? "unknown"} messages=${msgs} diagnostics=${diags.length}`);
+    for (const d of diags.slice(0, 12)) log(`aiviews   ${d.kind}: ${d.text.replace(/\s+/g, " ").slice(0, 400)}`);
+    // Some extensions give up on their own after a timeout (Codex: 30 s without "renderer ready") and replace their page.
+    const html0 = X.useWebviews.getState().entries[h]?.html ?? "";
+    await until(() => (X.useWebviews.getState().entries[h]?.html ?? "") !== html0, 40_000);
+    const html1 = X.useWebviews.getState().entries[h]?.html ?? "";
+    log(`aiviews   after 40 s: ${html1 === html0 ? "same page" : `page replaced: ${(/<title>([^<]*)/i.exec(html1)?.[1] ?? html1.slice(0, 120)).trim()}`}`);
+    for (const t of (X.webviewTrace.get(h) ?? []).slice(0, v.extensionId === "openai.chatgpt" ? 12 : 0)) log(`aiviews   msg ${t}`);
+    if (v.extensionId === "openai.chatgpt") {
+      const channels = [...new Set(X.workbench.get().output.map((l) => l.channel))];
+      log(`aiviews   output channels: ${channels.join(", ")}`);
+      for (const l of X.workbench.get().output.filter((x) => /codex|chatgpt/i.test(x.channel) && /error|renderer|ready|ipc/i.test(x.text)).slice(-20)) log(`aiviews   [${l.channel}] ${new Date(l.t).toISOString().slice(11, 23)} ${l.text.replace(/\s+/g, " ").slice(0, 300)}`);
+    }
+  }
+  // Installing an extension restarts the extension host while views are open (how Codex failed for a user): again, after a restart.
+  log("aiviews: restarting the extension hosts with the views open");
+  await X.restartExtensionHosts();
+  await sleep(8000);
+  for (const id of ["chatgpt.sidebarSecondaryView", "claudeVSCodeSidebarSecondary", "cloudcode.gemini.chatView"]) {
+    const v = X.useViews.getState().views.find((x) => x.id === id);
+    if (!v) continue;
+    X.focusView(v.id, false);
+    const resolved = await until(() => !!X.useWebviews.getState().viewHandles[v.id], 25_000);
+    const h = X.useWebviews.getState().viewHandles[v.id];
+    if (!resolved || !h) {
+      log(`aiviews AFTER-RESTART ${v.id}: no-handle`);
+      continue;
+    }
+    await until(() => (X.useWebviewStatus.getState()[h]?.phase ?? "starting") !== "starting", 40_000);
+    const html0 = X.useWebviews.getState().entries[h]?.html ?? "";
+    await until(() => (X.useWebviews.getState().entries[h]?.html ?? "") !== html0, 40_000);
+    const html1 = X.useWebviews.getState().entries[h]?.html ?? "";
+    log(`aiviews AFTER-RESTART ${v.id}: ${X.useWebviewStatus.getState()[h]?.phase} messages=${X.webviewMessageCounts.get(h) ?? 0} ${html1 === html0 ? "same page" : `page replaced: ${(/<title>([^<]*)/i.exec(html1)?.[1] ?? "").trim()}`}`);
+    log(`aiviews   trace: ${(X.webviewTrace.get(h) ?? []).join(" | ").slice(0, 600)}`);
+  }
+  log("aiviews selftest done");
+}

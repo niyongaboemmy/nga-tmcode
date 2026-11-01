@@ -113,6 +113,7 @@ export interface DevOptions {
   selftestExthost?: boolean;
   /** TMCODE_DEV_SELFTEST=extensions */
   selftestExtensions?: boolean;
+  selftestAiViews?: boolean;
   launch: string | null;
 }
 export let devOptions: DevOptions = { workspace: null, selftest: false, selftestGit: false, selftestUi: false, selftestProjects: false, launch: null };
@@ -145,6 +146,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     dev_selftest_projects: boolean;
     dev_selftest_exthost?: boolean;
     dev_selftest_extensions?: boolean;
+    dev_selftest_aiviews?: boolean;
     dev_launch: string | null;
     open_path: string | null;
     /** Debug builds: developer tools may open (Toggle Developer Tools). */
@@ -153,7 +155,7 @@ export async function createTauriPlatform(): Promise<Platform> {
     secondary?: boolean;
     pid?: number;
   }>("app_info");
-  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, selftestExthost: !!info.dev_selftest_exthost, selftestExtensions: !!info.dev_selftest_extensions, launch: info.dev_launch };
+  devOptions = { workspace: info.dev_workspace, selftest: info.dev_selftest, selftestGit: info.dev_selftest_git, selftestUi: info.dev_selftest_ui, selftestProjects: info.dev_selftest_projects, selftestExthost: !!info.dev_selftest_exthost, selftestExtensions: !!info.dev_selftest_extensions, selftestAiViews: !!info.dev_selftest_aiviews, launch: info.dev_launch };
   // Command-line path, else the last path macOS asked us to open before we were listening.
   const queued = await invoke<string[]>("take_pending_open").catch(() => []);
   launchPath = info.open_path ?? queued[queued.length - 1] ?? null;

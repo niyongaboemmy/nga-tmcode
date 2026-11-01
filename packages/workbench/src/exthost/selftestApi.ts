@@ -13,4 +13,5 @@ export { updateSetting, showView } from "../state/store";
 export { executeCommand } from "../commands/registry";
 export { codeEditorFor } from "../monaco/editors";
 export { workbench } from "../state/store";
-export { useWebviews, webviewMessageCounts } from "./views/webviews";
+export { useWebviews, useWebviewStatus, webviewMessageCounts, webviewTrace, traceWebviewBodies } from "./views/webviews";
+export { focusView, useViews } from "./views/model";

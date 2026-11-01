@@ -13023,3 +13023,181 @@ button.tm-setting-badge {
   color: var(--foreground);
   font-size: 11px;
 }
+/* An extension webview that hasn't started yet (WebviewSlot): its iframe is hidden until it has. */
+.tm-webview-slot {
+  position: relative;
+}
+.tm-webview-starting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--description);
+  font-size: 12px;
+}
+.tm-webview-stuck {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tm-webview-stuck p {
+  margin: 0;
+}
+.tm-webview-stuck-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+  font-weight: 600;
+}
+.tm-webview-stuck-title .codicon {
+  color: var(--warning);
+}
+.tm-webview-stuck-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--description);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-word;
+}
+.tm-webview-stuck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.tm-menu-check {
+  display: inline-flex;
+  width: 16px;
+  margin: 0 4px 0 -4px;
+  flex: none;
+}
+/* One AI icon for every AI tool (parts/aiTools.tsx): the tool picked last, with a small sparkle. */
+.tm-activity-ai {
+  position: relative;
+}
+.tm-activity-ai-mark {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  display: inline-flex;
+  color: var(--ai);
+  pointer-events: none;
+}
+.tm-activity-ai-mark .codicon {
+  font-size: 10px;
+}
+.tm-activity-ai.is-open {
+  color: var(--activitybar-active, var(--foreground));
+}
+.tm-ai-tools-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 270px;
+  max-width: min(340px, calc(100vw - 12px));
+  max-height: calc(100vh - 12px);
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--ai) 30%, var(--widget-border, var(--border)));
+  border-radius: 10px;
+  background: var(--menu-bg, var(--widget-bg, var(--editor-bg)));
+  box-shadow: 0 12px 32px -8px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--ai) 10%, transparent);
+  color: var(--foreground);
+  font: 13px var(--font-ui);
+  outline: none;
+  animation: tm-ai-tools-in var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+@keyframes tm-ai-tools-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.tm-ai-tools-head {
+  padding: 4px 8px 6px;
+  color: var(--description);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tm-ai-tools-item,
+.tm-ai-tools-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tm-ai-tools-item.is-focused,
+.tm-ai-tools-action:hover {
+  background: var(--list-hover, color-mix(in srgb, var(--foreground) 8%, transparent));
+}
+.tm-ai-tools-item.is-selected {
+  background: color-mix(in srgb, var(--ai) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--ai);
+}
+.tm-ai-tools-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.tm-ai-tools-item.is-selected .tm-ai-tools-icon {
+  background: color-mix(in srgb, var(--ai) 28%, transparent);
+  color: var(--foreground);
+}
+.tm-ai-tools-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.tm-ai-tools-title {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-ai-tools-where {
+  overflow: hidden;
+  color: var(--description);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-ai-tools-check {
+  color: var(--ai);
+}
+.tm-ai-tools-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+.tm-ai-tools-action {
+  color: var(--description);
+  font-size: 12px;
+}
+.tm-auxbar-ai .codicon-chevron-down {
+  font-size: 12px;
+  opacity: 0.7;
+}

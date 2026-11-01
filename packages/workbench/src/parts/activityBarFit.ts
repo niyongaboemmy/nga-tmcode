@@ -6,6 +6,8 @@ export interface BarItem {
   key: string;
   view?: { id: ViewId; icon: string; label: string; command: string };
   container?: ViewContainer;
+  /** The one AI icon (parts/aiTools.tsx) for every AI tool. */
+  ai?: true;
 }
 
 /**

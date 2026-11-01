@@ -19,6 +19,22 @@ describe("webview documents", () => {
     expect(webviewDocument("<html lang='en'><body>x</body></html>", { state: undefined, theme })).toMatch(/^<html lang='en'><head><script>/);
   });
 
+  it("is a script that parses (a broken prelude stops every extension page)", () => {
+    const s = preludeScript({ state: { n: 1 }, theme });
+    expect(() => new Function(s.replace(/^<script>/, "").replace(/<\/script>$/, ""))).not.toThrow();
+  });
+
+  it("reports what goes wrong on the page: errors, rejections, failed loads, CSP refusals", () => {
+    const s = preludeScript({ state: null, theme });
+    for (const event of ['"error"', '"unhandledrejection"', '"securitypolicyviolation"']) expect(s).toContain(event);
+    expect(s).toContain('type: "diagnostic"');
+  });
+
+  it("delivers the extension's messages from the page's own origin, as VS Code does (Codex checks it)", () => {
+    const s = preludeScript({ state: null, theme });
+    expect(s).toContain("origin: window.location.origin");
+  });
+
   it("keeps state and theme JSON from closing the script", () => {
     const s = preludeScript({ state: { evil: "</script><script>alert(1)</script>" }, theme });
     expect(s.match(/<\/script>/g)).toHaveLength(1);

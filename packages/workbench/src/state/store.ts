@@ -235,7 +235,7 @@ export interface WorkbenchState {
 }
 
 export type ContextMenuItem =
-  | { kind: "item"; label: string; keybinding?: string; disabled?: boolean; danger?: boolean; run: () => void }
+  | { kind: "item"; label: string; keybinding?: string; disabled?: boolean; danger?: boolean; /** A toggle: a check mark when true (VS Code's activity bar menu). */ checked?: boolean; run: () => void }
   | { kind: "separator" };
 
 let platform: Platform | null = null;
