@@ -49,7 +49,7 @@ beforeEach(() => {
 
 describe("Learning keeps the agent read-only", () => {
   it("only the looking tools, and every change refused", () => {
-    expect(toolDefs("auto", true, true, "learning").map((t) => t.function.name)).toEqual(["list_files", "read_file", "search", "get_problems"]);
+    expect(toolDefs("auto", true, true, "learning").map((t) => t.function.name)).toEqual(["list_files", "read_file", "search", "get_problems", "repo_map", "find_symbol", "explore", "ask_user"]);
     expect(permission("auto", "read_file", {}, "learning")).toBe("allow");
     for (const t of ["edit_file", "write_file", "delete_file", "rename_file", "run_command", "propose_grade"]) expect(permission("auto", t, { command: "npm test" }, "learning")).toBe("refuse");
     expect(permission("auto", "edit_file", {}, "industrial")).toBe("allow");
@@ -176,5 +176,31 @@ describe("the sticky signed layer (A9)", () => {
     expect(await verifySticky(token({ exp: "2020-01-01T00:00:00Z" }), 5, keys)).toEqual({ ok: false, why: "expired" });
     expect(await verifySticky(token({ kid: "nope" }), 5, keys)).toEqual({ ok: false, why: "signature" });
     expect(await verifySticky({ junk: 1 }, 5, keys)).toEqual({ ok: false, why: "malformed" });
+  });
+});
+
+describe("codebase understanding (G7)", () => {
+  it("maps definitions ranked by use and finds where a name is defined and used", async () => {
+    const { p } = platform(() => ({ status: 200, body: "{}" }));
+    (p as { fs: MemoryFileSystem }).fs = new MemoryFileSystem({
+      "src/cart.js": "export function total(items) {\n  return items.reduce((a, b) => a + b.price, 0);\n}\nexport class Cart {}\n",
+      "src/app.js": "import { total } from './cart.js';\nconsole.log(total([]));\nconsole.log(total([{ price: 2 }]));\n",
+      "util.py": "def helper():\n    pass\n\nclass Thing:\n    def go(self):\n        pass\n",
+      ".env": "SECRET=1\n",
+    });
+    await initWorkbench(p);
+    const { repoMap, findSymbol, symbolsOf } = await import("./agent/codebase");
+    expect(symbolsOf("util.py", "def helper():\n    pass\nclass Thing:\n    def go(self):\n")).toEqual([
+      { name: "helper", kind: "function", line: 1 },
+      { name: "Thing", kind: "class", line: 3 },
+      { name: "go", kind: "method", line: 4 },
+    ]);
+    const map = await repoMap(p.fs);
+    expect(map.split("\n")[0]).toBe("src/cart.js (used 3×)");
+    expect(map).toContain("function total :1");
+    expect(map).not.toContain(".env");
+    const found = await findSymbol(p.fs, "total");
+    expect(found).toContain("src/cart.js:1: function total");
+    expect(found).toContain("src/app.js:2: console.log(total([]));");
   });
 });
