@@ -1758,6 +1758,18 @@ kbd,
 .tm-status-tour .tm-action {
   color: inherit;
 }
+.tm-chat-explain {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px dashed color-mix(in srgb, var(--tm-layer-industrial) 50%, var(--border));
+  border-radius: 6px;
+}
+.tm-chat-suggest-detail {
+  margin-left: auto;
+  opacity: 0.7;
+}
 .tm-chat-question {
   display: grid;
   gap: 6px;

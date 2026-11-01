@@ -5,7 +5,9 @@ import { rememberAiCopy } from "../activity/sources";
 import { monaco } from "../monaco/setup";
 import { listFiles } from "../parts/search/search";
 import { signIn, useProjects } from "../projects/service";
-import { activeFilePath, getPlatform, notify, openSpecialEditor, useWorkbench } from "../state/store";
+import { activeFilePath, getPlatform, notify, openFile, openSpecialEditor, useWorkbench } from "../state/store";
+import { debugWithAi, reviewFile, startTour } from "./actions";
+import { expandRecipe, recipeSuggestions } from "./recipes";
 import { showInputBox, showQuickPick, type PickItem } from "../widgets/QuickPick";
 import { loadAiKeys, providerLabel, setCustomModels, useAiKeys } from "./keys";
 import { Codicon } from "../widgets/icons";
@@ -281,8 +283,59 @@ function MessageActions({ m }: { m: Message }) {
 
 let editPrompt: (m: Message) => void = () => undefined;
 
+/**
+ * Explain before accept (E1, Industrial · Guided): one question about the change before you keep
+ * it. It never blocks; the answer goes to the Activity log, where the teacher sees it (I1).
+ */
+function ExplainChange({ m }: { m: Message }) {
+  const [text, setText] = useState("");
+  const [done, setDone] = useState(false);
+  if (done) return <p className="tm-chat-note" data-testid="ai-explained">Thanks: your explanation is in your Activity log.</p>;
+  return (
+    <form
+      className="tm-chat-explain"
+      data-testid="ai-explain-change"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!text.trim()) return;
+        recordActivity({ kind: "ai", action: "explained", text: `Explained TMCode AI's change to ${m.checkpoint!.files.join(", ")}: "${text.trim().slice(0, 300)}"`, data: { files: m.checkpoint!.files.join(", "), explanation: text.trim().slice(0, 1000) }, actor: { type: "you" }, ai: { by: "TMCode AI", how: "change explained by the student" } });
+        setDone(true);
+      }}
+    >
+      <label>
+        <Codicon name="mortar-board" /> Before you keep it: in one sentence, what does this change do, and why?
+      </label>
+      <div className="tm-chat-question-own">
+        <input className="tm-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="It… because…" aria-label="Explain the change" />
+        <button type="submit" className="tm-chat-btn is-primary" disabled={!text.trim()}>
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
+const PLAN_FILE = ".tmcode/plan/plan.md";
+
+/** B1: the plan becomes a file you can edit; "Start building" then carries it out. */
+async function savePlan(content: string) {
+  const fs = getPlatform().fs;
+  await fs.createDir(".tmcode").catch(() => undefined);
+  await fs.createDir(".tmcode/plan").catch(() => undefined);
+  const tasks = content
+    .split("\n")
+    .map((l) => l.replace(/^\s*\d+[.)]\s+/, "- [ ] "))
+    .join("\n");
+  await fs.writeFile(PLAN_FILE, `# Plan\n\n${tasks.trim()}\n\n## How we'll check it\n\n- [ ] The tests pass\n- [ ] It works in the preview\n`);
+  recordActivity({ kind: "ai", action: "plan", path: PLAN_FILE, text: `Saved TMCode AI's plan as ${PLAN_FILE}`, actor: { type: "you" }, ai: { by: "TMCode AI", how: "plan saved as a file" } });
+  openFile(PLAN_FILE, { pinned: true });
+}
+
 function Answer({ m }: { m: Message }) {
   const parts = useMemo(() => splitAnswer(m.content), [m.content]);
+  const g = useAiGate();
+  const canEdit = g.edit;
+  const scaffolds = g.layer === "industrial" && g.profile === "guided" && useAi.getState().status?.staff !== true;
   const model = m.provider ? `${m.provider} · ${m.model}` : (m.model ?? "");
   const busy = useChat((s) => s.busy);
   return (
@@ -322,8 +375,12 @@ function Answer({ m }: { m: Message }) {
           )}
         </div>
       )}
-      {m.mode === "plan" && !m.streaming && !m.error && m.content.trim() && (
+      {m.checkpoint && !m.checkpoint.undone && !m.streaming && scaffolds && <ExplainChange m={m} />}
+      {m.mode === "plan" && canEdit && !m.streaming && !m.error && m.content.trim() && (
         <div className="tm-chat-approve">
+          <button type="button" className="tm-chat-btn" onClick={() => void savePlan(m.content)} disabled={busy} data-testid="ai-save-plan" title={`Save as ${PLAN_FILE}: edit it, then build from it`}>
+            <Codicon name="save" /> Save as Plan
+          </button>
           <button type="button" className="tm-chat-btn is-primary" onClick={() => startBuilding("edit")} disabled={busy} data-testid="ai-start-building">
             <Codicon name="play" /> Start building
           </button>
@@ -780,6 +837,17 @@ export function ChatView() {
     setAttachments([]);
     setAttachError(null);
     historyAt.current = null;
+    // Slash recipes (L6): one word for a common job; in Learning they become guides.
+    const recipe = expandRecipe(q, gate.tutor, agentMode);
+    if (recipe?.kind === "action") {
+      if (recipe.action === "review") return void reviewFile();
+      if (recipe.action === "debug") return debugWithAi();
+      if (recipe.action === "tour") return void startTour();
+      if (gate.tutor) return void ask(`Help me write a plan for: ${recipe.arg || "this task"}. Ask me questions about what it should do; I write the plan.`, { file: withFile, problems: withProblems }, "chat");
+      setAgentMode("plan");
+      return void ask(recipe.arg || "Plan the next step for this project.", { file: withFile, problems: withProblems, mentions: used, attachments: files }, "plan");
+    }
+    if (recipe?.kind === "ask") return void ask(recipe.prompt, { file: withFile, problems: withProblems, mentions: used, attachments: files }, recipe.mode);
     void ask(q, { file: withFile, problems: withProblems, mentions: used, attachments: files });
   };
 
@@ -831,6 +899,12 @@ export function ChatView() {
   };
 
   const updateSuggest = async (value: string, caret: number) => {
+    // "/" at the start: the slash recipes (L6).
+    const slash = /^\/([a-z0-9-]*)$/i.exec(value.slice(0, caret));
+    if (slash) {
+      const items = recipeSuggestions(slash[1]).map((r) => `/${r.id}`);
+      return setSuggest(items.length ? { query: slash[1], items, index: 0 } : null);
+    }
     const m = /(^|\s)@([\w./-]*)$/.exec(value.slice(0, caret));
     if (!m) return setSuggest(null);
     const q = m[2].toLowerCase();
@@ -840,6 +914,12 @@ export function ChatView() {
 
   const pickMention = (path: string) => {
     const el = input.current;
+    if (path.startsWith("/")) {
+      setText(`${path} `);
+      setSuggest(null);
+      setTimeout(() => el?.focus(), 0);
+      return;
+    }
     const caret = el?.selectionStart ?? text.length;
     const before = text.slice(0, caret).replace(/@([\w./-]*)$/, `@${path} `);
     setText(before + text.slice(caret));
@@ -1037,8 +1117,9 @@ export function ChatView() {
           {suggest && (
             <div className="tm-chat-suggest" role="listbox" data-testid="ai-mentions">
               {suggest.items.map((f, i) => (
-                <button key={f} type="button" role="option" aria-selected={i === suggest.index} className={i === suggest.index ? "is-on" : ""} onMouseDown={(e) => (e.preventDefault(), pickMention(f))}>
-                  <Codicon name="file" /> {f}
+                <button key={f} type="button" role="option" aria-selected={i === suggest.index} className={i === suggest.index ? "is-on" : ""} onMouseDown={(e) => (e.preventDefault(), pickMention(f))} data-testid={f.startsWith("/") ? "ai-recipe" : undefined}>
+                  <Codicon name={f.startsWith("/") ? "zap" : "file"} /> {f}
+                  {f.startsWith("/") && <span className="tm-chat-suggest-detail">{recipeSuggestions(f.slice(1)).find((r) => r.id === f.slice(1))?.label}</span>}
                 </button>
               ))}
             </div>

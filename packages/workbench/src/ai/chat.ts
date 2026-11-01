@@ -3,10 +3,12 @@ import { recordActivity } from "../activity/log";
 import { getDocument, languageForPath } from "../monaco/documents";
 import { codeEditorFor } from "../monaco/editors";
 import { monaco } from "../monaco/setup";
+import { listFiles } from "../parts/search/search";
 import { activeFilePath, getPlatform, useWorkbench } from "../state/store";
 import { Checkpoint, EXPLORE_TOOLS, gradingTools, parseArgs, permission, preview, runTool, toolDefs, type AgentMode, type ToolCall } from "./agent/tools";
 import { CLIS, cliOf, isCliMode, isCliProvider, openCliAgent } from "./aiClis";
 import { aiMaySee, combine, forAi, guardCall, loadAgentGuard } from "./agent/guard";
+import { projectRules } from "./agent/projectRules";
 import { replyLanguage } from "./actions";
 import { aiGate } from "./gate";
 import { asAiError, chat, effectiveMode, setAgentMode, useAi, type AiRequestError, type ChatContext, type WireMessage } from "./service";
@@ -151,6 +153,15 @@ export async function gatherContext(opts: ContextOptions): Promise<{ context: Ch
   // A teacher reviewing a submission: Task Mentor answers as a grading assistant (staff only).
   const lang = replyLanguage();
   if (lang) context.reply_language = lang;
+  // AGENTS.md (B2): the project's own rules, nearest folder last.
+  const rules = await projectRules(getPlatform().fs, active).catch(() => null);
+  if (rules?.text) {
+    context.task = [context.task, `Project rules (${rules.files.join(", ")}): follow them.\n${forAi(rules.text)}`].filter(Boolean).join("\n\n");
+    chips.push(`Rules: ${rules.files.length} file${rules.files.length === 1 ? "" : "s"}`);
+  }
+  // Industrial · Guided (A6, E7): scaffolds on for students.
+  const g = aiGate();
+  if (g.layer === "industrial" && g.profile === "guided" && useAi.getState().status?.staff !== true) context.scaffolds = true;
   const grading = gradingTools.chatContext?.() ?? null;
   if (grading) {
     context.purpose = grading.purpose;
@@ -330,6 +341,7 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
   let content = "";
   let provider = "";
   let model = "";
+  let heal: HealState = { attempts: 0, last: null };
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       if (stopFlag.cancelled) break;
@@ -339,7 +351,14 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
       provider = r.provider;
       model = r.model;
       if (r.text.trim()) content = prefix + r.text;
-      if (!r.toolCalls.length) break;
+      if (!r.toolCalls.length) {
+        // L3: check the work (the project's tests), and let the agent fix what fails, with a breaker.
+        const again = await selfCheck(id, mode, cp, heal);
+        if (!again) break;
+        heal = again.state;
+        wire = [...wire, { role: "assistant", content: r.text || "Done." }, { role: "user", content: again.prompt }];
+        continue;
+      }
       wire = [...wire, { role: "assistant", content: r.text || null, tool_calls: r.toolCalls }];
       for (const call of r.toolCalls) {
         if (stopFlag.cancelled) break;
@@ -418,6 +437,71 @@ async function runAgent(id: number, mode: AgentMode, wire: WireMessage[], contex
     for (const [, resolve] of answers) resolve(null);
     answers.clear();
   }
+}
+
+// ── L3: the self-healing loop, with a circuit breaker ──
+
+export interface HealState {
+  attempts: number;
+  /** The last failure, to stop when the same one comes back. */
+  last: string | null;
+}
+
+export const HEAL_MAX = 5;
+
+/** The project's own test command, if it has one (never anything destructive). */
+export async function detectTestCommand(): Promise<string | null> {
+  const fs = getPlatform().fs;
+  const pkg = await fs.readFile("package.json").catch(() => null);
+  if (pkg) {
+    try {
+      const t = (JSON.parse(pkg) as { scripts?: Record<string, string> }).scripts?.test;
+      if (t && !/no test specified/.test(t)) return "npm test --silent";
+    } catch {
+      /* not JSON */
+    }
+  }
+  const files = await listFiles(fs).catch(() => [] as string[]);
+  if (files.some((f) => /(^|\/)(test_[^/]+|[^/]+_test)\.py$/.test(f))) return "python3 -m pytest -q";
+  if (files.some((f) => /_test\.go$/.test(f))) return "go test ./...";
+  if (files.includes("Cargo.toml")) return "cargo test --quiet";
+  return null;
+}
+
+/** A failure's fingerprint: the output's tail without numbers that change between runs (times, ids). */
+export function failureSignature(output: string): string {
+  return output.slice(-600).replace(/\d+(\.\d+)?\s*m?s\b/g, "#").replace(/0x[0-9a-f]+/gi, "#").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * After the agent says it's done (Industrial, Edit automatically / Auto, files changed): run the
+ * tests. Pass: stop. Fail: hand the output back, at most HEAL_MAX times, and stop at once when the
+ * same failure repeats (the breaker), never running anything but the project's own test command.
+ */
+async function selfCheck(id: number, mode: AgentMode, cp: Checkpoint, state: HealState): Promise<{ prompt: string; state: HealState } | null> {
+  const g = aiGate();
+  if (stopFlag.cancelled || g.layer !== "industrial" || (mode !== "edit" && mode !== "auto") || !cp.files.length || !getPlatform().proc) return null;
+  const command = await detectTestCommand();
+  if (!command) return null;
+  const stepId = `selfcheck-${state.attempts + 1}`;
+  setStep(id, { id: stepId, tool: "run_command", title: `Self-check ${state.attempts + 1}: ${command}`, status: "running", command });
+  const res = await runTool({ id: stepId, type: "function", function: { name: "run_command", arguments: JSON.stringify({ command }) } }, cp, stopFlag);
+  if (res.ok) {
+    setStep(id, { id: stepId, tool: "run_command", title: `Self-check passed: ${command}`, status: "done", command, output: res.output });
+    return null;
+  }
+  const sig = failureSignature(res.output);
+  const attempts = state.attempts + 1;
+  if (sig === state.last || attempts > HEAL_MAX) {
+    setStep(id, { id: stepId, tool: "run_command", title: sig === state.last ? "Self-check stopped: the same failure came back (circuit breaker)" : `Self-check stopped after ${HEAL_MAX} attempts`, status: "failed", command, output: res.output });
+    recordActivity({ kind: "ai", action: "self-heal-stopped", text: `TMCode AI's self-check stopped (${sig === state.last ? "same failure twice" : `${HEAL_MAX} attempts`})`, data: { attempts }, actor: { type: "tmcode-ai" }, ai: { by: "TMCode AI", how: "self-healing loop stopped by the breaker" } });
+    return null;
+  }
+  setStep(id, { id: stepId, tool: "run_command", title: `Self-check ${attempts}/${HEAL_MAX} failed: fixing`, status: "failed", command, output: res.output });
+  return {
+    state: { attempts, last: sig },
+    prompt: `The self-check (\`${command}\`) failed, attempt ${attempts} of ${HEAL_MAX}:\n\n${res.output.slice(-4000)}\n\nFix the cause with the smallest change. Don't change or delete tests to make them pass, and don't run destructive commands.`,
+  };
 }
 
 /** The user's answer to an ask_user step (null: skip). */
