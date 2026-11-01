@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.6.0 — 2026-11-01
+
+**TMCode 1.6: Check What I Mean.** Before TMCode AI works on a new or unclear request, it shows what it understood: the goal, examples to tick, unusual cases, the files. You confirm it, correct it, or send your words as you typed them. Nothing is rewritten behind your back, and the AI always gets your own words. A Kinyarwanda request is restated in Kinyarwanda and sent to the AI in clear English.
+
+### What TMCode understood, before the AI acts
+
+- **The card:** the goal in one sentence, in your language. Below it: examples to tick ✓ or ✗ (or fill in: "you decide"), unusual cases (an empty list, a wrong password…), the files, the words from your request it relied on, and what it assumed. Click an assumption to remove it. Answer at most two quick questions.
+- **Yes, do this** (Enter) sends your words plus the confirmed card. **Edit my words** (Esc) takes you back to the prompt box. **As typed** (⌘/Ctrl+Enter) sends your words unchecked.
+- **Save as plan** and **Save ✓ examples as tests** (a Python or JavaScript test file next to the code) are under ⋯.
+- **Never in the way:** if the check is slow or fails, your words go to the AI as they are.
+
+### For students
+
+- **Industrial · Guided:** the card teaches. Each part TMCode added says why, and you add one thing yourself (an example or an unusual case) before the AI starts. As your requests get complete, the card fades to hints, then to a one-line "Understood as …". It comes back for a while if you need more help. Your teacher can pin a stage.
+- **Learning:** a prompt coach, not a rewrite. It marks the parts of your question (the goal, what's vague) and asks what's missing. Then a checklist ticks itself while you improve the question.
+- **The live meter** under the prompt box shows which of six things your request says: goal, input, output, an example, an unusual case, the file.
+- **Prompt Problems:** your teacher gives examples, and you describe the program in your own words. The AI writes it from your words only, and it passes when the examples pass, including hidden ones.
+
+### Languages
+
+- **Kinyarwanda and mixed requests** are always checked: TMCode restates them in Kinyarwanda, lists the English terms (ijambobanga → password), and gives the AI the goal in English.
+- **Kinyarwanda never goes to a small local model**, which doesn't understand it well. TMCode uses the school's AI, or asks you to write in English or French.
+
+### Everyone else
+
+- **Staff and your own AI:** checks run on demand with ✨, ⌘⇧Enter (Ctrl+Shift+Enter) or **TMCode AI: Check What I Mean**, and automatically only for Kinyarwanda or very unclear requests. Settings › AI Answers › Check What I Mean.
+- **Private by design:** the check sees what you typed and your file names, never your files' contents. Pasted code is left out, and names and e-mail addresses are removed. **Check Requests on This Computer** uses your local model for English and French. **Double-Check Unclear Requests** reads a request twice and asks when the readings differ (it uses more requests).
+- **For teachers:** every check is a line in the Activity log (metadata only, unless the work says otherwise), and the AI-use statement counts the checks you confirmed.
+
+### All changes
+
+- Ready-made starters skip the request check (they are already clear)
+- Release notes for 1.6.0: Check What I Mean
+- Request check: instructions inside pasted blocks never count as the user's own words
+- Request check e2e (Guided card + hand-off, Kinyarwanda glossary, Open on demand, Learning coach, pass-through, holdout, Prompt Problem, narrow side bar); card scrolls inside itself with a sticky footer; coach classes renamed (tm-coach clashed with the activity coachmark)
+- Request interpreter: intent card, Learning coach, teach-and-fade, Prompt Problems (prompt interpreter report)
+
 ## 1.5.1 — 2026-11-01
 
 **TMCode 1.5.1: a tidy terminal list.** The list of terminals beside the terminal panel keeps one line per terminal: long names such as "Install ChatGPT (Codex)" end with "…" (point at one for the whole name), the icons line up in one column, Split and Kill show on the row you point at, and the list's width follows the panel.
