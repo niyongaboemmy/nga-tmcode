@@ -1723,6 +1723,14 @@ kbd,
   color: #fff;
   background: color-mix(in srgb, var(--tm-layer-industrial) 80%, #000);
 }
+.tm-root[data-size="md"] .tm-status-layer-profile,
+.tm-root[data-size="md"] .tm-status-layer-name,
+.tm-root[data-size="sm"] .tm-status-layer-profile,
+.tm-root[data-size="sm"] .tm-status-layer-name,
+.tm-root[data-size="xs"] .tm-status-layer-profile,
+.tm-root[data-size="xs"] .tm-status-layer-name {
+  display: none;
+}
 .tm-status-layer.is-clickable:hover {
   filter: brightness(1.12);
 }

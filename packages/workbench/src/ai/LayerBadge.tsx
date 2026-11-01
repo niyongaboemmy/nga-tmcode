@@ -1,4 +1,4 @@
-import { LAYER_INFO, PROFILE_LINE, type Layer } from "@tmcode/protocol";
+import { LAYER_INFO, PROFILE_LINE, layerName, type Layer } from "@tmcode/protocol";
 import { useEffect } from "react";
 import { aiExamActive, canChoose, gateLabel, useAiGate, type AiGate } from "./gate";
 import { chooseGuided, chooseLayer } from "./layers";
@@ -49,7 +49,11 @@ export function LayerBadge() {
   return (
     <button type="button" className={`tm-status-item is-clickable tm-status-layer is-${g.layer} is-${g.profile}`} title={layerTitle(g)} aria-label={layerTitle(g)} onClick={() => void pickLayer(g)} data-testid="ai-layer-badge" data-layer={g.layer} data-profile={g.profile}>
       <Codicon name={info.icon} />
-      <span>{gateLabel(g)}</span>
+      {/* Below the largest window size only the icon shows (the status bar is full); the title keeps it all. */}
+      <span>
+        <span className="tm-status-layer-name">{layerName(g.layer, null, aiExamActive())}</span>
+        {g.layer === "industrial" && <span className="tm-status-layer-profile">{` · ${g.profile === "open" ? "Open" : "Guided"}`}</span>}
+      </span>
     </button>
   );
 }
