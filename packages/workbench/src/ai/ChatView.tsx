@@ -854,7 +854,8 @@ export function ChatView() {
     );
   }
 
-  const send = (typed = text, trigger: "send" | "manual" = "send") => {
+  /** "starter": one of the ready-made prompts (already clear, so never checked). */
+  const send = (typed = text, trigger: "send" | "manual" | "starter" = "send") => {
     const files = attachments;
     // Attachments alone are a question too.
     const q = typed.trim() || (files.length ? `Look at the attached file${files.length === 1 ? "" : "s"}.` : "");
@@ -879,7 +880,7 @@ export function ChatView() {
     if (recipe?.kind === "ask") return void ask(recipe.prompt, { file: withFile, problems: withProblems, mentions: used, attachments: files }, recipe.mode);
     const opts = { file: withFile, problems: withProblems, mentions: used, attachments: files };
     // The request check (prompt interpreter report): the card or the coach first, when the gate says so.
-    if (interceptRequest(q, opts, agentMode, { firstOfTask: !useChat.getState().messages.length, recipeWithArgs: false, planEntry: agentMode === "plan" && !useChat.getState().messages.length, mentions: used.length, openFile: !!file }, trigger)) return;
+    if (trigger !== "starter" && interceptRequest(q, opts, agentMode, { firstOfTask: !useChat.getState().messages.length, recipeWithArgs: false, planEntry: agentMode === "plan" && !useChat.getState().messages.length, mentions: used.length, openFile: !!file }, trigger)) return;
     void ask(q, opts);
   };
 
@@ -1074,7 +1075,7 @@ export function ChatView() {
             )}
             <div className="tm-chat-starters">
               {(tutor ? TUTOR_STARTERS : STARTERS).map((s) => (
-                <button key={s.label} type="button" className="tm-chat-starter" onClick={() => send(s.prompt)} disabled={!file && s.icon !== "lightbulb"}>
+                <button key={s.label} type="button" className="tm-chat-starter" onClick={() => send(s.prompt, "starter")} disabled={!file && s.icon !== "lightbulb"}>
                   <Codicon name={s.icon} /> {s.label}
                 </button>
               ))}
