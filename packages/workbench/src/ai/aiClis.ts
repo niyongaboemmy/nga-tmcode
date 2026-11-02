@@ -7,9 +7,14 @@ import { AiRequestError, type ChatContext, type StreamHandlers, type WireMessage
 
 /**
  * The AI companies' own coding CLIs as AIs that answer TMCode AI ("Which AI answers" › Your AI
- * accounts): Claude Code (a Claude account), Codex (a ChatGPT account) and Gemini CLI (a Google
- * account), each signed in with the user's own account on its free or paid plan, or an API key.
- * No Task Mentor allowance is spent and nothing has to be copied into a browser tab.
+ * accounts): Claude Code (a Claude account), Codex (a ChatGPT account), Antigravity CLI (`agy`, a
+ * Google account) and Gemini CLI (a Gemini API key or a Google Cloud work account), each signed in
+ * with the user's own account on its free or paid plan, or an API key. No Task Mentor allowance is
+ * spent and nothing has to be copied into a browser tab.
+ *
+ * Since 18 June 2026 Gemini CLI no longer serves personal Google accounts (free, Google AI Pro,
+ * Ultra): Google moved them to Antigravity CLI (agy). Gemini CLI still works with a paid Gemini API
+ * key or an enterprise account, so it stays, and its account failures point to agy (CLI_MOVED).
  *
  * - Questions (the terminal's AI, the chat in Chat mode) run the CLI headless and read-only; the
  *   question goes on stdin, never on the command line, and streams back as JSON lines.
@@ -20,10 +25,10 @@ import { AiRequestError, type ChatContext, type StreamHandlers, type WireMessage
  *   never in exams). ai_tools.rs blocks the binaries when the school says no, and every question,
  *   agent task and command run is in the activity log with the CLI named, for teachers and admins.
  *
- * Modes: "cli:<claude|codex|gemini>" (the CLI's own default model) or "cli:<id>/<model>".
+ * Modes: "cli:<claude|codex|agy|gemini>" (the CLI's own default model) or "cli:<id>/<model>".
  */
 
-export type CliId = "claude" | "codex" | "gemini";
+export type CliId = "claude" | "codex" | "agy" | "gemini";
 type AgentMode = "manual" | "edit" | "plan" | "auto";
 
 /** One line of a CLI's JSON output, as it matters for the answer. */
@@ -36,7 +41,11 @@ export interface CliSpec {
   /** What the user signs in with ("Claude", "ChatGPT", "Google"). */
   account: string;
   bin: string;
+  /** The install command (macOS and Linux; `installWindows` on Windows when it differs). */
   install: string;
+  installWindows?: string;
+  /** A folder its installer puts it in that a login shell may not have on PATH yet (added at the end of PATH). */
+  extraPath?: { posix: string; windows: string };
   docs: string;
   /** Where the user sees or changes their plan (free → paid). */
   plans: string;
@@ -54,7 +63,14 @@ export interface CliSpec {
   /** Failure words that mean "sign in again" / "plan or rate limit reached". */
   signedOut: RegExp;
   limit: RegExp;
+  /** The in-CLI command that switches account, when there is no sign-out command ("/auth"). */
+  switchAccount?: string;
+  /** One line about which accounts it takes, shown with it in the menu and in Settings. */
+  note?: string;
 }
+
+/** Gemini CLI's account failures since Google moved personal accounts to Antigravity CLI. */
+export const GEMINI_MOVED = "Google moved personal and AI Pro accounts from Gemini CLI to Antigravity CLI (agy). Install agy or add a Gemini API key.";
 
 const json = (line: string): Record<string, unknown> | null => {
   try {
@@ -142,6 +158,60 @@ export const CLIS: Record<CliId, CliSpec> = {
     signedOut: /not logged in|401 unauthorized|missing bearer|please log in|login required/i,
     limit: /usage limit|rate limit|quota|too many requests|429/i,
   },
+  // Antigravity CLI 1.4 (antigravity.google/docs/cli): a native binary, not an npm package.
+  agy: {
+    id: "agy",
+    label: "Gemini (Antigravity)",
+    account: "Google",
+    bin: "agy",
+    install: "curl -fsSL https://antigravity.google/cli/install.sh | bash",
+    installWindows: "irm https://antigravity.google/cli/install.ps1 | iex",
+    // The installer puts agy in ~/.local/bin (%LOCALAPPDATA%\agy\bin) and adds it to the shell's
+    // profile, which a login shell (proc_run's `$SHELL -lc`) may not read.
+    extraPath: { posix: "$HOME/.local/bin", windows: "%LOCALAPPDATA%\\agy\\bin" },
+    docs: "https://antigravity.google/docs/cli/headless",
+    plans: "https://gemini.google/subscriptions/",
+    // `agy models` slugs (1.4.12); the list depends on the account, so any other one can be typed.
+    models: [
+      { id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro", detail: "The most capable" },
+      { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash", detail: "Fast" },
+      { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)", detail: "The fastest" },
+    ],
+    // No status command: its sign-in is in the OS keyring. `agy models` lists models when signed in
+    // (or with an API key) and exits 1 with "Please sign in to view available models" when not.
+    statusCommand: () => "agy models",
+    accountOf: () => "Google account",
+    // Run without arguments it signs in (a saved profile silently, else the browser) and opens its own prompt.
+    signIn: "agy",
+    signOut: null,
+    switchAccount: "/logout",
+    // Print mode: the prompt on stdin (no -p), stream-json, Plan mode, slash commands off. Tools that
+    // need approval are refused in print mode anyway.
+    headless: (model) => ["agy --output-format stream-json --mode plan --disable-slash-commands", ...(model ? [`--model ${model}`] : [])].join(" "),
+    parse: (line) => {
+      const d = json(line);
+      if (!d) return null;
+      if (d.event === "init") {
+        const m = ((d.init ?? {}) as { model?: string }).model;
+        return typeof m === "string" && m ? { kind: "model", model: m } : null;
+      }
+      if (d.event === "step_update") {
+        const u = (d.step_update ?? {}) as { step_type?: string; text_delta?: string };
+        return u.step_type === "agent_response" && typeof u.text_delta === "string" && u.text_delta ? { kind: "delta", text: u.text_delta } : null;
+      }
+      if (d.event === "result") {
+        const r = (d.result ?? {}) as { status?: string; response?: string; error?: string };
+        const error = r.status !== "SUCCESS";
+        return { kind: "result", text: String((error ? r.error || r.response : r.response) ?? ""), error };
+      }
+      return null;
+    },
+    // Manual → its default (asks before tools), Edit → accept-edits, Plan → plan. Its own auto mode
+    // needs the terminal sandbox and is a preview, so Auto → accept-edits (as for Gemini CLI).
+    agent: (m, model, task) => ["agy", ...(m === "manual" ? [] : ["--mode", m === "plan" ? "plan" : "accept-edits"]), ...(model ? ["--model", model] : []), ...(task ? ["-i", task] : [])].join(" "),
+    signedOut: /authentication required|authentication failed|please sign in|run 'agy' to log in|not logged in/i,
+    limit: /quota|rate limit|resource_exhausted|429|too many requests|out of credits|insufficient credits|usage limit/i,
+  },
   gemini: {
     id: "gemini",
     label: "Gemini CLI",
@@ -156,15 +226,19 @@ export const CLIS: Record<CliId, CliSpec> = {
       { id: "flash", label: "Flash", detail: "Fast" },
       { id: "flash-lite", label: "Flash-Lite", detail: "The fastest" },
     ],
-    // Gemini CLI has no status command: a Google sign-in leaves oauth_creds.json, an API key is in the environment.
+    // Gemini CLI has no status command: an API key (or Vertex AI) is in the environment, a chosen
+    // sign-in is "selectedType" in settings.json. oauth_creds.json alone isn't enough: 0.66 exits 41
+    // ("Please set an Auth method") when no method is selected.
     statusCommand: (windows) =>
       windows
-        ? 'if defined GEMINI_API_KEY (exit 0) else if exist "%USERPROFILE%\\.gemini\\oauth_creds.json" (exit 0) else (exit 1)'
-        : 'test -n "$GEMINI_API_KEY" || test -f "$HOME/.gemini/oauth_creds.json" || grep -qs \'"selectedType"\' "$HOME/.gemini/settings.json"',
-    accountOf: () => "Google account",
-    // Its sign-in is the CLI's own first screen ("Login with Google").
+        ? 'if defined GEMINI_API_KEY (exit 0) else if defined GOOGLE_GENAI_USE_VERTEXAI (exit 0) else (findstr /c:"selectedType" "%USERPROFILE%\\.gemini\\settings.json" >nul || exit 1)'
+        : 'if test -n "$GEMINI_API_KEY"; then echo "Gemini API key"; elif test -n "$GOOGLE_GENAI_USE_VERTEXAI"; then echo "Vertex AI"; else grep -qs \'"selectedType"\' "$HOME/.gemini/settings.json" && echo "Google account"; fi',
+    accountOf: (out) => (/api key/i.test(out) ? "Gemini API key" : /vertex/i.test(out) ? "Vertex AI" : "Google account"),
+    // Its sign-in is the CLI's own first screen ("Login with Google", or "Use Gemini API Key").
     signIn: "gemini",
     signOut: null,
+    switchAccount: "/auth",
+    note: "With a Gemini API key or a Google Cloud work account. Personal and AI Pro accounts: use Gemini (Antigravity).",
     headless: (model) => ['gemini -p "" --output-format stream-json --skip-trust --approval-mode plan', ...(model ? [`--model ${model}`] : [])].join(" "),
     parse: (line) => {
       const d = json(line);
@@ -175,10 +249,18 @@ export const CLIS: Record<CliId, CliSpec> = {
       return null;
     },
     agent: (m, model, task) => ["gemini", "--approval-mode", { manual: "default", edit: "auto_edit", plan: "plan", auto: "auto_edit" }[m], ...(model ? ["--model", model] : []), ...(task ? ["-i", task] : [])].join(" "),
-    signedOut: /set an auth method|not authenticated|login required|invalid api key|api key not valid|unauthenticated/i,
+    // Headless with an expired Google sign-in it asks "Opening authentication page…[Y/n]" (on the
+    // question's stdin) and fails with "Authentication cancelled" / exit 42.
+    signedOut: /set an auth method|not authenticated|login required|invalid api key|api key not valid|unauthenticated|opening authentication page|authentication cancelled|error authenticating/i,
     limit: /quota|rate limit|resource_exhausted|429|too many requests/i,
   },
 };
+
+/**
+ * Gemini CLI refusing a personal Google account: its sign-in failures (a personal account can't sign
+ * in again) and the words a consumer-plan refusal may use (Google didn't publish its exact text).
+ */
+const GEMINI_ACCOUNT_GONE = /antigravity|\bagy\b|no longer (?:supported|available|served)|not (?:supported|eligible|available) for (?:this|your) account|ineligible|consumer (?:plan|account|tier)|discontinued|has been retired/i;
 
 export const CLI_IDS = Object.keys(CLIS) as CliId[];
 
@@ -223,8 +305,18 @@ export interface CliInfo {
 }
 
 const UNKNOWN: CliInfo = { state: "unknown", version: null, account: null, detail: null, checkedAt: 0 };
-export const useAiClis = create<Record<CliId, CliInfo>>(() => ({ claude: UNKNOWN, codex: UNKNOWN, gemini: UNKNOWN }));
+export const useAiClis = create<Record<CliId, CliInfo>>(() => ({ claude: UNKNOWN, codex: UNKNOWN, agy: UNKNOWN, gemini: UNKNOWN }));
 const setInfo = (id: CliId, p: Partial<CliInfo>) => useAiClis.setState((s) => ({ [id]: { ...s[id], ...p } }) as Partial<Record<CliId, CliInfo>>);
+
+/** `command` for proc_run, with the CLI's install folder at the end of PATH when it has one. */
+export function withCliPath(id: CliId, command: string, windows: boolean): string {
+  const extra = CLIS[id].extraPath;
+  if (!extra) return command;
+  return windows ? `set "PATH=%PATH%;${extra.windows}" && ${command}` : `export PATH="$PATH:${extra.posix}"; ${command}`;
+}
+
+/** The command that installs the CLI on this computer. */
+export const installCommand = (id: CliId, windows: boolean) => (windows && CLIS[id].installWindows) || CLIS[id].install;
 
 /** Runs a short command; its output and exit code (null code: it couldn't start or took too long). */
 function run(command: string, timeoutMs: number): Promise<{ code: number | null; out: string; err: string }> {
@@ -268,13 +360,14 @@ export function detectCli(id: CliId, force = false): Promise<CliInfo> {
   }
   setInfo(id, { state: "checking" });
   const spec = CLIS[id];
+  const windows = getPlatform().os === "windows";
   const p = (async () => {
-    const v = await run(`${spec.bin} --version`, 15_000);
+    const v = await run(withCliPath(id, `${spec.bin} --version`, windows), 15_000);
     let next: Partial<CliInfo>;
     if (v.code === 0) {
       const version = /(\d+\.\d+\.\d+)/.exec(v.out)?.[1] ?? (v.out.trim().slice(0, 30) || null);
-      const status = spec.statusCommand(getPlatform().os === "windows");
-      const s = status ? await run(status, 15_000) : null;
+      const status = spec.statusCommand(windows);
+      const s = status ? await run(withCliPath(id, status, windows), 15_000) : null;
       // Claude Code says loggedIn:false with exit 0 or 1; the others exit non-zero when signed out.
       const signedOut = s ? s.code !== 0 || json(s.out)?.loggedIn === false : false;
       next = { state: signedOut ? "signed-out" : "ready", version, account: s && !signedOut ? spec.accountOf(s.out) : null, detail: null };
@@ -346,8 +439,15 @@ export function cliError(id: CliId, text: string, exit: number | null = null): A
   const spec = CLIS[id];
   const t = text.trim();
   const e = (code: string, message: string) => new AiRequestError(code, message, id);
+  // (before the "is not recognized" of a missing Windows command)
+  if (id === "agy" && /not recognized as a known model/i.test(t)) return e("CLI_FAILED", `${spec.label} doesn't offer that model on your account. Pick its default model, or another one from \`agy models\`.`);
   if (exit === 127 || new RegExp(`command not found|is not recognized|No such file or directory.*${spec.bin}`, "i").test(t)) return e("CLI_MISSING", `${spec.label} isn't installed on this computer. Install it, or pick another AI.`);
-  if (spec.signedOut.test(t) || (id === "gemini" && exit === 41)) return e("CLI_SIGNED_OUT", `${spec.label} isn't signed in. Sign in with your ${spec.account} account, then ask again.`);
+  if (id === "gemini" && (spec.signedOut.test(t) || exit === 41 || GEMINI_ACCOUNT_GONE.test(t))) {
+    // An API key that is wrong is still the user's to fix in Gemini CLI.
+    if (/invalid api key|api key not valid|api_key_invalid/i.test(t)) return e("CLI_SIGNED_OUT", `${spec.label} rejected your Gemini API key (GEMINI_API_KEY). Check it, then ask again.`);
+    return e("CLI_MOVED", GEMINI_MOVED);
+  }
+  if (spec.signedOut.test(t)) return e("CLI_SIGNED_OUT", `${spec.label} isn't signed in. Sign in with your ${spec.account} account, then ask again.`);
   if (spec.limit.test(t)) return e("CLI_LIMIT", `${spec.label} can't answer right now (your ${spec.account} plan's limit, or too many requests): ${t.slice(0, 200)}`);
   if (/AI tools are off|turned off by your school/i.test(t)) return new AiRequestError("AI_DISABLED", t.slice(0, 300));
   return e("CLI_FAILED", t ? `${spec.label} couldn't answer: ${t.slice(0, 300)}` : `${spec.label} couldn't answer. Try again.`);
@@ -402,7 +502,7 @@ export async function cliChat(messages: WireMessage[], context: ChatContext | un
   };
   try {
     pid = await proc.run(
-      spec.headless(cliModelOf(mode)),
+      withCliPath(id, spec.headless(cliModelOf(mode)), getPlatform().os === "windows"),
       "",
       (e) => {
         if (e.type === "stdout") {
@@ -484,7 +584,7 @@ export function signOutCli(id: CliId) {
 }
 
 export function installCli(id: CliId) {
-  runInTerminal(CLIS[id].install, { name: `Install ${CLIS[id].label}` });
+  runInTerminal(installCommand(id, getPlatform().os === "windows"), { name: `Install ${CLIS[id].label}` });
   setInfo(id, { checkedAt: 0 });
 }
 

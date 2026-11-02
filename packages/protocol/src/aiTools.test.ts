@@ -16,6 +16,8 @@ describe("AI tool matcher", () => {
     expect(tool("claude -p hi")).toEqual({ tool: "Claude Code", kind: "run" });
     expect(tool("/opt/homebrew/bin/codex")?.tool).toBe("Codex CLI");
     expect(tool(["C:\\Users\\a\\AppData\\Roaming\\npm\\gemini.cmd"])?.tool).toBe("Gemini CLI");
+    expect(tool(["/Users/a/.local/bin/agy", "-p=hi"])?.tool).toBe("Antigravity CLI");
+    expect(tool(["C:\\Users\\a\\AppData\\Local\\agy\\bin\\agy.exe"])?.tool).toBe("Antigravity CLI");
     expect(tool(["C:\\tools\\aider.exe", "--model", "x"])?.tool).toBe("Aider");
     expect(tool("gh copilot suggest")?.tool).toBe("GitHub Copilot CLI");
     expect(tool("cursor-agent")?.tool).toBe("Cursor Agent");

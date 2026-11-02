@@ -177,7 +177,7 @@ export function aiMenuItems(opts: { loaded: boolean; thirdParty: boolean; canDra
   const items: ContextMenuItem[] = [];
   if (opts.canDraft) items.push({ kind: "item", label: "Draft with AI…", run: opts.openBox });
   if (opts.thirdParty && opts.loaded) {
-    for (const tool of ["claude", "gemini", "codex"] as GradingCli[]) items.push({ kind: "item", label: `Grade with ${GRADING_CLIS[tool].label}`, run: () => void gradeWithCli(tool) });
+    for (const tool of ["claude", "agy", "gemini", "codex"] as GradingCli[]) items.push({ kind: "item", label: `Grade with ${GRADING_CLIS[tool].label}`, run: () => void gradeWithCli(tool) });
     items.push({ kind: "item", label: "Copy Grading Prompt", run: () => void copyGradingPrompt() });
   }
   return items.length ? [{ kind: "separator" }, ...items] : [];

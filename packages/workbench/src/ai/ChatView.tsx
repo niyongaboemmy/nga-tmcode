@@ -442,6 +442,15 @@ function Answer({ m }: { m: Message }) {
   );
 }
 
+/** Gemini CLI turned the account away: answer with Antigravity CLI instead (installing it or signing in first when needed). */
+async function useAgyInstead() {
+  const info = await detectCli("agy", true);
+  if (info.state === "ready") return setAiMode("cli:agy");
+  if (info.state === "missing") return installCli("agy");
+  if (info.state === "signed-out") return signInCli("agy");
+  notify("info", info.detail ?? `${CLIS.agy.label} couldn't be checked here.`);
+}
+
 /** What to do when an AI CLI couldn't answer (the chat's and the terminal's error boxes); `cli` is the error's reason. */
 export function CliFixes({ code, cli, retry }: { code: string; cli?: string; retry?: () => void }) {
   if (!code.startsWith("CLI_")) return null;
@@ -458,6 +467,21 @@ export function CliFixes({ code, cli, retry }: { code: string; cli?: string; ret
         <button type="button" className="tm-link-button" onClick={() => signInCli(id)} data-testid="cli-signin">
           Sign In with {spec!.account}
         </button>
+      )}
+      {code === "CLI_MOVED" && (
+        <>
+          <button type="button" className="tm-link-button" onClick={() => void useAgyInstead()} data-testid="cli-use-agy">
+            Use {CLIS.agy.label}
+          </button>
+          <button type="button" className="tm-link-button" onClick={openAiKeysSettings} data-testid="cli-gemini-key">
+            Add a Gemini API Key
+          </button>
+          {id && (
+            <button type="button" className="tm-link-button" onClick={() => signInCli(id)} title="Google Cloud work accounts (Gemini Code Assist Standard or Enterprise) still sign in to Gemini CLI">
+              Sign In with a Work Account
+            </button>
+          )}
+        </>
       )}
       {code === "CLI_LIMIT" && id && (
         <button type="button" className="tm-link-button" onClick={() => void getPlatform().openExternal?.(spec!.plans)} data-testid="cli-plans">
@@ -554,8 +578,8 @@ function cliItems(icon: (id: string, fallback: string) => string): PickItem[] {
   return CLI_IDS.flatMap((id): PickItem[] => {
     const spec = CLIS[id];
     const cc = all[id];
-    if (cc.state === "missing") return [{ id: `__cli:install:${id}`, label: `Install ${spec.label}…`, description: `your ${spec.account} account`, icon: "cloud-download" }];
-    if (cc.state === "signed-out") return [{ id: `__cli:signin:${id}`, label: `Sign In to ${spec.label}…`, description: `with your ${spec.account} account`, detail: "Installed, not signed in yet.", icon: "account" }];
+    if (cc.state === "missing") return [{ id: `__cli:install:${id}`, label: `Install ${spec.label}…`, description: `your ${spec.account} account`, detail: spec.note, icon: "cloud-download" }];
+    if (cc.state === "signed-out") return [{ id: `__cli:signin:${id}`, label: `Sign In to ${spec.label}…`, description: `with your ${spec.account} account`, detail: spec.note ? `Installed, not signed in yet. ${spec.note}` : "Installed, not signed in yet.", icon: "account" }];
     if (cc.state === "unavailable") return [{ id: `__cli:retry:${id}`, label: spec.label, detail: `${cc.detail ?? "It couldn't be checked."} Pick this to check again.`, icon: "warning" }];
     // Still being checked (the menu doesn't wait for it): pick it to see the result.
     if (cc.state === "checking" || cc.state === "unknown") return [{ id: `__cli:retry:${id}`, label: spec.label, description: "checking…", detail: `Is ${spec.label} installed and signed in with your ${spec.account} account? Pick this to see.`, icon: "loading" }];
