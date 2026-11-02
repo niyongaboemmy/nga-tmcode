@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.1 — 2026-11-02
+
+**TMCode 1.6.1: Gemini with your Google account works again, through Antigravity CLI.** Since 18 June 2026 Google no longer serves personal Google accounts (free, Google AI Pro, Ultra) in Gemini CLI: it moved them to Antigravity CLI (`agy`). TMCode now offers **Gemini (Antigravity)** in Your AI accounts, and when Gemini CLI turns a personal account away it says why and what to do, instead of "isn't signed in".
+
+### Gemini (Antigravity)
+
+- **Pick it in "Which AI answers"** (the model menu in the chat and in the terminal's AI box): its default model, Gemini 3.1 Pro, Gemini 3.8 Flash, Gemini 3.8 Flash (Low), or any model name you type (`agy models` lists the ones your account has).
+- **It answers with your Google account and plan.** No TMCode AI allowance is used. When your plan's limit is reached, TMCode says so and offers **Your Google Plan** or **Use Free AI and Retry**.
+- **In the chat (Chat mode) and in the terminal** (⌘I, `# words`, Fix with AI) it answers read-only, in its Plan mode, with slash commands off. Your question goes to it on its input, never on a command line.
+- **In agent modes** it works on your project in a terminal and asks there before it acts: Manual → its default mode, Edit automatically → accept-edits, Plan → plan, Auto → accept-edits (agy's own auto mode is a preview that needs its terminal sandbox).
+- **Install and sign in, in one click.** **Install…** runs Google's installer in a terminal (`curl -fsSL https://antigravity.google/cli/install.sh | bash` on macOS and Linux, `irm https://antigravity.google/cli/install.ps1 | iex` on Windows). **Sign In with Google** opens agy, which signs you in in your browser. TMCode finds agy in `~/.local/bin` (`%LOCALAPPDATA%\agy\bin` on Windows) even before your shell's PATH has it. To switch account, use agy's `/logout`.
+- **Grading:** **Grade with Gemini (Antigravity)** joins Grade with Claude Code, Gemini CLI and Codex.
+
+### Gemini CLI
+
+- **It stays, for a Gemini API key or a Google Cloud work account** (Gemini Code Assist Standard or Enterprise), which Google still serves. Settings › TMCode AI › Your AI accounts says so under it.
+- **A personal account now gets a clear message:** "Google moved personal and AI Pro accounts from Gemini CLI to Antigravity CLI (agy). Install agy or add a Gemini API key." with **Use Gemini (Antigravity)** (it installs agy, signs you in, or switches to it, whichever is next), **Add a Gemini API Key** and **Sign In with a Work Account**.
+- **"Signed in" means signed in.** TMCode no longer counts a leftover `~/.gemini/oauth_creds.json` as signed in: Gemini CLI needs an API key, Vertex AI or a chosen sign-in method. The account line shows **Gemini API key**, **Vertex AI** or **Google account**.
+- A wrong Gemini API key says so ("rejected your Gemini API key (GEMINI_API_KEY)") instead of asking you to sign in.
+
+### Your school stays in charge
+
+- Gemini (Antigravity) is a third-party AI tool like the others: only where your school allows those, never in exams. When the school says no, TMCode blocks `agy` (and `antigravity`) in its terminals too, and every question, agent task and command run is in the Activity log with **Gemini (Antigravity)** named.
+
+### All changes
+
+- Gemini with your own account: Antigravity CLI (agy), and say why Gemini CLI refuses personal accounts
+
 ## 1.6.0 — 2026-11-01
 
 **TMCode 1.6: Check What I Mean.** Before TMCode AI works on a new or unclear request, it shows what it understood: the goal, examples to tick, unusual cases, the files. You confirm it, correct it, or send your words as you typed them. Nothing is rewritten behind your back, and the AI always gets your own words. A Kinyarwanda request is restated in Kinyarwanda and sent to the AI in clear English.
