@@ -1,7 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { dismissNotification, useWorkbench } from "../state/store";
 import { clearAllNotifications, clearNotification, keptActions, markAllAsRead, showNotificationCenter, toggleDoNotDisturb, unreadCount, useNotificationCenter } from "../state/notificationCenter";
 import { Codicon } from "./icons";
+
+/** Entries drawn at a time; "Show more" adds the next page (a long history stays light). */
+export const NC_PAGE = 30;
 
 const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -12,9 +15,12 @@ export function NotificationCenter() {
   const history = useNotificationCenter((s) => s.history);
   const live = useWorkbench((s) => s.notifications);
   const ref = useRef<HTMLDivElement>(null);
+  const [pages, setPages] = useState(1);
+  const liveById = useMemo(() => new Map(live.map((n) => [n.id, n])), [live]);
 
   useEffect(() => {
     if (!open) return;
+    setPages(1);
     ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") showNotificationCenter(false);
@@ -51,8 +57,8 @@ export function NotificationCenter() {
         </button>
       </div>
       <div className="tm-nc-list">
-        {history.map((h) => {
-          const n = live.find((x) => x.id === h.id);
+        {history.slice(0, pages * NC_PAGE).map((h) => {
+          const n = liveById.get(h.id);
           return (
             <div key={h.id} className={`tm-nc-item is-${h.severity} ${n ? "" : "is-closed"} ${h.unread ? "is-unread" : ""}`} data-testid="notification-entry">
               <Codicon name={h.severity === "error" ? "error" : h.severity === "warning" ? "warning" : "info"} className={`tm-toast-icon is-${h.severity}`} />
@@ -89,6 +95,11 @@ export function NotificationCenter() {
             </div>
           );
         })}
+        {history.length > pages * NC_PAGE && (
+          <button type="button" className="tm-link-button tm-nc-more" onClick={() => setPages(pages + 1)} data-testid="notifications-show-more">
+            Show {Math.min(NC_PAGE, history.length - pages * NC_PAGE)} more ({history.length - pages * NC_PAGE} older)
+          </button>
+        )}
       </div>
     </div>
   );

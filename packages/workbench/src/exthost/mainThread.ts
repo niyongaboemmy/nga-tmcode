@@ -1,4 +1,5 @@
 import { terminalOp } from "./terminals";
+import { showMessage } from "./messages";
 import { installExtScmTests } from "./extScmTests";
 import { extensionDebugConfigs } from "../debug/debugService";
 import type { LaunchConfig } from "../debug/launchJson";
@@ -14,7 +15,7 @@ import { allCommands, executeCommand, getCommand, registerCommand } from "../com
 import { monaco } from "../monaco/setup";
 import { ensureDocument, extraProblems, getDocument, pathOfUri, recomputeProblems, saveAll, saveDocument, uriFor } from "../monaco/documents";
 import { codeEditorFor, runEditorAction } from "../monaco/editors";
-import { closeActiveEditor, dismissNotification, getPlatform, log, moveEntry, notify, notifyProgress, openEditorInput, openFile, openSpecialEditor, refreshExplorer, showDialog, toggleAuxiliaryBar, useWorkbench, type Problem } from "../state/store";
+import { closeActiveEditor, getPlatform, log, moveEntry, notify, notifyProgress, openEditorInput, openFile, openSpecialEditor, refreshExplorer, toggleAuxiliaryBar, useWorkbench, type Problem } from "../state/store";
 import { isVirtualPath, virtualName } from "../util/virtual";
 import { showInputBox, showQuickPick, type PickItem } from "../widgets/QuickPick";
 import { editorFor, flushEditors, flushTabs, fromRange } from "./documentSync";
@@ -107,40 +108,6 @@ export function clearDiagnosticsOf(kind: HostKind) {
 }
 
 // ───────────── messages ─────────────
-
-function showMessage(severity: "info" | "warning" | "error", message: string, opts: { modal?: boolean; detail?: string }, items: string[]): Promise<number | null> {
-  if (opts.modal) {
-    const buttons = items.map((label, i) => ({ id: String(i), label, primary: i === 0 }));
-    return showDialog({ message, detail: opts.detail, severity: severity === "info" ? "info" : "warning", buttons: [...buttons, { id: "cancel", label: "Cancel" }], cancelId: "cancel" }).then((id) => (id === "cancel" ? null : Number(id)));
-  }
-  return new Promise((resolve) => {
-    let done = false;
-    let un: () => void = () => {};
-    const finish = (v: number | null) => {
-      if (done) return;
-      done = true;
-      un();
-      resolve(v);
-    };
-    const id = notify(
-      severity,
-      message,
-      items.length
-        ? items.map((label, i) => ({
-            label,
-            run: () => {
-              finish(i);
-              dismissNotification(id);
-            },
-          }))
-        : undefined,
-    );
-    // Closed (or timed out) without a choice: undefined, as in VS Code.
-    un = useWorkbench.subscribe((s) => {
-      if (!s.notifications.some((n) => n.id === id)) finish(null);
-    });
-  });
-}
 
 // ───────────── progress ─────────────
 
