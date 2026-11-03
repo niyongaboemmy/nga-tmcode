@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { dismissNotification, resetWorkbenchForTests, useWorkbench } from "../state/store";
+import { recordToasts, unreadCount, visibleToasts } from "../state/notificationCenter";
 import { showMessage } from "./messages";
 
 describe("extension messages", () => {
@@ -27,5 +28,21 @@ describe("extension messages", () => {
     void showMessage("info", "B", {}, ["OK"]);
     void showMessage("error", "A", {}, ["OK"]);
     expect(useWorkbench.getState().notifications).toHaveLength(3);
+  });
+
+  it("info waits quietly under the bell, buttons and all; warnings still pop up", () => {
+    void showMessage("info", "Take a survey?", {}, ["Yes"]);
+    void showMessage("warning", "Reload to update", {}, ["Reload"]);
+    const all = useWorkbench.getState().notifications;
+    expect(all).toHaveLength(2);
+    expect(visibleToasts(all, false).map((n) => n.message)).toEqual(["Reload to update"]);
+    // The bell counts it until it is seen.
+    expect(unreadCount(recordToasts([], all, 0))).toBe(1);
+  });
+
+  it("pops up info too when notifications.extensionInfo is toast", () => {
+    useWorkbench.setState({ settings: { ...useWorkbench.getState().settings, "notifications.extensionInfo": "toast" } });
+    void showMessage("info", "Take a survey?", {}, ["Yes"]);
+    expect(visibleToasts(useWorkbench.getState().notifications, false)).toHaveLength(1);
   });
 });

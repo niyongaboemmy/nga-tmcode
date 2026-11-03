@@ -1,5 +1,8 @@
 import { dismissNotification, notify, showDialog, useWorkbench } from "../state/store";
 
+/** Info from extensions waits under the bell unless the setting says pop up (warnings and errors always pop up). */
+const quietInfo = (severity: string) => severity === "info" && useWorkbench.getState().settings["notifications.extensionInfo"] !== "toast";
+
 /**
  * window.showInformationMessage / Warning / Error from extensions. A question
  * asked again while the first is still up (Gemini Code Assist's survey, ~600
@@ -61,7 +64,7 @@ export function showMessage(severity: "info" | "warning" | "error", message: str
           }))
         : undefined,
       // The centre keeps one entry per message, however often the extension says it.
-      { owner: `ext:${key}` },
+      { owner: `ext:${key}`, ...(quietInfo(severity) ? { quiet: true } : {}) },
     );
   });
 }
