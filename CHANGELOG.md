@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.2 — 2026-11-03
+
+**TMCode 1.6.2: a flood of notifications no longer freezes the window.** An extension that asked the same thing again and again (Gemini Code Assist's survey, hundreds of times) piled up toasts with buttons until TMCode stopped responding. Now:
+
+- **The same question shows once.** When an extension asks something that is already on screen, it joins the open notification instead of adding a new one, and your answer goes to every ask. The notification centre keeps one entry for it.
+- **At most 12 notifications stay open.** Past that, the oldest one with buttons closes (you still find it in the notification centre). A running operation with its Cancel button and important notices are never closed this way. On screen you see the newest two, as before, with "+N more".
+- **The notification centre opens fast however long it is:** it shows 30 at a time, with **Show more** for older ones.
+- **Lighter:** one watcher follows every extension message, instead of one each on every screen update.
+
+### All changes
+
+- Notifications: one toast per repeated extension message, at most 12 open, paged centre (1.6.2)
+
 ## 1.6.1 — 2026-11-02
 
 **TMCode 1.6.1: Gemini with your Google account works again, through Antigravity CLI.** Since 18 June 2026 Google no longer serves personal Google accounts (free, Google AI Pro, Ultra) in Gemini CLI: it moved them to Antigravity CLI (`agy`). TMCode now offers **Gemini (Antigravity)** in Your AI accounts, and when Gemini CLI turns a personal account away it says why and what to do, instead of "isn't signed in".
