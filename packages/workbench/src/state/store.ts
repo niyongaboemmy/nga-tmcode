@@ -133,6 +133,8 @@ export interface Notification {
   owner?: string;
   /** Its owner was on screen: recorded in the centre (read), never shown as a toast. */
   silent?: boolean;
+  /** Open, but only in the notification centre (unread until seen): its buttons work there. */
+  quiet?: boolean;
 }
 
 export interface DialogButton {

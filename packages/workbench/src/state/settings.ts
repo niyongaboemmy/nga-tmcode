@@ -166,6 +166,12 @@ export interface Settings {
    * Exams never show Home.
    */
   "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
+  /**
+   * Information from extensions that asks something (surveys, tips, "what's new", with buttons): "quiet"
+   * (default) waits under the bell in the status bar, its buttons there; "toast" pops up as VS Code does.
+   * Plain information (feedback, no buttons), warnings and errors always pop up.
+   */
+  "notifications.extensionInfo": "quiet" | "toast";
   /** Students: four views (Assignments, Files, Search, Run) and a short status bar; the rest under More. */
   "workbench.simpleLayout": boolean;
   /** AI tools (TMCode AI and AI extensions' views) under one AI icon in the activity bar, the open one highlighted. */
@@ -261,6 +267,7 @@ export const DEFAULT_SETTINGS: Settings = {
   "workbench.editor.languageDetection": true,
   "markdown.editor.drop.enabled": "smart",
   "workbench.startupEditor": "home",
+  "notifications.extensionInfo": "quiet",
   "workbench.simpleLayout": true,
   "workbench.activityBar.groupAiTools": true,
   "workbench.activityBar.hidden": [],
@@ -696,6 +703,16 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
           { value: "home", label: "Home" },
           { value: "homeIfNoFolder", label: "Home, only when no folder is open" },
           { value: "none", label: "none" },
+        ],
+      },
+      {
+        key: "notifications.extensionInfo",
+        label: "Notifications: Extension Information",
+        description: "Where information from extensions that asks something (surveys, tips, what's new) goes. Quiet: it waits under the bell in the status bar, with its buttons, until you open it. Short messages without buttons, warnings and errors from extensions always pop up.",
+        type: "enum",
+        options: [
+          { value: "quiet", label: "Quiet: under the bell" },
+          { value: "toast", label: "Pop up" },
         ],
       },
       {

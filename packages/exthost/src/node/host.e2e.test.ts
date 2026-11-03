@@ -323,6 +323,45 @@ exports.activate = (context) => {
   });
 });
 
+describe("messages", () => {
+  it("the same open toast asked for 1,000 times reaches the workbench once; every ask gets the answer", async () => {
+    const extRoot = mkdtempSync(join(tmpdir(), "tmcode-asker-"));
+    const ASKER = `
+const vscode = require("vscode");
+exports.activate = (context) => {
+  context.subscriptions.push(vscode.commands.registerCommand("asker.ask", async () => {
+    const items = [{ title: "Yes" }, { title: "No" }];
+    const answers = await Promise.all(Array.from({ length: 1000 }, () => vscode.window.showInformationMessage("Survey?", ...items)));
+    return answers.map((a) => a && a.title).join(",") === Array(1000).fill("No").join(",");
+  }));
+};`;
+    const dir = writeExtension(extRoot, "asker", { main: "./main.js", activationEvents: ["onCommand:asker.ask"] }, { "main.js": ASKER });
+    let shown = 0;
+    let answer: (v: number) => void = () => {};
+    const wb: WB = new FakeWorkbench({
+      root: mkdtempSync(join(tmpdir(), "tmcode-asker-ws-")),
+      extensions: [describeExtension(dir)],
+      onRequest: (method: string) => {
+        if (method !== "$main.showMessage") return undefined;
+        shown++;
+        return new Promise<number>((r) => (answer = r));
+      },
+    });
+    try {
+      await wb.init;
+      await wb.request("$startup");
+      const all = wb.request("$executeCommand", ["asker.ask", []]);
+      await wb.waitFor(() => shown > 0, "the toast");
+      await new Promise((r) => setTimeout(r, 200));
+      answer(1);
+      expect(await all).toBe(true);
+      expect(shown).toBe(1);
+    } finally {
+      await wb.close();
+    }
+  });
+});
+
 describe("tree views and webviews", () => {
   const ui = () => (wb as unknown as { ui: unknown[][] }).ui;
   const posted = () => (wb as unknown as { posted: { handle: string; message: unknown }[] }).posted;

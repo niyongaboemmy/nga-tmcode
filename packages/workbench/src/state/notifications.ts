@@ -34,6 +34,8 @@ export interface NotifyOptions {
    * is on screen (its brief or grading tab in front) goes to the centre, not a toast (calm screen).
    */
   owner?: string;
+  /** Waits in the notification centre (the bell counts it) instead of a toast: extension info, e.g. a survey. */
+  quiet?: boolean;
 }
 
 export const HINT_MS = 6000;

@@ -44,7 +44,7 @@ export function recordToasts(history: HistoryEntry[], toasts: Notification[], no
     if (at < 0) {
       // The newest state of a thing wins: its older entries (and their buttons) go.
       if (n.owner) out = out.filter((h) => h.owner !== n.owner);
-      out = [{ id: n.id, severity: n.severity, message: n.message, time: now, kind: kindOf(n), ...(n.owner ? { owner: n.owner } : {}), ...(isExternal(n) && !n.silent ? { unread: true } : {}) }, ...out];
+      out = [{ id: n.id, severity: n.severity, message: n.message, time: now, kind: kindOf(n), ...(n.owner ? { owner: n.owner } : {}), ...((isExternal(n) || n.quiet) && !n.silent ? { unread: true } : {}) }, ...out];
     }
     else if (out[at].message !== n.message || out[at].severity !== n.severity) {
       out = out.map((h, i) => (i === at ? { ...h, message: n.message, severity: n.severity } : h));
@@ -175,10 +175,11 @@ export function toggleDoNotDisturb() {
 }
 
 /**
- * Toasts shown. In Do Not Disturb: errors, failures, running operations,
+ * Toasts shown (never the quiet ones: they wait in the centre). In Do Not Disturb: errors, failures, running operations,
  * important results and what bypasses it (exams, teacher messages, returned
  * work). During an exam Do Not Disturb hides nothing.
  */
 export function visibleToasts(toasts: Notification[], dnd: boolean, examActive = false) {
-  return dnd ? toasts.filter((n) => shownInDnd(n, examActive)) : toasts;
+  const shown = toasts.filter((n) => !n.quiet);
+  return dnd ? shown.filter((n) => shownInDnd(n, examActive)) : shown;
 }

@@ -260,6 +260,12 @@ class TextEditorEditBuilder {
 
 // ───────────────────────── mementos ─────────────────────────
 
+/**
+ * An extension's globalState / workspaceState, as VS Code's ExtensionMemento: get() returns the
+ * stored value itself (not a copy), update() stores a copy. Extensions rely on that: Gemini Code
+ * Assist's survey pushes onto the array get() returned and checks it on the next event; with a copy
+ * the check never saw the push and it asked again on every telemetry event, without end (it froze TMCode).
+ */
 class Memento {
   constructor(
     private readonly values: Record<string, unknown>,
@@ -270,7 +276,7 @@ class Memento {
   }
   get<V>(key: string, defaultValue?: V): V | undefined {
     const v = this.values[key];
-    return v === undefined ? defaultValue : (JSON.parse(JSON.stringify(v)) as V);
+    return v === undefined ? defaultValue : (v as V);
   }
   update(key: string, value: unknown): Promise<void> {
     if (value === undefined) delete this.values[key];
@@ -1406,9 +1412,22 @@ export class ExtHost {
     }
     items = items.filter((i) => i !== undefined && i !== null);
     const labels = items.map((i) => (typeof i === "string" ? i : String((i as { title?: string }).title ?? "")));
-    const idx = await this.rpc.request<number | null>("$main.showMessage", [severity, String(message), { modal: !!options.modal, detail: options.detail }, labels]);
+    // The same toast asked for again while it is open waits for that one answer, without another
+    // message to the workbench (an extension in a loop sent 24,000 a second and froze the window).
+    const key = options.modal ? null : JSON.stringify([severity, String(message), labels]);
+    let ask = key === null ? undefined : this.openMessages.get(key);
+    if (!ask) {
+      ask = this.rpc.request<number | null>("$main.showMessage", [severity, String(message), { modal: !!options.modal, detail: options.detail }, labels]);
+      if (key !== null) {
+        this.openMessages.set(key, ask);
+        const done = () => this.openMessages.delete(key);
+        ask.then(done, done);
+      }
+    }
+    const idx = await ask;
     return idx === null || idx === undefined ? undefined : items[idx];
   }
+  private readonly openMessages = new Map<string, Promise<number | null>>();
 
   async showQuickPick(itemsOrPromise: unknown, options: Record<string, unknown> = {}, token?: CancellationToken) {
     const items = (await itemsOrPromise) as (string | Record<string, unknown>)[];
@@ -1587,4 +1606,4 @@ function languageFromName(path: string): string {
 }
 
 export type { ExtState, Event };
-export { OutputChannelImpl, TextEditorImpl, NotSupportedError };
+export { OutputChannelImpl, TextEditorImpl, NotSupportedError, Memento };

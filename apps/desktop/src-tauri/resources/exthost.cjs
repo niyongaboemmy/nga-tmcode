@@ -5485,7 +5485,7 @@ var Memento = class {
   }
   get(key, defaultValue) {
     const v = this.values[key];
-    return v === void 0 ? defaultValue : JSON.parse(JSON.stringify(v));
+    return v === void 0 ? defaultValue : v;
   }
   update(key, value) {
     if (value === void 0) delete this.values[key];
@@ -6535,9 +6535,20 @@ var ExtHost = class {
     }
     items = items.filter((i) => i !== void 0 && i !== null);
     const labels = items.map((i) => typeof i === "string" ? i : String(i.title ?? ""));
-    const idx = await this.rpc.request("$main.showMessage", [severity, String(message), { modal: !!options.modal, detail: options.detail }, labels]);
+    const key = options.modal ? null : JSON.stringify([severity, String(message), labels]);
+    let ask = key === null ? void 0 : this.openMessages.get(key);
+    if (!ask) {
+      ask = this.rpc.request("$main.showMessage", [severity, String(message), { modal: !!options.modal, detail: options.detail }, labels]);
+      if (key !== null) {
+        this.openMessages.set(key, ask);
+        const done = () => this.openMessages.delete(key);
+        ask.then(done, done);
+      }
+    }
+    const idx = await ask;
     return idx === null || idx === void 0 ? void 0 : items[idx];
   }
+  openMessages = /* @__PURE__ */ new Map();
   async showQuickPick(itemsOrPromise, options = {}, token) {
     const items = await itemsOrPromise;
     if (!Array.isArray(items) || token?.isCancellationRequested) return void 0;
