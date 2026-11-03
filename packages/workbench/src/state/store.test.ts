@@ -10,6 +10,7 @@ import {
   setExplorerEditError,
   notify,
   notifyProgress,
+  MAX_OPEN_NOTIFICATIONS,
   openRecent,
   resetWorkbenchForTests,
   saveHandlers,
@@ -170,6 +171,16 @@ describe("notifications", () => {
     expect(list.map((n) => n.message)).toEqual(expect.arrayContaining(["changed on disk", "Cloning…"]));
     // Plain info goes before warnings and errors; of those, the newest stay.
     expect(list.map((n) => n.message).slice(2)).toEqual(["n2", "n4", "n6"]);
+  });
+
+  it("keeps at most twelve open when every toast has buttons, never the running operation", () => {
+    notifyProgress("Cloning…");
+    for (let i = 0; i < 600; i++) notify("info", `survey ${i}`, [{ label: "Yes", run: () => {} }]);
+    const list = useWorkbench.getState().notifications;
+    expect(list).toHaveLength(MAX_OPEN_NOTIFICATIONS);
+    expect(list[0].message).toBe("Cloning…");
+    // The newest stay.
+    expect(list.at(-1)!.message).toBe("survey 599");
   });
 });
 

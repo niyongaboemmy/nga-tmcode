@@ -9072,6 +9072,12 @@ button.tm-setting-badge {
   overflow-y: auto;
   min-height: 0;
 }
+.tm-nc-more {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: center;
+}
 .tm-nc-item {
   display: grid;
   grid-template-columns: auto 1fr auto;

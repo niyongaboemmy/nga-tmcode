@@ -1471,20 +1471,28 @@ export function clearOutput() {
 }
 
 const MAX_NOTIFICATIONS = 5;
+/** Even toasts with buttons stop here: an extension asking again and again (a survey, 600 times) froze the window. */
+export const MAX_OPEN_NOTIFICATIONS = 12;
 /** Notifications the student still has to act on: buttons, or a running operation's progress / Cancel. */
 const needsAction = (n: Notification) => !!n.actions?.length || n.progress !== undefined || !!n.cancel || !!n.important;
+/** Never pushed out: a running operation (its Cancel) and what is marked important. */
+const mustStay = (n: Notification) => n.progress !== undefined || !!n.cancel || !!n.important;
 
 /**
- * Keeps at most five toasts without ever pushing out one with buttons ("changed
- * on disk… Discard my changes") or a running operation: the oldest plain info
- * goes first, then the oldest plain warning or error.
+ * Keeps at most five toasts, pushing out the oldest plain info first, then the
+ * oldest plain warning or error. Toasts with buttons ("changed on disk… Discard
+ * my changes") stay too, up to twelve open in all: past that the oldest with
+ * buttons closes (the centre keeps it). A running operation or an important
+ * toast is never pushed out.
  */
-function capNotifications(list: Notification[]): Notification[] {
+export function capNotifications(list: Notification[]): Notification[] {
   const out = [...list];
   while (out.length > MAX_NOTIFICATIONS) {
     let i = out.findIndex((n) => n.severity === "info" && !needsAction(n));
     if (i < 0) i = out.findIndex((n) => !needsAction(n));
+    if (i < 0 && out.length > MAX_OPEN_NOTIFICATIONS) i = out.findIndex((n) => !mustStay(n));
     if (i < 0) break;
+    clearToastTimer(out[i].id);
     out.splice(i, 1);
   }
   return out;
