@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.3 — 2026-11-03
+
+**TMCode 1.6.3: Gemini Code Assist no longer freezes TMCode.** Its "5-question survey" asked again about 24,000 times a second, so the window had no time left for you, even with only one notification on screen.
+
+### The cause, fixed
+
+- **Extension state now works as in VS Code.** `globalState.get()` / `workspaceState.get()` return the stored value itself, and `update()` stores a copy. TMCode used to return a copy from `get()`. Gemini's survey adds today to the list `get()` gave it, then sends a telemetry event that checks that list again. With a copy, the check never saw today, so it asked again, without end. Measured with the real extension: 479,769 asks in 20 seconds before, 1 now, and Gemini finishes starting up.
+- **The same question asked again while it is open** waits for that one answer inside the extension host. It no longer sends another message to the window, whatever an extension does.
+- **VS Code's spam protection:** more than 3 new extension notifications within 0.8 seconds, and the rest go to the notification centre only.
+
+### Questions wait under the bell
+
+- **Quiet by default.** An extension's information message that asks something (it has buttons: Yes, Don't ask me again…) goes to the notification centre: the bell in the status bar counts it, and its buttons work there. Short messages without buttons ("Committed") still pop up for a few seconds, as do warnings and errors.
+- **Your choice.** Settings › Application › **Notifications: Extension Information**: "Quiet: under the bell" (default) or "Pop up", as VS Code does.
+- Includes 1.6.2: at most 12 notifications stay open, and the notification centre shows 30 at a time with **Show more**.
+
+### All changes
+
+- Extension state get() returns the stored value, as VS Code; one open toast per question in the host; spam protection
+- Quiet only extension info that asks (has buttons); plain info still pops up
+- Extension information waits under the bell, not as a toast (1.6.3)
+
 ## 1.6.2 — 2026-11-03
 
 **TMCode 1.6.2: a flood of notifications no longer freezes the window.** An extension that asked the same thing again and again (Gemini Code Assist's survey, hundreds of times) piled up toasts with buttons until TMCode stopped responding. Now:
