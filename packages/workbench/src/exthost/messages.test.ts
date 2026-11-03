@@ -30,12 +30,13 @@ describe("extension messages", () => {
     expect(useWorkbench.getState().notifications).toHaveLength(3);
   });
 
-  it("info waits quietly under the bell, buttons and all; warnings still pop up", () => {
+  it("info that asks waits quietly under the bell, buttons and all; plain info and warnings still pop up", () => {
     void showMessage("info", "Take a survey?", {}, ["Yes"]);
+    void showMessage("info", "Committed", {}, []);
     void showMessage("warning", "Reload to update", {}, ["Reload"]);
     const all = useWorkbench.getState().notifications;
-    expect(all).toHaveLength(2);
-    expect(visibleToasts(all, false).map((n) => n.message)).toEqual(["Reload to update"]);
+    expect(all).toHaveLength(3);
+    expect(visibleToasts(all, false).map((n) => n.message)).toEqual(["Committed", "Reload to update"]);
     // The bell counts it until it is seen.
     expect(unreadCount(recordToasts([], all, 0))).toBe(1);
   });

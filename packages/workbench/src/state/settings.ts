@@ -167,8 +167,9 @@ export interface Settings {
    */
   "workbench.startupEditor": "home" | "homeIfNoFolder" | "none";
   /**
-   * Information from extensions (surveys, tips, "what's new"): "quiet" (default) waits under the bell
-   * in the status bar, its buttons there; "toast" pops up as VS Code does. Warnings and errors always pop up.
+   * Information from extensions that asks something (surveys, tips, "what's new", with buttons): "quiet"
+   * (default) waits under the bell in the status bar, its buttons there; "toast" pops up as VS Code does.
+   * Plain information (feedback, no buttons), warnings and errors always pop up.
    */
   "notifications.extensionInfo": "quiet" | "toast";
   /** Students: four views (Assignments, Files, Search, Run) and a short status bar; the rest under More. */
@@ -707,7 +708,7 @@ export const SETTING_SECTIONS: { title: string; settings: SettingDef[] }[] = [
       {
         key: "notifications.extensionInfo",
         label: "Notifications: Extension Information",
-        description: "Where information from extensions (surveys, tips, what's new) goes. Quiet: it waits under the bell in the status bar, with its buttons, until you open it. Warnings and errors from extensions always pop up.",
+        description: "Where information from extensions that asks something (surveys, tips, what's new) goes. Quiet: it waits under the bell in the status bar, with its buttons, until you open it. Short messages without buttons, warnings and errors from extensions always pop up.",
         type: "enum",
         options: [
           { value: "quiet", label: "Quiet: under the bell" },
