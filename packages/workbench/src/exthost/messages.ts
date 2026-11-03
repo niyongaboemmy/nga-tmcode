@@ -7,6 +7,18 @@ import { dismissNotification, notify, showDialog, useWorkbench } from "../state/
  */
 const quietInfo = (severity: string, items: string[]) => severity === "info" && items.length > 0 && useWorkbench.getState().settings["notifications.extensionInfo"] !== "toast";
 
+/** VS Code's spam protection (notificationsToasts.ts): more than 3 new toasts within 800 ms and the rest go to the centre only. */
+const SPAM_WINDOW_MS = 800;
+const SPAM_LIMIT = 3;
+let recentToasts: number[] = [];
+export const resetSpamProtectionForTests = () => void (recentToasts = []);
+
+/** Pure: the toast times kept after one more at `now`, and whether it is past the limit. */
+export function spamCheck(times: number[], now: number): { times: number[]; spam: boolean } {
+  const kept = [...times.filter((t) => now - t < SPAM_WINDOW_MS), now];
+  return { times: kept, spam: kept.length > SPAM_LIMIT };
+}
+
 /**
  * window.showInformationMessage / Warning / Error from extensions. A question
  * asked again while the first is still up (Gemini Code Assist's survey, ~600
@@ -54,6 +66,9 @@ export function showMessage(severity: "info" | "warning" | "error", message: str
     }
     // id 0 until notify returns: the watcher skips it (notify's own store change runs it first).
     const entry = { id: 0, waiters: [resolve] };
+    const check = spamCheck(recentToasts, Date.now());
+    recentToasts = check.times;
+    const quiet = quietInfo(severity, items) || (check.spam && severity !== "error");
     openMessages.set(key, entry);
     entry.id = notify(
       severity,
@@ -68,7 +83,7 @@ export function showMessage(severity: "info" | "warning" | "error", message: str
           }))
         : undefined,
       // The centre keeps one entry per message, however often the extension says it.
-      { owner: `ext:${key}`, ...(quietInfo(severity, items) ? { quiet: true } : {}) },
+      { owner: `ext:${key}`, ...(quiet ? { quiet: true } : {}) },
     );
   });
 }

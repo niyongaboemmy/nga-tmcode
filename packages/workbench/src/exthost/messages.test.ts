@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { dismissNotification, resetWorkbenchForTests, useWorkbench } from "../state/store";
 import { recordToasts, unreadCount, visibleToasts } from "../state/notificationCenter";
-import { showMessage } from "./messages";
+import { resetSpamProtectionForTests, showMessage, spamCheck } from "./messages";
 
 describe("extension messages", () => {
-  beforeEach(() => resetWorkbenchForTests());
+  beforeEach(() => {
+    resetWorkbenchForTests();
+    resetSpamProtectionForTests();
+  });
 
   it("shows one toast for the same question asked again and again, and answers every ask", async () => {
     const asks = Array.from({ length: 50 }, () => showMessage("info", "Take a 5-question survey?", {}, ["Yes", "No"]));
@@ -45,5 +48,15 @@ describe("extension messages", () => {
     useWorkbench.setState({ settings: { ...useWorkbench.getState().settings, "notifications.extensionInfo": "toast" } });
     void showMessage("info", "Take a survey?", {}, ["Yes"]);
     expect(visibleToasts(useWorkbench.getState().notifications, false)).toHaveLength(1);
+  });
+
+  it("spam protection: a fourth new toast within 800 ms goes to the centre only, as in VS Code", () => {
+    let times: number[] = [];
+    const spam = [0, 100, 200, 300, 1200].map((t) => {
+      const r = spamCheck(times, t);
+      times = r.times;
+      return r.spam;
+    });
+    expect(spam).toEqual([false, false, false, true, false]);
   });
 });
